@@ -22,8 +22,8 @@ from datetime import datetime
 
 import dateutil
 import ee
-from geedim import utils as imutil
-from homonim import get_logger
+from geedim import utils as dim_util
+from geedim import get_logger
 
 # conda install -c conda-forge earthengine-api
 # conda install -c conda-forge folium
@@ -38,7 +38,7 @@ from homonim import get_logger
 
 logger = get_logger(__name__)
 def parse_arguments():
-    collection_info = imutil.load_collection_info()
+    collection_info = dim_util.load_collection_info()
     parser = argparse.ArgumentParser(description='Search and download surface reflectance imagery from Google Earth Engine (GEE)')
     # parser.add_argument('extent_file', help='path specifying source image/vector file whose spatial extent should be covered', type=str,
     #                     metavar='extent_file', nargs='+')
@@ -93,20 +93,20 @@ def main(args):
     else:
         min_images = 1
     if False:
-        src_bbox_wgs84, crs = imutil.get_image_bounds(args.extent_file, expand=5)
-        link, image = imutil.search_image_collection(args.collection, src_bbox_wgs84, args.date, min_images=min_images,
-                                                     crs=crs, bands=None, cloud_mask=lambda x: x)
+        src_bbox_wgs84, crs = dim_util.get_image_bounds(args.extent_file, expand=5)
+        link, image = dim_util.search_image_collection(args.collection, src_bbox_wgs84, args.date, min_images=min_images,
+                                                       crs=crs, bands=None, cloud_mask=lambda x: x)
     else:
         if 'landsat' in args.collection:
-            ref_image = imutil.EeLandsatRefImage(args.extent_file, collection=args.collection)
+            ref_image = dim_util.EeLandsatRefImage(args.extent_file, collection=args.collection)
         elif 'sentinel' in args.collection:
-            ref_image = imutil.Sentinel2EeImage(args.extent_file, collection=args.collection)
+            ref_image = dim_util.Sentinel2EeImage(args.extent_file, collection=args.collection)
         else:
-            ref_image = imutil.EeRefImage(args.extent_file, collection=args.collection)
+            ref_image = dim_util.EeRefImage(args.extent_file, collection=args.collection)
 
         link, image = ref_image.search(args.date, min_images=min_images)
 
-    imutil.download_image(link, args.output_filename)
+    dim_util.download_image(link, args.output_filename)
 
 if __name__ == "__main__":
     args = parse_arguments()

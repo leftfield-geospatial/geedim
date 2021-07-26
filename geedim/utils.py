@@ -29,7 +29,7 @@ import numpy as np
 import pandas
 import pandas as pd
 import rasterio as rio
-from homonim import get_logger, root_path
+from geedim import get_logger, root_path
 from rasterio.warp import transform_geom
 from shapely import geometry
 import time
