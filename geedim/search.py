@@ -71,162 +71,8 @@ def get_image_bounds(filename, expand=10):
         src_bbox_wgs84 = geometry.shape(transform_geom(im.crs, 'WGS84', src_bbox_expand))
     return geometry.mapping(src_bbox_wgs84), im.crs.to_wkt()
 
-# from https://github.com/gee-community/gee_tools, MIT license
-def minscale(image):
-    """ Get the minimal scale of an Image, looking at all Image's bands.
-    For example if:
-        B1 = 30
-        B2 = 60
-        B3 = 10
-    the function will return 10
-    :return: the minimal scale
-    :rtype: ee.Number
-    """
-    bands = image.bandNames()
 
-    first = image.select([ee.String(bands.get(0))])
-    ini = ee.Number(first.projection().nominalScale())
-
-    def wrap(name, i):
-        i = ee.Number(i)
-        scale = ee.Number(image.select([name]).projection().nominalScale())
-        condition = scale.lte(i)
-        newscale = ee.Algorithms.If(condition, scale, i)
-        return newscale
-
-    return ee.Number(bands.slice(1).iterate(wrap, ini))
-
-# from https://github.com/gee-community/gee_tools, MIT license
-def parametrize(image, range_from, range_to, bands=None, drop=False):
-    """ Parametrize from a original **known** range to a fixed new range
-    :param range_from: Original range. example: (0, 5000)
-    :type range_from: tuple
-    :param range_to: Fixed new range. example: (500, 1000)
-    :type range_to: tuple
-    :param bands: bands to parametrize. If *None* all bands will be
-        parametrized.
-    :type bands: list
-    :param drop: drop the bands that will not be parametrized
-    :type drop: bool
-    :return: the parsed image with the parsed bands parametrized
-    :rtype: ee.Image
-    """
-    original_range = range_from if isinstance(range_from, ee.List) \
-        else ee.List(range_from)
-
-    final_range = range_to if isinstance(range_to, ee.List) \
-        else ee.List(range_to)
-
-    # original min and max
-    min0 = ee.Image.constant(original_range.get(0))
-    max0 = ee.Image.constant(original_range.get(1))
-
-    # range from min to max
-    rango0 = max0.subtract(min0)
-
-    # final min max images
-    min1 = ee.Image.constant(final_range.get(0))
-    max1 = ee.Image.constant(final_range.get(1))
-
-    # final range
-    rango1 = max1.subtract(min1)
-
-    # all bands
-    all = image.bandNames()
-
-    # bands to parametrize
-    if bands:
-        bands_ee = ee.List(bands)
-    else:
-        bands_ee = image.bandNames()
-
-    inter = ee_list.intersection(bands_ee, all)
-    diff = ee_list.difference(all, inter)
-    image_ = image.select(inter)
-
-    # Percentage corresponding to the actual value
-    percent = image_.subtract(min0).divide(rango0)
-
-    # Taking count of the percentage of the original value in the original
-    # range compute the final value corresponding to the final range.
-    # Percentage * final_range + final_min
-
-    final = percent.multiply(rango1).add(min1)
-
-    if not drop:
-        # Add the rest of the bands (no parametrized)
-        final = image.select(diff).addBands(final)
-
-    # return passProperty(image, final, 'system:time_start')
-    return ee.Image(final.copyProperties(source=image))
-
-# from https://github.com/gee-community/gee_tools, MIT license
-def unpack(iterable):
-    """ Helper function to unpack an iterable """
-    unpacked = []
-    for tt in iterable:
-        for t in tt:
-            unpacked.append(t)
-    return unpacked
-
-# from https://github.com/gee-community/gee_tools, MIT license
-def getRegion(eeobject, bounds=False, error=1):
-    """ Gets the region of a given geometry to use in exporting tasks. The
-    argument can be a Geometry, Feature or Image
-    :param eeobject: geometry to get region of
-    :type eeobject: ee.Feature, ee.Geometry, ee.Image
-    :param error: error parameter of ee.Element.geometry
-    :return: region coordinates ready to use in a client-side EE function
-    :rtype: json
-    """
-    def dispatch(geometry):
-        info = geometry.getInfo()
-        geomtype = info['type']
-        if geomtype == 'GeometryCollection':
-            geometries = info['geometries']
-            region = []
-            for geom in geometries:
-                this_type = geom['type']
-                if this_type in ['Polygon', 'Rectangle']:
-                    region.append(geom['coordinates'][0])
-                elif this_type in ['MultiPolygon']:
-                    geometries2 = geom['coordinates']
-                    region.append(unpack(geometries2))
-
-        elif geomtype == 'MultiPolygon':
-            subregion = info['coordinates']
-            region = unpack(subregion)
-        else:
-            region = info['coordinates']
-
-        return region
-
-    # Geometry
-    if isinstance(eeobject, ee.Geometry):
-        geometry = eeobject.bounds() if bounds else eeobject
-        region = dispatch(geometry)
-    # Feature and Image
-    elif isinstance(eeobject, (ee.Feature, ee.Image)):
-        geometry = eeobject.geometry(error).bounds() if bounds else eeobject.geometry(error)
-        region = dispatch(geometry)
-    # FeatureCollection and ImageCollection
-    elif isinstance(eeobject, (ee.FeatureCollection, ee.ImageCollection)):
-        if bounds:
-            geometry = eeobject.geometry(error).bounds()
-        else:
-            geometry = eeobject.geometry(error).dissolve()
-        region = dispatch(geometry)
-    # List
-    elif isinstance(eeobject, list):
-        condition = all([type(item) == list for item in eeobject])
-        if condition:
-            region = eeobject
-    else:
-        region = eeobject
-
-    return region
-
-class EeRefImage:
+class BaseEeImage:
     def __init__(self, collection=''):
         self.collection = collection
         # self._search_region, self._crs = get_image_bounds(source_image_filename, expand=10)
@@ -245,26 +91,13 @@ class EeRefImage:
         return image.set('TIME_DIST', ee.Number(image.get('system:time_start')).
                          subtract(self._search_date.timestamp()*1000).abs())
 
-    def _get_im_collection(self, start_date, end_date):
+    def _get_im_collection(self, start_date, end_date, region):
         return ee.ImageCollection(self._collection_info['ee_collection']).\
             filterDate(start_date, end_date).\
-            filterBounds(self._search_region).\
+            filterBounds(region).\
             map(self._add_timedelta)
             # filter(ee.Filter.contains('system:footprint'), self._search_region).\
 
-    def get_image_info(self, image):
-        im_info = image.getInfo()
-
-        band_info_df = pd.DataFrame(im_info['bands'])
-        crs_transforms = np.array(band_info_df['crs_transform'].to_list())
-        scales = np.abs(crs_transforms[:, 0])
-        min_scale_i = np.argmin(scales)
-        # crs = image.select(min_scale_i).projection().crs()
-        # scale = image.select(min_scale_i).projection().nominalScale()
-        min_crs = band_info_df.iloc[min_scale_i]['crs']
-        min_scale = scales[min_scale_i]
-
-        return im_info, min_crs, min_scale
 
 
     def search(self, date, region, day_range=16):
@@ -278,7 +111,7 @@ class EeRefImage:
 
         logger.info(f'Searching for {self._collection_info["ee_collection"]} images between '
                     f'{start_date.strftime("%Y-%m-%d")} and {end_date.strftime("%Y-%m-%d")}')
-        self._im_collection = self._get_im_collection(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"))
+        self._im_collection = self._get_im_collection(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"), region)
         num_images = self._im_collection.size().getInfo()
 
         if num_images == 0:
@@ -343,224 +176,12 @@ class EeRefImage:
 
         return self._im_collection.median().set('COMPOSITE_IMAGES', self._im_df.to_string())
 
-    def export_image(self, image, description, folder=None, crs=None, region=None, scale=None, wait=True):
-
-        im_info, min_crs, min_scale = self.get_image_info(image)
-
-        # check if scale is same across bands
-        band_info_df = pd.DataFrame(im_info['bands'])
-        scales = np.array(band_info_df['crs_transform'].to_list())[:, 0]
-
-        # min_scale_i = np.argmin(scales) #.astype(float)
-        if np.all(band_info_df['crs'] == 'EPSG:4326') and np.all(scales == 1):
-            # set the crs and and scale if it is a composite image
-            if crs is None or scale is None:
-                _image = self._im_collection.first()
-                _im_info, min_crs, min_scale = self.get_image_info(_image)
-                logger.warning(f'This appears to be a composite image in WGS84, reprojecting all bands to {min_crs} at {min_scale}m resolution')
-
-        if crs is None:
-            # crs = image.select(min_scale_i).projection().crs()
-            crs = min_crs
-        if region is None:
-            region = ee.Geometry(self._search_region)
-        if scale is None:
-            # scale = image.select(min_scale_i).projection().nominalScale()
-            scale = float(min_scale)
-
-        if (band_info_df['crs'].unique().size > 1) or (np.unique(scales).size > 1):
-            logger.warning(f'Image bands have different scales, reprojecting all to {crs} at {scale}m resolution')
-
-        # force all bands into same crs and scale
-        band_info_df['crs'] = crs
-        band_info_df['scale'] = scale
-        bands_dict = band_info_df[['id', 'crs', 'scale', 'data_type']].to_dict('records')
-
-        # TODO: make sure the cast to uint16 below is valid for new collections
-        task = ee.batch.Export.image.toDrive(image=image.toUint16(),
-                                             region=region,
-                                             description=description,
-                                             folder=folder,
-                                             fileNamePrefix=description,
-                                             scale=scale,
-                                             crs=crs,
-                                             maxPixels=1e9)
-
-        logger.info(f'Starting export task {description}...')
-        task.start()
-        if wait:
-            status = ee.data.getOperation(task.name)
-            toggles = '-\|/'
-            toggle_count = 0
-            while ('done' not in status) or (not status['done']):
-                time.sleep(.5)
-                status = ee.data.getOperation(task.name)
-                # if ('stages' in status['metadata']):
-                #     stage_name = status['metadata']['stages'][-1]['displayName']
-                #     status_str = status_str + f': {stage_name}'
-                # sys.stdout.write(f'\rExport image status: {str(status["metadata"]["state"]).lower()} {toggles[toggle_count%4]}')
-                # TODO: interpret totalWorkUnits and completeWorkUnits
-                sys.stdout.write(f'\rExport image {str(status["metadata"]["state"]).lower()} [ {toggles[toggle_count%4]} ]')
-                sys.stdout.flush()
-                toggle_count += 1
-            sys.stdout.write(f'\rExport image {str(status["metadata"]["state"]).lower()}\n')
-            if status['metadata']['state'] != 'SUCCEEDED':
-                logger.error(f'Export failed \n{status}')
-                raise Exception(f'Export failed \n{status}')
-
-
-    def download_image(self, image, filename, crs=None, region=None, scale=None):
-
-        im_info, min_crs, min_scale = self.get_image_info(image)
-
-        # check if scale is same across bands
-        band_info_df = pd.DataFrame(im_info['bands'])
-        scales = np.array(band_info_df['crs_transform'].to_list())[:, 0]
-
-        # min_scale_i = np.argmin(scales) #.astype(float)
-        if np.all(band_info_df['crs'] == 'EPSG:4326') and np.all(scales == 1):
-            # set the crs and and scale if it is a composite image
-            if crs is None or scale is None:
-                _image = self._im_collection.first()
-                _im_info, min_crs, min_scale = self.get_image_info(_image)
-                logger.warning(f'This appears to be a composite image in WGS84, reprojecting all bands to {min_crs} at {min_scale}m resolution')
-
-        if crs is None:
-            # crs = image.select(min_scale_i).projection().crs()
-            crs = min_crs
-        if region is None:
-            region = self._search_region
-        if scale is None:
-            # scale = image.select(min_scale_i).projection().nominalScale()
-            scale = float(min_scale)
-
-        if (band_info_df['crs'].unique().size > 1) or (np.unique(scales).size > 1):
-            logger.warning(f'Image bands have different scales, reprojecting all to {crs} at {scale}m resolution')
-
-        # force all bands into same crs and scale
-        band_info_df['crs'] = crs
-        band_info_df['scale'] = scale
-        bands_dict = band_info_df[['id', 'crs', 'scale', 'data_type']].to_dict('records')
-
-        # TODO: make sure the cast to uint16 is ok for any new collections
-        link = image.getDownloadURL({
-            'scale': scale,
-            'crs': crs,
-            'fileFormat': 'GeoTIFF',
-            'bands':  bands_dict,
-            'filePerBand': False,
-            'region': region})
-
-        logger.info(f'Opening link: {link}')
-
-        try:
-            file_link = urllib.request.urlopen(link)
-        except urllib.error.HTTPError as ex:
-            logger.error(f'Could not open URL: HHTP error {ex.code} - {ex.reason}')
-            response = json.loads(ex.read())
-            if ('error' in response) and ('message' in response['error']):
-                msg = response['error']['message']
-                logger.error(msg)
-                if (msg == 'User memory limit exceeded.'):
-                    logger.error('There is a 10MB Earth Engine limit on image downloads, either decrease image size, or use export(...)')
-                    return
-            raise ex
-
-        meta = file_link.info()
-        file_size = int(meta['Content-Length'])
-        logger.info(f'Download size: {file_size / (1024 ** 2):.2f} MB')
-
-        tif_filename = pathlib.Path(filename)
-        tif_filename = tif_filename.joinpath(tif_filename.parent, tif_filename.stem + '.tif')    # force to zip file
-        zip_filename = tif_filename.parent.joinpath('gee_image_download.zip')
-
-        if zip_filename.exists():
-            logger.warning(f'{zip_filename} exists, overwriting...')
-
-        logger.info(f'Downloading to {zip_filename}')
-
-        with open(zip_filename, 'wb') as f:
-            file_size_dl = 0
-            block_size = 8192
-            while (file_size_dl <= file_size):
-                buffer = file_link.read(block_size)
-                if not buffer:
-                    break
-                file_size_dl += len(buffer)
-                f.write(buffer)
-
-                progress = (file_size_dl / file_size)
-                sys.stdout.write('\r')
-                sys.stdout.write('[%-50s] %d%%' % ('=' * int(50 * progress), 100 * progress))
-                sys.stdout.flush()
-            sys.stdout.write('\n')
-
-        # extract download.zip -> download.tif and rename to tif_filename
-        logger.info(f'Extracting {zip_filename}')
-        with zipfile.ZipFile(zip_filename, "r") as zip_file:
-            zip_file.extractall(zip_filename.parent)
-
-        if tif_filename.exists():
-            logger.warning(f'{tif_filename} exists, overwriting...')
-            os.remove(tif_filename)
-
-        _tif_filename = zipfile.ZipFile(zip_filename, "r").namelist()[0]
-        os.rename(zip_filename.parent.joinpath(_tif_filename), tif_filename)
-
-        if ('properties' in im_info) and ('system:footprint' in im_info['properties']):
-            im_info['properties'].pop('system:footprint')
-
-        with rio.open(tif_filename, 'r+') as im:
-            if 'properties' in im_info:
-                im.update_tags(**im_info['properties'])
-            # im.profile['photometric'] = None    # fix warning
-            if 'bands' in im_info:
-                for band_i, band_info in enumerate(im_info['bands']):
-                    im.set_band_description(band_i + 1, band_info['id'])
-                    im.update_tags(band_i + 1, ID=band_info['id'])
-                    if band_info['id'] in self._band_df['id'].to_list():
-                        band_row = self._band_df.loc[self._band_df['id'] == band_info['id']].iloc[0]
-                        # band_row = band_row[['abbrev', 'name', 'bw_start', 'bw_end']]
-                        im.update_tags(band_i + 1, ABBREV=band_row['abbrev'])
-                        im.update_tags(band_i + 1, NAME=band_row['name'])
-                        im.update_tags(band_i + 1, BW_START=band_row['bw_start'])
-                        im.update_tags(band_i + 1, BW_END=band_row['bw_end'])
-        return link
-
-
-    def _download_im_collection(self, filename, band_list=None):
-        """
-        Download all images in the collection
-
-        Parameters
-        ----------
-        filename :  str
-                    Base filename to use.
-
-        Returns
-        -------
-        """
-        if self._im_collection is None:
-            raise Exception('First generate a valid image collection with search(...) method')
-
-        num_images = self._im_collection.size().getInfo()
-        ee_im_list = self._im_collection.toList(num_images)
-        filename = pathlib.Path(filename)
-
-        for i in range(num_images):
-            im_i = ee.Image(ee_im_list.get(i))
-            if band_list is not None:
-                im_i = im_i.select(*band_list)
-            im_date_i = ee.Date(im_i.get('system:time_start')).format('YYYY-MM-dd').getInfo()
-            filename_i = filename.parent.joinpath(f'{filename.stem}_{i}_{im_date_i}.tif')
-            logger.info(f'Downloading {filename_i.stem}...')
-            self.download_image(im_i, filename_i)
 
 
 
-class LandsatEeImage(EeRefImage):
+class LandsatEeImage(BaseEeImage):
     def __init__(self, apply_valid_mask=True, collection='landsat8', valid_portion=90):
-        EeRefImage.__init__(self, collection=collection)
+        BaseEeImage.__init__(self, collection=collection)
         self.apply_valid_mask = apply_valid_mask
         if self.collection == 'landsat8':
             self._display_properties = ['VALID_PORTION', 'QA_SCORE_AVG', 'GEOMETRIC_RMSE_VERIFY', 'GEOMETRIC_RMSE_MODEL', 'SUN_AZIMUTH', 'SUN_ELEVATION']
@@ -634,27 +255,30 @@ class LandsatEeImage(EeRefImage):
 
         return image.set(valid_portion).set(q_score_avg).addBands(q_score)
 
-    def _get_im_collection(self, start_date, end_date):
+    def _get_im_collection(self, start_date, end_date, region):
         return ee.ImageCollection(self._collection_info['ee_collection']).\
             filterDate(start_date, end_date).\
-            filterBounds(self._search_region).\
+            filterBounds(region).\
             map(self._check_validity).\
             filter(ee.Filter.gt('VALID_PORTION', self._valid_portion))
 
     def search(self, date, region, day_range=16, valid_portion=70):
         self._valid_portion = valid_portion
-        EeRefImage.search(self, date, region, day_range=day_range)
+        BaseEeImage.search(self, date, region, day_range=day_range)
+
+    def get_single_image(self, image_num):
+        return BaseEeImage.get_single_image(self, image_num).toUint16()
 
     # TODO: consider making a generic version of this in the base class, perhaps with a self.key=... defaults
     def get_auto_image(self, key='QA_SCORE_AVG', ascending=False):
         if (self._im_df is None) or (self._im_collection is None):
             raise Exception('First generate valid search results with search(...) method')
-        return self._im_collection.sort(key, ascending).first()
+        return self._im_collection.sort(key, ascending).first().toUint16()
 
     def get_composite_image(self):
         if self._im_collection is None:
             raise Exception('First generate a valid image collection with search(...) method')
-        return self._im_collection.qualityMosaic('QA_SCORE').set('COMPOSITE_IMAGES', self._im_df.to_string())
+        return self._im_collection.qualityMosaic('QA_SCORE').set('COMPOSITE_IMAGES', self._im_df.to_string()).toUint16()
 
     def calibrate(self, image):
         # convert DN to float SR
@@ -712,9 +336,9 @@ class LandsatEeImage(EeRefImage):
         return ee.Image(calib_image.copyProperties(image)).toFloat()    # call toFloat after updateMask
 
 
-class Sentinel2EeImage(EeRefImage):
+class Sentinel2EeImage(BaseEeImage):
     def __init__(self, collection='sentinel2_toa', valid_portion=90):
-        EeRefImage.__init__(self, collection=collection)
+        BaseEeImage.__init__(self, collection=collection)
         self._valid_portion = valid_portion
         self._display_properties = ['VALID_PORTION', 'GEOMETRIC_QUALITY_FLAG', 'RADIOMETRIC_QUALITY_FLAG', 'MEAN_SOLAR_AZIMUTH_ANGLE', 'MEAN_SOLAR_ZENITH_ANGLE', 'MEAN_INCIDENCE_AZIMUTH_ANGLE_B1', 'MEAN_INCIDENCE_ZENITH_ANGLE_B1']
 
@@ -728,31 +352,34 @@ class Sentinel2EeImage(EeRefImage):
 
         return image.set(valid_portion).updateMask(valid_mask)
 
-    def _get_im_collection(self, start_date, end_date):
+    def _get_im_collection(self, start_date, end_date, region):
         return ee.ImageCollection(self._collection_info['ee_collection']).\
             filterDate(start_date, end_date).\
-            filterBounds(self._search_region).\
+            filterBounds(region).\
             map(self._check_validity).\
             filter(ee.Filter.gt('VALID_PORTION', self._valid_portion))
 
     def search(self, date, region, day_range=16, valid_portion=90):
         self._valid_portion = valid_portion
-        EeRefImage.search(self, date, region, day_range=day_range)
+        BaseEeImage.search(self, date, region, day_range=day_range)
+
+    def get_single_image(self, image_num):
+        return BaseEeImage.get_single_image(self, image_num).toUint16()
 
     # TODO: consider making a generic version of this in the base class, perhaps with a self.key=... defaults
     def get_auto_image(self, key='VALID_PORTION', ascending=False):
         if (self._im_df is None) or (self._im_collection is None):
             raise Exception('First generate valid search results with search(...) method')
-        return self._im_collection.sort(key, ascending).first()
+        return self._im_collection.sort(key, ascending).first().toUint16()
 
     def get_composite_image(self):
         if self._im_collection is None:
             raise Exception('First generate a valid image collection with search(...) method')
-        return self._im_collection.mosaic().set('COMPOSITE_IMAGES', self._im_df.to_string())
+        return self._im_collection.mosaic().set('COMPOSITE_IMAGES', self._im_df.to_string()).toUint16()
 
-class Sentinel2CloudlessEeImage(EeRefImage):
+class Sentinel2CloudlessEeImage(BaseEeImage):
     def __init__(self, apply_valid_mask=True, collection='sentinel2_toa', valid_portion=60):
-        EeRefImage.__init__(self, collection=collection)
+        BaseEeImage.__init__(self, collection=collection)
         self.apply_valid_mask = apply_valid_mask
         self.scale = 10
         self._valid_portion = valid_portion
@@ -824,17 +451,17 @@ class Sentinel2CloudlessEeImage(EeRefImage):
 
         return image.set(valid_portion).set(q_score_avg).addBands(q_score)
 
-    def _get_im_collection(self, start_date, end_date):
+    def _get_im_collection(self, start_date, end_date, region):
         # adapted from https://developers.google.com/earth-engine/tutorials/community/sentinel-2-s2cloudless
         # Import and filter S2 SR.
         s2_sr_toa_col = (ee.ImageCollection(self._collection_info['ee_collection'])
-                     .filterBounds(self._search_region)
+                     .filterBounds(region)
                      .filterDate(start_date, end_date)
                      .filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', self._cloud_filter)))
 
         # Import and filter s2cloudless.
         s2_cloudless_col = (ee.ImageCollection('COPERNICUS/S2_CLOUD_PROBABILITY')
-                            .filterBounds(self._search_region)
+                            .filterBounds(region)
                             .filterDate(start_date, end_date))
 
         # Join the filtered s2cloudless collection to the SR collection by the 'system:index' property.
@@ -849,19 +476,22 @@ class Sentinel2CloudlessEeImage(EeRefImage):
 
     def search(self, date, region, day_range=16, valid_portion=90):
         self._valid_portion = valid_portion
-        EeRefImage.search(self, date, region, day_range=day_range)
+        BaseEeImage.search(self, date, region, day_range=day_range)
+
+    def get_single_image(self, image_num):
+        return BaseEeImage.get_single_image(self, image_num).toUint16()
 
     # TODO: consider making a generic version of this in the base class, perhaps with a self.key=... defaults
     def get_auto_image(self, key='VALID_PORTION', ascending=False):
         if (self._im_df is None) or (self._im_collection is None):
             raise Exception('First generate valid search results with search(...) method')
-        return self._im_collection.sort(key, ascending).first()
+        return self._im_collection.sort(key, ascending).first().toUint16()
 
     def get_composite_image(self):
         if self._im_collection is None:
             raise Exception('First generate a valid image collection with search(...) method')
         # return self._im_collection.qualityMosaic('QA_SCORE').set('COMPOSITE_IMAGES', self._im_df.to_string())
-        return self._im_collection.median().set('COMPOSITE_IMAGES', self._im_df.to_string())
+        return self._im_collection.median().set('COMPOSITE_IMAGES', self._im_df.to_string()).toUint16()
 
 
 ##

@@ -22,7 +22,7 @@ from datetime import datetime
 
 import dateutil
 import ee
-from geedim import utils as dim_util
+from geedim import search as dim_util
 from geedim import get_logger
 
 # conda install -c conda-forge earthengine-api
@@ -102,7 +102,7 @@ def main(args):
         elif 'sentinel' in args.collection:
             ref_image = dim_util.Sentinel2EeImage(args.extent_file, collection=args.collection)
         else:
-            ref_image = dim_util.EeRefImage(args.extent_file, collection=args.collection)
+            ref_image = dim_util.BaseEeImage(args.extent_file, collection=args.collection)
 
         link, image = ref_image.search(args.date, min_images=min_images)
 
