@@ -43,14 +43,11 @@ def get_image_info(image):
     crs_transforms = np.array(band_info_df['crs_transform'].to_list())
     scales = np.abs(crs_transforms[:, 0]).astype(float)
     band_info_df['scale'] = scales
-    # min_scale_i = np.argmin(scales)
-    # min_crs = band_info_df.iloc[min_scale_i]['crs']
-    # min_scale = scales[min_scale_i]
 
     return im_info_dict, band_info_df
 
 # Adapted from from https://github.com/gee-community/gee_tools, MIT license
-def min_projection(image):
+def get_min_projection(image):
     bands = image.bandNames()
     # init_dict = ee.Dictionary(dict(scale=ee.Number(1e99), crs=ee.String('')))
     init_proj = image.select(0).projection()
@@ -68,32 +65,26 @@ def min_projection(image):
     return ee.Projection(bands.iterate(compare_scale, init_proj))
     # return ee.Number(bands.iterate(compare_scale, ee.Number(1e99)))
 
-
-def export_image(image, description, folder=None, crs=None, region=None, scale=None, wait=True):\
+# TODO: minimise as far as possible getInfo() calls below
+def export_image(image, description, folder=None, region=None, crs=None, scale=None, wait=True):
     # TODO: can we avoid getInfo here?
     im_info_dict, band_info_df = get_image_info(image)
 
-    if np.all(band_info_df['crs'] == 'EPSG:4326') and np.all(band_info_df['scale'] == 1):
-        if crs is None or scale is None:
-            raise Exception(f'This appears to be a composite image in WGS84, specify a target CRS')
+    if np.all(band_info_df['crs'] == 'EPSG:4326') and np.all(band_info_df['scale'] == 1) and \
+            (crs is None or scale is None):
+            raise Exception(f'This appears to be a composite image in WGS84, specify a target scale and CRS')
 
     if crs is None:
         crs = band_info_df['crs'].iloc[band_info_df['scale'].argmin()]
     if region is None:
-        region = image.geometry().bounds().getInfo()
-        logger.warning('Region not specified, setting to image granule')
+        region = image.geometry().bounds()
+        logger.warning('Region not specified, setting to image bounds')
     if scale is None:
         scale = band_info_df['scale'].min()
 
     if (band_info_df['crs'].unique().size > 1) or (band_info_df['scale'].unique().size > 1):
         logger.warning(f'Image bands have different scales, reprojecting all to {crs} at {scale}m resolution')
 
-    # force all bands into same crs and scale
-    band_info_df['crs'] = crs
-    band_info_df['scale'] = scale
-    bands_dict = band_info_df[['id', 'crs', 'scale', 'data_type']].to_dict('records')
-
-    # TODO: make sure the cast to uint16 below is valid for new collections
     task = ee.batch.Export.image.toDrive(image=image,
                                          region=region,
                                          description=description,
@@ -105,6 +96,7 @@ def export_image(image, description, folder=None, crs=None, region=None, scale=N
 
     logger.info(f'Starting export task {description}...')
     task.start()
+
     if wait:
         status = ee.data.getOperation(task.name)
         toggles = '-\|/'
@@ -126,33 +118,26 @@ def export_image(image, description, folder=None, crs=None, region=None, scale=N
             logger.error(f'Export failed \n{status}')
             raise Exception(f'Export failed \n{status}')
 
+    return task
 
-def download_image(image, filename, crs=None, region=None, scale=None):
+def download_image(image, filename, region=None, crs=None, scale=None):
 
-    im_info = image.getInfo()
-    # check if scale is same across bands
-    band_info_df = pd.DataFrame(im_info['bands'])
-    scales = np.array(band_info_df['crs_transform'].to_list())[:, 0]
+    # TODO: this first section of code is the same as for export_image
+    im_info_dict, band_info_df = get_image_info(image)
 
-    # min_scale_i = np.argmin(scales) #.astype(float)
-    if np.all(band_info_df['crs'] == 'EPSG:4326') and np.all(scales == 1):
-        # set the crs and and scale if it is a composite image
-        if crs is None or scale is None:
-            _image = self._im_collection.first()
-            _im_info, min_crs, min_scale = self.get_image_info(_image)
-            logger.warning(
-                f'This appears to be a composite image in WGS84, reprojecting all bands to {min_crs} at {min_scale}m resolution')
+    if np.all(band_info_df['crs'] == 'EPSG:4326') and np.all(band_info_df['scale'] == 1) and \
+            (crs is None or scale is None):
+            raise Exception(f'This appears to be a composite image in WGS84, specify a target scale and CRS')
 
     if crs is None:
-        # crs = image.select(min_scale_i).projection().crs()
-        crs = min_crs
+        crs = band_info_df['crs'].iloc[band_info_df['scale'].argmin()]
     if region is None:
-        region = self._search_region
+        region = image.geometry().bounds()
+        logger.warning('Region not specified, setting to granule bounds')
     if scale is None:
-        # scale = image.select(min_scale_i).projection().nominalScale()
-        scale = float(min_scale)
+        scale = band_info_df['scale'].min()
 
-    if (band_info_df['crs'].unique().size > 1) or (np.unique(scales).size > 1):
+    if (band_info_df['crs'].unique().size > 1) or (band_info_df['scale'].unique().size > 1):
         logger.warning(f'Image bands have different scales, reprojecting all to {crs} at {scale}m resolution')
 
     # force all bands into same crs and scale
@@ -226,51 +211,56 @@ def download_image(image, filename, crs=None, region=None, scale=None):
     _tif_filename = zipfile.ZipFile(zip_filename, "r").namelist()[0]
     os.rename(zip_filename.parent.joinpath(_tif_filename), tif_filename)
 
-    if ('properties' in im_info) and ('system:footprint' in im_info['properties']):
-        im_info['properties'].pop('system:footprint')
+    if ('properties' in im_info_dict) and ('system:footprint' in im_info_dict['properties']):
+        im_info_dict['properties'].pop('system:footprint')
 
     with rio.open(tif_filename, 'r+') as im:
-        if 'properties' in im_info:
-            im.update_tags(**im_info['properties'])
+        if 'properties' in im_info_dict:
+            im.update_tags(**im_info_dict['properties'])
         # im.profile['photometric'] = None    # fix warning
-        if 'bands' in im_info:
-            for band_i, band_info in enumerate(im_info['bands']):
+        if 'bands' in im_info_dict:
+            for band_i, band_info in enumerate(im_info_dict['bands']):
                 im.set_band_description(band_i + 1, band_info['id'])
                 im.update_tags(band_i + 1, ID=band_info['id'])
-                if band_info['id'] in self._band_df['id'].to_list():
-                    band_row = self._band_df.loc[self._band_df['id'] == band_info['id']].iloc[0]
-                    # band_row = band_row[['abbrev', 'name', 'bw_start', 'bw_end']]
-                    im.update_tags(band_i + 1, ABBREV=band_row['abbrev'])
-                    im.update_tags(band_i + 1, NAME=band_row['name'])
-                    im.update_tags(band_i + 1, BW_START=band_row['bw_start'])
-                    im.update_tags(band_i + 1, BW_END=band_row['bw_end'])
+                # TODO: use image id to get _band_df from json file
+                # if band_info['id'] in self._band_df['id'].to_list():
+                #     band_row = self._band_df.loc[self._band_df['id'] == band_info['id']].iloc[0]
+                #     # band_row = band_row[['abbrev', 'name', 'bw_start', 'bw_end']]
+                #     im.update_tags(band_i + 1, ABBREV=band_row['abbrev'])
+                #     im.update_tags(band_i + 1, NAME=band_row['name'])
+                #     im.update_tags(band_i + 1, BW_START=band_row['bw_start'])
+                #     im.update_tags(band_i + 1, BW_END=band_row['bw_end'])
     return link
 
 
-def _download_im_collection(self, filename, band_list=None):
-    """
-    Download all images in the collection
+def download_im_collection(im_collection, path, region=None, crs=None, scale=None):
 
-    Parameters
-    ----------
-    filename :  str
-                Base filename to use.
-
-    Returns
-    -------
-    """
-    if self._im_collection is None:
-        raise Exception('First generate a valid image collection with search(...) method')
-
-    num_images = self._im_collection.size().getInfo()
-    ee_im_list = self._im_collection.toList(num_images)
-    filename = pathlib.Path(filename)
+    num_images = im_collection.size().getInfo()
+    ee_im_list = im_collection.toList(num_images)
+    path = pathlib.Path(path)
 
     for i in range(num_images):
-        im_i = ee.Image(ee_im_list.get(i))
-        if band_list is not None:
-            im_i = im_i.select(*band_list)
-        im_date_i = ee.Date(im_i.get('system:time_start')).format('YYYY-MM-dd').getInfo()
-        filename_i = filename.parent.joinpath(f'{filename.stem}_{i}_{im_date_i}.tif')
-        logger.info(f'Downloading {filename_i.stem}...')
-        self.download_image(im_i, filename_i)
+        image = ee.Image(ee_im_list.get(i))
+        # im_date = ee.Date(image.get('system:time_start')).format('YYYY-MM-dd').getInfo()
+        id = ee.String(image.get('system:id')).getInfo().replace('/','_')
+        filename = path.joinpath(f'{id}.tif')
+        logger.info(f'Downloading {filename.stem}...')
+        download_image(image, filename, region=region, crs=crs, scale=scale)
+
+def export_im_collection(im_collection, path, folder=None, region=None, crs=None, scale=None):
+
+    num_images = im_collection.size().getInfo()
+    ee_im_list = im_collection.toList(num_images)
+    path = pathlib.Path(path)
+
+    task_list = []
+    for i in range(num_images):
+        image = ee.Image(ee_im_list.get(i))
+        # im_date = ee.Date(image.get('system:time_start')).format('YYYY-MM-dd').getInfo()
+        id = ee.String(image.get('system:id')).getInfo().replace('/','_')
+        filename = path.joinpath(f'{id}.tif')
+        logger.info(f'Downloading {filename.stem}...')
+        task = export_image(image, filename, folder=folder, region=region, crs=crs, scale=scale, wait=False)
+        task_list.append(task)
+
+    return task_list
