@@ -1,73 +1,72 @@
 """
-   Copyright 2021 Dugal Harris - dugalh@gmail.com
+    Copyright 2021 Dugal Harris - dugalh@gmail.com
 
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
 
        http://www.apache.org/licenses/LICENSE-2.0
 
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
 """
-import json
-import os
-import pathlib
-import sys
-import zipfile
+
+## Classes for searching GEE image collections
+
 from datetime import timedelta, datetime
-import urllib
 
 import ee
 import numpy as np
 import pandas
-import pandas as pd
 import rasterio as rio
-from geedim import get_logger, root_path
 from rasterio.warp import transform_geom
-from shapely import geometry
-import time
+# from shapely import geometry
 
+from geedim import get_logger
+
+##
 logger = get_logger(__name__)
 
-def load_collection_info():
+def get_image_bounds(filename, expand=5):
     """
-    Loads the satellite band etc information from json file into a dict
-    """
-    with open(root_path.joinpath('data/inputs/satellite_info.json')) as f:
-        satellite_info = json.load(f)
-    return satellite_info
-
-def get_image_bounds(filename, expand=10):
-    """
-    Get the WGS84 geojson bounds of an image
+    Get a WGS84 geojson polygon representing the optionally expanded bounds of an image
 
     Parameters
     ----------
     filename :  str
                 name of the image file whose bounds to find
-    expand :  int
-              percentage (0-100) by which to expand the bounds (default: 10)
+    expand :    int
+                percentage (0-100) by which to expand the bounds (default: 5)
 
     Returns
     -------
     bounds : geojson
              polygon of bounds in WGS84
     crs: str
-         WKT CRS of image file
+         WKT CRS string of image file
     """
     with rio.open(filename) as im:
-        src_bbox = geometry.box(*im.bounds)
-        if (im.crs.linear_units == 'metre') and (expand > 0):
-            expand_m = np.sqrt(src_bbox.area) * expand / 100.
-            src_bbox_expand = src_bbox.buffer(expand_m, join_style=geometry.JOIN_STYLE.mitre)    # expand the bounding box
-            # src_bbox = geometry.box(*src_bbox.buffer(expand_m).bounds)    # expand the bounding box
-        src_bbox_wgs84 = geometry.shape(transform_geom(im.crs, 'WGS84', src_bbox_expand))
-    return geometry.mapping(src_bbox_wgs84), im.crs.to_wkt()
+        bbox = im.bounds
+        if (im.crs.linear_units == 'metre') and (expand > 0):   # expand the bounding box
+            expand_x = (bbox.right - bbox.left) * expand / 100.
+            expand_y = (bbox.top - bbox.bottom) * expand / 100.
+            bbox_expand = rio.coords.BoundingBox(bbox.left - expand_x, bbox.bottom + expand_y,
+                                                 bbox.right + expand_x, bbox.top - expand_y)
+        else:
+            bbox_expand = bbox
 
+        coordinates = [[bbox_expand.right, bbox_expand.bottom],
+                      [bbox_expand.right, bbox_expand.top],
+                      [bbox_expand.left, bbox_expand.top],
+                      [bbox_expand.left, bbox_expand.bottom],
+                      [bbox_expand.right, bbox_expand.bottom]]
+
+        bbox_expand_dict = dict(type='Polygon', coordinates=[coordinates])
+        src_bbox_wgs84 = transform_geom(im.crs, 'WGS84', bbox_expand_dict)   # convert to WGS84 geojson
+    return src_bbox_wgs84, im.crs.to_wkt()
 
 
 class ImSearch:
@@ -232,7 +231,7 @@ class LandsatImSearch(ImSearch):
             aerosol_prob = sr_qa_aerosol.rightShift(6).bitwiseAnd(3)
             aerosol_mask = aerosol_prob.lt(3).rename('AEROSOL_MASK')
 
-            # TODO: is aerosol_mask helpful in general, it looks suspect for GEF NGI ims
+            # TODO: is aerosol_mask helpful? it looks suspect for GEF NGI ims
             valid_mask = cloud_mask.And(aerosol_mask).And(fill_mask).rename('VALID_MASK')
             q_score = cloud_conf.add(cloud_shadow_conf).add(cirrus_conf).add(aerosol_prob).multiply(-1).add(12)
         else:
@@ -427,7 +426,6 @@ class Sentinel2CloudlessImSearch(ImSearch):
         # https://en.wikipedia.org/wiki/Solar_azimuth_angle perhaps it is the angle between south and shadow cast by vertical rod, clockwise +ve
         # shadow_mask = shadow_mask.multiply(dark_pixels).rename('shadow_mask')
         # TODO: dilate valid_mask by _buffer ?
-        # TODO: do we need fill_mask with s2 ?
         # TODO: does below work in N hemisphere?
         shadow_azimuth = ee.Number(-90).add(ee.Number(image.get('MEAN_SOLAR_AZIMUTH_ANGLE')))
 

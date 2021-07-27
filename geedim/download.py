@@ -13,25 +13,33 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
+
+## Functions to download and export GEE images
+
 import json
 import os
 import pathlib
 import sys
-import zipfile
-from datetime import timedelta, datetime
+import time
 import urllib
+import zipfile
 
 import ee
 import numpy as np
 import pandas as pd
 import rasterio as rio
+
 from geedim import get_logger, root_path
-from rasterio.warp import transform_geom
-from shapely import geometry
-import time
 
 logger = get_logger(__name__)
 
+def load_collection_info():
+    """
+    Loads the satellite band etc information from json file into a dict
+    """
+    with open(root_path.joinpath('data/inputs/satellite_info.json')) as f:
+        satellite_info = json.load(f)
+    return satellite_info
 
 def get_image_info(image):
     im_info_dict = image.getInfo()
