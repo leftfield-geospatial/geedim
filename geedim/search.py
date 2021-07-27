@@ -1,20 +1,17 @@
 """
-    Geedim: Download surface reflectance imagery with Google Earth Engine
-    Copyright (C) 2021 Dugal Harris
-    Email: dugalh@gmail.com
+   Copyright 2021 Dugal Harris - dugalh@gmail.com
 
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as
-    published by the Free Software Foundation, either version 3 of the
-    License, or any later version.
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
+       http://www.apache.org/licenses/LICENSE-2.0
 
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
 """
 import json
 import os
@@ -72,16 +69,12 @@ def get_image_bounds(filename, expand=10):
     return geometry.mapping(src_bbox_wgs84), im.crs.to_wkt()
 
 
-class BaseEeImage:
-    def __init__(self, collection=''):
-        self.collection = collection
+
+class ImSearch:
+    def __init__(self, collection):
         # self._search_region, self._crs = get_image_bounds(source_image_filename, expand=10)
-        collection_info = load_collection_info()
-        if not collection in collection_info.keys():
-            raise ValueError(f'Unknown collection: {collection}')
-        self._collection_info = collection_info[collection]
-        self._band_df = pd.DataFrame(self._collection_info['bands'])
-        self._display_properties = []
+        self._collection = collection
+        self._im_props = []
         self._im_collection = None
         self._im_df = None
         self._search_region = None
@@ -92,25 +85,62 @@ class BaseEeImage:
                          subtract(self._search_date.timestamp()*1000).abs())
 
     def _get_im_collection(self, start_date, end_date, region):
-        return ee.ImageCollection(self._collection_info['ee_collection']).\
+        return ee.ImageCollection(self._collection).\
             filterDate(start_date, end_date).\
             filterBounds(region).\
             map(self._add_timedelta)
             # filter(ee.Filter.contains('system:footprint'), self._search_region).\
 
+    @staticmethod
+    def _print_proplist(prop_list, properties):
+        prop_df = pandas.DataFrame(prop_list)
+        cols = ['EE_ID', 'DATE'] + properties
+        prop_df = prop_df[cols].sort_values(by='DATE').reset_index(drop=True)
+        logger.info('Search results:\n' + prop_df.to_string())
+        return prop_df
 
+    @staticmethod
+    def _get_collection_df(im_collection, properties, print=True):
+        init_list = ee.List([])
+
+        def aggregrate_props(image, im_prop_list):
+            prop_dict = ee.Dictionary()
+            prop_dict = prop_dict.set('EE_ID', image.get('system:index'))
+            prop_dict = prop_dict.set('DATE', image.get('system:time_start'))
+            for prop_key in properties:
+                prop_dict = prop_dict.set(prop_key,
+                                          ee.Algorithms.If(image.get(prop_key), image.get(prop_key), ee.String('None')))
+            return ee.List(im_prop_list).add(prop_dict)
+
+        # retrieve properties of search result images for display
+        im_prop_list = ee.List(im_collection.iterate(aggregrate_props, init_list)).getInfo()
+        im_list = im_collection.toList(im_collection.size())
+
+        # add ee image and convert date to python datetime
+        for i, prop_dict in enumerate(im_prop_list):
+            prop_dict['DATE'] = datetime.utcfromtimestamp(prop_dict['DATE'] / 1000)
+            prop_dict['IMAGE'] = ee.Image(im_list.get(i))
+
+        # create dataframe of search results
+        im_prop_df = pandas.DataFrame(im_prop_list)
+        cols = ['EE_ID', 'DATE'] + properties + ['IMAGE']
+        im_prop_df = im_prop_df[cols].sort_values(by='DATE').reset_index(drop=True)
+        if print == True:
+            logger.info('\n' + im_prop_df[['EE_ID', 'DATE'] + properties].to_string())
+        return im_prop_df
 
     def search(self, date, region, day_range=16):
+        self._im_df = None
+        self._im_collection = None
         self._search_region = region
         self._search_date = date
-        self._im_df = None
 
         start_date = date - timedelta(days=day_range)
         end_date = date + timedelta(days=day_range)
-        num_images = 0
 
-        logger.info(f'Searching for {self._collection_info["ee_collection"]} images between '
+        logger.info(f'Searching for {self._collection} images between '
                     f'{start_date.strftime("%Y-%m-%d")} and {end_date.strftime("%Y-%m-%d")}')
+
         self._im_collection = self._get_im_collection(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"), region)
         num_images = self._im_collection.size().getInfo()
 
@@ -119,76 +149,54 @@ class BaseEeImage:
             return None
 
         logger.info(f'Found {num_images} images:')
-        self._im_df = self._display_search_results()
+        self._im_df = ImSearch._get_collection_df(self._im_collection, self._im_props, print=True)
 
-        return self._im_df.to_dict(orient='index')
+        return self._im_df
 
-    def _display_search_results(self):
-        init_list = ee.List([])
-        display_properties = self._display_properties
-
-        def aggregrate_props(image, res_list):
-            res_dict = ee.Dictionary()
-            res_dict = res_dict.set('EE_ID', image.get('system:index'))
-            res_dict = res_dict.set('DATE', image.get('system:time_start'))
-            for prop_key in display_properties:
-                res_dict = res_dict.set(prop_key, ee.Algorithms.If(image.get(prop_key), image.get(prop_key), ee.String('None')))
-            return ee.List(res_list).add(res_dict)
-
-        # retrieve properties of search result images for display
-        res_list = ee.List(self._im_collection.iterate(aggregrate_props, init_list)).getInfo()
-
-        # create dataframe of search results
-        im_df = pandas.DataFrame(res_list)
-        im_df['DATE'] = [datetime.utcfromtimestamp(ts/1000) for ts in im_df['DATE']]    # convert timestamp to datetime
-        cols = ['EE_ID', 'DATE'] + self._display_properties     # re-order columns
-        im_df = im_df[cols].sort_values(by='DATE').reset_index(drop=True)
-        logger.info('Search results:\n' + im_df.to_string())
-        return im_df
-
-    def get_auto_image(self):
-        if (self._im_df is None) or (self._im_collection is None):
-            raise Exception('First generate valid search results with search(...) method')
-        return self._im_collection.sort('TIME_DIST', True).first()
-
-    def get_single_image(self, image_num):
-        if (self._im_df is None) or (self._im_collection is None):
-            raise Exception('First generate valid search results with search(...) method')
-
-        image = None
-        if isinstance(image_num, str):
-            if image_num not in self._im_df['EE_ID']:
-                raise ValueError(f'{image_num} does not exist in search results')
-            image = self._im_collection.filterMetadata('system:index', 'equals', image_num).first()
-        elif isinstance(image_num, int):
-            if (image_num >= 0) and (image_num < self._im_df.shape[0]):
-                image_num = self._im_df.loc[image_num]['EE_ID']
-                image = self._im_collection.filterMetadata('system:index', 'equals', image_num).first()
-            else:
-                raise ValueError(f'image_num={image_num} out of range')
-        else:
-            raise TypeError(f'Unknown image_num type')
-        return image
+    # def get_auto_image(self):
+    #     if (self._im_df is None) or (self._im_collection is None):
+    #         raise Exception('First generate valid search results with search(...) method')
+    #     return self._im_collection.sort('TIME_DIST', True).first()
+    #
+    # def get_single_image(self, image_num):
+    #     if (self._im_df is None) or (self._im_collection is None):
+    #         raise Exception('First generate valid search results with search(...) method')
+    #
+    #     if isinstance(image_num, str):
+    #         if image_num not in self._im_df['EE_ID'].values:
+    #             raise ValueError(f'{image_num} does not exist in search results')
+    #     elif isinstance(image_num, int):
+    #         if (image_num >= 0) and (image_num < self._im_df.shape[0]):
+    #             image_num = self._im_df.loc[image_num]['EE_ID']
+    #         else:
+    #             raise ValueError(f'image_num={image_num} out of range')
+    #     else:
+    #         raise TypeError(f'Unknown image_num type')
+    #     return self._im_collection.filterMetadata('system:index', 'equals', image_num).first()
 
     def get_composite_image(self):
         if self._im_collection is None or self._im_df is None:
             raise Exception('First generate valid search results with search(...) method')
 
-        return self._im_collection.median().set('COMPOSITE_IMAGES', self._im_df.to_string())
+        return self._im_collection.median().set('COMPOSITE_IMAGES', self._im_df[['EE_ID', 'DATE'] + self._im_props].to_string())
 
 
 
-
-class LandsatEeImage(BaseEeImage):
-    def __init__(self, apply_valid_mask=True, collection='landsat8', valid_portion=90):
-        BaseEeImage.__init__(self, collection=collection)
-        self.apply_valid_mask = apply_valid_mask
-        if self.collection == 'landsat8':
-            self._display_properties = ['VALID_PORTION', 'QA_SCORE_AVG', 'GEOMETRIC_RMSE_VERIFY', 'GEOMETRIC_RMSE_MODEL', 'SUN_AZIMUTH', 'SUN_ELEVATION']
+class LandsatImSearch(ImSearch):
+    def __init__(self, collection='landsat8'):
+        ImSearch.__init__(self, collection=collection)
+        if collection == 'landsat8':
+            self._collection = 'LANDSAT/LC08/C02/T1_L2'
+            self._im_props = ['VALID_PORTION', 'QA_SCORE_AVG', 'GEOMETRIC_RMSE_VERIFY', 'GEOMETRIC_RMSE_MODEL', 'SUN_AZIMUTH', 'SUN_ELEVATION']
+        elif collection == 'landsat7':
+            self._collection = 'LANDSAT/LE07/C02/T1_L2'
+            self._im_props = ['VALID_PORTION', 'QA_SCORE_AVG', 'GEOMETRIC_RMSE_MODEL', 'SUN_AZIMUTH', 'SUN_ELEVATION']
         else:
-            self._display_properties = ['VALID_PORTION', 'QA_SCORE_AVG', 'GEOMETRIC_RMSE_MODEL', 'SUN_AZIMUTH', 'SUN_ELEVATION']
+            # TODO: add support for landsat 4-5 collection 2 when they are available
+            raise ValueError(f'Unsupported landsat collection: {collection}')
 
-        self._valid_portion = valid_portion
+        self._valid_portion = 90
+        self._apply_valid_mask = False
         # 'LANDSAT_PRODUCT_ID', 'DATE_ACQUIRED', 'SCENE_CENTER_TIME', 'CLOUD_COVER_LAND', 'IMAGE_QUALITY_OLI', 'ROLL_ANGLE', 'NADIR_OFFNADIR', 'GEOMETRIC_RMSE_MODEL',
 
     def _check_validity(self, image):
@@ -216,7 +224,7 @@ class LandsatEeImage(BaseEeImage):
         cloud_shadow_conf = qa_pixel.rightShift(10).bitwiseAnd(3).rename('CLOUD_SHADOW_CONF')
         cirrus_conf = qa_pixel.rightShift(14).bitwiseAnd(3).rename('CIRRUS_CONF')
 
-        if self.collection == 'landsat8':
+        if self._collection == 'LANDSAT/LC08/C02/T1_L2':
             # bits 6-7 of SR_QA_AEROSOL, are aerosol level where 3 = high, 2=medium, 1=low
             sr_qa_aerosol_bitmask = (1 << 6) | (1 << 7)
             sr_qa_aerosol = image.select('SR_QA_AEROSOL')
@@ -248,7 +256,7 @@ class LandsatEeImage(BaseEeImage):
             image = image.addBands(fill_mask)
             image = image.addBands(valid_mask)
 
-        if self.apply_valid_mask:
+        if self._apply_valid_mask:
             image = image.updateMask(valid_mask)
         else:
             image = image.updateMask(fill_mask)
@@ -256,29 +264,29 @@ class LandsatEeImage(BaseEeImage):
         return image.set(valid_portion).set(q_score_avg).addBands(q_score)
 
     def _get_im_collection(self, start_date, end_date, region):
-        return ee.ImageCollection(self._collection_info['ee_collection']).\
+        return ee.ImageCollection(self._collection).\
             filterDate(start_date, end_date).\
             filterBounds(region).\
             map(self._check_validity).\
             filter(ee.Filter.gt('VALID_PORTION', self._valid_portion))
 
-    def search(self, date, region, day_range=16, valid_portion=70):
+    def search(self, date, region, day_range=16, valid_portion=70, apply_valid_mask=False):
         self._valid_portion = valid_portion
-        BaseEeImage.search(self, date, region, day_range=day_range)
+        self._apply_valid_mask = apply_valid_mask
+        return ImSearch.search(self, date, region, day_range=day_range)
 
-    def get_single_image(self, image_num):
-        return BaseEeImage.get_single_image(self, image_num).toUint16()
-
-    # TODO: consider making a generic version of this in the base class, perhaps with a self.key=... defaults
-    def get_auto_image(self, key='QA_SCORE_AVG', ascending=False):
-        if (self._im_df is None) or (self._im_collection is None):
-            raise Exception('First generate valid search results with search(...) method')
-        return self._im_collection.sort(key, ascending).first().toUint16()
+    # def get_single_image(self, image_num):
+    #     return ImSearch.get_single_image(self, image_num).toUint16()
+    #
+    # def get_auto_image(self, key='QA_SCORE_AVG', ascending=False):
+    #     if (self._im_df is None) or (self._im_collection is None):
+    #         raise Exception('First generate valid search results with search(...) method')
+    #     return self._im_collection.sort(key, ascending).first().toUint16()
 
     def get_composite_image(self):
         if self._im_collection is None:
             raise Exception('First generate a valid image collection with search(...) method')
-        return self._im_collection.qualityMosaic('QA_SCORE').set('COMPOSITE_IMAGES', self._im_df.to_string()).toUint16()
+        return self._im_collection.qualityMosaic('QA_SCORE').set('COMPOSITE_IMAGES', self._im_df[['EE_ID', 'DATE'] + self._im_props].to_string()).toUint16()
 
     def calibrate(self, image):
         # convert DN to float SR
@@ -336,11 +344,19 @@ class LandsatEeImage(BaseEeImage):
         return ee.Image(calib_image.copyProperties(image)).toFloat()    # call toFloat after updateMask
 
 
-class Sentinel2EeImage(BaseEeImage):
-    def __init__(self, collection='sentinel2_toa', valid_portion=90):
-        BaseEeImage.__init__(self, collection=collection)
-        self._valid_portion = valid_portion
-        self._display_properties = ['VALID_PORTION', 'GEOMETRIC_QUALITY_FLAG', 'RADIOMETRIC_QUALITY_FLAG', 'MEAN_SOLAR_AZIMUTH_ANGLE', 'MEAN_SOLAR_ZENITH_ANGLE', 'MEAN_INCIDENCE_AZIMUTH_ANGLE_B1', 'MEAN_INCIDENCE_ZENITH_ANGLE_B1']
+class Sentinel2ImSearch(ImSearch):
+    def __init__(self, collection='sentinel2_toa'):
+        ImSearch.__init__(self, collection=collection)
+        if collection == 'sentinel2_toa':
+            self._collection = 'COPERNICUS/S2'
+        elif collection == 'sentinel2_sr':
+            self._collection = 'COPERNICUS/S2_SR'
+        else:
+            raise ValueError(f'Unsupported sentinel2 collection: {collection}')
+
+        self._im_props = ['VALID_PORTION', 'GEOMETRIC_QUALITY_FLAG', 'RADIOMETRIC_QUALITY_FLAG', 'MEAN_SOLAR_AZIMUTH_ANGLE', 'MEAN_SOLAR_ZENITH_ANGLE', 'MEAN_INCIDENCE_AZIMUTH_ANGLE_B1', 'MEAN_INCIDENCE_ZENITH_ANGLE_B1']
+        self._valid_portion = 90
+        self._apply_valid_mask = False
 
     def _check_validity(self, image):
         image = self._add_timedelta(image)
@@ -349,41 +365,49 @@ class Sentinel2EeImage(BaseEeImage):
         valid_mask = qa.bitwiseAnd(bit_mask).eq(0).rename('VALID_MASK')
         valid_portion = valid_mask.unmask().multiply(100).reduceRegion(reducer='mean', geometry=self._search_region,
                                                                        scale=image.select(1).projection().nominalScale()).rename(['VALID_MASK'], ['VALID_PORTION'])
-
-        return image.set(valid_portion).updateMask(valid_mask)
+        if self._apply_valid_mask:
+            image = image.updateMask(valid_mask)
+        return image.set(valid_portion)
 
     def _get_im_collection(self, start_date, end_date, region):
-        return ee.ImageCollection(self._collection_info['ee_collection']).\
+        return ee.ImageCollection(self._collection).\
             filterDate(start_date, end_date).\
             filterBounds(region).\
             map(self._check_validity).\
             filter(ee.Filter.gt('VALID_PORTION', self._valid_portion))
 
-    def search(self, date, region, day_range=16, valid_portion=90):
+    def search(self, date, region, day_range=16, valid_portion=90, apply_valid_mask = False):
         self._valid_portion = valid_portion
-        BaseEeImage.search(self, date, region, day_range=day_range)
+        self._apply_valid_mask = apply_valid_mask
+        return ImSearch.search(self, date, region, day_range=day_range)
 
-    def get_single_image(self, image_num):
-        return BaseEeImage.get_single_image(self, image_num).toUint16()
-
-    # TODO: consider making a generic version of this in the base class, perhaps with a self.key=... defaults
-    def get_auto_image(self, key='VALID_PORTION', ascending=False):
-        if (self._im_df is None) or (self._im_collection is None):
-            raise Exception('First generate valid search results with search(...) method')
-        return self._im_collection.sort(key, ascending).first().toUint16()
+    # def get_single_image(self, image_num):
+    #     return ImSearch.get_single_image(self, image_num).toUint16()
+    #
+    # def get_auto_image(self, key='VALID_PORTION', ascending=False):
+    #     if (self._im_df is None) or (self._im_collection is None):
+    #         raise Exception('First generate valid search results with search(...) method')
+    #     return self._im_collection.sort(key, ascending).first().toUint16()
 
     def get_composite_image(self):
         if self._im_collection is None:
             raise Exception('First generate a valid image collection with search(...) method')
-        return self._im_collection.mosaic().set('COMPOSITE_IMAGES', self._im_df.to_string()).toUint16()
+        return self._im_collection.mosaic().set('COMPOSITE_IMAGES', self._im_df[['EE_ID', 'DATE'] + self._im_props].to_string()).toUint16()
 
-class Sentinel2CloudlessEeImage(BaseEeImage):
-    def __init__(self, apply_valid_mask=True, collection='sentinel2_toa', valid_portion=60):
-        BaseEeImage.__init__(self, collection=collection)
-        self.apply_valid_mask = apply_valid_mask
+class Sentinel2CloudlessImSearch(ImSearch):
+    def __init__(self, collection='sentinel2_toa'):
+        ImSearch.__init__(self, collection=collection)
+        if collection == 'sentinel2_toa':
+            self._collection = 'COPERNICUS/S2'
+        elif collection == 'sentinel2_sr':
+            self._collection = 'COPERNICUS/S2_SR'
+        else:
+            raise ValueError(f'Unsupported sentinel2 collection: {collection}')
         self.scale = 10
-        self._valid_portion = valid_portion
-        self._display_properties = ['VALID_PORTION', 'QA_SCORE_AVG', 'GEOMETRIC_QUALITY_FLAG', 'RADIOMETRIC_QUALITY_FLAG', 'MEAN_SOLAR_AZIMUTH_ANGLE', 'MEAN_SOLAR_ZENITH_ANGLE', 'MEAN_INCIDENCE_AZIMUTH_ANGLE_B1', 'MEAN_INCIDENCE_ZENITH_ANGLE_B1']
+        self._im_props = ['VALID_PORTION', 'QA_SCORE_AVG', 'GEOMETRIC_QUALITY_FLAG', 'RADIOMETRIC_QUALITY_FLAG', 'MEAN_SOLAR_AZIMUTH_ANGLE', 'MEAN_SOLAR_ZENITH_ANGLE', 'MEAN_INCIDENCE_AZIMUTH_ANGLE_B1', 'MEAN_INCIDENCE_ZENITH_ANGLE_B1']
+        self._valid_portion = 90
+        self._apply_valid_mask = False
+
         self._cloud_filter = 60         # Maximum image cloud cover percent allowed in image collection
         self._cloud_prob_thresh = 40    # Cloud probability (%); values greater than are considered cloud
         self._nir_drk_thresh = 0.15     # Near-infrared reflectance; values less than are considered potential cloud shadow
@@ -393,8 +417,8 @@ class Sentinel2CloudlessEeImage(BaseEeImage):
     def _check_validity(self, image):
         # adapted from https://developers.google.com/earth-engine/tutorials/community/sentinel-2-s2cloudless
         # highest res of s2 image, that all bands of this image will be reprojected to if it is downloaded
-        scale = image.select(1).projection().nominalScale()
         image = self._add_timedelta(image)
+        scale = image.select(1).projection().nominalScale()
 
         cloud_prob = ee.Image(image.get('s2cloudless')).select('probability')
         q_score = cloud_prob.multiply(-1).add(100).rename('QA_SCORE')
@@ -414,7 +438,7 @@ class Sentinel2CloudlessEeImage(BaseEeImage):
                        .mask()  # applies cloud_mask?
                        .rename('PROJ_CLOUD_MASK'))
 
-        if self.collection == 'sentinel2_sr':
+        if self._collection == 'COPERNICUS/S2_SR':
             # Note: SCL does not classify cloud shadows well, they are often labelled "dark".  Instead of using only
             # cloud shadow areas from this band, we combine it with the projected dark and shadow areas from SCL band
             scl = image.select('SCL')
@@ -441,7 +465,7 @@ class Sentinel2CloudlessEeImage(BaseEeImage):
             image = image.addBands(shadow_mask)
             image = image.addBands(valid_mask)
 
-        if self.apply_valid_mask:
+        if self._apply_valid_mask:
             # NOTE: for export_image, updateMask sets pixels to 0, for download_image, it does the same and sets nodata=0
             image = image.updateMask(valid_mask)
         # else:
@@ -454,7 +478,7 @@ class Sentinel2CloudlessEeImage(BaseEeImage):
     def _get_im_collection(self, start_date, end_date, region):
         # adapted from https://developers.google.com/earth-engine/tutorials/community/sentinel-2-s2cloudless
         # Import and filter S2 SR.
-        s2_sr_toa_col = (ee.ImageCollection(self._collection_info['ee_collection'])
+        s2_sr_toa_col = (ee.ImageCollection(self._collection)
                      .filterBounds(region)
                      .filterDate(start_date, end_date)
                      .filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', self._cloud_filter)))
@@ -474,24 +498,32 @@ class Sentinel2CloudlessEeImage(BaseEeImage):
             })
         })).map(self._check_validity).filter(ee.Filter.gt('VALID_PORTION', self._valid_portion))
 
-    def search(self, date, region, day_range=16, valid_portion=90):
+    def search(self, date, region, day_range=16, valid_portion=90, apply_valid_mask=False):
         self._valid_portion = valid_portion
-        BaseEeImage.search(self, date, region, day_range=day_range)
+        self._apply_valid_mask = apply_valid_mask
+        return ImSearch.search(self, date, region, day_range=day_range)
 
-    def get_single_image(self, image_num):
-        return BaseEeImage.get_single_image(self, image_num).toUint16()
-
-    # TODO: consider making a generic version of this in the base class, perhaps with a self.key=... defaults
-    def get_auto_image(self, key='VALID_PORTION', ascending=False):
-        if (self._im_df is None) or (self._im_collection is None):
-            raise Exception('First generate valid search results with search(...) method')
-        return self._im_collection.sort(key, ascending).first().toUint16()
+    # def get_single_image(self, image_num):
+    #     return ImSearch.get_single_image(self, image_num).toUint16()
+    #
+    # def get_auto_image(self, key='VALID_PORTION', ascending=False):
+    #     if (self._im_df is None) or (self._im_collection is None):
+    #         raise Exception('First generate valid search results with search(...) method')
+    #     return self._im_collection.sort(key, ascending).first().toUint16()
 
     def get_composite_image(self):
         if self._im_collection is None:
             raise Exception('First generate a valid image collection with search(...) method')
         # return self._im_collection.qualityMosaic('QA_SCORE').set('COMPOSITE_IMAGES', self._im_df.to_string())
-        return self._im_collection.median().set('COMPOSITE_IMAGES', self._im_df.to_string()).toUint16()
+        return self._im_collection.median().set('COMPOSITE_IMAGES', self._im_df[['EE_ID', 'DATE'] + self._im_props].to_string()).toUint16()
+
+class ModisNbarImSearch(ImSearch):
+    def __init__(self, collection='modis'):
+        ImSearch.__init__(self, collection=collection)
+        if collection == 'modis':
+            self._collection = 'MODIS/006/MCD43A4'
+        else:
+            raise ValueError(f'Unsupported modis collection: {collection}')
 
 
 ##
