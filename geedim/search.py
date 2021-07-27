@@ -23,6 +23,7 @@ import pandas
 import rasterio as rio
 from rasterio.warp import transform_geom
 
+from geedim import download
 from geedim import get_logger
 
 # from shapely import geometry
@@ -68,7 +69,7 @@ def get_image_bounds(filename, expand=5):
         src_bbox_wgs84 = transform_geom(im.crs, 'WGS84', bbox_expand_dict)   # convert to WGS84 geojson
     return src_bbox_wgs84, im.crs.to_wkt()
 
-
+##
 class ImSearch:
     def __init__(self, collection):
         """
@@ -120,10 +121,10 @@ class ImSearch:
         : ee.ImageCollection
         The filtered image collection
         """
-        return ee.ImageCollection(self._collection).\
-            filterDate(start_date, end_date).\
-            filterBounds(region).\
-            map(self._add_timedelta)
+        return (ee.ImageCollection(self._collection).
+                filterDate(start_date, end_date).
+                filterBounds(region).
+                map(self._add_timedelta))
 
     @staticmethod
     def _get_collection_df(im_collection, properties, print=True):
@@ -203,8 +204,8 @@ class ImSearch:
         end_date = date + timedelta(days=day_range)
 
         # filter the image collection
-        logger.info(f'Searching for {self._collection} images betwee{start_date.strftime("%Y-%m-%d")} and '\
-                      '{end_date.strftime("%Y-%m-%d")}')
+        logger.info(f'Searching for {self._collection} images between {start_date.strftime("%Y-%m-%d")} and '
+                      f'{end_date.strftime("%Y-%m-%d")}')
         self._im_collection = self._get_im_collection(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"),
                                                       region)
 
@@ -237,7 +238,7 @@ class ImSearch:
         # set metadata to indicate component images
         return comp_image.set('COMPOSITE_IMAGES', self._im_df[['EE_ID', 'DATE'] + self._im_props].to_string())
 
-
+##
 class LandsatImSearch(ImSearch):
     def __init__(self, collection='landsat8'):
         """
@@ -327,17 +328,19 @@ class LandsatImSearch(ImSearch):
 
         # calculate the potion of valid image pixels
         # TODO: is self._search_region necessary or can it be passed or otherwise referred to?
-        valid_portion = valid_mask.unmask().\
-            multiply(100).\
-            reduceRegion(reducer='mean', geometry=self._search_region, scale=image.projection().nominalScale()).\
-            rename(['VALID_MASK'], ['VALID_PORTION'])
+        valid_portion = (valid_mask.unmask().
+                         multiply(100).
+                         reduceRegion(reducer='mean', geometry=self._search_region,
+                                      scale=image.projection().nominalScale()).
+                         rename(['VALID_MASK'], ['VALID_PORTION']))
 
         q_score = q_score.where(fill_mask.Not(), 0).rename('QA_SCORE')  # Zero q_score where pixels are unfilled
 
         # calculate the average quality score
-        q_score_avg = q_score.unmask().\
-            reduceRegion(reducer='mean', geometry=self._search_region, scale=image.projection().nominalScale()).\
-            rename(['QA_SCORE'], ['QA_SCORE_AVG'])
+        q_score_avg = (q_score.unmask().
+                       reduceRegion(reducer='mean', geometry=self._search_region,
+                                    scale=image.projection().nominalScale()).
+                       rename(['QA_SCORE'], ['QA_SCORE_AVG']))
 
         if False:
             # TODO: can these be passed in a list?
@@ -374,13 +377,13 @@ class LandsatImSearch(ImSearch):
         The filtered image collection
         """
 
-        return ee.ImageCollection(self._collection).\
-            filterDate(start_date, end_date).\
-            filterBounds(region).\
-            map(self._check_validity).\
-            filter(ee.Filter.gt('VALID_PORTION', self._valid_portion))
+        return (ee.ImageCollection(self._collection).
+                filterDate(start_date, end_date).
+                filterBounds(region).
+                map(self._check_validity).
+                filter(ee.Filter.gt('VALID_PORTION', self._valid_portion)))
 
-    def search(self, date, region, day_range=16, valid_portion=70, apply_valid_mask=False):
+    def search(self, date, region, day_range=16, valid_portion=50, apply_valid_mask=False):
         """
         Search for Landsat images based on date, region etc criteria
         
@@ -419,6 +422,7 @@ class LandsatImSearch(ImSearch):
 
         comp_im = self._im_collection.qualityMosaic('QA_SCORE')
 
+        # set metadata to indicate component images
         return comp_im.set('COMPOSITE_IMAGES', self._im_df[['EE_ID', 'DATE'] + self._im_props].to_string()).toUint16()
 
     def convert_dn_to_sr(self, image):
@@ -479,10 +483,19 @@ class LandsatImSearch(ImSearch):
         # call toFloat after updateMask
         return ee.Image(calib_image.copyProperties(image)).toFloat()
 
-
+##
 class Sentinel2ImSearch(ImSearch):
     def __init__(self, collection='sentinel2_toa'):
+        """
+        Class for searching Sentinel-2 TOA and SR earth engine image collections
+
+        Parameters
+        ----------
+        collection : str, optional
+                     'sentinel_toa' (top of atmosphere - default) or 'sentinel_sr' (surface reflectance)
+        """
         ImSearch.__init__(self, collection=collection)
+
         if collection == 'sentinel2_toa':
             self._collection = 'COPERNICUS/S2'
         elif collection == 'sentinel2_sr':
@@ -490,108 +503,208 @@ class Sentinel2ImSearch(ImSearch):
         else:
             raise ValueError(f'Unsupported sentinel2 collection: {collection}')
 
-        self._im_props = ['VALID_PORTION', 'GEOMETRIC_QUALITY_FLAG', 'RADIOMETRIC_QUALITY_FLAG', 'MEAN_SOLAR_AZIMUTH_ANGLE', 'MEAN_SOLAR_ZENITH_ANGLE', 'MEAN_INCIDENCE_AZIMUTH_ANGLE_B1', 'MEAN_INCIDENCE_ZENITH_ANGLE_B1']
+        self._im_props = ['VALID_PORTION', 'GEOMETRIC_QUALITY_FLAG', 'RADIOMETRIC_QUALITY_FLAG',
+                          'MEAN_SOLAR_AZIMUTH_ANGLE', 'MEAN_SOLAR_ZENITH_ANGLE', 'MEAN_INCIDENCE_AZIMUTH_ANGLE_B1',
+                          'MEAN_INCIDENCE_ZENITH_ANGLE_B1']
+
         self._valid_portion = 90
         self._apply_valid_mask = False
 
     def _check_validity(self, image):
+        """
+        Evaluate image validity and quality
+
+        Parameters
+        ----------
+        image : ee.Image
+                Image to evaluate
+
+        Returns
+        -------
+        : ee.Image
+        Image with added properties and band(s)
+        """
+
         image = self._add_timedelta(image)
-        bit_mask = (1 << 11) | (1 << 10)
+        bit_mask = (1 << 11) | (1 << 10)    # bits 10 and 11 are opaque and cirrus clouds respectively
         qa = image.select('QA60')
         valid_mask = qa.bitwiseAnd(bit_mask).eq(0).rename('VALID_MASK')
-        valid_portion = valid_mask.unmask().multiply(100).reduceRegion(reducer='mean', geometry=self._search_region,
-                                                                       scale=image.select(1).projection().nominalScale()).rename(['VALID_MASK'], ['VALID_PORTION'])
+
+        min_scale = download.get_min_projection(image).nominalScale()
+
+        # calculate the potion of valid image pixels
+        valid_portion = (valid_mask.unmask().
+                         multiply(100).
+                         reduceRegion(reducer='mean', geometry=self._search_region, scale=min_scale).
+                         rename(['VALID_MASK'], ['VALID_PORTION']))
+
+        # TODO: what happens if/when pixels aren't filled
         if self._apply_valid_mask:
             image = image.updateMask(valid_mask)
         return image.set(valid_portion)
 
     def _get_im_collection(self, start_date, end_date, region):
-        return ee.ImageCollection(self._collection).\
-            filterDate(start_date, end_date).\
-            filterBounds(region).\
-            map(self._check_validity).\
-            filter(ee.Filter.gt('VALID_PORTION', self._valid_portion))
+        """
+        Create an image collection filtered by date, bounds and portion of valid pixels
 
-    def search(self, date, region, day_range=16, valid_portion=90, apply_valid_mask = False):
+        Parameters
+        ----------
+        start_date : str, ee.Date
+                     Earliest image date e.g. '2015-05-08'
+        end_date : str, ee.Date
+                   Latest image date e.g. '2015-05-08'
+        region : geojson, ee.Geometry
+                 Polygon in WGS84 specifying a region that images should intersect
+
+        Returns
+        -------
+        : ee.ImageCollection
+        The filtered image collection
+        """
+        return (ee.ImageCollection(self._collection).
+                filterDate(start_date, end_date).
+                filterBounds(region).
+                map(self._check_validity).
+                filter(ee.Filter.gt('VALID_PORTION', self._valid_portion)))
+
+    def search(self, date, region, day_range=16, valid_portion=50, apply_valid_mask = False):
+        """
+        Search for Sentinel-2 images based on date, region etc criteria
+
+        Parameters
+        date : datetime.datetime
+               Python datetime specifying the desired image capture date
+        region : geojson, ee.Geometry
+                 Polygon in WGS84 specifying a region that images should intersect
+        day_range : int, optional
+                    Number of days before and after `date` to search within
+        valid_portion: int, optional
+                     Minimum portion (%) of image pixels that should be valid (not cloud)
+        apply_valid_mask : bool, optional
+                        Mask out clouds in search result images
+
+        Returns
+        -------
+        : pandas.DataFrame
+        Dataframe specifying image properties that match the search criteria
+        """
         self._valid_portion = valid_portion
         self._apply_valid_mask = apply_valid_mask
         return ImSearch.search(self, date, region, day_range=day_range)
 
-    # def get_single_image(self, image_num):
-    #     return ImSearch.get_single_image(self, image_num).toUint16()
-    #
-    # def get_auto_image(self, key='VALID_PORTION', ascending=False):
-    #     if (self._im_df is None) or (self._im_collection is None):
-    #         raise Exception('First generate valid search results with search(...) method')
-    #     return self._im_collection.sort(key, ascending).first().toUint16()
 
     def get_composite_image(self):
+        """
+        Create a composite image from search results
+
+        Returns
+        -------
+        : ee.Image
+        Composite image
+        """
         if self._im_collection is None:
             raise Exception('First generate a valid image collection with search(...) method')
-        return self._im_collection.mosaic().set('COMPOSITE_IMAGES', self._im_df[['EE_ID', 'DATE'] + self._im_props].to_string()).toUint16()
 
+        if self._apply_valid_mask is None:
+            logger.warning('Calling search(...) with apply_valid_mask=True is recommended composite creation')
+
+        comp_im = self._im_collection.mosaic()
+
+        # set metadata to indicate component images
+        return comp_im.set('COMPOSITE_IMAGES', self._im_df[['EE_ID', 'DATE'] + self._im_props].to_string()).toUint16()
+
+##
 class Sentinel2CloudlessImSearch(ImSearch):
     def __init__(self, collection='sentinel2_toa'):
+        """
+        Class for searching Sentinel-2 TOA and SR earth engine image collections. Uses cloud-probability for masking
+        and quality scoring.
+
+        Parameters
+        ----------
+        collection : str, optional
+                     'sentinel_toa' (top of atmosphere - default) or 'sentinel_sr' (surface reflectance)
+        """
         ImSearch.__init__(self, collection=collection)
+
         if collection == 'sentinel2_toa':
             self._collection = 'COPERNICUS/S2'
         elif collection == 'sentinel2_sr':
             self._collection = 'COPERNICUS/S2_SR'
         else:
             raise ValueError(f'Unsupported sentinel2 collection: {collection}')
-        self.scale = 10
-        self._im_props = ['VALID_PORTION', 'QA_SCORE_AVG', 'GEOMETRIC_QUALITY_FLAG', 'RADIOMETRIC_QUALITY_FLAG', 'MEAN_SOLAR_AZIMUTH_ANGLE', 'MEAN_SOLAR_ZENITH_ANGLE', 'MEAN_INCIDENCE_AZIMUTH_ANGLE_B1', 'MEAN_INCIDENCE_ZENITH_ANGLE_B1']
+
+        self._im_props = ['VALID_PORTION', 'QA_SCORE_AVG', 'GEOMETRIC_QUALITY_FLAG', 'RADIOMETRIC_QUALITY_FLAG',
+                          'MEAN_SOLAR_AZIMUTH_ANGLE', 'MEAN_SOLAR_ZENITH_ANGLE', 'MEAN_INCIDENCE_AZIMUTH_ANGLE_B1',
+                          'MEAN_INCIDENCE_ZENITH_ANGLE_B1']
+
         self._valid_portion = 90
         self._apply_valid_mask = False
 
         self._cloud_filter = 60         # Maximum image cloud cover percent allowed in image collection
         self._cloud_prob_thresh = 40    # Cloud probability (%); values greater than are considered cloud
-        self._nir_drk_thresh = 0.15     # Near-infrared reflectance; values less than are considered potential cloud shadow
+        # self._nir_drk_thresh = 0.15     # Near-infrared reflectance; values less than are considered potential cloud shadow
         self._cloud_proj_dist = 1       # Maximum distance (km) to search for cloud shadows from cloud edges
-        self._buffer = 100               # Distance (m) to dilate the edge of cloud-identified objects
+        self._buffer = 100              # Distance (m) to dilate the edge of cloud-identified objects
 
     def _check_validity(self, image):
-        # adapted from https://developers.google.com/earth-engine/tutorials/community/sentinel-2-s2cloudless
-        # highest res of s2 image, that all bands of this image will be reprojected to if it is downloaded
-        image = self._add_timedelta(image)
-        scale = image.select(1).projection().nominalScale()
+        """
+        Evaluate image validity and quality
 
+        Parameters
+        ----------
+        image : ee.Image
+                Image to evaluate
+
+        Returns
+        -------
+        : ee.Image
+        Image with added properties and band(s)
+        """
+        # adapted from https://developers.google.com/earth-engine/tutorials/community/sentinel-2-s2cloudless
+
+        image = self._add_timedelta(image)
+        min_scale = download.get_min_projection(image).nominalScale()
+
+        # convert cloud probability in 0-100 quality score
         cloud_prob = ee.Image(image.get('s2cloudless')).select('probability')
         q_score = cloud_prob.multiply(-1).add(100).rename('QA_SCORE')
 
         cloud_mask = cloud_prob.gt(self._cloud_prob_thresh).rename('CLOUD_MASK')
-        # https://en.wikipedia.org/wiki/Solar_azimuth_angle perhaps it is the angle between south and shadow cast by vertical rod, clockwise +ve
-        # shadow_mask = shadow_mask.multiply(dark_pixels).rename('shadow_mask')
+        # See https://en.wikipedia.org/wiki/Solar_azimuth_angle
+
         # TODO: dilate valid_mask by _buffer ?
         # TODO: does below work in N hemisphere?
         shadow_azimuth = ee.Number(-90).add(ee.Number(image.get('MEAN_SOLAR_AZIMUTH_ANGLE')))
 
         # project the the cloud mask in the direction of shadows for self._cloud_proj_dist
-        proj_cloud_mask = (cloud_mask.directionalDistanceTransform(shadow_azimuth, self._cloud_proj_dist * 1000/10)
-                       # .reproject(**{'crs': image.select(0).projection(), 'scale': 100}) # necessary?
-                       .select('distance')
-                       .mask()  # applies cloud_mask?
-                       .rename('PROJ_CLOUD_MASK'))
+        proj_dist_px = ee.Number(self._cloud_proj_dist * 1000).divide(min_scale)
+        proj_cloud_mask = (cloud_mask.directionalDistanceTransform(shadow_azimuth, proj_dist_px).
+                           select('distance').mask().rename('PROJ_CLOUD_MASK'))
+            # .reproject(**{'crs': image.select(0).projection(), 'scale': 100})
 
-        if self._collection == 'COPERNICUS/S2_SR':
+        if self._collection == 'COPERNICUS/S2_SR':  # use SCL to reduce shadow_mask
             # Note: SCL does not classify cloud shadows well, they are often labelled "dark".  Instead of using only
-            # cloud shadow areas from this band, we combine it with the projected dark and shadow areas from SCL band
+            # cloud shadow areas from this band, we combine it with the projected dark and shadow areas from s2cloudless
             scl = image.select('SCL')
-            dark_shadow_mask = scl.eq(3).Or(scl.eq(2)).focal_max(self._buffer, 'circle', 'meters')     # dilate
+            dark_shadow_mask = scl.eq(3).Or(scl.eq(2)).focal_max(self._buffer, 'circle', 'meters')
             shadow_mask = proj_cloud_mask.And(dark_shadow_mask).rename('SHADOW_MASK')
         else:
             shadow_mask = proj_cloud_mask.rename('SHADOW_MASK')   # mask all areas that could be cloud shadow
 
-        # combine cloud and cloud shadow masks into one
+        # combine cloud and shadow masks
         valid_mask = (cloud_mask.Or(shadow_mask)).Not().rename('VALID_MASK')
 
-        valid_portion = valid_mask.unmask().multiply(100).reduceRegion(reducer='mean', geometry=self._search_region,
-                                                                       scale=scale).rename(['VALID_MASK'], ['VALID_PORTION'])
+        # calculate the potion of valid image pixels TODO: this is repeated in each class
+        valid_portion = (valid_mask.unmask().
+                         multiply(100).
+                         reduceRegion(reducer='mean', geometry=self._search_region, scale=min_scale).
+                         rename(['VALID_MASK'], ['VALID_PORTION']))
 
-        # create a pixel quallity score (higher is better)
-        # set q_score lowest where fill_mask==0
-        # q_score = q_score.where(fill_mask.Not(), 0).rename('QA_SCORE')
-        q_score_avg = q_score.unmask().reduceRegion(reducer='mean', geometry=self._search_region, scale=scale).rename(['QA_SCORE'], ['QA_SCORE_AVG'])
+        # calculate the average quality score
+        q_score_avg = (q_score.unmask().
+                       reduceRegion(reducer='mean', geometry=self._search_region, scale=min_scale).
+                       rename(['QA_SCORE'], ['QA_SCORE_AVG']))
 
         if False:
             image = image.addBands(cloud_prob)
@@ -601,29 +714,43 @@ class Sentinel2CloudlessImSearch(ImSearch):
             image = image.addBands(valid_mask)
 
         if self._apply_valid_mask:
-            # NOTE: for export_image, updateMask sets pixels to 0, for download_image, it does the same and sets nodata=0
+            # NOTE: for export_image, updateMask sets pixels to 0,
+            # for download_image, it does the same and sets nodata=0
             image = image.updateMask(valid_mask)
-        # else:
-        #     image = image.unmask()
-        # else:
-        #     image = image.updateMask(fill_mask)
 
         return image.set(valid_portion).set(q_score_avg).addBands(q_score)
 
     def _get_im_collection(self, start_date, end_date, region):
-        # adapted from https://developers.google.com/earth-engine/tutorials/community/sentinel-2-s2cloudless
-        # Import and filter S2 SR.
-        s2_sr_toa_col = (ee.ImageCollection(self._collection)
-                     .filterBounds(region)
-                     .filterDate(start_date, end_date)
-                     .filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', self._cloud_filter)))
+        """
+        Create an image collection filtered by date, bounds and portion of valid pixels. Combines sentinel2 SR/TOA
+        collection with separate cloud probability collection.
 
-        # Import and filter s2cloudless.
+        Parameters
+        ----------
+        start_date : str, ee.Date
+                     Earliest image date e.g. '2015-05-08'
+        end_date : str, ee.Date
+                   Latest image date e.g. '2015-05-08'
+        region : geojson, ee.Geometry
+                 Polygon in WGS84 specifying a region that images should intersect
+
+        Returns
+        -------
+        : ee.ImageCollection
+        The filtered image collection
+        """
+        # adapted from https://developers.google.com/earth-engine/tutorials/community/sentinel-2-s2cloudless
+
+        s2_sr_toa_col = (ee.ImageCollection(self._collection)
+                         .filterBounds(region)
+                         .filterDate(start_date, end_date)
+                         .filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', self._cloud_filter)))
+
         s2_cloudless_col = (ee.ImageCollection('COPERNICUS/S2_CLOUD_PROBABILITY')
                             .filterBounds(region)
                             .filterDate(start_date, end_date))
 
-        # Join the filtered s2cloudless collection to the SR collection by the 'system:index' property.
+        # join filtered s2cloudless collection to the SR/TOA collection by the 'system:index' property.
         return ee.ImageCollection(ee.Join.saveFirst('s2cloudless').apply(**{
             'primary': s2_sr_toa_col,
             'secondary': s2_cloudless_col,
@@ -633,32 +760,65 @@ class Sentinel2CloudlessImSearch(ImSearch):
             })
         })).map(self._check_validity).filter(ee.Filter.gt('VALID_PORTION', self._valid_portion))
 
-    def search(self, date, region, day_range=16, valid_portion=90, apply_valid_mask=False):
+    def search(self, date, region, day_range=16, valid_portion=50, apply_valid_mask=False):
+        """
+        Search for Sentinel-2 images based on date, region etc criteria
+
+        Parameters
+        date : datetime.datetime
+               Python datetime specifying the desired image capture date
+        region : geojson, ee.Geometry
+                 Polygon in WGS84 specifying a region that images should intersect
+        day_range : int, optional
+                    Number of days before and after `date` to search within
+        valid_portion: int, optional
+                     Minimum portion (%) of image pixels that should be valid (filled, and not cloud or shadow)
+        apply_valid_mask : bool, optional
+                        Mask out clouds, shadows and aerosols in search result images
+
+        Returns
+        -------
+        : pandas.DataFrame
+        Dataframe specifying image properties that match the search criteria
+        """
         self._valid_portion = valid_portion
         self._apply_valid_mask = apply_valid_mask
         return ImSearch.search(self, date, region, day_range=day_range)
 
-    # def get_single_image(self, image_num):
-    #     return ImSearch.get_single_image(self, image_num).toUint16()
-    #
-    # def get_auto_image(self, key='VALID_PORTION', ascending=False):
-    #     if (self._im_df is None) or (self._im_collection is None):
-    #         raise Exception('First generate valid search results with search(...) method')
-    #     return self._im_collection.sort(key, ascending).first().toUint16()
 
     def get_composite_image(self):
+        """
+        Create a composite image from search results, favouring pixels with the highest quality score
+
+        Returns
+        -------
+        : ee.Image
+        Composite image
+        """
         if self._im_collection is None:
             raise Exception('First generate a valid image collection with search(...) method')
-        # return self._im_collection.qualityMosaic('QA_SCORE').set('COMPOSITE_IMAGES', self._im_df.to_string())
-        return self._im_collection.median().set('COMPOSITE_IMAGES', self._im_df[['EE_ID', 'DATE'] + self._im_props].to_string()).toUint16()
 
+        if self._apply_valid_mask is None:
+            logger.warning('Calling search(...) with apply_valid_mask=True is recommended for composite creation')
+
+        comp_im = self._im_collection.mosaic()
+
+        # set metadata to indicate component images
+        return comp_im.set('COMPOSITE_IMAGES', self._im_df[['EE_ID', 'DATE'] + self._im_props].to_string()).toUint16()
+
+##
 class ModisNbarImSearch(ImSearch):
-    def __init__(self, collection='modis'):
-        ImSearch.__init__(self, collection=collection)
-        if collection == 'modis':
-            self._collection = 'MODIS/006/MCD43A4'
-        else:
-            raise ValueError(f'Unsupported modis collection: {collection}')
+    def __init__(self):
+        """
+        Class for searching the MODIS daily NBAR earth engine image collection
+
+        Parameters
+        ----------
+        collection : str, optional
+                     'modis' (default)
+        """
+        ImSearch.__init__(self, 'modis')
+        self._collection = 'MODIS/006/MCD43A4'
 
 
 ##
