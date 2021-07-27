@@ -53,8 +53,8 @@ def get_image_bounds(filename, expand=5):
         if (im.crs.linear_units == 'metre') and (expand > 0):   # expand the bounding box
             expand_x = (bbox.right - bbox.left) * expand / 100.
             expand_y = (bbox.top - bbox.bottom) * expand / 100.
-            bbox_expand = rio.coords.BoundingBox(bbox.left - expand_x, bbox.bottom + expand_y,
-                                                 bbox.right + expand_x, bbox.top - expand_y)
+            bbox_expand = rio.coords.BoundingBox(bbox.left - expand_x, bbox.bottom - expand_y,
+                                                 bbox.right + expand_x, bbox.top + expand_y)
         else:
             bbox_expand = bbox
 
