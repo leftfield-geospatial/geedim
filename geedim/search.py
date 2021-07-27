@@ -19,13 +19,13 @@
 from datetime import timedelta, datetime
 
 import ee
-import numpy as np
 import pandas
 import rasterio as rio
 from rasterio.warp import transform_geom
-# from shapely import geometry
 
 from geedim import get_logger
+
+# from shapely import geometry
 
 ##
 logger = get_logger(__name__)
@@ -71,37 +71,83 @@ def get_image_bounds(filename, expand=5):
 
 class ImSearch:
     def __init__(self, collection):
-        # self._search_region, self._crs = get_image_bounds(source_image_filename, expand=10)
+        """
+        Base class for searching earth engine image collections
+
+        Parameters
+        ----------
+        collection : str
+                     GEE image collection string e.g. 'MODIS/006/MCD43A4'
+        """
         self._collection = collection
-        self._im_props = []
+        self._im_props = []             # list of image properties to display in search results
         self._im_collection = None
         self._im_df = None
         self._search_region = None
         self._search_date = None
 
     def _add_timedelta(self, image):
+        """
+        Finds the time difference between image and search date, and adds this as a property to the image
+
+        Parameters
+        ----------
+        image : ee.Image
+                image to add
+
+        Returns
+        -------
+        Modified image
+        """
         return image.set('TIME_DIST', ee.Number(image.get('system:time_start')).
                          subtract(self._search_date.timestamp()*1000).abs())
 
     def _get_im_collection(self, start_date, end_date, region):
+        """
+        Create an image collection filtered by date, bounds and *ImSearch-specific mapping
+
+        Parameters
+        ----------
+        start_date : str, ee.Date
+                     Earliest image date e.g. '2015-05-08'
+        end_date : str, ee.Date
+                   Latest image date e.g. '2015-05-08'
+        region : geojson, ee.Geometry
+                 Polygon in WGS84 specifying a region that images should intersect
+
+        Returns
+        -------
+        : ee.ImageCollection
+        The filtered image collection
+        """
         return ee.ImageCollection(self._collection).\
             filterDate(start_date, end_date).\
             filterBounds(region).\
             map(self._add_timedelta)
-            # filter(ee.Filter.contains('system:footprint'), self._search_region).\
-
-    @staticmethod
-    def _print_proplist(prop_list, properties):
-        prop_df = pandas.DataFrame(prop_list)
-        cols = ['EE_ID', 'DATE'] + properties
-        prop_df = prop_df[cols].sort_values(by='DATE').reset_index(drop=True)
-        logger.info('Search results:\n' + prop_df.to_string())
-        return prop_df
 
     @staticmethod
     def _get_collection_df(im_collection, properties, print=True):
+        """
+        Convert a filtered image collection to a pandas dataframe of image properties
+
+        Parameters
+        ----------
+        im_collection : ee.ImageCollection
+                        Filtered image collection
+        properties : list
+                     Image property keys to include in output
+        print : bool, optional
+                Print a table of image properties
+
+        Returns
+        -------
+        : pandas.DataFrame
+        Table of image properties including the ee.Image objects
+        """
+
         init_list = ee.List([])
 
+        # aggregate relevant properties of im_collection images
         def aggregrate_props(image, im_prop_list):
             prop_dict = ee.Dictionary()
             prop_dict = prop_dict.set('EE_ID', image.get('system:index'))
@@ -111,16 +157,17 @@ class ImSearch:
                                           ee.Algorithms.If(image.get(prop_key), image.get(prop_key), ee.String('None')))
             return ee.List(im_prop_list).add(prop_dict)
 
-        # retrieve properties of search result images for display
+        # retrieve list of dicts of collection image properties
         im_prop_list = ee.List(im_collection.iterate(aggregrate_props, init_list)).getInfo()
-        im_list = im_collection.toList(im_collection.size())
 
-        # add ee image and convert date to python datetime
+        im_list = im_collection.toList(im_collection.size())    # image objects
+
+        # add EE image objects and convert ee.Date to python datetime
         for i, prop_dict in enumerate(im_prop_list):
             prop_dict['DATE'] = datetime.utcfromtimestamp(prop_dict['DATE'] / 1000)
             prop_dict['IMAGE'] = ee.Image(im_list.get(i))
 
-        # create dataframe of search results
+        # convert to DataFrame
         im_prop_df = pandas.DataFrame(im_prop_list)
         cols = ['EE_ID', 'DATE'] + properties + ['IMAGE']
         im_prop_df = im_prop_df[cols].sort_values(by='DATE').reset_index(drop=True)
@@ -129,6 +176,24 @@ class ImSearch:
         return im_prop_df
 
     def search(self, date, region, day_range=16):
+        """
+        Search for images based on date and region
+
+        Parameters
+        ----------
+        date : datetime.datetime
+               Python datetime specifying the desired image capture date
+        region : geojson, ee.Geometry
+                 Polygon in WGS84 specifying a region that images should intersect
+        day_range : int, optional
+                    Number of days before and after `date` to search within
+
+        Returns
+        -------
+        : pandas.DataFrame
+        Dataframe specifying image properties that match the search criteria
+        """
+        # Initialise
         self._im_df = None
         self._im_collection = None
         self._search_region = region
@@ -137,56 +202,58 @@ class ImSearch:
         start_date = date - timedelta(days=day_range)
         end_date = date + timedelta(days=day_range)
 
-        logger.info(f'Searching for {self._collection} images between '
-                    f'{start_date.strftime("%Y-%m-%d")} and {end_date.strftime("%Y-%m-%d")}')
+        # filter the image collection
+        logger.info(f'Searching for {self._collection} images betwee{start_date.strftime("%Y-%m-%d")} and '\
+                      '{end_date.strftime("%Y-%m-%d")}')
+        self._im_collection = self._get_im_collection(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"),
+                                                      region)
 
-        self._im_collection = self._get_im_collection(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"), region)
         num_images = self._im_collection.size().getInfo()
 
         if num_images == 0:
-            logger.info(f'Could not find any images in that date range')
+            logger.info(f'Could not find any images matching those criteria')
             return None
 
+        # print search results
         logger.info(f'Found {num_images} images:')
         self._im_df = ImSearch._get_collection_df(self._im_collection, self._im_props, print=True)
 
         return self._im_df
 
-    # def get_auto_image(self):
-    #     if (self._im_df is None) or (self._im_collection is None):
-    #         raise Exception('First generate valid search results with search(...) method')
-    #     return self._im_collection.sort('TIME_DIST', True).first()
-    #
-    # def get_single_image(self, image_num):
-    #     if (self._im_df is None) or (self._im_collection is None):
-    #         raise Exception('First generate valid search results with search(...) method')
-    #
-    #     if isinstance(image_num, str):
-    #         if image_num not in self._im_df['EE_ID'].values:
-    #             raise ValueError(f'{image_num} does not exist in search results')
-    #     elif isinstance(image_num, int):
-    #         if (image_num >= 0) and (image_num < self._im_df.shape[0]):
-    #             image_num = self._im_df.loc[image_num]['EE_ID']
-    #         else:
-    #             raise ValueError(f'image_num={image_num} out of range')
-    #     else:
-    #         raise TypeError(f'Unknown image_num type')
-    #     return self._im_collection.filterMetadata('system:index', 'equals', image_num).first()
-
     def get_composite_image(self):
+        """
+        Create a median composite image from search results
+
+        Returns
+        -------
+        : ee.Image
+        Composite image
+        """
         if self._im_collection is None or self._im_df is None:
             raise Exception('First generate valid search results with search(...) method')
 
-        return self._im_collection.median().set('COMPOSITE_IMAGES', self._im_df[['EE_ID', 'DATE'] + self._im_props].to_string())
+        comp_image = self._im_collection.median()
 
+        # set metadata to indicate component images
+        return comp_image.set('COMPOSITE_IMAGES', self._im_df[['EE_ID', 'DATE'] + self._im_props].to_string())
 
 
 class LandsatImSearch(ImSearch):
     def __init__(self, collection='landsat8'):
+        """
+        Class for searching Landsat 7-8 earth engine image collections
+
+        Parameters
+        ----------
+        collection : str, optional
+                     'landsat7' or 'landsat8' (default)
+        """
         ImSearch.__init__(self, collection=collection)
+
         if collection == 'landsat8':
-            self._collection = 'LANDSAT/LC08/C02/T1_L2'
-            self._im_props = ['VALID_PORTION', 'QA_SCORE_AVG', 'GEOMETRIC_RMSE_VERIFY', 'GEOMETRIC_RMSE_MODEL', 'SUN_AZIMUTH', 'SUN_ELEVATION']
+            self._collection = 'LANDSAT/LC08/C02/T1_L2'     # EE collection name
+            self._im_props = ['VALID_PORTION', 'QA_SCORE_AVG', 'GEOMETRIC_RMSE_VERIFY', 'GEOMETRIC_RMSE_MODEL',
+                              'SUN_AZIMUTH', 'SUN_ELEVATION']   # image properties to include in search results
         elif collection == 'landsat7':
             self._collection = 'LANDSAT/LE07/C02/T1_L2'
             self._im_props = ['VALID_PORTION', 'QA_SCORE_AVG', 'GEOMETRIC_RMSE_MODEL', 'SUN_AZIMUTH', 'SUN_ELEVATION']
@@ -196,10 +263,23 @@ class LandsatImSearch(ImSearch):
 
         self._valid_portion = 90
         self._apply_valid_mask = False
-        # 'LANDSAT_PRODUCT_ID', 'DATE_ACQUIRED', 'SCENE_CENTER_TIME', 'CLOUD_COVER_LAND', 'IMAGE_QUALITY_OLI', 'ROLL_ANGLE', 'NADIR_OFFNADIR', 'GEOMETRIC_RMSE_MODEL',
 
     def _check_validity(self, image):
-        # Notes
+        """
+        Evaluate image validity and quality
+
+        Parameters
+        ----------
+        image : ee.Image
+                Image to evaluate
+
+        Returns
+        -------
+        : ee.Image
+        Image with added properties and band(s)
+        """
+
+        # NOTES
         # - QA_PIXEL The *conf bit pairs (8-9,10-11,12-13,14-15) will always be 1 or more, unless it is a fill pixel -
         # i.e. the fill bit 0 is set.  Values are higher where there are cloud, cloud shadow etc.  The water bit 7, is
         # seems to be set incorrectly quite often, but with the rest of the bits ok/sensible.
@@ -208,46 +288,59 @@ class LandsatImSearch(ImSearch):
         # - The behaviour of updateMask in combination with ImageCollection qualityMosaic (and perhaps median and mosaic
         # ) is weird: updateMask always masks bands added with addBands, but only masks the original SR etc bands after
         # a call to qualityMosaic (or perhaps median etc)
-        # - Pixels in Fill bit QA_* masks seem to refer to nodata / uncovered pixels only.  They don't occur amongst valid data
+        # - Pixels in Fill bit QA_* masks seem to refer to nodata / uncovered pixels only.  They don't occur amongst
+        # valid data
 
-        image = self._add_timedelta(image)
+        image = self._add_timedelta(image)  # Add TIME_DIST property from base class
+
         # create a mask of valid (non cloud, shadow and aerosol) pixels
         # bits 1-4 of QA_PIXEL are dilated cloud, cirrus, cloud & cloud shadow, respectively
         qa_pixel_bitmask = (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4)
         qa_pixel = image.select('QA_PIXEL')
         cloud_mask = qa_pixel.bitwiseAnd(qa_pixel_bitmask).eq(0).rename('CLOUD_MASK')
+
+        # mask of filled (imaged) pixels
         fill_mask = qa_pixel.bitwiseAnd(1).eq(0).rename('FILL_MASK')
 
-        # quality scores
+        # extract cloud etc quality scores (2 bits)
         cloud_conf = qa_pixel.rightShift(8).bitwiseAnd(3).rename('CLOUD_CONF')
         cloud_shadow_conf = qa_pixel.rightShift(10).bitwiseAnd(3).rename('CLOUD_SHADOW_CONF')
         cirrus_conf = qa_pixel.rightShift(14).bitwiseAnd(3).rename('CIRRUS_CONF')
 
-        if self._collection == 'LANDSAT/LC08/C02/T1_L2':
+        if self._collection == 'LANDSAT/LC08/C02/T1_L2':    # landsat8
+            # TODO: is SR_QA_AEROSOL helpful? (Looks suspect for GEF region images)
+            # include SR_QA_AEROSOL in valid_mask and q_score
             # bits 6-7 of SR_QA_AEROSOL, are aerosol level where 3 = high, 2=medium, 1=low
-            sr_qa_aerosol_bitmask = (1 << 6) | (1 << 7)
             sr_qa_aerosol = image.select('SR_QA_AEROSOL')
-            # aerosol_prob = sr_qa_aerosol.bitwiseAnd(sr_qa_aerosol_bitmask).rightShift(6)
             aerosol_prob = sr_qa_aerosol.rightShift(6).bitwiseAnd(3)
             aerosol_mask = aerosol_prob.lt(3).rename('AEROSOL_MASK')
 
-            # TODO: is aerosol_mask helpful? it looks suspect for GEF NGI ims
+            # combine cloud etc masks to create validity mask
             valid_mask = cloud_mask.And(aerosol_mask).And(fill_mask).rename('VALID_MASK')
+            # sum the cloud etc probabilities, and convert range to 0-12, where 12 is best
             q_score = cloud_conf.add(cloud_shadow_conf).add(cirrus_conf).add(aerosol_prob).multiply(-1).add(12)
         else:
+            # combine cloud etc masks to create validity mask
             valid_mask = cloud_mask.And(fill_mask).rename('VALID_MASK')
+            # sum the cloud etc probabilities, and convert range to 0-12, where 12 is best
             q_score = cloud_conf.add(cloud_shadow_conf).add(cirrus_conf).multiply(-1).add(9)
 
-        # use unmask below as a workaround to prevent valid_portion only reducing the region masked below
-        valid_portion = valid_mask.unmask().multiply(100).reduceRegion(reducer='mean', geometry=self._search_region,
-                                                                       scale=image.projection().nominalScale()).rename(['VALID_MASK'], ['VALID_PORTION'])
+        # calculate the potion of valid image pixels
+        # TODO: is self._search_region necessary or can it be passed or otherwise referred to?
+        valid_portion = valid_mask.unmask().\
+            multiply(100).\
+            reduceRegion(reducer='mean', geometry=self._search_region, scale=image.projection().nominalScale()).\
+            rename(['VALID_MASK'], ['VALID_PORTION'])
 
-        # create a pixel quallity score (higher is better)
-        # set q_score lowest where fill_mask==0
-        q_score = q_score.where(fill_mask.Not(), 0).rename('QA_SCORE')
-        q_score_avg = q_score.unmask().reduceRegion(reducer='mean', geometry=self._search_region, scale=image.projection().nominalScale()).rename(['QA_SCORE'], ['QA_SCORE_AVG'])
+        q_score = q_score.where(fill_mask.Not(), 0).rename('QA_SCORE')  # Zero q_score where pixels are unfilled
+
+        # calculate the average quality score
+        q_score_avg = q_score.unmask().\
+            reduceRegion(reducer='mean', geometry=self._search_region, scale=image.projection().nominalScale()).\
+            rename(['QA_SCORE'], ['QA_SCORE_AVG'])
 
         if False:
+            # TODO: can these be passed in a list?
             image = image.addBands(cloud_conf)
             image = image.addBands(cloud_shadow_conf)
             image = image.addBands(cirrus_conf)
@@ -256,13 +349,31 @@ class LandsatImSearch(ImSearch):
             image = image.addBands(valid_mask)
 
         if self._apply_valid_mask:
-            image = image.updateMask(valid_mask)
+            image = image.updateMask(valid_mask)    # mask out cloud, shadow, unfilled etc pixels
         else:
-            image = image.updateMask(fill_mask)
+            image = image.updateMask(fill_mask)     # mask out unfilled pixels only
 
         return image.set(valid_portion).set(q_score_avg).addBands(q_score)
 
     def _get_im_collection(self, start_date, end_date, region):
+        """
+        Create an image collection filtered by date, bounds and portion of valid pixels
+
+        Parameters
+        ----------
+        start_date : str, ee.Date
+                     Earliest image date e.g. '2015-05-08'
+        end_date : str, ee.Date
+                   Latest image date e.g. '2015-05-08'
+        region : geojson, ee.Geometry
+                 Polygon in WGS84 specifying a region that images should intersect
+
+        Returns
+        -------
+        : ee.ImageCollection
+        The filtered image collection
+        """
+
         return ee.ImageCollection(self._collection).\
             filterDate(start_date, end_date).\
             filterBounds(region).\
@@ -270,77 +381,103 @@ class LandsatImSearch(ImSearch):
             filter(ee.Filter.gt('VALID_PORTION', self._valid_portion))
 
     def search(self, date, region, day_range=16, valid_portion=70, apply_valid_mask=False):
+        """
+        Search for Landsat images based on date, region etc criteria
+        
+        Parameters
+        date : datetime.datetime
+               Python datetime specifying the desired image capture date
+        region : geojson, ee.Geometry
+                 Polygon in WGS84 specifying a region that images should intersect
+        day_range : int, optional
+                    Number of days before and after `date` to search within
+        valid_portion: int, optional
+                     Minimum portion (%) of image pixels that should be valid (filled, and not cloud or shadow)
+        apply_valid_mask : bool, optional
+                        Mask out clouds, shadows and aerosols in search result images
+
+        Returns
+        -------
+        : pandas.DataFrame
+        Dataframe specifying image properties that match the search criteria
+        """
         self._valid_portion = valid_portion
         self._apply_valid_mask = apply_valid_mask
         return ImSearch.search(self, date, region, day_range=day_range)
 
-    # def get_single_image(self, image_num):
-    #     return ImSearch.get_single_image(self, image_num).toUint16()
-    #
-    # def get_auto_image(self, key='QA_SCORE_AVG', ascending=False):
-    #     if (self._im_df is None) or (self._im_collection is None):
-    #         raise Exception('First generate valid search results with search(...) method')
-    #     return self._im_collection.sort(key, ascending).first().toUint16()
-
     def get_composite_image(self):
+        """
+        Create a composite image from search results, favouring pixels with the highest quality score
+
+        Returns
+        -------
+        : ee.Image
+        Composite image
+        """
         if self._im_collection is None:
             raise Exception('First generate a valid image collection with search(...) method')
-        return self._im_collection.qualityMosaic('QA_SCORE').set('COMPOSITE_IMAGES', self._im_df[['EE_ID', 'DATE'] + self._im_props].to_string()).toUint16()
 
-    def calibrate(self, image):
-        # convert DN to float SR
-        # copyProperties
+        comp_im = self._im_collection.qualityMosaic('QA_SCORE')
+
+        return comp_im.set('COMPOSITE_IMAGES', self._im_df[['EE_ID', 'DATE'] + self._im_props].to_string()).toUint16()
+
+    def convert_dn_to_sr(self, image):
+        """
+        Scale and offset landsat pixels in SR bands to surface reflectance (0-10000)
+
+        Parameters
+        ----------
+        image : ee.Image
+                image to scale and offset
+
+        Returns
+        -------
+        : ee.Image
+        Float32 image with SR bands in range 0-10000 & nodata = -inf
+        """
+
+        # retrieve the names of SR bands
         all_bands = image.bandNames()
-        refl_bands = ee.List([])
-        def add_refl_bands(band, refl_bands):
-            refl_bands = ee.Algorithms.If(ee.String(band).rindex('SR_B').eq(0), ee.List(refl_bands).add(band), refl_bands)
-            return refl_bands
-        refl_bands = ee.List(all_bands.iterate(add_refl_bands, refl_bands))
-
-        non_refl_bands = all_bands.removeAll(refl_bands)
-
-        refl_mult = ee.Number(image.get('REFLECTANCE_MULT_BAND_1'))
-        refl_add = ee.Number(image.get('REFLECTANCE_ADD_BAND_1'))
-        calib_image = ((image.select(refl_bands).multiply(refl_mult)).add(refl_add)).multiply(10000.0)
-        calib_image = calib_image.addBands(image.select(non_refl_bands))
-        calib_image = calib_image.updateMask(image.mask())
-
-        return ee.Image(calib_image.copyProperties(image)).toFloat()    # call toFloat after updateMask
-
-    def calibrate2(self, image):
-        # convert DN to float SR
-        # copyProperties
-        all_bands = image.bandNames()
-        refl_bands = ee.List([])
+        init_bands = ee.List([])
 
         def add_refl_bands(band, refl_bands):
             refl_bands = ee.Algorithms.If(ee.String(band).rindex('SR_B').eq(0), ee.List(refl_bands).add(band), refl_bands)
             return refl_bands
 
-        refl_bands = ee.List(all_bands.iterate(add_refl_bands, refl_bands))
-        non_refl_bands = all_bands.removeAll(refl_bands)
+        sr_bands = ee.List(all_bands.iterate(add_refl_bands, init_bands))
 
+        non_sr_bands = all_bands.removeAll(sr_bands)    # all the other non-SR bands
+
+        # retrieve the scale (mult) and offset (add) parameters for each band
         param_dict = ee.Dictionary(dict(mult=ee.Image().select([]), add=ee.Image().select([])))
 
         def add_refl_params(band, param_dict):
             param_dict = ee.Dictionary(param_dict)
+
             band_num = ee.String(band).slice(-1)
-            refl_mult_str = ee.String('REFLECTANCE_MULT_BAND_').cat(band_num)
-            refl_add_str = ee.String('REFLECTANCE_ADD_BAND_').cat(band_num)
-            refl_mult = ee.Image.constant(image.get(refl_mult_str)).rename(refl_mult_str)
-            refl_add = ee.Image.constant(image.get(refl_add_str)).rename(refl_add_str)
-            param_dict = param_dict.set('mult', ee.Image(param_dict.get('mult')).addBands(refl_mult))
-            param_dict = param_dict.set('add', ee.Image(param_dict.get('add')).addBands(refl_add))
+            sr_mult_str = ee.String('REFLECTANCE_MULT_BAND_').cat(band_num)
+            sr_add_str = ee.String('REFLECTANCE_ADD_BAND_').cat(band_num)
+
+            # create constant scale (mult) and offset (add) images for this band
+            sr_mult = ee.Image.constant(image.get(sr_mult_str)).rename(sr_mult_str)
+            sr_add = ee.Image.constant(image.get(sr_add_str)).rename(sr_add_str)
+
+            # add the constant scale/offset images for this band to multi-band scale/offset images
+            param_dict = param_dict.set('mult', ee.Image(param_dict.get('mult')).addBands(sr_mult))
+            param_dict = param_dict.set('add', ee.Image(param_dict.get('add')).addBands(sr_add))
+
             return param_dict
 
-        param_dict = ee.Dictionary(refl_bands.iterate(add_refl_params, param_dict))
+        param_dict = ee.Dictionary(sr_bands.iterate(add_refl_params, param_dict))
 
-        calib_image = image.select(refl_bands).multiply(param_dict.get('mult'))
+        # apply the scale and offset
+        calib_image = image.select(sr_bands).multiply(param_dict.get('mult'))
         calib_image = (calib_image.add(param_dict.get('add'))).multiply(10000.0)
-        calib_image = calib_image.addBands(image.select(non_refl_bands))
+        calib_image = calib_image.addBands(image.select(non_sr_bands))
         calib_image = calib_image.updateMask(image.mask())
 
-        return ee.Image(calib_image.copyProperties(image)).toFloat()    # call toFloat after updateMask
+        # call toFloat after updateMask
+        return ee.Image(calib_image.copyProperties(image)).toFloat()
 
 
 class Sentinel2ImSearch(ImSearch):

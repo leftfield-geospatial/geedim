@@ -82,7 +82,7 @@ def export_image(image, description, folder=None, region=None, crs=None, scale=N
     if crs is None:
         crs = band_info_df['crs'].iloc[band_info_df['scale'].argmin()]
     if region is None:
-        region = image.geometry().bounds()
+        region = image.geometry()
         logger.warning('Region not specified, setting to image bounds')
     if scale is None:
         scale = band_info_df['scale'].min()
@@ -137,7 +137,7 @@ def download_image(image, filename, region=None, crs=None, scale=None):
     if crs is None:
         crs = band_info_df['crs'].iloc[band_info_df['scale'].argmin()]
     if region is None:
-        region = image.geometry().bounds()
+        region = image.geometry()
         logger.warning('Region not specified, setting to granule bounds')
     if scale is None:
         scale = band_info_df['scale'].min()
