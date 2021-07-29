@@ -151,7 +151,7 @@ class ImSearch:
         # aggregate relevant properties of im_collection images
         def aggregrate_props(image, im_prop_list):
             prop_dict = ee.Dictionary()
-            prop_dict = prop_dict.set('EE_ID', image.get('system:index'))
+            prop_dict = prop_dict.set('ID', image.get('system:id'))
             prop_dict = prop_dict.set('DATE', image.get('system:time_start'))
             for prop_key in properties:
                 prop_dict = prop_dict.set(prop_key,
@@ -170,10 +170,10 @@ class ImSearch:
 
         # convert to DataFrame
         im_prop_df = pandas.DataFrame(im_prop_list)
-        cols = ['EE_ID', 'DATE'] + properties + ['IMAGE']
+        cols = ['ID', 'DATE'] + properties + ['IMAGE']
         im_prop_df = im_prop_df[cols].sort_values(by='DATE').reset_index(drop=True)
         if print == True:
-            logger.info('\n' + im_prop_df[['EE_ID', 'DATE'] + properties].to_string())
+            logger.info('\n' + im_prop_df[['ID', 'DATE'] + properties].to_string())
         return im_prop_df
 
     def search(self, date, region, day_range=16):
@@ -236,7 +236,7 @@ class ImSearch:
         comp_image = self._im_collection.median()
 
         # set metadata to indicate component images
-        return comp_image.set('COMPOSITE_IMAGES', self._im_df[['EE_ID', 'DATE'] + self._im_props].to_string())
+        return comp_image.set('COMPOSITE_IMAGES', self._im_df[['ID', 'DATE'] + self._im_props].to_string())
 
 ##
 class LandsatImSearch(ImSearch):
@@ -406,7 +406,13 @@ class LandsatImSearch(ImSearch):
         """
         self._valid_portion = valid_portion
         self._apply_valid_mask = apply_valid_mask
-        return ImSearch.search(self, date, region, day_range=day_range)
+        self._im_df = ImSearch.search(self, date, region, day_range=day_range)
+
+        # convert all image bands to uint16
+        im_list = [image.toUint16() for image in self._im_df.IMAGE.values]
+        self._im_df.IMAGE = im_list
+        return self._im_df
+
 
     def get_composite_image(self):
         """
@@ -423,7 +429,7 @@ class LandsatImSearch(ImSearch):
         comp_im = self._im_collection.qualityMosaic('QA_SCORE')
 
         # set metadata to indicate component images
-        return comp_im.set('COMPOSITE_IMAGES', self._im_df[['EE_ID', 'DATE'] + self._im_props].to_string()).toUint16()
+        return comp_im.set('COMPOSITE_IMAGES', self._im_df[['ID', 'DATE'] + self._im_props].to_string()).toUint16()
 
     def convert_dn_to_sr(self, image):
         """
@@ -439,7 +445,7 @@ class LandsatImSearch(ImSearch):
         : ee.Image
         Float32 image with SR bands in range 0-10000 & nodata = -inf
         """
-
+        # TODO: can we replace with unitScale?
         # retrieve the names of SR bands
         all_bands = image.bandNames()
         init_bands = ee.List([])
@@ -590,8 +596,12 @@ class Sentinel2ImSearch(ImSearch):
         """
         self._valid_portion = valid_portion
         self._apply_valid_mask = apply_valid_mask
-        return ImSearch.search(self, date, region, day_range=day_range)
+        self._im_df = ImSearch.search(self, date, region, day_range=day_range)
 
+        # convert all image bands to uint16 in preparation for export
+        im_list = [image.toUint16() for image in self._im_df.IMAGE.values]
+        self._im_df.IMAGE = im_list
+        return self._im_df
 
     def get_composite_image(self):
         """
@@ -611,7 +621,7 @@ class Sentinel2ImSearch(ImSearch):
         comp_im = self._im_collection.mosaic()
 
         # set metadata to indicate component images
-        return comp_im.set('COMPOSITE_IMAGES', self._im_df[['EE_ID', 'DATE'] + self._im_props].to_string()).toUint16()
+        return comp_im.set('COMPOSITE_IMAGES', self._im_df[['ID', 'DATE'] + self._im_props].to_string()).toUint16()
 
 ##
 class Sentinel2CloudlessImSearch(ImSearch):
@@ -783,7 +793,12 @@ class Sentinel2CloudlessImSearch(ImSearch):
         """
         self._valid_portion = valid_portion
         self._apply_valid_mask = apply_valid_mask
-        return ImSearch.search(self, date, region, day_range=day_range)
+        self._im_df = ImSearch.search(self, date, region, day_range=day_range)
+
+        # convert all image bands to uint16 in preparation for export
+        im_list = [image.toUint16() for image in self._im_df.IMAGE.values]
+        self._im_df.IMAGE = im_list
+        return self._im_df
 
 
     def get_composite_image(self):
@@ -804,7 +819,7 @@ class Sentinel2CloudlessImSearch(ImSearch):
         comp_im = self._im_collection.mosaic()
 
         # set metadata to indicate component images
-        return comp_im.set('COMPOSITE_IMAGES', self._im_df[['EE_ID', 'DATE'] + self._im_props].to_string()).toUint16()
+        return comp_im.set('COMPOSITE_IMAGES', self._im_df[['ID', 'DATE'] + self._im_props].to_string()).toUint16()
 
 ##
 class ModisNbarImSearch(ImSearch):
@@ -819,6 +834,37 @@ class ModisNbarImSearch(ImSearch):
         """
         ImSearch.__init__(self, 'modis')
         self._collection = 'MODIS/006/MCD43A4'
+
+    def search(self, date, region, day_range=16):
+        """
+        Search for MODIS daily NBAR images based on date & region
+
+        Parameters
+        date : datetime.datetime
+               Python datetime specifying the desired image capture date
+        region : geojson, ee.Geometry
+                 Polygon in WGS84 specifying a region that images should intersect
+        day_range : int, optional
+                    Number of days before and after `date` to search within
+
+        Returns
+        -------
+        : pandas.DataFrame
+        Dataframe specifying image properties that match the search criteria
+        """
+        self._im_df =  ImSearch.search(self, date, region, day_range=day_range)
+
+        # workaround for GEE bug which exports MODIS images with wrong CRS info
+        # wkt = 'PROJCS["Sinusoidal",GEOGCS["GCS_Undefined",DATUM["D_Undefined",SPHEROID["User_Defined_Spheroid",6371007.181,0.0]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.017453292519943295]],PROJECTION["Sinusoidal"],PARAMETER["False_Easting",0.0],PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",0.0],UNIT["Meter",1.0]]'
+        # wkt = 'PROJCS["MODIS Sinusoidal",GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["Degree",0.017453292519943295]],PROJECTION["Sinusoidal"],PARAMETER["false_easting",0.0],PARAMETER["false_northing",0.0],PARAMETER["central_meridian",0.0],PARAMETER["semi_major",6371007.181],PARAMETER["semi_minor",6371007.181],UNIT["m",1.0]]'
+        # im_list = [image.reproject(wkt, None, image.projection().nominalScale()) for image in self._im_df.IMAGE.values]
+        # self._im_df.IMAGE = im_list
+
+        # TODO: a reproject to avoid GEE 'SR-ORG:6974' export bug?
+        # convert all image bands to uint16 in preparation for export
+        im_list = [image.toUint16() for image in self._im_df.IMAGE.values]
+        self._im_df.IMAGE = im_list
+        return self._im_df
 
 
 ##

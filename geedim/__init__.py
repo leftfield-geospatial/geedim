@@ -20,7 +20,6 @@
 import logging
 import pathlib
 import os
-import json
 
 logging.basicConfig(format='%(levelname)s %(name)s: %(message)s')
 

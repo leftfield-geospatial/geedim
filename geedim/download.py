@@ -23,11 +23,13 @@ import sys
 import time
 import urllib
 import zipfile
+import logging
 
 import ee
 import numpy as np
 import pandas as pd
 import rasterio as rio
+from rasterio.enums import ColorInterp
 
 from geedim import get_logger, root_path
 
@@ -66,6 +68,7 @@ def get_image_info(image):
 
     return im_info_dict, band_info_df
 
+
 def get_min_projection(image):
     """
     Server side operations to find the minimum scale projection from image bands.  No calls to getInfo().
@@ -95,6 +98,7 @@ def get_min_projection(image):
         return ee.Projection(min_proj)
 
     return ee.Projection(bands.iterate(compare_scale, init_proj))
+
 
 def export_image(image, filename, folder=None, region=None, crs=None, scale=None, wait=True):
     """
@@ -129,6 +133,10 @@ def export_image(image, filename, folder=None, region=None, crs=None, scale=None
             (crs is None or scale is None):
             raise Exception(f'This appears to be a composite image in WGS84, specify a destination scale and CRS')
 
+    # if it is a native MODIS CRS then exit to avoid GEE bug
+    if np.any(band_info_df['crs'] == 'SR-ORG:6974') and (crs is None):
+        logger.warning(f'GEE does not populate the export projection correctly when when exporting in the native MODIS CRS')
+
     if crs is None:
         crs = band_info_df['crs'].iloc[band_info_df['scale'].argmin()]  # CRS corresponding to minimum scale
     if region is None:
@@ -158,27 +166,31 @@ def export_image(image, filename, folder=None, region=None, crs=None, scale=None
     task.start()
 
     if wait:    # wait for completion
-        status = ee.data.getOperation(task.name)
-        toggles = '-\|/'
-        toggle_count = 0
-
-        while ('done' not in status) or (not status['done']):
-            time.sleep(.5)
-            status = ee.data.getOperation(task.name)    # get task status
-            # TODO: interpret totalWorkUnits and completeWorkUnits
-
-            # display progress state and toggle
-            sys.stdout.write(f'\rExport image {str(status["metadata"]["state"]).lower()} '
-                             f'[ {toggles[toggle_count % 4]} ]')
-            sys.stdout.flush()
-            toggle_count += 1
-
-        sys.stdout.write(f'\rExport image {str(status["metadata"]["state"]).lower()}\n')
-        if status['metadata']['state'] != 'SUCCEEDED':
-            logger.error(f'Export failed \n{status}')
-            raise Exception(f'Export failed \n{status}')
+        monitor_export_task(task)
 
     return task
+
+def monitor_export_task(task):
+    status = ee.data.getOperation(task.name)
+    toggles = '-\|/'
+    toggle_count = 0
+
+    while ('done' not in status) or (not status['done']):
+        time.sleep(.5)
+        status = ee.data.getOperation(task.name)  # get task status
+        # TODO: interpret totalWorkUnits and completeWorkUnits
+
+        # display progress state and toggle
+        sys.stdout.write(f'\rExport image {str(status["metadata"]["state"]).lower()} '
+                         f'[ {toggles[toggle_count % 4]} ]')
+        sys.stdout.flush()
+        toggle_count += 1
+
+    sys.stdout.write(f'\rExport image {str(status["metadata"]["state"]).lower()}\n')
+    if status['metadata']['state'] != 'SUCCEEDED':
+        logger.error(f'Export failed \n{status}')
+        raise Exception(f'Export failed \n{status}')
+
 
 def download_image(image, filename, region=None, crs=None, scale=None, band_df=None):
     """
@@ -209,6 +221,9 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
             (crs is None or scale is None):
             raise Exception(f'This appears to be a composite image in WGS84, specify a destination scale and CRS')
 
+    if np.any(band_info_df['crs'] == 'SR-ORG:6974') and (crs is None):
+        logger.warning(f'GEE does not populate the export projection correctly when when exporting in the native MODIS CRS')
+
     if crs is None:
         crs = band_info_df['crs'].iloc[band_info_df['scale'].argmin()]
     if region is None:
@@ -219,7 +234,7 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
 
     # warn if some band scales will be changed
     if (band_info_df['crs'].unique().size > 1) or (band_info_df['scale'].unique().size > 1):
-        logger.warning(f'Image bands have different scales, reprojecting all to {crs} at {scale}m resolution')
+        logger.warning(f'Image bands have different scales, re-projecting all to {crs} at {scale}m resolution')
 
     # force all bands into same crs and scale
     band_info_df['crs'] = crs
@@ -288,32 +303,44 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
     with zipfile.ZipFile(zip_filename, "r") as zip_file:
         zip_file.extractall(zip_filename.parent)
 
-    if tif_filename.exists():
-        logger.warning(f'{tif_filename} exists, overwriting...')
-        os.remove(tif_filename)
+    _tif_filename = zip_filename.parent.joinpath(zipfile.ZipFile(zip_filename, "r").namelist()[0])
 
-    _tif_filename = zipfile.ZipFile(zip_filename, "r").namelist()[0]
-    os.rename(zip_filename.parent.joinpath(_tif_filename), tif_filename)
+    if _tif_filename != tif_filename:
+        if tif_filename.exists():
+            logger.warning(f'{tif_filename} exists, overwriting...')
+            os.remove(tif_filename)
+
+        os.rename(_tif_filename, tif_filename)
 
     # remove footprint property from im_info_dict before copying to tif file
     if ('properties' in im_info_dict) and ('system:footprint' in im_info_dict['properties']):
         im_info_dict['properties'].pop('system:footprint')
 
     # copy metadata to downloaded tif file
-    with rio.open(tif_filename, 'r+') as im:
-        if 'properties' in im_info_dict:
-            im.update_tags(**im_info_dict['properties'])
-        # im.profile['photometric'] = None    # TODO: fix warning
+    try:
+        # GEE sets tif colorinterp tags incorrectly, suppress rasterio warning relating to this:
+        # 'Sum of Photometric type-related color channels and ExtraSamples doesn't match SamplesPerPixel'
+        logging.getLogger("rasterio").setLevel(logging.ERROR)
 
-        if 'bands' in im_info_dict:
-            for band_i, band_info in enumerate(im_info_dict['bands']):
-                im.set_band_description(band_i + 1, band_info['id'])
-                im.update_tags(band_i + 1, ID=band_info['id'])
+        with rio.open(tif_filename, 'r+') as im:
+            if 'properties' in im_info_dict:
+                im.update_tags(**im_info_dict['properties'])
+            # im.profile['photometric'] = None    # TODO: fix warning
+            im.colorinterp = [ColorInterp.black] * im.count
 
-                if (band_df is not None) and (band_info['id'] in band_df['id'].values):
-                    band_row = band_df.loc[band_df['id'] == band_info['id']].iloc[0].drop('id')
-                    for key, val in band_row.iteritems():
-                        im.update_tags(band_i + 1, **{str(key).upper(): val})
+            if 'bands' in im_info_dict:
+                for band_i, band_info in enumerate(im_info_dict['bands']):
+                    im.set_band_description(band_i + 1, band_info['id'])
+                    im.update_tags(band_i + 1, ID=band_info['id'])
+
+                    if (band_df is not None) and (band_info['id'] in band_df['id'].values):
+                        band_row = band_df.loc[band_df['id'] == band_info['id']].iloc[0].drop('id')
+                        for key, val in band_row.iteritems():
+                            im.update_tags(band_i + 1, **{str(key).upper(): val})
+            im.colorinterp = [ColorInterp.undefined] * im.count
+    finally:
+        logging.getLogger("rasterio").setLevel(logging.WARNING)
+
     return link
 
 
@@ -349,6 +376,35 @@ def download_im_collection(im_collection, path, region=None, crs=None, scale=Non
         logger.info(f'Downloading {filename.stem}...')
         download_image(image, filename, region=region, crs=crs, scale=scale, band_df=band_df)
 
+def download_images(image_df, path, region=None, crs=None, scale=None, band_df=None):
+    """
+    Download a images in search results dataframe
+
+    Parameters
+    ----------
+    image_df : pandas.DataFrame
+               DataFrame containing ee.Image 's to download.  In same format as returned by *ImSearch.search(), i.e.
+               with 'EE_ID' and 'IMAGE' columns specifying the EE image id and ee.Image respectively
+    path : str, pathlib.Path
+           Directory to download image files to.  Image filenames will be derived from their earth engine IDs.
+    region : geojson, ee.Geometry, optional
+             Region of interest (WGS84) to export (default: export the entire image granule if it has one).
+    crs : str, optional
+          WKT, EPSG etc specification of CRS to export to (default: use the image CRS if it has one).
+    scale : float, optional
+            Pixel resolution (m) to export to (default: use the highest resolution of the image bands).
+    band_df : pandas.DataFrame, optional
+              DataFrame specifying band metadata to be copied to downloaded file.  'id' column should contain band id's
+              that match the ee.Image band id's
+    """
+
+    path = pathlib.Path(path)
+
+    for row_i, row in image_df.iterrows():
+        filename = path.joinpath(f'{row.EE_ID}.tif')
+        logger.info(f'Downloading {filename.stem}...')
+        download_image(row.IMAGE, filename, region=region, crs=crs, scale=scale, band_df=band_df)
+
 def export_im_collection(im_collection, folder=None, region=None, crs=None, scale=None):
     """
     Export each image in a collection to Google Drive
@@ -377,6 +433,35 @@ def export_im_collection(im_collection, folder=None, region=None, crs=None, scal
         filename = pathlib.Path(f'{id}.tif')
         logger.info(f'Exporting {filename}...')
         task = export_image(image, filename, folder=folder, region=region, crs=crs, scale=scale, wait=False)
+        task_list.append(task)
+
+    return task_list
+
+def export_images(image_df, folder=None, region=None, crs=None, scale=None):
+    """
+    Export each image in a collection to Google Drive
+
+    Parameters
+    ----------
+    image_df : pandas.DataFrame
+               DataFrame containing ee.Image 's to download.  In same format as returned by *ImSearch.search(), i.e.
+               with 'EE_ID' and 'IMAGE' columns specifying the EE image id and ee.Image respectively
+    folder : str, optional
+             Google Drive folder to export to (default: root).
+    region : geojson, ee.Geometry, optional
+             Region of interest (WGS84) to export (default: export the entire image granule if it has one).
+    crs : str, optional
+          WKT, EPSG etc specification of CRS to export to (default: use the image CRS if it has one).
+    scale : float, optional
+            Pixel resolution (m) to export to (default: use the highest resolution of the image bands).
+    """
+
+    task_list = []
+
+    for row_i, row in image_df.iterrows():
+        filename = str(row.EE_ID)
+        logger.info(f'Exporting {filename}...')
+        task = export_image(row.IMAGE, filename, folder=folder, region=region, crs=crs, scale=scale, wait=False)
         task_list.append(task)
 
     return task_list
