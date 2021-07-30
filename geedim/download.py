@@ -188,8 +188,8 @@ def monitor_export_task(task):
 
     sys.stdout.write(f'\rExport image {str(status["metadata"]["state"]).lower()}\n')
     if status['metadata']['state'] != 'SUCCEEDED':
-        logger.error(f'Export failed \n{status}')
-        raise Exception(f'Export failed \n{status}')
+        logger.error(f'{task.name} export failed \n{status}')
+        raise Exception(f'{task.name} export failed \n{status}')
 
 
 def download_image(image, filename, region=None, crs=None, scale=None, band_df=None):
