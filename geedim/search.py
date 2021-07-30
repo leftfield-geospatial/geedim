@@ -67,6 +67,7 @@ def get_image_bounds(filename, expand=5):
 
         bbox_expand_dict = dict(type='Polygon', coordinates=[coordinates])
         src_bbox_wgs84 = transform_geom(im.crs, 'WGS84', bbox_expand_dict)   # convert to WGS84 geojson
+
     return src_bbox_wgs84, im.crs.to_wkt()
 
 ##
@@ -80,7 +81,7 @@ class ImSearch:
         collection : str
                      GEE image collection string e.g. 'MODIS/006/MCD43A4'
         """
-        self._collection = collection
+        self._collection = collection.lower()
         self._im_props = []             # list of image properties to display in search results
         self._im_collection = None
         self._im_df = None
@@ -113,7 +114,7 @@ class ImSearch:
                      Earliest image date e.g. '2015-05-08'
         end_date : str, ee.Date
                    Latest image date e.g. '2015-05-08'
-        region : geojson, ee.Geometry
+        region : dict, geojson, ee.Geometry
                  Polygon in WGS84 specifying a region that images should intersect
 
         Returns
@@ -184,14 +185,14 @@ class ImSearch:
         ----------
         date : datetime.datetime
                Python datetime specifying the desired image capture date
-        region : geojson, ee.Geometry
+        region : dict, geojson, ee.Geometry, ee.Geometry
                  Polygon in WGS84 specifying a region that images should intersect
         day_range : int, optional
                     Number of days before and after `date` to search within
 
         Returns
         -------
-        : pandas.DataFrame
+        image_df : pandas.DataFrame
         Dataframe specifying image properties that match the search criteria
         """
         # Initialise
@@ -368,7 +369,7 @@ class LandsatImSearch(ImSearch):
                      Earliest image date e.g. '2015-05-08'
         end_date : str, ee.Date
                    Latest image date e.g. '2015-05-08'
-        region : geojson, ee.Geometry
+        region : dict, geojson, ee.Geometry
                  Polygon in WGS84 specifying a region that images should intersect
 
         Returns
@@ -390,7 +391,7 @@ class LandsatImSearch(ImSearch):
         Parameters
         date : datetime.datetime
                Python datetime specifying the desired image capture date
-        region : geojson, ee.Geometry
+        region : dict, geojson, ee.Geometry
                  Polygon in WGS84 specifying a region that images should intersect
         day_range : int, optional
                     Number of days before and after `date` to search within
@@ -559,7 +560,7 @@ class Sentinel2ImSearch(ImSearch):
                      Earliest image date e.g. '2015-05-08'
         end_date : str, ee.Date
                    Latest image date e.g. '2015-05-08'
-        region : geojson, ee.Geometry
+        region : dict, geojson, ee.Geometry
                  Polygon in WGS84 specifying a region that images should intersect
 
         Returns
@@ -580,7 +581,7 @@ class Sentinel2ImSearch(ImSearch):
         Parameters
         date : datetime.datetime
                Python datetime specifying the desired image capture date
-        region : geojson, ee.Geometry
+        region : dict, geojson, ee.Geometry
                  Polygon in WGS84 specifying a region that images should intersect
         day_range : int, optional
                     Number of days before and after `date` to search within
@@ -741,7 +742,7 @@ class Sentinel2CloudlessImSearch(ImSearch):
                      Earliest image date e.g. '2015-05-08'
         end_date : str, ee.Date
                    Latest image date e.g. '2015-05-08'
-        region : geojson, ee.Geometry
+        region : dict, geojson, ee.Geometry
                  Polygon in WGS84 specifying a region that images should intersect
 
         Returns
@@ -777,7 +778,7 @@ class Sentinel2CloudlessImSearch(ImSearch):
         Parameters
         date : datetime.datetime
                Python datetime specifying the desired image capture date
-        region : geojson, ee.Geometry
+        region : dict, geojson, ee.Geometry
                  Polygon in WGS84 specifying a region that images should intersect
         day_range : int, optional
                     Number of days before and after `date` to search within
@@ -842,7 +843,7 @@ class ModisNbarImSearch(ImSearch):
         Parameters
         date : datetime.datetime
                Python datetime specifying the desired image capture date
-        region : geojson, ee.Geometry
+        region : dict, geojson, ee.Geometry
                  Polygon in WGS84 specifying a region that images should intersect
         day_range : int, optional
                     Number of days before and after `date` to search within

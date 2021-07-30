@@ -112,7 +112,7 @@ def export_image(image, filename, folder=None, region=None, crs=None, scale=None
                The name of the task and destination file
     folder : str, optional
              Google Drive folder to export to (default: root).
-    region : geojson, ee.Geometry, optional
+    region : dict, geojson, ee.Geometry, optional
              Region of interest (WGS84) to export (default: export the entire image granule if it has one).
     crs : str, optional
           WKT, EPSG etc specification of CRS to export to (default: use the image CRS if it has one).
@@ -202,7 +202,7 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
             The image to export
     filename : str, pathlib.Path
                Name of the destination file
-    region : geojson, ee.Geometry, optional
+    region : dict, geojson, ee.Geometry, optional
              Region of interest (WGS84) to export (default: export the entire image granule if it has one).
     crs : str, optional
           WKT, EPSG etc specification of CRS to export to (default: use the image CRS if it has one).
@@ -237,7 +237,7 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
         logger.warning(f'Image bands have different scales, re-projecting all to {crs} at {scale}m resolution')
 
     # force all bands into same crs and scale
-    band_info_df['crs'] = crs
+    band_info_df['crs'] = str(crs)
     band_info_df['scale'] = scale
     bands_dict = band_info_df[['id', 'crs', 'scale', 'data_type']].to_dict('records')
 
@@ -255,6 +255,37 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
     # open the link
     try:
         file_link = urllib.request.urlopen(link)
+        # setup destination zip and tif filenames
+        meta = file_link.info()
+        file_size = int(meta['Content-Length'])
+        logger.info(f'Download size: {file_size / (1024 ** 2):.2f} MB')
+
+        tif_filename = pathlib.Path(filename)
+        tif_filename = tif_filename.joinpath(tif_filename.parent, tif_filename.stem + '.tif')  # force to tif file
+        zip_filename = tif_filename.parent.joinpath('gee_image_download.zip')
+
+        if zip_filename.exists():
+            logger.warning(f'{zip_filename} exists, overwriting...')
+
+        # download the zip file
+        logger.info(f'Downloading to {zip_filename}')
+        with open(zip_filename, 'wb') as f:
+            file_size_dl = 0
+            block_size = 8192
+            while (file_size_dl <= file_size):
+                buffer = file_link.read(block_size)
+                if not buffer:
+                    break
+                file_size_dl += len(buffer)
+                f.write(buffer)
+
+                # display progress bar
+                progress = (file_size_dl / file_size)
+                sys.stdout.write('\r')
+                sys.stdout.write('[%-50s] %d%%' % ('=' * int(50 * progress), 100 * progress))
+                sys.stdout.flush()
+            sys.stdout.write('\n')
+
     except urllib.error.HTTPError as ex:
         logger.error(f'Could not open URL: HHTP error {ex.code} - {ex.reason}')
 
@@ -267,36 +298,8 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
                 logger.error('There is a 10MB Earth Engine limit on image downloads, either decrease image size, or use export(...)')
         raise ex
 
-    # setup destination zip and tif filenames
-    meta = file_link.info()
-    file_size = int(meta['Content-Length'])
-    logger.info(f'Download size: {file_size / (1024 ** 2):.2f} MB')
-
-    tif_filename = pathlib.Path(filename)
-    tif_filename = tif_filename.joinpath(tif_filename.parent, tif_filename.stem + '.tif')  # force to tif file
-    zip_filename = tif_filename.parent.joinpath('gee_image_download.zip')
-
-    if zip_filename.exists():
-        logger.warning(f'{zip_filename} exists, overwriting...')
-
-    # download the zip file
-    logger.info(f'Downloading to {zip_filename}')
-    with open(zip_filename, 'wb') as f:
-        file_size_dl = 0
-        block_size = 8192
-        while (file_size_dl <= file_size):
-            buffer = file_link.read(block_size)
-            if not buffer:
-                break
-            file_size_dl += len(buffer)
-            f.write(buffer)
-
-            # display progress bar
-            progress = (file_size_dl / file_size)
-            sys.stdout.write('\r')
-            sys.stdout.write('[%-50s] %d%%' % ('=' * int(50 * progress), 100 * progress))
-            sys.stdout.flush()
-        sys.stdout.write('\n')
+    finally:
+        file_link.close()
 
     # extract tif from zip file
     logger.info(f'Extracting {zip_filename}')
@@ -354,7 +357,7 @@ def download_im_collection(im_collection, path, region=None, crs=None, scale=Non
                     The image collection to download
     path : str, pathlib.Path
            Directory to download image files to.  Image filenames will be derived from their earth engine IDs.
-    region : geojson, ee.Geometry, optional
+    region : dict, geojson, ee.Geometry, optional
              Region of interest (WGS84) to export (default: export the entire image granule if it has one).
     crs : str, optional
           WKT, EPSG etc specification of CRS to export to (default: use the image CRS if it has one).
@@ -387,7 +390,7 @@ def download_images(image_df, path, region=None, crs=None, scale=None, band_df=N
                with 'EE_ID' and 'IMAGE' columns specifying the EE image id and ee.Image respectively
     path : str, pathlib.Path
            Directory to download image files to.  Image filenames will be derived from their earth engine IDs.
-    region : geojson, ee.Geometry, optional
+    region : dict, geojson, ee.Geometry, optional
              Region of interest (WGS84) to export (default: export the entire image granule if it has one).
     crs : str, optional
           WKT, EPSG etc specification of CRS to export to (default: use the image CRS if it has one).
@@ -415,7 +418,7 @@ def export_im_collection(im_collection, folder=None, region=None, crs=None, scal
                     The image collection to download
     folder : str, optional
              Google Drive folder to export to (default: root).
-    region : geojson, ee.Geometry, optional
+    region : dict, geojson, ee.Geometry, optional
              Region of interest (WGS84) to export (default: export the entire image granule if it has one).
     crs : str, optional
           WKT, EPSG etc specification of CRS to export to (default: use the image CRS if it has one).
@@ -448,7 +451,7 @@ def export_images(image_df, folder=None, region=None, crs=None, scale=None):
                with 'EE_ID' and 'IMAGE' columns specifying the EE image id and ee.Image respectively
     folder : str, optional
              Google Drive folder to export to (default: root).
-    region : geojson, ee.Geometry, optional
+    region : dict, geojson, ee.Geometry, optional
              Region of interest (WGS84) to export (default: export the entire image granule if it has one).
     crs : str, optional
           WKT, EPSG etc specification of CRS to export to (default: use the image CRS if it has one).
