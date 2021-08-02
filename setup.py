@@ -31,5 +31,6 @@ setup(
     install_requires=[
         'rasterio>=1.2',
         'pandas>=1.3',
+        'earthengine-api >= 0.1.2'
     ],
 )

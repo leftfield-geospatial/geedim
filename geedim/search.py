@@ -14,15 +14,16 @@
     limitations under the License.
 """
 
-## Classes for searching GEE image collections
+##
+# Classes for searching GEE image collections
 
+import logging
 from datetime import timedelta, datetime
 
 import ee
 import pandas
 import rasterio as rio
 from rasterio.warp import transform_geom
-import logging
 
 from geedim import download
 from geedim import get_logger
@@ -31,6 +32,7 @@ from geedim import get_logger
 
 ##
 logger = get_logger(__name__)
+
 
 def get_image_bounds(filename, expand=5):
     """
@@ -56,7 +58,7 @@ def get_image_bounds(filename, expand=5):
         logging.getLogger("rasterio").setLevel(logging.ERROR)
         with rio.open(filename) as im:
             bbox = im.bounds
-            if (im.crs.linear_units == 'metre') and (expand > 0):   # expand the bounding box
+            if (im.crs.linear_units == 'metre') and (expand > 0):  # expand the bounding box
                 expand_x = (bbox.right - bbox.left) * expand / 100.
                 expand_y = (bbox.top - bbox.bottom) * expand / 100.
                 bbox_expand = rio.coords.BoundingBox(bbox.left - expand_x, bbox.bottom - expand_y,
@@ -65,17 +67,18 @@ def get_image_bounds(filename, expand=5):
                 bbox_expand = bbox
 
             coordinates = [[bbox_expand.right, bbox_expand.bottom],
-                          [bbox_expand.right, bbox_expand.top],
-                          [bbox_expand.left, bbox_expand.top],
-                          [bbox_expand.left, bbox_expand.bottom],
-                          [bbox_expand.right, bbox_expand.bottom]]
+                           [bbox_expand.right, bbox_expand.top],
+                           [bbox_expand.left, bbox_expand.top],
+                           [bbox_expand.left, bbox_expand.bottom],
+                           [bbox_expand.right, bbox_expand.bottom]]
 
             bbox_expand_dict = dict(type='Polygon', coordinates=[coordinates])
-            src_bbox_wgs84 = transform_geom(im.crs, 'WGS84', bbox_expand_dict)   # convert to WGS84 geojson
+            src_bbox_wgs84 = transform_geom(im.crs, 'WGS84', bbox_expand_dict)  # convert to WGS84 geojson
     finally:
         logging.getLogger("rasterio").setLevel(logging.WARNING)
 
     return src_bbox_wgs84, im.crs.to_wkt()
+
 
 ##
 class ImSearch:
@@ -90,7 +93,7 @@ class ImSearch:
         """
         self._collection = collection.lower()
         self._ee_collection = None
-        self._im_props = []             # list of image properties to display in search results
+        self._im_props = []  # list of image properties to display in search results
         self._im_collection = None
         self._im_df = None
         self._search_region = None
@@ -110,7 +113,7 @@ class ImSearch:
         Modified image
         """
         return image.set('TIME_DIST', ee.Number(image.get('system:time_start')).
-                         subtract(self._search_date.timestamp()*1000).abs())
+                         subtract(self._search_date.timestamp() * 1000).abs())
 
     def _get_im_collection(self, start_date, end_date, region):
         """
@@ -136,7 +139,7 @@ class ImSearch:
                 map(self._add_timedelta))
 
     @staticmethod
-    def _get_collection_df(im_collection, properties, print=True):
+    def _get_collection_df(im_collection, properties, do_print=True):
         """
         Convert a filtered image collection to a pandas dataframe of image properties
 
@@ -144,9 +147,9 @@ class ImSearch:
         ----------
         im_collection : ee.ImageCollection
                         Filtered image collection
-        properties : list
+        properties : list[str]
                      Image property keys to include in output
-        print : bool, optional
+        do_print : bool, optional
                 Print a table of image properties
 
         Returns
@@ -158,19 +161,18 @@ class ImSearch:
         init_list = ee.List([])
 
         # aggregate relevant properties of im_collection images
-        def aggregrate_props(image, im_prop_list):
-            prop_dict = ee.Dictionary()
-            prop_dict = prop_dict.set('ID', image.get('system:id'))
-            prop_dict = prop_dict.set('DATE', image.get('system:time_start'))
+        def aggregrate_props(image, prop_list):
+            prop = ee.Dictionary()
+            prop = prop.set('ID', image.get('system:id'))
+            prop = prop.set('DATE', image.get('system:time_start'))
             for prop_key in properties:
-                prop_dict = prop_dict.set(prop_key,
-                                          ee.Algorithms.If(image.get(prop_key), image.get(prop_key), ee.String('None')))
-            return ee.List(im_prop_list).add(prop_dict)
+                prop = prop.set(prop_key, ee.Algorithms.If(image.get(prop_key), image.get(prop_key), ee.String('None')))
+            return ee.List(prop_list).add(prop)
 
         # retrieve list of dicts of collection image properties
         im_prop_list = ee.List(im_collection.iterate(aggregrate_props, init_list)).getInfo()
 
-        im_list = im_collection.toList(im_collection.size())    # image objects
+        im_list = im_collection.toList(im_collection.size())  # image objects
 
         # add EE image objects and convert ee.Date to python datetime
         for i, prop_dict in enumerate(im_prop_list):
@@ -181,7 +183,7 @@ class ImSearch:
         im_prop_df = pandas.DataFrame(im_prop_list)
         cols = ['ID', 'DATE'] + properties + ['IMAGE']
         im_prop_df = im_prop_df[cols].sort_values(by='DATE').reset_index(drop=True)
-        if print == True:
+        if do_print:
             logger.info('\n' + im_prop_df[['ID', 'DATE'] + properties].to_string())
         return im_prop_df
 
@@ -214,7 +216,7 @@ class ImSearch:
 
         # filter the image collection
         logger.info(f'Searching for {self._ee_collection} images between {start_date.strftime("%Y-%m-%d")} and '
-                      f'{end_date.strftime("%Y-%m-%d")}')
+                    f'{end_date.strftime("%Y-%m-%d")}')
         self._im_collection = self._get_im_collection(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"),
                                                       region)
 
@@ -226,7 +228,7 @@ class ImSearch:
 
         # print search results
         logger.info(f'Found {num_images} images:')
-        self._im_df = ImSearch._get_collection_df(self._im_collection, self._im_props, print=True)
+        self._im_df = ImSearch._get_collection_df(self._im_collection, self._im_props, do_print=True)
 
         return self._im_df
 
@@ -247,6 +249,7 @@ class ImSearch:
         # set metadata to indicate component images
         return comp_image.set('COMPOSITE_IMAGES', self._im_df[['ID', 'DATE'] + self._im_props].to_string())
 
+
 ##
 class LandsatImSearch(ImSearch):
     def __init__(self, collection='landsat8_c2_l2'):
@@ -261,9 +264,9 @@ class LandsatImSearch(ImSearch):
         ImSearch.__init__(self, collection=collection)
 
         if collection == 'landsat8_c2_l2':
-            self._ee_collection = 'LANDSAT/LC08/C02/T1_L2'     # EE collection name
+            self._ee_collection = 'LANDSAT/LC08/C02/T1_L2'  # EE collection name
             self._im_props = ['VALID_PORTION', 'QA_SCORE_AVG', 'GEOMETRIC_RMSE_VERIFY', 'GEOMETRIC_RMSE_MODEL',
-                              'SUN_AZIMUTH', 'SUN_ELEVATION']   # image properties to include in search results
+                              'SUN_AZIMUTH', 'SUN_ELEVATION']  # image properties to include in search results
         elif collection == 'landsat7_c2_l2':
             self._ee_collection = 'LANDSAT/LE07/C02/T1_L2'
             self._im_props = ['VALID_PORTION', 'QA_SCORE_AVG', 'GEOMETRIC_RMSE_MODEL', 'SUN_AZIMUTH', 'SUN_ELEVATION']
@@ -317,7 +320,7 @@ class LandsatImSearch(ImSearch):
         cloud_shadow_conf = qa_pixel.rightShift(10).bitwiseAnd(3).rename('CLOUD_SHADOW_CONF')
         cirrus_conf = qa_pixel.rightShift(14).bitwiseAnd(3).rename('CIRRUS_CONF')
 
-        if self._ee_collection == 'LANDSAT/LC08/C02/T1_L2':    # landsat8_c2_l2
+        if self._ee_collection == 'LANDSAT/LC08/C02/T1_L2':  # landsat8_c2_l2
             # TODO: is SR_QA_AEROSOL helpful? (Looks suspect for GEF region images)
             # include SR_QA_AEROSOL in valid_mask and q_score
             # bits 6-7 of SR_QA_AEROSOL, are aerosol level where 3 = high, 2=medium, 1=low
@@ -361,9 +364,9 @@ class LandsatImSearch(ImSearch):
             image = image.addBands(valid_mask)
 
         if self._apply_valid_mask:
-            image = image.updateMask(valid_mask)    # mask out cloud, shadow, unfilled etc pixels
+            image = image.updateMask(valid_mask)  # mask out cloud, shadow, unfilled etc pixels
         else:
-            image = image.updateMask(fill_mask)     # mask out unfilled pixels only
+            image = image.updateMask(fill_mask)  # mask out unfilled pixels only
 
         return image.set(valid_portion).set(q_score_avg).addBands(q_score)
 
@@ -422,7 +425,6 @@ class LandsatImSearch(ImSearch):
         self._im_df.IMAGE = im_list
         return self._im_df
 
-
     def get_composite_image(self):
         """
         Create a composite image from search results, favouring pixels with the highest quality score
@@ -460,18 +462,18 @@ class LandsatImSearch(ImSearch):
         init_bands = ee.List([])
 
         def add_refl_bands(band, refl_bands):
-            refl_bands = ee.Algorithms.If(ee.String(band).rindex('SR_B').eq(0), ee.List(refl_bands).add(band), refl_bands)
+            refl_bands = ee.Algorithms.If(ee.String(band).rindex('SR_B').eq(0), ee.List(refl_bands).add(band),
+                                          refl_bands)
             return refl_bands
 
         sr_bands = ee.List(all_bands.iterate(add_refl_bands, init_bands))
-
-        non_sr_bands = all_bands.removeAll(sr_bands)    # all the other non-SR bands
+        non_sr_bands = all_bands.removeAll(sr_bands)  # all the other non-SR bands
 
         # retrieve the scale (mult) and offset (add) parameters for each band
         param_dict = ee.Dictionary(dict(mult=ee.Image().select([]), add=ee.Image().select([])))
 
-        def add_refl_params(band, param_dict):
-            param_dict = ee.Dictionary(param_dict)
+        def add_refl_params(band, param):
+            param = ee.Dictionary(param)
 
             band_num = ee.String(band).slice(-1)
             sr_mult_str = ee.String('REFLECTANCE_MULT_BAND_').cat(band_num)
@@ -482,10 +484,10 @@ class LandsatImSearch(ImSearch):
             sr_add = ee.Image.constant(image.get(sr_add_str)).rename(sr_add_str)
 
             # add the constant scale/offset images for this band to multi-band scale/offset images
-            param_dict = param_dict.set('mult', ee.Image(param_dict.get('mult')).addBands(sr_mult))
-            param_dict = param_dict.set('add', ee.Image(param_dict.get('add')).addBands(sr_add))
+            param = param.set('mult', ee.Image(param.get('mult')).addBands(sr_mult))
+            param = param.set('add', ee.Image(param.get('add')).addBands(sr_add))
 
-            return param_dict
+            return param
 
         param_dict = ee.Dictionary(sr_bands.iterate(add_refl_params, param_dict))
 
@@ -497,6 +499,7 @@ class LandsatImSearch(ImSearch):
 
         # call toFloat after updateMask
         return ee.Image(calib_image.copyProperties(image)).toFloat()
+
 
 ##
 class Sentinel2ImSearch(ImSearch):
@@ -541,7 +544,7 @@ class Sentinel2ImSearch(ImSearch):
         """
 
         image = self._add_timedelta(image)
-        bit_mask = (1 << 11) | (1 << 10)    # bits 10 and 11 are opaque and cirrus clouds respectively
+        bit_mask = (1 << 11) | (1 << 10)  # bits 10 and 11 are opaque and cirrus clouds respectively
         qa = image.select('QA60')
         valid_mask = qa.bitwiseAnd(bit_mask).eq(0).rename('VALID_MASK')
 
@@ -582,7 +585,7 @@ class Sentinel2ImSearch(ImSearch):
                 map(self._check_validity).
                 filter(ee.Filter.gt('VALID_PORTION', self._valid_portion)))
 
-    def search(self, date, region, day_range=16, valid_portion=50, apply_valid_mask = False):
+    def search(self, date, region, day_range=16, valid_portion=50, apply_valid_mask=False):
         """
         Search for Sentinel-2 images based on date, region etc criteria
 
@@ -632,6 +635,7 @@ class Sentinel2ImSearch(ImSearch):
         # set metadata to indicate component images
         return comp_im.set('COMPOSITE_IMAGES', self._im_df[['ID', 'DATE'] + self._im_props].to_string()).toUint16()
 
+
 ##
 class Sentinel2CloudlessImSearch(ImSearch):
     def __init__(self, collection='sentinel2_toa'):
@@ -660,11 +664,11 @@ class Sentinel2CloudlessImSearch(ImSearch):
         self._valid_portion = 90
         self._apply_valid_mask = False
 
-        self._cloud_filter = 60         # Maximum image cloud cover percent allowed in image collection
-        self._cloud_prob_thresh = 40    # Cloud probability (%); values greater than are considered cloud
-        # self._nir_drk_thresh = 0.15     # Near-infrared reflectance; values less than are considered potential cloud shadow
-        self._cloud_proj_dist = 1       # Maximum distance (km) to search for cloud shadows from cloud edges
-        self._buffer = 100              # Distance (m) to dilate the edge of cloud-identified objects
+        self._cloud_filter = 60  # Maximum image cloud cover percent allowed in image collection
+        self._cloud_prob_thresh = 40  # Cloud probability (%); values greater than are considered cloud
+        # self._nir_drk_thresh = 0.15# Near-infrared reflectance; values less than are considered potential cloud shadow
+        self._cloud_proj_dist = 1  # Maximum distance (km) to search for cloud shadows from cloud edges
+        self._buffer = 100  # Distance (m) to dilate the edge of cloud-identified objects
 
     def _check_validity(self, image):
         """
@@ -700,7 +704,7 @@ class Sentinel2CloudlessImSearch(ImSearch):
         proj_dist_px = ee.Number(self._cloud_proj_dist * 1000).divide(min_scale)
         proj_cloud_mask = (cloud_mask.directionalDistanceTransform(shadow_azimuth, proj_dist_px).
                            select('distance').mask().rename('PROJ_CLOUD_MASK'))
-            # .reproject(**{'crs': image.select(0).projection(), 'scale': 100})
+        # .reproject(**{'crs': image.select(0).projection(), 'scale': 100})
 
         if self._ee_collection == 'COPERNICUS/S2_SR':  # use SCL to reduce shadow_mask
             # Note: SCL does not classify cloud shadows well, they are often labelled "dark".  Instead of using only
@@ -709,7 +713,7 @@ class Sentinel2CloudlessImSearch(ImSearch):
             dark_shadow_mask = scl.eq(3).Or(scl.eq(2)).focal_max(self._buffer, 'circle', 'meters')
             shadow_mask = proj_cloud_mask.And(dark_shadow_mask).rename('SHADOW_MASK')
         else:
-            shadow_mask = proj_cloud_mask.rename('SHADOW_MASK')   # mask all areas that could be cloud shadow
+            shadow_mask = proj_cloud_mask.rename('SHADOW_MASK')  # mask all areas that could be cloud shadow
 
         # combine cloud and shadow masks
         valid_mask = (cloud_mask.Or(shadow_mask)).Not().rename('VALID_MASK')
@@ -809,7 +813,6 @@ class Sentinel2CloudlessImSearch(ImSearch):
         self._im_df.IMAGE = im_list
         return self._im_df
 
-
     def get_composite_image(self):
         """
         Create a composite image from search results, favouring pixels with the highest quality score
@@ -830,16 +833,12 @@ class Sentinel2CloudlessImSearch(ImSearch):
         # set metadata to indicate component images
         return comp_im.set('COMPOSITE_IMAGES', self._im_df[['ID', 'DATE'] + self._im_props].to_string()).toUint16()
 
+
 ##
 class ModisNbarImSearch(ImSearch):
     def __init__(self):
         """
         Class for searching the MODIS daily NBAR earth engine image collection
-
-        Parameters
-        ----------
-        collection : str, optional
-                     'modis_nbar' (default)
         """
         ImSearch.__init__(self, 'modis_nbar')
         self._ee_collection = 'MODIS/006/MCD43A4'
@@ -861,13 +860,7 @@ class ModisNbarImSearch(ImSearch):
         : pandas.DataFrame
         Dataframe specifying image properties that match the search criteria
         """
-        self._im_df =  ImSearch.search(self, date, region, day_range=day_range)
-
-        # workaround for GEE bug which exports MODIS images with wrong CRS info
-        # wkt = 'PROJCS["Sinusoidal",GEOGCS["GCS_Undefined",DATUM["D_Undefined",SPHEROID["User_Defined_Spheroid",6371007.181,0.0]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.017453292519943295]],PROJECTION["Sinusoidal"],PARAMETER["False_Easting",0.0],PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",0.0],UNIT["Meter",1.0]]'
-        # wkt = 'PROJCS["MODIS Sinusoidal",GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["Degree",0.017453292519943295]],PROJECTION["Sinusoidal"],PARAMETER["false_easting",0.0],PARAMETER["false_northing",0.0],PARAMETER["central_meridian",0.0],PARAMETER["semi_major",6371007.181],PARAMETER["semi_minor",6371007.181],UNIT["m",1.0]]'
-        # im_list = [image.reproject(wkt, None, image.projection().nominalScale()) for image in self._im_df.IMAGE.values]
-        # self._im_df.IMAGE = im_list
+        self._im_df = ImSearch.search(self, date, region, day_range=day_range)
 
         # TODO: a reproject to avoid GEE 'SR-ORG:6974' export bug?
         # convert all image bands to uint16 in preparation for export
@@ -875,6 +868,4 @@ class ModisNbarImSearch(ImSearch):
         self._im_df.IMAGE = im_list
         return self._im_df
 
-
 ##
-
