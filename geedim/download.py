@@ -26,7 +26,6 @@ import zipfile
 import logging
 
 import ee
-import numpy as np
 import pandas as pd
 import rasterio as rio
 from rasterio.enums import ColorInterp
@@ -62,8 +61,8 @@ def get_image_info(image):
     im_info_dict = image.getInfo()
 
     band_info_df = pd.DataFrame(im_info_dict['bands'])
-    crs_transforms = np.array(band_info_df['crs_transform'].to_list())
-    scales = np.abs(crs_transforms[:, 0]).astype(float)
+    crs_transforms = band_info_df['crs_transform'].values
+    scales = [abs(float(crs_transform[0])) for crs_transform in crs_transforms]
     band_info_df['scale'] = scales
 
     return im_info_dict, band_info_df
@@ -129,12 +128,12 @@ def export_image(image, filename, folder=None, region=None, crs=None, scale=None
     im_info_dict, band_info_df = get_image_info(image)
 
     # if the image is in WGS84 and has no scale (probable composite), then exit
-    if np.all(band_info_df['crs'] == 'EPSG:4326') and np.all(band_info_df['scale'] == 1) and \
+    if all(band_info_df['crs'] == 'EPSG:4326') and all(band_info_df['scale'] == 1) and \
             (crs is None or scale is None):
             raise Exception(f'This appears to be a composite image in WGS84, specify a destination scale and CRS')
 
     # if it is a native MODIS CRS then exit to avoid GEE bug
-    if np.any(band_info_df['crs'] == 'SR-ORG:6974') and (crs is None):
+    if any(band_info_df['crs'] == 'SR-ORG:6974') and (crs is None):
         logger.warning(f'GEE does not populate the export projection correctly when when exporting in the native MODIS CRS')
 
     if crs is None:
@@ -217,11 +216,11 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
     im_info_dict, band_info_df = get_image_info(image)
 
     # if the image is in WGS84 and has no scale (probable composite), then exit
-    if np.all(band_info_df['crs'] == 'EPSG:4326') and np.all(band_info_df['scale'] == 1) and\
+    if all(band_info_df['crs'] == 'EPSG:4326') and all(band_info_df['scale'] == 1) and\
             (crs is None or scale is None):
             raise Exception(f'This appears to be a composite image in WGS84, specify a destination scale and CRS')
 
-    if np.any(band_info_df['crs'] == 'SR-ORG:6974') and (crs is None):
+    if any(band_info_df['crs'] == 'SR-ORG:6974') and (crs is None):
         logger.warning(f'GEE does not populate the export projection correctly when when exporting in the native MODIS CRS')
 
     if crs is None:

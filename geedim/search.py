@@ -22,6 +22,7 @@ import ee
 import pandas
 import rasterio as rio
 from rasterio.warp import transform_geom
+import logging
 
 from geedim import download
 from geedim import get_logger
@@ -49,24 +50,30 @@ def get_image_bounds(filename, expand=5):
     crs: str
          WKT CRS string of image file
     """
-    with rio.open(filename) as im:
-        bbox = im.bounds
-        if (im.crs.linear_units == 'metre') and (expand > 0):   # expand the bounding box
-            expand_x = (bbox.right - bbox.left) * expand / 100.
-            expand_y = (bbox.top - bbox.bottom) * expand / 100.
-            bbox_expand = rio.coords.BoundingBox(bbox.left - expand_x, bbox.bottom - expand_y,
-                                                 bbox.right + expand_x, bbox.top + expand_y)
-        else:
-            bbox_expand = bbox
+    try:
+        # GEE sets tif colorinterp tags incorrectly, suppress rasterio warning relating to this:
+        # 'Sum of Photometric type-related color channels and ExtraSamples doesn't match SamplesPerPixel'
+        logging.getLogger("rasterio").setLevel(logging.ERROR)
+        with rio.open(filename) as im:
+            bbox = im.bounds
+            if (im.crs.linear_units == 'metre') and (expand > 0):   # expand the bounding box
+                expand_x = (bbox.right - bbox.left) * expand / 100.
+                expand_y = (bbox.top - bbox.bottom) * expand / 100.
+                bbox_expand = rio.coords.BoundingBox(bbox.left - expand_x, bbox.bottom - expand_y,
+                                                     bbox.right + expand_x, bbox.top + expand_y)
+            else:
+                bbox_expand = bbox
 
-        coordinates = [[bbox_expand.right, bbox_expand.bottom],
-                      [bbox_expand.right, bbox_expand.top],
-                      [bbox_expand.left, bbox_expand.top],
-                      [bbox_expand.left, bbox_expand.bottom],
-                      [bbox_expand.right, bbox_expand.bottom]]
+            coordinates = [[bbox_expand.right, bbox_expand.bottom],
+                          [bbox_expand.right, bbox_expand.top],
+                          [bbox_expand.left, bbox_expand.top],
+                          [bbox_expand.left, bbox_expand.bottom],
+                          [bbox_expand.right, bbox_expand.bottom]]
 
-        bbox_expand_dict = dict(type='Polygon', coordinates=[coordinates])
-        src_bbox_wgs84 = transform_geom(im.crs, 'WGS84', bbox_expand_dict)   # convert to WGS84 geojson
+            bbox_expand_dict = dict(type='Polygon', coordinates=[coordinates])
+            src_bbox_wgs84 = transform_geom(im.crs, 'WGS84', bbox_expand_dict)   # convert to WGS84 geojson
+    finally:
+        logging.getLogger("rasterio").setLevel(logging.WARNING)
 
     return src_bbox_wgs84, im.crs.to_wkt()
 
@@ -82,6 +89,7 @@ class ImSearch:
                      GEE image collection string e.g. 'MODIS/006/MCD43A4'
         """
         self._collection = collection.lower()
+        self._ee_collection = None
         self._im_props = []             # list of image properties to display in search results
         self._im_collection = None
         self._im_df = None
@@ -122,7 +130,7 @@ class ImSearch:
         : ee.ImageCollection
         The filtered image collection
         """
-        return (ee.ImageCollection(self._collection).
+        return (ee.ImageCollection(self._ee_collection).
                 filterDate(start_date, end_date).
                 filterBounds(region).
                 map(self._add_timedelta))
@@ -205,7 +213,7 @@ class ImSearch:
         end_date = date + timedelta(days=day_range)
 
         # filter the image collection
-        logger.info(f'Searching for {self._collection} images between {start_date.strftime("%Y-%m-%d")} and '
+        logger.info(f'Searching for {self._ee_collection} images between {start_date.strftime("%Y-%m-%d")} and '
                       f'{end_date.strftime("%Y-%m-%d")}')
         self._im_collection = self._get_im_collection(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"),
                                                       region)
@@ -241,23 +249,23 @@ class ImSearch:
 
 ##
 class LandsatImSearch(ImSearch):
-    def __init__(self, collection='landsat8'):
+    def __init__(self, collection='landsat8_c2_l2'):
         """
         Class for searching Landsat 7-8 earth engine image collections
 
         Parameters
         ----------
         collection : str, optional
-                     'landsat7' or 'landsat8' (default)
+                     'landsat7_c2_l2' or 'landsat8_c2_l2' (default)
         """
         ImSearch.__init__(self, collection=collection)
 
-        if collection == 'landsat8':
-            self._collection = 'LANDSAT/LC08/C02/T1_L2'     # EE collection name
+        if collection == 'landsat8_c2_l2':
+            self._ee_collection = 'LANDSAT/LC08/C02/T1_L2'     # EE collection name
             self._im_props = ['VALID_PORTION', 'QA_SCORE_AVG', 'GEOMETRIC_RMSE_VERIFY', 'GEOMETRIC_RMSE_MODEL',
                               'SUN_AZIMUTH', 'SUN_ELEVATION']   # image properties to include in search results
-        elif collection == 'landsat7':
-            self._collection = 'LANDSAT/LE07/C02/T1_L2'
+        elif collection == 'landsat7_c2_l2':
+            self._ee_collection = 'LANDSAT/LE07/C02/T1_L2'
             self._im_props = ['VALID_PORTION', 'QA_SCORE_AVG', 'GEOMETRIC_RMSE_MODEL', 'SUN_AZIMUTH', 'SUN_ELEVATION']
         else:
             # TODO: add support for landsat 4-5 collection 2 when they are available
@@ -309,7 +317,7 @@ class LandsatImSearch(ImSearch):
         cloud_shadow_conf = qa_pixel.rightShift(10).bitwiseAnd(3).rename('CLOUD_SHADOW_CONF')
         cirrus_conf = qa_pixel.rightShift(14).bitwiseAnd(3).rename('CIRRUS_CONF')
 
-        if self._collection == 'LANDSAT/LC08/C02/T1_L2':    # landsat8
+        if self._ee_collection == 'LANDSAT/LC08/C02/T1_L2':    # landsat8_c2_l2
             # TODO: is SR_QA_AEROSOL helpful? (Looks suspect for GEF region images)
             # include SR_QA_AEROSOL in valid_mask and q_score
             # bits 6-7 of SR_QA_AEROSOL, are aerosol level where 3 = high, 2=medium, 1=low
@@ -378,7 +386,7 @@ class LandsatImSearch(ImSearch):
         The filtered image collection
         """
 
-        return (ee.ImageCollection(self._collection).
+        return (ee.ImageCollection(self._ee_collection).
                 filterDate(start_date, end_date).
                 filterBounds(region).
                 map(self._check_validity).
@@ -504,9 +512,9 @@ class Sentinel2ImSearch(ImSearch):
         ImSearch.__init__(self, collection=collection)
 
         if collection == 'sentinel2_toa':
-            self._collection = 'COPERNICUS/S2'
+            self._ee_collection = 'COPERNICUS/S2'
         elif collection == 'sentinel2_sr':
-            self._collection = 'COPERNICUS/S2_SR'
+            self._ee_collection = 'COPERNICUS/S2_SR'
         else:
             raise ValueError(f'Unsupported sentinel2 collection: {collection}')
 
@@ -568,7 +576,7 @@ class Sentinel2ImSearch(ImSearch):
         : ee.ImageCollection
         The filtered image collection
         """
-        return (ee.ImageCollection(self._collection).
+        return (ee.ImageCollection(self._ee_collection).
                 filterDate(start_date, end_date).
                 filterBounds(region).
                 map(self._check_validity).
@@ -639,9 +647,9 @@ class Sentinel2CloudlessImSearch(ImSearch):
         ImSearch.__init__(self, collection=collection)
 
         if collection == 'sentinel2_toa':
-            self._collection = 'COPERNICUS/S2'
+            self._ee_collection = 'COPERNICUS/S2'
         elif collection == 'sentinel2_sr':
-            self._collection = 'COPERNICUS/S2_SR'
+            self._ee_collection = 'COPERNICUS/S2_SR'
         else:
             raise ValueError(f'Unsupported sentinel2 collection: {collection}')
 
@@ -694,7 +702,7 @@ class Sentinel2CloudlessImSearch(ImSearch):
                            select('distance').mask().rename('PROJ_CLOUD_MASK'))
             # .reproject(**{'crs': image.select(0).projection(), 'scale': 100})
 
-        if self._collection == 'COPERNICUS/S2_SR':  # use SCL to reduce shadow_mask
+        if self._ee_collection == 'COPERNICUS/S2_SR':  # use SCL to reduce shadow_mask
             # Note: SCL does not classify cloud shadows well, they are often labelled "dark".  Instead of using only
             # cloud shadow areas from this band, we combine it with the projected dark and shadow areas from s2cloudless
             scl = image.select('SCL')
@@ -752,7 +760,7 @@ class Sentinel2CloudlessImSearch(ImSearch):
         """
         # adapted from https://developers.google.com/earth-engine/tutorials/community/sentinel-2-s2cloudless
 
-        s2_sr_toa_col = (ee.ImageCollection(self._collection)
+        s2_sr_toa_col = (ee.ImageCollection(self._ee_collection)
                          .filterBounds(region)
                          .filterDate(start_date, end_date)
                          .filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', self._cloud_filter)))
@@ -831,10 +839,10 @@ class ModisNbarImSearch(ImSearch):
         Parameters
         ----------
         collection : str, optional
-                     'modis' (default)
+                     'modis_nbar' (default)
         """
-        ImSearch.__init__(self, 'modis')
-        self._collection = 'MODIS/006/MCD43A4'
+        ImSearch.__init__(self, 'modis_nbar')
+        self._ee_collection = 'MODIS/006/MCD43A4'
 
     def search(self, date, region, day_range=16):
         """

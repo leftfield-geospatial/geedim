@@ -1,0 +1,30 @@
+# Config file for conda package
+#
+#  To build, install & remove the development version:
+#    git clone git+https://github.com/dugalh/homonim.git
+#    conda build .
+#    conda install -c conda-forge --use-local homonim
+#    conda remove -c conda-forge --use-local mhomonim
+
+package:
+  name: geedim
+  version: 0.1.0
+
+source:
+  git_url: https://github.com/dugalh/geedim.git
+
+requirements:
+  run:
+    - python >=3.8
+    - rasterio >=1.2
+    - pandas >=1.3
+    - earthengine-api >=0.1.2
+
+build:
+  number: 0
+  noarch: python
+  script: pip install -e .
+
+about:
+  home: https://github.com/dugalh/homonim
+  license: AGPLv3

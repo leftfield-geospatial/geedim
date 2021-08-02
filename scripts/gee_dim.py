@@ -44,8 +44,8 @@ def parse_arguments():
     parser.add_argument('-d', '--date', help='capture date to search around e.g. \'2015-01-28\' '
                                              '(default: use creation time of the <extent_file>)', type=str)
     parser.add_argument('-c', '--collection',
-                        help='image collection to search: \'landsat7\'=LANDSAT/LE07/C02/T1_L2, '
-                             '\'landsat8\'=LANDSAT/LC08/C02/T1_L2, \'sentinel2_toa\'=COPERNICUS/S2, \'sentinel2_sr\'=COPERNICUS/S2_SR, '
+                        help='image collection to search: \'landsat7_c2_l2\'=LANDSAT/LE07/C02/T1_L2, '
+                             '\'landsat8_c2_l2\'=LANDSAT/LC08/C02/T1_L2, \'sentinel2_toa\'=COPERNICUS/S2, \'sentinel2_sr\'=COPERNICUS/S2_SR, '
                              '\'modis\'=MODIS/006/MCD43A4, *=valid GEE image collection name',
                         choices=list(collection_info.keys()), type=str)
     parser.add_argument('-o', '--output_filename',
@@ -85,7 +85,7 @@ def main(args):
     ee.Initialize()
 
     ## get extents and search
-    if args.collection == 'landsat7':
+    if args.collection == 'landsat7_c2_l2':
         min_images = 2  # composite of >1 image to get rid of scanline error
     else:
         min_images = 1
