@@ -1,10 +1,10 @@
 # Config file for conda package
 #
 #  To build, install & remove the development version:
-#    git clone git+https://github.com/dugalh/homonim.git
+#    git clone git+https://github.com/dugalh/geedim.git
 #    conda build .
-#    conda install -c conda-forge --use-local homonim
-#    conda remove -c conda-forge --use-local mhomonim
+#    conda install -c conda-forge --use-local geedim
+#    conda remove -c conda-forge --use-local geedim
 
 package:
   name: geedim
@@ -26,5 +26,5 @@ build:
   script: pip install -e .
 
 about:
-  home: https://github.com/dugalh/homonim
-  license: AGPLv3
+  home: https://github.com/dugalh/geedim
+  license: Apache-2.0
