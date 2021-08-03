@@ -32,18 +32,9 @@ import pandas as pd
 import rasterio as rio
 from rasterio.enums import ColorInterp
 
-from geedim import get_logger, root_path
+from geedim import get_logger
 
 logger = get_logger(__name__)
-
-
-def load_collection_info():
-    """
-    Loads the satellite band etc information from json file into a dict
-    """
-    with open(root_path.joinpath('data/inputs/satellite_info.json')) as f:
-        satellite_info = json.load(f)
-    return satellite_info
 
 
 def get_image_info(image):

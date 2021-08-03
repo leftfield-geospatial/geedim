@@ -102,8 +102,7 @@ class TestGeeDim(unittest.TestCase):
                                    (23.92842810355374, -33.58496384476743),
                                    (24.018987152147467, -33.58425124616373)]]}
         date = datetime.strptime('2019-02-01', '%Y-%m-%d')
-        collection_info = download.load_collection_info()
-        band_df = pd.DataFrame.from_dict(collection_info[imsearch_obj._collection]['bands'])
+        band_df = pd.DataFrame.from_dict(imsearch_obj._collection_info['bands'])
 
         image_df = imsearch_obj.search(date, region, day_range=32)
 
@@ -139,7 +138,6 @@ class TestGeeDim(unittest.TestCase):
         Test search and download/export for each *ImSearch class
         """
         self.test_export = True
-        self.collection_info = download.load_collection_info()
 
         ee.Initialize()
 
