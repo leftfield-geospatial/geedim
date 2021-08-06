@@ -1,5 +1,5 @@
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import ee
 import pandas as pd
@@ -104,7 +104,7 @@ class TestGeeDim(unittest.TestCase):
         date = datetime.strptime('2019-02-01', '%Y-%m-%d')
         band_df = pd.DataFrame.from_dict(imsearch_obj._collection_info['bands'])
 
-        image_df = imsearch_obj.search(date, region, day_range=32)
+        image_df = imsearch_obj.search(date, date + timedelta(days=32), region)
 
         # check search results
         self.assertGreater(image_df.shape[0], 0, msg='Search returned one or more images')

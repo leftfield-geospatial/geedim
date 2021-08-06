@@ -42,12 +42,6 @@ def load_collection_info():
 
     return satellite_info
 
-class_col_map = {'landsat7_c2_l2': lambda: LandsatImSearch(collection='landsat7_c2_l2'),
-                 'landsat8_c2_l2': lambda: LandsatImSearch(collection='landsat8_c2_l2'),
-                 'sentinel2_toa': lambda: Sentinel2CloudlessImSearch(collection='sentinel2_toa'),
-                 'sentinel2_sr': lambda: Sentinel2CloudlessImSearch(collection='sentinel2_sr'),
-                 'modis_nbar': lambda: LandsatImSearch(collection='modis_nbar')}
-
 def get_image_bounds(filename, expand=5):
     """
     Get a WGS84 geojson polygon representing the optionally expanded bounds of an image
@@ -208,18 +202,18 @@ class ImSearch:
             logger.info('\n' + im_prop_df[['ID', 'DATE'] + properties].to_string())
         return im_prop_df
 
-    def search(self, date, region, day_range=16):
+    def search(self, start_date, end_date, region):
         """
         Search for images based on date and region
 
         Parameters
         ----------
-        date : datetime.datetime
-               Python datetime specifying the desired image capture date
+        start_date : datetime.datetime
+                     Python datetime specifying the start image capture date
+        end_date : datetime.datetime
+                   Python datetime specifying the end image capture date (if None, then set to start_date)
         region : dict, geojson, ee.Geometry, ee.Geometry
                  Polygon in WGS84 specifying a region that images should intersect
-        day_range : int, optional
-                    Number of days before and after `date` to search within
 
         Returns
         -------
@@ -230,10 +224,12 @@ class ImSearch:
         self._im_df = None
         self._im_collection = None
         self._search_region = region
-        self._search_date = date
+        if end_date is None:
+            end_date = start_date
+        self._search_date = start_date + (end_date-start_date)/2
 
-        start_date = date - timedelta(days=day_range)
-        end_date = date + timedelta(days=day_range)
+        # start_date = date - timedelta(days=day_range)
+        # end_date = date + timedelta(days=day_range)
 
         # filter the image collection
         logger.info(f'Searching for {self._collection_info["ee_collection"]} images between '
@@ -403,17 +399,17 @@ class LandsatImSearch(ImSearch):
                 map(lambda image: self.process_image(image, region=region, apply_mask=self._apply_valid_mask)).
                 filter(ee.Filter.gt('VALID_PORTION', self._valid_portion)))
 
-    def search(self, date, region, day_range=16, valid_portion=50, apply_valid_mask=False):
+    def search(self, start_date, end_date, region, valid_portion=50, apply_valid_mask=False):
         """
         Search for Landsat images based on date, region etc criteria
         
         Parameters
-        date : datetime.datetime
-               Python datetime specifying the desired image capture date
+        start_date : datetime.datetime
+                     Python datetime specifying the start image capture date
+        end_date : datetime.datetime
+                   Python datetime specifying the end image capture date (if None, then set to start_date)
         region : dict, geojson, ee.Geometry
                  Polygon in WGS84 specifying a region that images should intersect
-        day_range : int, optional
-                    Number of days before and after `date` to search within
         valid_portion: int, optional
                      Minimum portion (%) of image pixels that should be valid (filled, and not cloud or shadow)
         apply_valid_mask : bool, optional
@@ -426,7 +422,7 @@ class LandsatImSearch(ImSearch):
         """
         self._valid_portion = valid_portion
         self._apply_valid_mask = apply_valid_mask
-        self._im_df = ImSearch.search(self, date, region, day_range=day_range)
+        self._im_df = ImSearch.search(self, start_date, end_date, region)
 
         # convert all image bands to uint16
         im_list = [image.toUint16() for image in self._im_df.IMAGE.values]
@@ -576,17 +572,17 @@ class Sentinel2ImSearch(ImSearch):
                 map(lambda image: self.process_image(image, region=region, apply_mask=self._apply_valid_mask)).
                 filter(ee.Filter.gt('VALID_PORTION', self._valid_portion)))
 
-    def search(self, date, region, day_range=16, valid_portion=50, apply_valid_mask=False):
+    def search(self, start_date, end_date, region, valid_portion=50, apply_valid_mask=False):
         """
         Search for Sentinel-2 images based on date, region etc criteria
 
         Parameters
-        date : datetime.datetime
-               Python datetime specifying the desired image capture date
+        start_date : datetime.datetime
+                     Python datetime specifying the start image capture date
+        end_date : datetime.datetime
+                   Python datetime specifying the end image capture date (if None, then set to start_date)
         region : dict, geojson, ee.Geometry
                  Polygon in WGS84 specifying a region that images should intersect
-        day_range : int, optional
-                    Number of days before and after `date` to search within
         valid_portion: int, optional
                      Minimum portion (%) of image pixels that should be valid (not cloud)
         apply_valid_mask : bool, optional
@@ -599,7 +595,7 @@ class Sentinel2ImSearch(ImSearch):
         """
         self._valid_portion = valid_portion
         self._apply_valid_mask = apply_valid_mask
-        self._im_df = ImSearch.search(self, date, region, day_range=day_range)
+        self._im_df = ImSearch.search(self, start_date, end_date, region)
 
         # convert all image bands to uint16 in preparation for export
         im_list = [image.toUint16() for image in self._im_df.IMAGE.values]
@@ -753,21 +749,21 @@ class Sentinel2CloudlessImSearch(ImSearch):
             })})).map(lambda image: self.process_image(image, region=region, apply_mask=self._apply_valid_mask)).
                 filter(ee.Filter.gt('VALID_PORTION', self._valid_portion)))
 
-    def search(self, date, region, day_range=16, valid_portion=50, apply_valid_mask=False):
+    def search(self, start_date, end_date, region, valid_portion=50, apply_valid_mask=False):
         """
         Search for Sentinel-2 images based on date, region etc criteria
 
         Parameters
-        date : datetime.datetime
-               Python datetime specifying the desired image capture date
+        start_date : datetime.datetime
+                     Python datetime specifying the start image capture date
+        end_date : datetime.datetime
+                   Python datetime specifying the end image capture date (if None, then set to start_date)
         region : dict, geojson, ee.Geometry
                  Polygon in WGS84 specifying a region that images should intersect
-        day_range : int, optional
-                    Number of days before and after `date` to search within
         valid_portion: int, optional
-                     Minimum portion (%) of image pixels that should be valid (filled, and not cloud or shadow)
+                     Minimum portion (%) of image pixels that should be valid (not cloud)
         apply_valid_mask : bool, optional
-                        Mask out clouds, shadows and aerosols in search result images
+                        Mask out clouds in search result images
 
         Returns
         -------
@@ -776,7 +772,7 @@ class Sentinel2CloudlessImSearch(ImSearch):
         """
         self._valid_portion = valid_portion
         self._apply_valid_mask = apply_valid_mask
-        self._im_df = ImSearch.search(self, date, region, day_range=day_range)
+        self._im_df = ImSearch.search(self, start_date, end_date, region)
 
         # convert all image bands to uint16 in preparation for export
         im_list = [image.toUint16() for image in self._im_df.IMAGE.values]
@@ -793,24 +789,25 @@ class ModisNbarImSearch(ImSearch):
         """
         ImSearch.__init__(self, collection)
 
-    def search(self, date, region, day_range=16):
+    def search(self, start_date, end_date, region):
         """
-        Search for MODIS daily NBAR images based on date & region
+        Search for images based on date and region
 
         Parameters
-        date : datetime.datetime
-               Python datetime specifying the desired image capture date
-        region : dict, geojson, ee.Geometry
+        ----------
+        start_date : datetime.datetime
+                     Python datetime specifying the start image capture date
+        end_date : datetime.datetime
+                   Python datetime specifying the end image capture date (if None, then set to start_date)
+        region : dict, geojson, ee.Geometry, ee.Geometry
                  Polygon in WGS84 specifying a region that images should intersect
-        day_range : int, optional
-                    Number of days before and after `date` to search within
 
         Returns
         -------
-        : pandas.DataFrame
+        image_df : pandas.DataFrame
         Dataframe specifying image properties that match the search criteria
         """
-        self._im_df = ImSearch.search(self, date, region, day_range=day_range)
+        self._im_df = ImSearch.search(self, start_date, end_date, region)
 
         # TODO: a reproject to avoid GEE 'SR-ORG:6974' export bug?
         # convert all image bands to uint16 in preparation for export
