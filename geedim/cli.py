@@ -17,6 +17,7 @@
 import click
 
 from geedim import search
+import ee
 
 # map collection keys to classes
 # cls_col_map = {'landsat7_c2_l2': lambda: search.LandsatImSearch(collection='landsat7_c2_l2'),
@@ -37,8 +38,8 @@ def cli():
 
 @click.command()
 @click.option(
-    "-x",
-    "--dataset",
+    "-c",
+    "--collection",
     type=click.Choice(list(cls_col_map.keys()), case_sensitive=False),
     help="Collection.",
     default="landsat8_c2_l2",
@@ -50,9 +51,11 @@ def cli():
     nargs=4,
     help="Bounding box in WGS84 (xmin, ymin, xmax, ymax).",
 )
-@click.option("-s", "--start_date", type=click.DateTime, help="Start date (YYYY-MM-DD).")
-@click.option("-e", "--end_date", type=click.DateTime, help="End date (YYYY-MM-DD).")
+@click.option("-s", "--start_date", type=click.DateTime(), help="Start date (YYYY-MM-DD).")
+@click.option("-e", "--end_date", type=click.DateTime(), help="End date (YYYY-MM-DD).")
 def search(collection, bbox, start_date, end_date):
+    ee.Initialize()
+
     imsearch = cls_col_map[collection](collection=collection)
 
     xmin, ymin, xmax, ymax = bbox
@@ -60,3 +63,5 @@ def search(collection, bbox, start_date, end_date):
     bbox_dict = dict(type='Polygon', coordinates=[coordinates])
 
     res = imsearch.search(start_date, end_date, bbox_dict)
+cli.add_command(search)
+
