@@ -201,6 +201,7 @@ class ImSearch:
         # convert to DataFrame
         im_prop_df = pandas.DataFrame(im_prop_list)
         im_prop_df = im_prop_df.sort_values(by='system:time_start').reset_index(drop=True)
+        im_prop_df = im_prop_df.rename(columns=dict(zip(property_df.PROPERTY, property_df.ABBREV))) # rename cols to abbrev
 
         if do_print:
             logger.info('\nImage property descriptions:\n' +
@@ -209,8 +210,8 @@ class ImSearch:
             logger.info('\n' + im_prop_df.to_string(
                 float_format='%.2f',
                 formatters={'system:time_start': lambda x: datetime.strftime(x, '%Y-%m-%d %H:%M')},
-                columns=property_df.PROPERTY,
-                header=property_df.ABBREV,
+                columns=property_df.ABBREV,
+                # header=property_df.ABBREV,
                 index=False,
                 justify='center'))
 
