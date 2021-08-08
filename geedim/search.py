@@ -18,10 +18,11 @@
 # Classes for searching GEE image collections
 import json
 import logging
-from datetime import timedelta, datetime
+from datetime import datetime
 
 import ee
 import pandas
+import pandas as pd
 import rasterio as rio
 from rasterio.warp import transform_geom
 
@@ -103,11 +104,12 @@ class ImSearch:
         if not collection in collection_info:
             raise ValueError(f'Unknown collection: {collection}')
         self._collection_info = collection_info[collection]
-        self._im_props = []  # list of image properties to display in search results
+        self._im_props = {}  # list of image properties to display in search results
         self._im_collection = None
         self._im_df = None
         self._search_region = None
         self._search_date = None
+        self._im_transform = lambda image: image
 
     def process_image(self, image, region=None, apply_mask=True):
         """
@@ -154,23 +156,26 @@ class ImSearch:
                 map(lambda image: self.process_image(image, region=region)))
 
     @staticmethod
-    def _get_collection_df(im_collection, properties, do_print=True):
+    def _get_collection_df(im_collection, property_dict={}, im_transform = lambda x: x, do_print=True):
         """
-        Convert a filtered image collection to a pandas dataframe of image properties
+        Convert a filtered image collection to a pandas dataframe of images and their properties
 
         Parameters
         ----------
         im_collection : ee.ImageCollection
                         Filtered image collection
-        properties : list[str]
-                     Image property keys to include in output
+        property_dict : dict{str,str}, optional
+                        Dict of image properties  to include in dataframe
+                        {abbrev image property key1, full image property key1, ...}
+        im_transform : lambda, optional
+                        Transformation function to apply to search result images
         do_print : bool, optional
-                Print a table of image properties
+                   Print the dataframe
 
         Returns
         -------
         : pandas.DataFrame
-        Table of image properties including the ee.Image objects
+        Dataframe of ee.Image objects and their properties
         """
 
         init_list = ee.List([])
@@ -180,7 +185,7 @@ class ImSearch:
             prop = ee.Dictionary()
             prop = prop.set('ID', image.get('system:id'))
             prop = prop.set('DATE', image.get('system:time_start'))
-            for prop_key in properties:
+            for prop_key in property_dict.values():
                 prop = prop.set(prop_key, ee.Algorithms.If(image.get(prop_key), image.get(prop_key), ee.String('None')))
             return ee.List(prop_list).add(prop)
 
@@ -192,14 +197,25 @@ class ImSearch:
         # add EE image objects and convert ee.Date to python datetime
         for i, prop_dict in enumerate(im_prop_list):
             prop_dict['DATE'] = datetime.utcfromtimestamp(prop_dict['DATE'] / 1000)
-            prop_dict['IMAGE'] = ee.Image(im_list.get(i))
+            prop_dict['IMAGE'] = im_transform(ee.Image(im_list.get(i)))   # TODO: remove IMAGE ?
 
         # convert to DataFrame
         im_prop_df = pandas.DataFrame(im_prop_list)
-        cols = ['ID', 'DATE'] + properties + ['IMAGE']
+        cols = ['ID', 'DATE'] + list(property_dict.values()) + ['IMAGE']
         im_prop_df = im_prop_df[cols].sort_values(by='DATE').reset_index(drop=True)
         if do_print:
-            logger.info('\n' + im_prop_df[['ID', 'DATE'] + properties].to_string())
+            print_cols = ['ID', 'DATE'] + list(property_dict.values())
+            header = ['ID', 'DATE'] + list(property_dict.keys())
+            key_df = pd.DataFrame.from_dict(dict(ABBREV=header, NAME=print_cols))
+
+            logger.info('\nIMAGE PROPERTY KEY:\n' + key_df.to_string(index=False, justify='right'))
+            logger.info('\n' + im_prop_df.to_string(
+                float_format='%.2f',
+                formatters={'DATE': lambda x: datetime.strftime(x, '%Y-%m-%d %H:%M')},
+                columns=print_cols,
+                header=header,
+                index=False,
+                justify='center'))
         return im_prop_df
 
     def search(self, start_date, end_date, region):
@@ -246,7 +262,8 @@ class ImSearch:
 
         # print search results
         logger.info(f'Found {num_images} images:')
-        self._im_df = ImSearch._get_collection_df(self._im_collection, self._im_props, do_print=True)
+        self._im_df = ImSearch._get_collection_df(self._im_collection, self._im_props, do_print=True,
+                                                  im_transform=self._im_transform)
 
         return self._im_df
 
@@ -266,16 +283,19 @@ class LandsatImSearch(ImSearch):
         ImSearch.__init__(self, collection=collection)
 
         if collection == 'landsat8_c2_l2':
-            self._im_props = ['VALID_PORTION', 'QA_SCORE_AVG', 'GEOMETRIC_RMSE_VERIFY', 'GEOMETRIC_RMSE_MODEL',
-                              'SUN_AZIMUTH', 'SUN_ELEVATION']  # image properties to include in search results
+            # self._im_props = {'Valid (%)':'VALID_PORTION', 'Qual. Score ':'QA_SCORE_AVG', 'Geom. RMSE':'GEOMETRIC_RMSE_MODEL',
+            #                   'Solar Azim. (deg)':'SUN_AZIMUTH', 'Solar Elev. (deg)':'SUN_ELEVATION'}  # image properties to include in search results
+            self._im_props = {'VALID':'VALID_PORTION', 'SCORE':'QA_SCORE_AVG', 'GRMSE':'GEOMETRIC_RMSE_MODEL', 'SAA':'SUN_AZIMUTH', 'SEA':'SUN_ELEVATION'}
         elif collection == 'landsat7_c2_l2':
-            self._im_props = ['VALID_PORTION', 'QA_SCORE_AVG', 'GEOMETRIC_RMSE_MODEL', 'SUN_AZIMUTH', 'SUN_ELEVATION']
+            # self._im_props = ['VALID_PORTION', 'QA_SCORE_AVG', 'GEOMETRIC_RMSE_MODEL', 'SUN_AZIMUTH', 'SUN_ELEVATION']
+            self._im_props = {'VALID':'VALID_PORTION', 'SCORE':'QA_SCORE_AVG', 'GRMSE':'GEOMETRIC_RMSE_MODEL', 'SAA':'SUN_AZIMUTH', 'SEA':'SUN_ELEVATION'}
         else:
             # TODO: add support for landsat 4-5 collection 2 when they are available
             raise ValueError(f'Unsupported landsat collection: {collection}')
 
         self._valid_portion = 90
         self._apply_valid_mask = False
+        self._im_transform = lambda image : ee.Image.toUint16(image)
 
     def process_image(self, image, region=None, apply_mask=True):
         """
@@ -422,12 +442,7 @@ class LandsatImSearch(ImSearch):
         """
         self._valid_portion = valid_portion
         self._apply_valid_mask = apply_valid_mask
-        self._im_df = ImSearch.search(self, start_date, end_date, region)
-
-        # convert all image bands to uint16
-        im_list = [image.toUint16() for image in self._im_df.IMAGE.values]
-        self._im_df.IMAGE = im_list
-        return self._im_df
+        return ImSearch.search(self, start_date, end_date, region)
 
     @staticmethod
     def convert_dn_to_sr(image):
@@ -502,12 +517,14 @@ class Sentinel2ImSearch(ImSearch):
         """
         ImSearch.__init__(self, collection=collection)
 
-        self._im_props = ['VALID_PORTION', 'GEOMETRIC_QUALITY_FLAG', 'RADIOMETRIC_QUALITY_FLAG',
-                          'MEAN_SOLAR_AZIMUTH_ANGLE', 'MEAN_SOLAR_ZENITH_ANGLE', 'MEAN_INCIDENCE_AZIMUTH_ANGLE_B1',
-                          'MEAN_INCIDENCE_ZENITH_ANGLE_B1']
+        self._im_props = {'VALID':'VALID_PORTION', 'RADQ':'RADIOMETRIC_QUALITY', 'GEOMQ':'GEOMETRIC_QUALITY',
+                          'SAA':'MEAN_SOLAR_AZIMUTH_ANGLE', 'SZA':'MEAN_SOLAR_ZENITH_ANGLE', 'VAA':'MEAN_INCIDENCE_AZIMUTH_ANGLE_B1',
+                          'VZA':'MEAN_INCIDENCE_ZENITH_ANGLE_B1'}
+        # RADIATIVE_TRANSFER_ACCURACY, RADIOMETRIC_QUALITY_FLAG, GENERAL_QUALITY, 'GEOMETRIC_QUALITY', 'RADIOMETRIC_QUALITY',
 
         self._valid_portion = 90
         self._apply_valid_mask = False
+        self._im_transform = lambda image : ee.Image.toUint16(image)
 
     def process_image(self, image, region=None, apply_mask=True):
         """
@@ -595,12 +612,7 @@ class Sentinel2ImSearch(ImSearch):
         """
         self._valid_portion = valid_portion
         self._apply_valid_mask = apply_valid_mask
-        self._im_df = ImSearch.search(self, start_date, end_date, region)
-
-        # convert all image bands to uint16 in preparation for export
-        im_list = [image.toUint16() for image in self._im_df.IMAGE.values]
-        self._im_df.IMAGE = im_list
-        return self._im_df
+        return ImSearch.search(self, start_date, end_date, region)
 
 
 
@@ -618,12 +630,13 @@ class Sentinel2CloudlessImSearch(ImSearch):
         """
         ImSearch.__init__(self, collection=collection)
 
-        self._im_props = ['VALID_PORTION', 'QA_SCORE_AVG', 'GEOMETRIC_QUALITY_FLAG', 'RADIOMETRIC_QUALITY_FLAG',
-                          'MEAN_SOLAR_AZIMUTH_ANGLE', 'MEAN_SOLAR_ZENITH_ANGLE', 'MEAN_INCIDENCE_AZIMUTH_ANGLE_B1',
-                          'MEAN_INCIDENCE_ZENITH_ANGLE_B1']
+        self._im_props = {'VALID':'VALID_PORTION', 'SCORE':'QA_SCORE_AVG', 'RADQ':'RADIOMETRIC_QUALITY', 'GEOMQ':'GEOMETRIC_QUALITY',
+                          'SAA':'MEAN_SOLAR_AZIMUTH_ANGLE', 'SZA':'MEAN_SOLAR_ZENITH_ANGLE', 'VAA':'MEAN_INCIDENCE_AZIMUTH_ANGLE_B1',
+                          'VZA':'MEAN_INCIDENCE_ZENITH_ANGLE_B1'}
 
         self._valid_portion = 90
         self._apply_valid_mask = False
+        self._im_transform = lambda image : ee.Image.toUint16(image)
 
         self._cloud_filter = 60  # Maximum image cloud cover percent allowed in image collection
         self._cloud_prob_thresh = 40  # Cloud probability (%); values greater than are considered cloud
@@ -761,9 +774,9 @@ class Sentinel2CloudlessImSearch(ImSearch):
         region : dict, geojson, ee.Geometry
                  Polygon in WGS84 specifying a region that images should intersect
         valid_portion: int, optional
-                     Minimum portion (%) of image pixels that should be valid (not cloud)
+                       Minimum portion (%) of image pixels that should be valid (not cloud)
         apply_valid_mask : bool, optional
-                        Mask out clouds in search result images
+                           Mask out clouds in search result images
 
         Returns
         -------
@@ -772,12 +785,8 @@ class Sentinel2CloudlessImSearch(ImSearch):
         """
         self._valid_portion = valid_portion
         self._apply_valid_mask = apply_valid_mask
-        self._im_df = ImSearch.search(self, start_date, end_date, region)
+        return ImSearch.search(self, start_date, end_date, region)
 
-        # convert all image bands to uint16 in preparation for export
-        im_list = [image.toUint16() for image in self._im_df.IMAGE.values]
-        self._im_df.IMAGE = im_list
-        return self._im_df
 
 
 

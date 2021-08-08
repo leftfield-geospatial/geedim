@@ -15,6 +15,8 @@
 """
 
 import click
+import pathlib
+import pandas as pd
 
 from geedim import search
 import ee
@@ -32,6 +34,9 @@ cls_col_map = {'landsat7_c2_l2': search.LandsatImSearch,
                'sentinel2_sr': search.Sentinel2CloudlessImSearch,
                'modis_nbar': search.ModisNbarImSearch}
 
+# pd.set_option("display.precision", 2)
+# pd.set_option("display.max_colwidth", 50)
+
 @click.group()
 def cli():
     pass
@@ -41,8 +46,9 @@ def cli():
     "-c",
     "--collection",
     type=click.Choice(list(cls_col_map.keys()), case_sensitive=False),
-    help="Collection.",
+    help="Image collection.",
     default="landsat8_c2_l2",
+    required=True
 )
 @click.option(
     "-b",
@@ -50,10 +56,28 @@ def cli():
     type=click.FLOAT,
     nargs=4,
     help="Bounding box in WGS84 (xmin, ymin, xmax, ymax).",
+    required=False
 )
-@click.option("-s", "--start_date", type=click.DateTime(), help="Start date (YYYY-MM-DD).")
-@click.option("-e", "--end_date", type=click.DateTime(), help="End date (YYYY-MM-DD).")
-def search(collection, bbox, start_date, end_date):
+@click.option(
+    "-r",
+    "--region",
+    type=click.STRING,
+    help="File specifying region.",
+    required=False
+)
+@click.option("-s", "--start_date", type=click.DateTime(), help="Start date.", required=True)
+@click.option("-e", "--end_date", type=click.DateTime(), help="End date.", required=True)
+@click.option(
+    "-o",
+    "--output",
+    type=click.Path(exists=False, file_okay=True, dir_okay=False, writable=True, readable=False, resolve_path=True,
+                    allow_dash=False),
+    default=None,
+    help="Output results to this filename. Type inferred from extension [.csv|.json]",
+    required=False
+)
+def search(collection, bbox, region, start_date, end_date, output):
+    """ Search for Earth Engine images """
     ee.Initialize()
 
     imsearch = cls_col_map[collection](collection=collection)
@@ -62,6 +86,16 @@ def search(collection, bbox, start_date, end_date):
     coordinates = [[xmax, ymax], [xmax, ymin], [xmin, ymin], [xmin, ymax], [xmax, ymax]]
     bbox_dict = dict(type='Polygon', coordinates=[coordinates])
 
-    res = imsearch.search(start_date, end_date, bbox_dict)
+    im_df = imsearch.search(start_date, end_date, bbox_dict)
+
+    if output is not None:
+        output = pathlib.Path(output)
+        if output.suffix == '.csv':
+            im_df.to_csv(output)
+        elif output.suffix == '.json':
+            im_df.to_json(output)
+        else:
+            raise ValueError(f'Unknown output file extension: {output.suffix}')
+
 cli.add_command(search)
 
