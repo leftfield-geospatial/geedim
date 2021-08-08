@@ -11,6 +11,15 @@
         {"id": "SR_B5", "name": "shortwave infrared 1", "abbrev": "SWIR1", "bw_start": 1.55, "bw_end": 1.75, "res": 30},
         {"id": "ST_B6", "name": "brightness temperature", "abbrev": "BT", "bw_start": 10.40, "bw_end": 12.50, "res": 30},
         {"id": "SR_B7", "name": "shortwave infrared 2", "abbrev": "SWIR2", "bw_start": 2.08, "bw_end": 2.35, "res": 30}
+    ],
+    "properties": [
+        {"PROPERTY": "system:id", "ABBREV": "ID", "DESCRIPTION": "Earth Engine image id"},
+        {"PROPERTY": "system:time_start", "ABBREV": "DATE", "DESCRIPTION": "Image capture date/time (UTC)"},
+        {"PROPERTY": "VALID_PORTION", "ABBREV": "VALID", "DESCRIPTION": "Portion of cloud and shadow free pixels (%)"},
+        {"PROPERTY": "QA_SCORE_AVG", "ABBREV": "SCORE", "DESCRIPTION": "Cloud/shadow free confidence score "},
+        {"PROPERTY": "GEOMETRIC_RMSE_MODEL", "ABBREV": "GRMSE", "DESCRIPTION": "Orthorectification RMSE (m)"},
+        {"PROPERTY": "SUN_AZIMUTH", "ABBREV": "SAA", "DESCRIPTION": "Solar azimuth angle (deg)"},
+        {"PROPERTY": "SUN_ELEVATION", "ABBREV": "SEA", "DESCRIPTION": "Solar elevation angle (deg)"}
     ]},
 "landsat8_c2_l2":{
     "start_date": "2013-04-11",
@@ -25,6 +34,15 @@
         {"id": "SR_B6", "name": "shortwave infrared 1", "abbrev": "SWIR1", "bw_start": 1.566, "bw_end": 1.651, "res": 30},
         {"id": "SR_B7", "name": "shortwave infrared 2", "abbrev": "SWIR2", "bw_start": 2.107, "bw_end": 2.294, "res": 30},
         {"id": "ST_B10", "name": "brightness temperature", "abbrev": "BT", "bw_start": 10.60, "bw_end": 11.19, "res": 30}
+    ],
+    "properties": [
+        {"PROPERTY": "system:id", "ABBREV": "ID", "DESCRIPTION": "Earth Engine image id"},
+        {"PROPERTY": "system:time_start", "ABBREV": "DATE", "DESCRIPTION": "Image capture date/time (UTC)"},
+        {"PROPERTY": "VALID_PORTION", "ABBREV": "VALID", "DESCRIPTION": "Portion of cloud and shadow free pixels (%)"},
+        {"PROPERTY": "QA_SCORE_AVG", "ABBREV": "SCORE", "DESCRIPTION": "Cloud/shadow free confidence score "},
+        {"PROPERTY": "GEOMETRIC_RMSE_MODEL", "ABBREV": "GRMSE", "DESCRIPTION": "Orthorectification RMSE (m)"},
+        {"PROPERTY": "SUN_AZIMUTH", "ABBREV": "SAA", "DESCRIPTION": "Solar azimuth angle (deg)"},
+        {"PROPERTY": "SUN_ELEVATION", "ABBREV": "SEA", "DESCRIPTION": "Solar elevation angle (deg)"}
     ]},
 "sentinel2_toa":{
     "start_date": "2015-06-23",
@@ -43,6 +61,17 @@
         {"id": "B9", "name": "water vapour", "abbrev": "WV", "bw_start": 0.931, "bw_end": 0.958, "res": 60},
         {"id": "B11", "name": "shortwave infrared 1", "abbrev": "SWIR1", "bw_start": 1.539, "bw_end": 1.681, "res": 20},
         {"id": "B12", "name": "shortwave infrared 2", "abbrev": "SWIR2", "bw_start": 2.072, "bw_end": 2.312, "res": 20}
+    ],
+    "properties": [
+        {"PROPERTY": "system:id", "ABBREV": "ID", "DESCRIPTION": "Earth Engine image id"},
+        {"PROPERTY": "system:time_start", "ABBREV": "DATE", "DESCRIPTION": "Image capture date/time (UTC)"},
+        {"PROPERTY": "VALID_PORTION", "ABBREV": "VALID", "DESCRIPTION": "Portion of cloud and shadow free pixels (%)"},
+        {"PROPERTY": "RADIOMETRIC_QUALITY", "ABBREV": "RADQ", "DESCRIPTION": "Radiometric quality check"},
+        {"PROPERTY": "GEOMETRIC_QUALITY", "ABBREV": "GEOMQ", "DESCRIPTION": "Radiometric quality check"},
+        {"PROPERTY": "MEAN_SOLAR_AZIMUTH_ANGLE", "ABBREV": "SAA", "DESCRIPTION": "Solar azimuth angle (deg)"},
+        {"PROPERTY": "MEAN_SOLAR_ZENITH_ANGLE", "ABBREV": "SZA", "DESCRIPTION": "Solar zenith angle (deg)"},
+        {"PROPERTY": "MEAN_INCIDENCE_AZIMUTH_ANGLE_B1", "ABBREV": "VAA", "DESCRIPTION": "View (B1) azimuth angle (deg)"},
+        {"PROPERTY": "MEAN_INCIDENCE_ZENITH_ANGLE_B1", "ABBREV": "VZA", "DESCRIPTION": "View (B1) zenith angle (deg)"}
     ]},
 "sentinel2_sr":{
     "start_date": "2017-03-28",
@@ -61,6 +90,18 @@
         {"id": "B9", "name": "water vapour", "abbrev": "WV", "bw_start": 0.931, "bw_end": 0.958, "res": 60},
         {"id": "B11", "name": "shortwave infrared 1", "abbrev": "SWIR1", "bw_start": 1.539, "bw_end": 1.681, "res": 20},
         {"id": "B12", "name": "shortwave infrared 2", "abbrev": "SWIR2", "bw_start": 2.072, "bw_end": 2.312, "res": 20}
+    ],
+    "properties": [
+        {"PROPERTY": "system:id", "ABBREV": "ID", "DESCRIPTION": "Earth Engine image id"},
+        {"PROPERTY": "system:time_start", "ABBREV": "DATE", "DESCRIPTION": "Image capture date/time (UTC)"},
+        {"PROPERTY": "VALID_PORTION", "ABBREV": "VALID", "DESCRIPTION": "Portion of cloud and shadow free pixels (%)"},
+        {"PROPERTY": "QA_SCORE_AVG", "ABBREV": "SCORE", "DESCRIPTION": "Cloudless probability from S2_CLOUD_PROBABILITY (%)"},
+        {"PROPERTY": "RADIOMETRIC_QUALITY", "ABBREV": "RADQ", "DESCRIPTION": "Radiometric quality check"},
+        {"PROPERTY": "GEOMETRIC_QUALITY", "ABBREV": "GEOMQ", "DESCRIPTION": "Radiometric quality check"},
+        {"PROPERTY": "MEAN_SOLAR_AZIMUTH_ANGLE", "ABBREV": "SAA", "DESCRIPTION": "Solar azimuth angle (deg)"},
+        {"PROPERTY": "MEAN_SOLAR_ZENITH_ANGLE", "ABBREV": "SZA", "DESCRIPTION": "Solar zenith angle (deg)"},
+        {"PROPERTY": "MEAN_INCIDENCE_AZIMUTH_ANGLE_B1", "ABBREV": "VAA", "DESCRIPTION": "View (B1) azimuth angle (deg)"},
+        {"PROPERTY": "MEAN_INCIDENCE_ZENITH_ANGLE_B1", "ABBREV": "VZA", "DESCRIPTION": "View (B1) zenith angle (deg)"}
     ]},
 "modis_nbar":{
     "start_date": "2000-02-18",
@@ -74,5 +115,9 @@
         {"id": "Nadir_Reflectance_Band5", "name": "shortwave infrared 1", "abbrev": "SWIR1", "bw_start": 1.230, "bw_end": 1.250, "res": 500},
         {"id": "Nadir_Reflectance_Band6", "name": "shortwave infrared 2", "abbrev": "SWIR2", "bw_start": 1.628, "bw_end": 1.652, "res": 500},
         {"id": "Nadir_Reflectance_Band7", "name": "shortwave infrared 3", "abbrev": "SWIR3", "bw_start": 2.105, "bw_end": 2.155, "res": 500}
+    ],
+    "properties": [
+        {"PROPERTY": "system:id", "ABBREV": "ID", "DESCRIPTION": "Earth Engine image id"},
+        {"PROPERTY": "system:time_start", "ABBREV": "DATE", "DESCRIPTION": "Image capture date/time (UTC)"}
     ]}
 }

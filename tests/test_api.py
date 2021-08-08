@@ -108,15 +108,13 @@ class TestGeeDim(unittest.TestCase):
 
         # check search results
         self.assertGreater(image_df.shape[0], 0, msg='Search returned one or more images')
-        self.assertTrue(('DATE' in image_df.columns) and ('ID' in image_df.columns),
-                        msg='Search results have date and id fields')
-        for im_prop in imsearch_obj._im_props.values():
+        for im_prop in imsearch_obj._im_props.PROPERTY.values:
             self.assertTrue(im_prop in image_df.columns, msg='Search results contain specified properties')
 
         # select an image to download/export
         im_idx = math.ceil(image_df.shape[0] / 2)
         image = image_df.IMAGE.iloc[im_idx]
-        image_id = image_df.ID.iloc[im_idx].replace('/', '_')
+        image_id = image_df['system:id'].iloc[im_idx].replace('/', '_')
 
         export_tasks = []
         if self.test_export:  # start export tasks

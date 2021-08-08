@@ -104,7 +104,7 @@ class ImSearch:
         if not collection in collection_info:
             raise ValueError(f'Unknown collection: {collection}')
         self._collection_info = collection_info[collection]
-        self._im_props = {}  # list of image properties to display in search results
+        self._im_props = pd.DataFrame(self._collection_info['properties'])  # list of image properties to display in search results
         self._im_collection = None
         self._im_df = None
         self._search_region = None
@@ -156,7 +156,7 @@ class ImSearch:
                 map(lambda image: self.process_image(image, region=region)))
 
     @staticmethod
-    def _get_collection_df(im_collection, property_dict={}, im_transform = lambda x: x, do_print=True):
+    def _get_collection_df(im_collection, property_df, im_transform = lambda x: x, do_print=True):
         """
         Convert a filtered image collection to a pandas dataframe of images and their properties
 
@@ -164,9 +164,9 @@ class ImSearch:
         ----------
         im_collection : ee.ImageCollection
                         Filtered image collection
-        property_dict : dict{str,str}, optional
-                        Dict of image properties  to include in dataframe
-                        {abbrev image property key1, full image property key1, ...}
+        property_df : pandas.Dataframe
+                        Dateframe of image properties to include in results with ['Property', 'Abbrev', 'Description']
+                        columns
         im_transform : lambda, optional
                         Transformation function to apply to search result images
         do_print : bool, optional
@@ -183,9 +183,7 @@ class ImSearch:
         # aggregate relevant properties of im_collection images
         def aggregrate_props(image, prop_list):
             prop = ee.Dictionary()
-            prop = prop.set('ID', image.get('system:id'))
-            prop = prop.set('DATE', image.get('system:time_start'))
-            for prop_key in property_dict.values():
+            for prop_key in property_df.PROPERTY.values:
                 prop = prop.set(prop_key, ee.Algorithms.If(image.get(prop_key), image.get(prop_key), ee.String('None')))
             return ee.List(prop_list).add(prop)
 
@@ -196,26 +194,26 @@ class ImSearch:
 
         # add EE image objects and convert ee.Date to python datetime
         for i, prop_dict in enumerate(im_prop_list):
-            prop_dict['DATE'] = datetime.utcfromtimestamp(prop_dict['DATE'] / 1000)
+            if 'system:time_start' in prop_dict:
+                prop_dict['system:time_start'] = datetime.utcfromtimestamp(prop_dict['system:time_start'] / 1000)
             prop_dict['IMAGE'] = im_transform(ee.Image(im_list.get(i)))   # TODO: remove IMAGE ?
 
         # convert to DataFrame
         im_prop_df = pandas.DataFrame(im_prop_list)
-        cols = ['ID', 'DATE'] + list(property_dict.values()) + ['IMAGE']
-        im_prop_df = im_prop_df[cols].sort_values(by='DATE').reset_index(drop=True)
-        if do_print:
-            print_cols = ['ID', 'DATE'] + list(property_dict.values())
-            header = ['ID', 'DATE'] + list(property_dict.keys())
-            key_df = pd.DataFrame.from_dict(dict(ABBREV=header, NAME=print_cols))
+        im_prop_df = im_prop_df.sort_values(by='system:time_start').reset_index(drop=True)
 
-            logger.info('\nIMAGE PROPERTY KEY:\n' + key_df.to_string(index=False, justify='right'))
+        if do_print:
+            logger.info('\nImage property descriptions:\n' +
+                        property_df[['ABBREV', 'DESCRIPTION']].to_string(index=False, justify='right'))
+
             logger.info('\n' + im_prop_df.to_string(
                 float_format='%.2f',
-                formatters={'DATE': lambda x: datetime.strftime(x, '%Y-%m-%d %H:%M')},
-                columns=print_cols,
-                header=header,
+                formatters={'system:time_start': lambda x: datetime.strftime(x, '%Y-%m-%d %H:%M')},
+                columns=property_df.PROPERTY,
+                header=property_df.ABBREV,
                 index=False,
                 justify='center'))
+
         return im_prop_df
 
     def search(self, start_date, end_date, region):
@@ -285,10 +283,12 @@ class LandsatImSearch(ImSearch):
         if collection == 'landsat8_c2_l2':
             # self._im_props = {'Valid (%)':'VALID_PORTION', 'Qual. Score ':'QA_SCORE_AVG', 'Geom. RMSE':'GEOMETRIC_RMSE_MODEL',
             #                   'Solar Azim. (deg)':'SUN_AZIMUTH', 'Solar Elev. (deg)':'SUN_ELEVATION'}  # image properties to include in search results
-            self._im_props = {'VALID':'VALID_PORTION', 'SCORE':'QA_SCORE_AVG', 'GRMSE':'GEOMETRIC_RMSE_MODEL', 'SAA':'SUN_AZIMUTH', 'SEA':'SUN_ELEVATION'}
+            # self._im_props = {'VALID':'VALID_PORTION', 'SCORE':'QA_SCORE_AVG', 'GRMSE':'GEOMETRIC_RMSE_MODEL', 'SAA':'SUN_AZIMUTH', 'SEA':'SUN_ELEVATION'}
+            pass
         elif collection == 'landsat7_c2_l2':
             # self._im_props = ['VALID_PORTION', 'QA_SCORE_AVG', 'GEOMETRIC_RMSE_MODEL', 'SUN_AZIMUTH', 'SUN_ELEVATION']
-            self._im_props = {'VALID':'VALID_PORTION', 'SCORE':'QA_SCORE_AVG', 'GRMSE':'GEOMETRIC_RMSE_MODEL', 'SAA':'SUN_AZIMUTH', 'SEA':'SUN_ELEVATION'}
+            # self._im_props = {'VALID':'VALID_PORTION', 'SCORE':'QA_SCORE_AVG', 'GRMSE':'GEOMETRIC_RMSE_MODEL', 'SAA':'SUN_AZIMUTH', 'SEA':'SUN_ELEVATION'}
+            pass
         else:
             # TODO: add support for landsat 4-5 collection 2 when they are available
             raise ValueError(f'Unsupported landsat collection: {collection}')
@@ -517,9 +517,9 @@ class Sentinel2ImSearch(ImSearch):
         """
         ImSearch.__init__(self, collection=collection)
 
-        self._im_props = {'VALID':'VALID_PORTION', 'RADQ':'RADIOMETRIC_QUALITY', 'GEOMQ':'GEOMETRIC_QUALITY',
-                          'SAA':'MEAN_SOLAR_AZIMUTH_ANGLE', 'SZA':'MEAN_SOLAR_ZENITH_ANGLE', 'VAA':'MEAN_INCIDENCE_AZIMUTH_ANGLE_B1',
-                          'VZA':'MEAN_INCIDENCE_ZENITH_ANGLE_B1'}
+        # self._im_props = {'VALID':'VALID_PORTION', 'RADQ':'RADIOMETRIC_QUALITY', 'GEOMQ':'GEOMETRIC_QUALITY',
+        #                   'SAA':'MEAN_SOLAR_AZIMUTH_ANGLE', 'SZA':'MEAN_SOLAR_ZENITH_ANGLE', 'VAA':'MEAN_INCIDENCE_AZIMUTH_ANGLE_B1',
+        #                   'VZA':'MEAN_INCIDENCE_ZENITH_ANGLE_B1'}
         # RADIATIVE_TRANSFER_ACCURACY, RADIOMETRIC_QUALITY_FLAG, GENERAL_QUALITY, 'GEOMETRIC_QUALITY', 'RADIOMETRIC_QUALITY',
 
         self._valid_portion = 90
@@ -630,9 +630,9 @@ class Sentinel2CloudlessImSearch(ImSearch):
         """
         ImSearch.__init__(self, collection=collection)
 
-        self._im_props = {'VALID':'VALID_PORTION', 'SCORE':'QA_SCORE_AVG', 'RADQ':'RADIOMETRIC_QUALITY', 'GEOMQ':'GEOMETRIC_QUALITY',
-                          'SAA':'MEAN_SOLAR_AZIMUTH_ANGLE', 'SZA':'MEAN_SOLAR_ZENITH_ANGLE', 'VAA':'MEAN_INCIDENCE_AZIMUTH_ANGLE_B1',
-                          'VZA':'MEAN_INCIDENCE_ZENITH_ANGLE_B1'}
+        # self._im_props = {'VALID':'VALID_PORTION', 'SCORE':'QA_SCORE_AVG', 'RADQ':'RADIOMETRIC_QUALITY', 'GEOMQ':'GEOMETRIC_QUALITY',
+        #                   'SAA':'MEAN_SOLAR_AZIMUTH_ANGLE', 'SZA':'MEAN_SOLAR_ZENITH_ANGLE', 'VAA':'MEAN_INCIDENCE_AZIMUTH_ANGLE_B1',
+        #                   'VZA':'MEAN_INCIDENCE_ZENITH_ANGLE_B1'}
 
         self._valid_portion = 90
         self._apply_valid_mask = False
