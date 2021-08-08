@@ -13,12 +13,15 @@
     See the License for the specific language governing permissions and
     limitations under the License.
 """
+import os
+import json
 
 import click
 import pathlib
 import pandas as pd
+import rasterio as rio
 
-from geedim import search
+from geedim import search as search_api
 import ee
 
 # map collection keys to classes
@@ -28,11 +31,11 @@ import ee
 #                  'sentinel2_sr': lambda: search.Sentinel2CloudlessImSearch(collection='sentinel2_sr'),
 #                  'modis_nbar': lambda: search.LandsatImSearch(collection='modis_nbar')}
 
-cls_col_map = {'landsat7_c2_l2': search.LandsatImSearch,
-               'landsat8_c2_l2': search.LandsatImSearch,
-               'sentinel2_toa': search.Sentinel2CloudlessImSearch,
-               'sentinel2_sr': search.Sentinel2CloudlessImSearch,
-               'modis_nbar': search.ModisNbarImSearch}
+cls_col_map = {'landsat7_c2_l2': search_api.LandsatImSearch,
+               'landsat8_c2_l2': search_api.LandsatImSearch,
+               'sentinel2_toa': search_api.Sentinel2CloudlessImSearch,
+               'sentinel2_sr': search_api.Sentinel2CloudlessImSearch,
+               'modis_nbar': search_api.ModisNbarImSearch}
 
 # pd.set_option("display.precision", 2)
 # pd.set_option("display.max_colwidth", 50)
@@ -55,14 +58,14 @@ def cli():
     "--bbox",
     type=click.FLOAT,
     nargs=4,
-    help="Bounding box in WGS84 (xmin, ymin, xmax, ymax).",
+    help="Region bounding box co-ordinates in WGS84 (xmin, ymin, xmax, ymax).",
     required=False
 )
 @click.option(
     "-r",
     "--region",
     type=click.STRING,
-    help="File specifying region.",
+    help="Region geojson or raster filename.  Either bbox or region are required.",
     required=False
 )
 @click.option("-s", "--start_date", type=click.DateTime(), help="Start date.", required=True)
@@ -73,22 +76,51 @@ def cli():
     type=click.Path(exists=False, file_okay=True, dir_okay=False, writable=True, readable=False, resolve_path=True,
                     allow_dash=False),
     default=None,
-    help="Output results to this filename. Type inferred from extension [.csv|.json]",
+    help="Filename to write search results to. Type inferred from extension: [.csv|.json]",
     required=False
 )
-def search(collection, bbox, region, start_date, end_date, output):
+@click.option(
+    "-rb",
+    "--region_buf",
+    type=click.FLOAT,
+    default=5,
+    help="If --region is a raster file, add a buffer to the image bounds of <region_buf>%",
+    required=False,
+    show_default=True
+)
+def search(collection, bbox, region, start_date, end_date, output, region_buf):
     """ Search for Earth Engine images """
+
+    if (bbox is None) and (region is None):
+        raise click.BadParameter('Either --region or --bbox must be passed', region)
+
     ee.Initialize()
 
     imsearch = cls_col_map[collection](collection=collection)
 
-    xmin, ymin, xmax, ymax = bbox
-    coordinates = [[xmax, ymax], [xmax, ymin], [xmin, ymin], [xmin, ymax], [xmax, ymax]]
-    bbox_dict = dict(type='Polygon', coordinates=[coordinates])
+    if region is not None:  # read region file/string
+        if os.path.isfile(region):
+            region = pathlib.Path(region)
+            if 'json' in region.suffix: # read region from gejson file
+                with open(region) as f:
+                    region_geojson = json.load(f)
+            else:                       # read region from raster file
+                try:
+                    region_geojson, _ = search_api.get_image_bounds(region, region_buf)
+                except Exception as ex:
+                    raise click.BadParameter(f'{region} is not a valid geojson or raster file. \n{ex}')
+        else:
+            region_geojson = json.loads(region)
+    else:               # convert bbox to geojson
+        xmin, ymin, xmax, ymax = bbox
+        coordinates = [[xmax, ymax], [xmax, ymin], [xmin, ymin], [xmin, ymax], [xmax, ymax]]
+        region_geojson = dict(type='Polygon', coordinates=[coordinates])
 
-    im_df = imsearch.search(start_date, end_date, bbox_dict)
+    im_df = imsearch.search(start_date, end_date, region_geojson)
 
-    if output is not None:
+    if (output is not None) and (im_df is not None):
+        if 'IMAGE' in im_df.columns:
+            im_df = im_df.drop(columns='IMAGE')
         output = pathlib.Path(output)
         if output.suffix == '.csv':
             im_df.to_csv(output)
