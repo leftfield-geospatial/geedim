@@ -241,7 +241,7 @@ class ImSearch:
         self._search_region = region
         if end_date is None:
             end_date = start_date
-        self._search_date = start_date + (end_date-start_date)/2
+        self._search_date = start_date + (end_date - start_date)/2
 
         # start_date = date - timedelta(days=day_range)
         # end_date = date + timedelta(days=day_range)

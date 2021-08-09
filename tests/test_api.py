@@ -14,7 +14,7 @@ from geedim import root_path
 from geedim import search
 
 
-class TestGeeDim(unittest.TestCase):
+class TestGeeDimApi(unittest.TestCase):
     """
     Test backend functionality in search and download modules
     """

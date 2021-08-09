@@ -13,70 +13,73 @@
     See the License for the specific language governing permissions and
     limitations under the License.
 """
-import os
 import json
+import os
+import pathlib
 
 import click
-import pathlib
-import pandas as pd
-import rasterio as rio
-
-from geedim import search as search_api
 import ee
 
-# map collection keys to classes
-# cls_col_map = {'landsat7_c2_l2': lambda: search.LandsatImSearch(collection='landsat7_c2_l2'),
-#                  'landsat8_c2_l2': lambda: search.LandsatImSearch(collection='landsat8_c2_l2'),
-#                  'sentinel2_toa': lambda: search.Sentinel2CloudlessImSearch(collection='sentinel2_toa'),
-#                  'sentinel2_sr': lambda: search.Sentinel2CloudlessImSearch(collection='sentinel2_sr'),
-#                  'modis_nbar': lambda: search.LandsatImSearch(collection='modis_nbar')}
+from geedim import search as search_api
 
+# map collection keys to classes
 cls_col_map = {'landsat7_c2_l2': search_api.LandsatImSearch,
                'landsat8_c2_l2': search_api.LandsatImSearch,
                'sentinel2_toa': search_api.Sentinel2CloudlessImSearch,
                'sentinel2_sr': search_api.Sentinel2CloudlessImSearch,
                'modis_nbar': search_api.ModisNbarImSearch}
 
-# pd.set_option("display.precision", 2)
-# pd.set_option("display.max_colwidth", 50)
 
 @click.group()
 def cli():
     pass
+
 
 @click.command()
 @click.option(
     "-c",
     "--collection",
     type=click.Choice(list(cls_col_map.keys()), case_sensitive=False),
-    help="Image collection.",
+    help="Earth Engine image collection to search.",
     default="landsat8_c2_l2",
     required=True
+)
+@click.option(
+    "-s",
+    "--start-date",
+    type=click.DateTime(),
+    help="Start date (UTC).",
+    required=True
+)
+@click.option(
+    "-e",
+    "--end-date",
+    type=click.DateTime(),
+    help="End date (UTC).  [default = start_date]",
+    required=False,
 )
 @click.option(
     "-b",
     "--bbox",
     type=click.FLOAT,
     nargs=4,
-    help="Region bounding box co-ordinates in WGS84 (xmin, ymin, xmax, ymax).",
+    help="Search region bounding box co-ordinates in WGS84 (xmin, ymin, xmax, ymax).",
     required=False
 )
 @click.option(
     "-r",
     "--region",
     type=click.STRING,
-    help="Region geojson or raster filename.  Either bbox or region are required.",
+    help="Geojson or raster filename providing search region.  One of bbox or region must be passed.",
     required=False
 )
-@click.option("-s", "--start_date", type=click.DateTime(), help="Start date.", required=True)
-@click.option("-e", "--end_date", type=click.DateTime(), help="End date.", required=True)
 @click.option(
     "-o",
     "--output",
     type=click.Path(exists=False, file_okay=True, dir_okay=False, writable=True, readable=False, resolve_path=True,
                     allow_dash=False),
     default=None,
-    help="Filename to write search results to. Type inferred from extension: [.csv|.json]",
+    help="Write search results to this filename. File type inferred from extension: [.csv|.json]",
     required=False
 )
 @click.option(
@@ -88,11 +91,13 @@ def cli():
     required=False,
     show_default=True
 )
-def search(collection, bbox, region, start_date, end_date, output, region_buf):
+def search(collection, start_date, end_date=None, bbox=None, region=None, output=None, region_buf=5):
     """ Search for Earth Engine images """
 
     if (bbox is None) and (region is None):
         raise click.BadParameter('Either --region or --bbox must be passed', region)
+    if end_date is None:
+        end_date = start_date
 
     ee.Initialize()
 
@@ -101,17 +106,17 @@ def search(collection, bbox, region, start_date, end_date, output, region_buf):
     if region is not None:  # read region file/string
         if os.path.isfile(region):
             region = pathlib.Path(region)
-            if 'json' in region.suffix: # read region from gejson file
+            if 'json' in region.suffix:  # read region from gejson file
                 with open(region) as f:
                     region_geojson = json.load(f)
-            else:                       # read region from raster file
+            else:  # read region from raster file
                 try:
                     region_geojson, _ = search_api.get_image_bounds(region, region_buf)
                 except Exception as ex:
                     raise click.BadParameter(f'{region} is not a valid geojson or raster file. \n{ex}')
         else:
             region_geojson = json.loads(region)
-    else:               # convert bbox to geojson
+    else:  # convert bbox to geojson
         xmin, ymin, xmax, ymax = bbox
         coordinates = [[xmax, ymax], [xmax, ymin], [xmin, ymin], [xmin, ymax], [xmax, ymax]]
         region_geojson = dict(type='Polygon', coordinates=[coordinates])
@@ -128,6 +133,7 @@ def search(collection, bbox, region, start_date, end_date, output, region_buf):
             im_df.to_json(output)
         else:
             raise ValueError(f'Unknown output file extension: {output.suffix}')
+    return 0
+
 
 cli.add_command(search)
-
