@@ -219,7 +219,7 @@ class ImSearch:
 
         return im_prop_df
 
-    def get_image(self, id):
+    def get_image(self, id, region=None):
         """
         Retrieve an ee.Image object, adding validity and quality metadata where possible
 
@@ -227,6 +227,8 @@ class ImSearch:
         ----------
         id : str
              Earth engine image ID e.g. 'LANDSAT/LC08/C02/T1_L2/LC08_182037_20190118 2019-01-18'
+        region : ee.Geometry, dict, geojson
+                 Process image over this region
 
         Returns
         -------
@@ -236,7 +238,7 @@ class ImSearch:
         if '/'.join(id.split('/')[:-1]) != self._collection_info['ee_collection']:
             raise ValueError(f'{id} is not a valid earth engine id for {self.__class__}')
 
-        return self._process_image(ee.Image(id))
+        return self._process_image(ee.Image(id), region=region)
 
     def search(self, start_date, end_date, region):
         """
@@ -784,7 +786,7 @@ class Sentinel2CloudlessImSearch(ImSearch):
             })})).map(lambda image: self._process_image(image, region=region, apply_mask=self._apply_valid_mask)).
                 filter(ee.Filter.gt('VALID_PORTION', self._valid_portion)))
 
-    def get_image(self, id):
+    def get_image(self, id, region=None):
         """
         Retrieve an ee.Image object, adding validity and quality metadata where possible
 
@@ -792,6 +794,8 @@ class Sentinel2CloudlessImSearch(ImSearch):
         ----------
         id : str
              Earth engine image ID e.g. 'LANDSAT/LC08/C02/T1_L2/LC08_182037_20190118 2019-01-18'
+        region : ee.Geometry, dict, geojson
+                 Process image over this region
 
         Returns
         -------
@@ -808,7 +812,7 @@ class Sentinel2CloudlessImSearch(ImSearch):
         s2_cloud_prob_image = ee.Image(f'COPERNICUS/S2_CLOUD_PROBABILITY/{index}')
         image = ee.Image(id).set('s2cloudless', s2_cloud_prob_image)
 
-        return self._process_image(image)
+        return self._process_image(image, region=region)
 
     def search(self, start_date, end_date, region, valid_portion=50, apply_valid_mask=False):
         """
