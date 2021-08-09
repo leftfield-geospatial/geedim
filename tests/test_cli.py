@@ -84,7 +84,7 @@ class TestGeeDimCli(unittest.TestCase):
         results_filename = root_path.joinpath('data/outputs/tests/search_results.json')
         start_date = datetime.strptime('2019-01-01', '%Y-%m-%d')
         end_date = datetime.strptime('2019-01-15', '%Y-%m-%d')
-        region_filename = root_path.joinpath('data/inputs/test/region.geojson')
+        region_filename = root_path.joinpath('data/inputs/tests/region.geojson')
 
         result = CliRunner().invoke(cli.cli, ['search', '-c', collection, '-r', str(region_filename), '-s',
                                               start_date.strftime("%Y-%m-%d"), '-e', end_date.strftime("%Y-%m-%d"),
