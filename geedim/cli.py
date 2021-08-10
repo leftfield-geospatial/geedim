@@ -58,6 +58,39 @@ def _parse_region_bbox(region=None, bbox=None, region_buf=5):
 
     return region_geojson
 
+def _export_download(id, bbox=None, region=None, path=None, crs=None, scale=None, wait=True, download=True):
+    """ download or export image(s), with cloud and shadow masking """
+
+    ee.Initialize()
+
+    region_geojson = _parse_region_bbox(region=region, bbox=bbox)
+
+    collection_info = search_api.load_collection_info()
+    collection_df = pd.DataFrame.from_dict(collection_info, orient='index')
+
+    for _id in id:
+        ee_collection = '/'.join(_id.split('/')[:-1])
+        if not (ee_collection in collection_df.ee_collection.values):
+            logger.warning(f'Skipping {_id}: Unknown collection')
+            continue
+
+        collection = collection_df.index[collection_df.ee_collection == ee_collection][0]
+
+        if collection == 'modis_nbar' and crs is None:  # workaround MODIS native CRS export issue
+            crs = 'EPSG:3857'
+            logger.warning(f'Re-projecting {_id} to {crs} to avoid GEE MODIS CRS bug: https://issuetracker.google.com/issues/194561313.')
+
+        imsearch_obj = cls_col_map[collection](collection=collection)
+        image = imsearch_obj.get_image(_id, region=region_geojson)
+
+        if download:
+            filename = pathlib.Path(path).joinpath(_id.replace('/', '_') + '.tif')
+            download_api.download_image(image, filename, region=region_geojson, crs=crs, scale=scale)
+        else:
+            filename = _id.replace('/', '_')
+            download_api.export_image(image, filename, folder=path, region=region_geojson, crs=crs, scale=scale,
+                                  wait=wait)
+
 # define options common to >1 command
 bbox_option = click.option(
     "-b",
@@ -198,27 +231,7 @@ cli.add_command(search)
 @scale_option
 def download(id, bbox=None, region=None, download_dir=os.getcwd(), crs=None, scale=None):
     """ Download image(s), with cloud and shadow masking """
-
-    ee.Initialize()
-
-    region_geojson = _parse_region_bbox(region=region, bbox=bbox)
-
-    collection_info = search_api.load_collection_info()
-    collection_df = pd.DataFrame.from_dict(collection_info, orient='index')
-
-    for _id in id:
-        ee_collection = '/'.join(_id.split('/')[:-1])
-        if not (ee_collection in collection_df.ee_collection.values):
-            logger.warning(f'Skipping {_id}, unknown collection')
-            continue
-
-        collection = collection_df.index[collection_df.ee_collection == ee_collection][0]
-        filename = pathlib.Path(download_dir).joinpath(_id.replace('/', '_') + '.tif')
-
-        imsearch_obj = cls_col_map[collection](collection=collection)
-        image = imsearch_obj.get_image(_id, region=region_geojson)
-
-        download_api.download_image(image, filename, region=region_geojson, crs=crs, scale=scale)
+    _export_download(id, bbox=bbox, region=region, path=download_dir, crs=crs, scale=scale, download=True)
 
 cli.add_command(download)
 
@@ -246,27 +259,6 @@ cli.add_command(download)
 )
 def export(id, bbox=None, region=None, drive_folder='', crs=None, scale=None, wait=True):
     """ Export image(s) to Google Drive, with cloud and shadow masking """
-
-    ee.Initialize()
-
-    region_geojson = _parse_region_bbox(region=region, bbox=bbox)
-
-    collection_info = search_api.load_collection_info()
-    collection_df = pd.DataFrame.from_dict(collection_info, orient='index')
-
-    for _id in id:
-        ee_collection = '/'.join(_id.split('/')[:-1])
-        if not (ee_collection in collection_df.ee_collection.values):
-            logger.warning(f'Skipping {_id}: Unknown collection')
-            continue
-
-        collection = collection_df.index[collection_df.ee_collection == ee_collection][0]
-        filename = _id.replace('/', '_')
-
-        imsearch_obj = cls_col_map[collection](collection=collection)
-        image = imsearch_obj.get_image(_id, region=region_geojson)
-
-        download_api.export_image(image, filename, folder=drive_folder, region=region_geojson, crs=crs, scale=scale,
-                                  wait=wait)
+    _export_download(id, bbox=bbox, region=region, path=drive_folder, crs=crs, scale=scale, wait=wait, download=False)
 
 cli.add_command(export)
