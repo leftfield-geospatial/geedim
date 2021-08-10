@@ -50,6 +50,7 @@ def get_composite_image(self):
     # set metadata to indicate component images
     return comp_image.set('COMPOSITE_IMAGES', self._im_df[['ID', 'DATE'] + self._im_props].to_string())
 
+
 def get_composite_image(self):
     """
     Create a composite image from search results, favouring pixels with the highest quality score
@@ -66,6 +67,7 @@ def get_composite_image(self):
 
     # set metadata to indicate component images
     return comp_im.set('COMPOSITE_IMAGES', self._im_df[['ID', 'DATE'] + self._im_props].to_string()).toUint16()
+
 
 def get_composite_image(self):
     """
@@ -86,6 +88,7 @@ def get_composite_image(self):
 
     # set metadata to indicate component images
     return comp_im.set('COMPOSITE_IMAGES', self._im_df[['ID', 'DATE'] + self._im_props].to_string()).toUint16()
+
 
 def get_composite_image(self):
     """

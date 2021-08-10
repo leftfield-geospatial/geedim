@@ -1,3 +1,4 @@
+import math
 import unittest
 from datetime import datetime, timedelta
 
@@ -7,18 +8,14 @@ import rasterio as rio
 from rasterio.crs import CRS
 from rasterio.warp import transform_bounds
 
-
-import math
-
-from geedim import download
-from geedim import root_path
-from geedim import search
+from geedim import download, search, root_path
 
 
 class TestGeeDimApi(unittest.TestCase):
     """
     Test backend functionality in search and download modules
     """
+
     # TODO: separate API search and download testing (?)
     def _test_download(self, image, image_id, region, crs=None, scale=None, band_df=None):
         """
@@ -103,7 +100,7 @@ class TestGeeDimApi(unittest.TestCase):
                                    (23.92842810355374, -33.58496384476743),
                                    (24.018987152147467, -33.58425124616373)]]}
         date = datetime.strptime('2019-02-01', '%Y-%m-%d')
-        band_df = pd.DataFrame.from_dict(imsearch_obj._collection_info['bands'])
+        band_df = pd.DataFrame.from_dict(imsearch_obj.collection_info['bands'])
 
         image_df = imsearch_obj.search(date, date + timedelta(days=32), region)
 
@@ -116,7 +113,7 @@ class TestGeeDimApi(unittest.TestCase):
         # TODO: change to use get_image()
         im_idx = math.ceil(image_df.shape[0] / 2)
         image_id = str(image_df['ID'].iloc[im_idx])
-        image = imsearch_obj.get_image(image_id, region=region)    #  image_df.IMAGE.iloc[im_idx]
+        image = imsearch_obj.get_image(image_id, region=region)  # image_df.IMAGE.iloc[im_idx]
         image_name = image_id.replace('/', '_')
 
         # workaround for GEE MODIS CRS bug
@@ -152,12 +149,12 @@ class TestGeeDimApi(unittest.TestCase):
 
         # *ImSearch objects to test
         test_objs = [search.ModisNbarImSearch(collection='modis_nbar'),
-            search.LandsatImSearch(collection='landsat8_c2_l2'),
-            search.LandsatImSearch(collection='landsat7_c2_l2'),
-            search.Sentinel2ImSearch(collection='sentinel2_toa'),
-            search.Sentinel2ImSearch(collection='sentinel2_sr'),
-            search.Sentinel2CloudlessImSearch(collection='sentinel2_toa'),
-            search.Sentinel2CloudlessImSearch(collection='sentinel2_sr')]
+                     search.LandsatImSearch(collection='landsat8_c2_l2'),
+                     search.LandsatImSearch(collection='landsat7_c2_l2'),
+                     search.Sentinel2ImSearch(collection='sentinel2_toa'),
+                     search.Sentinel2ImSearch(collection='sentinel2_sr'),
+                     search.Sentinel2CloudlessImSearch(collection='sentinel2_toa'),
+                     search.Sentinel2CloudlessImSearch(collection='sentinel2_sr')]
 
         # run tests on each object, accumulating export tasks to check on later
         export_tasks = []

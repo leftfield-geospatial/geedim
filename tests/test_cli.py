@@ -54,7 +54,7 @@ class TestSearchCli(unittest.TestCase):
                         'Search results have correct columns')
         self.assertTrue(all(res_df.DATE >= start_date) and all(res_df.DATE <= end_date),
                         'Search results are in correct date range')
-        self.assertTrue(all([imseach_obj._collection_info['ee_collection'] in im_id for im_id in res_df.ID.values]),
+        self.assertTrue(all([imseach_obj.collection_info['ee_collection'] in im_id for im_id in res_df.ID.values]),
                         'Search results have correct EE ID')
         self.assertTrue(all(res_df.VALID >= 0) and all(res_df.VALID <= 100),
                         'Search results have correct validity range')
@@ -99,6 +99,7 @@ class TestSearchCli(unittest.TestCase):
 
         self._test_search_results(collection, start_date, end_date, results_filename)  # check results
 
+
 # TODO: consider decreasing testing here as there is somw overlap with test_api
 class TestDownloadCli(unittest.TestCase):
     """
@@ -123,8 +124,8 @@ class TestDownloadCli(unittest.TestCase):
                 Pixel resolution passed to `geedim download` if any
         """
 
-        for id in ids:
-            image_filename = pathlib.Path(download_dir).joinpath(id.replace('/', '_') + '.tif')
+        for _id in ids:
+            image_filename = pathlib.Path(download_dir).joinpath(_id.replace('/', '_') + '.tif')
             self.assertTrue(image_filename.exists(), 'Downloaded image exists')
 
             with rio.open(image_filename) as im:
@@ -140,7 +141,6 @@ class TestDownloadCli(unittest.TestCase):
                 if scale is not None:
                     self.assertAlmostEqual(scale, im.res[0], places=3, msg='CLI and download image scale match')
                 # TODO: test masking when that is done, perhaps comparing to VALID_PORTION or similar
-
 
     def test_download_bbox(self):
         """
@@ -162,7 +162,6 @@ class TestDownloadCli(unittest.TestCase):
         # check downloaded images
         region_bounds = rio.coords.BoundingBox(*bbox)
         self._test_download_files(ids, download_dir, region_bounds)
-
 
     def test_download_region(self):
         """
@@ -195,14 +194,12 @@ class TestDownloadCli(unittest.TestCase):
         # check downloaded images
         self._test_download_files(ids, download_dir, region_bounds, crs=crs, scale=scale)
 
-
     def test_export(self):
         """
         Test `geedim export` with --bbox option
         """
         # test export of one image only to save time, and because we can't check the exported image validity
         ids = ['LANDSAT/LC08/C02/T1_L2/LC08_182037_20190219']
-        download_dir = root_path.joinpath('data/outputs/tests')
         bbox = (23.9, 33.5, 24, 33.6)
         prefixed_ids = [val for tup in zip(['-i'] * len(ids), ids) for val in tup]
 

@@ -43,6 +43,7 @@ def load_collection_info():
 
     return satellite_info
 
+
 def get_image_bounds(filename, expand=5):
     """
     Get a WGS84 geojson polygon representing the optionally expanded bounds of an image
@@ -101,10 +102,11 @@ class ImSearch:
                      GEE image collection string e.g. 'MODIS/006/MCD43A4'
         """
         collection_info = load_collection_info()
-        if not collection in collection_info:
+        if collection not in collection_info:
             raise ValueError(f'Unknown collection: {collection}')
-        self._collection_info = collection_info[collection]
-        self._im_props = pd.DataFrame(self._collection_info['properties'])  # list of image properties to display in search results
+        self.collection_info = collection_info[collection]
+        # list of image properties to display in search results
+        self._im_props = pd.DataFrame(self.collection_info['properties'])
         self._im_df = None
         self._search_date = None
         self._im_transform = lambda image: image
@@ -129,7 +131,7 @@ class ImSearch:
         """
         if self._search_date is not None:
             image = image.set('TIME_DIST', ee.Number(image.get('system:time_start')).
-                         subtract(self._search_date.timestamp() * 1000).abs())
+                              subtract(self._search_date.timestamp() * 1000).abs())
         return image
 
     def _get_im_collection(self, start_date, end_date, region):
@@ -150,13 +152,13 @@ class ImSearch:
         : ee.ImageCollection
         The filtered image collection
         """
-        return (ee.ImageCollection(self._collection_info['ee_collection']).
+        return (ee.ImageCollection(self.collection_info['ee_collection']).
                 filterDate(start_date, end_date).
                 filterBounds(region).
                 map(lambda image: self._process_image(image, region=region)))
 
     @staticmethod
-    def _get_collection_df(im_collection, property_df, im_transform = lambda x: x, do_print=True):
+    def _get_collection_df(im_collection, property_df, im_transform=lambda x: x, do_print=True):
         """
         Convert a filtered image collection to a pandas dataframe of images and their properties
 
@@ -196,12 +198,13 @@ class ImSearch:
         for i, prop_dict in enumerate(im_prop_list):
             if 'system:time_start' in prop_dict:
                 prop_dict['system:time_start'] = datetime.utcfromtimestamp(prop_dict['system:time_start'] / 1000)
-            prop_dict['IMAGE'] = im_transform(ee.Image(im_list.get(i)))   # TODO: remove IMAGE ?
+            prop_dict['IMAGE'] = im_transform(ee.Image(im_list.get(i)))  # TODO: remove IMAGE ?
 
         # convert to DataFrame
         im_prop_df = pandas.DataFrame(im_prop_list)
         im_prop_df = im_prop_df.sort_values(by='system:time_start').reset_index(drop=True)
-        im_prop_df = im_prop_df.rename(columns=dict(zip(property_df.PROPERTY, property_df.ABBREV))) # rename cols to abbrev
+        im_prop_df = im_prop_df.rename(
+            columns=dict(zip(property_df.PROPERTY, property_df.ABBREV)))  # rename cols to abbrev
 
         if do_print:
             logger.info('\nImage property descriptions:\n' +
@@ -217,13 +220,13 @@ class ImSearch:
 
         return im_prop_df
 
-    def get_image(self, id, region=None):
+    def get_image(self, image_id, region=None):
         """
         Retrieve an ee.Image object, adding validity and quality metadata where possible
 
         Parameters
         ----------
-        id : str
+        image_id : str
              Earth engine image ID e.g. 'LANDSAT/LC08/C02/T1_L2/LC08_182037_20190118 2019-01-18'
         region : ee.Geometry, dict, geojson
                  Process image over this region
@@ -233,11 +236,11 @@ class ImSearch:
         : ee.Image
           The processed image
         """
-        if '/'.join(id.split('/')[:-1]) != self._collection_info['ee_collection']:
-            raise ValueError(f'{id} is not a valid earth engine id for {self.__class__}')
+        if '/'.join(image_id.split('/')[:-1]) != self.collection_info['ee_collection']:
+            raise ValueError(f'{image_id} is not a valid earth engine id for {self.__class__}')
 
-        return self._process_image(ee.Image(id), region=region).toUint16()
-        # return ee.Image(id).toUint16()
+        return self._process_image(ee.Image(image_id), region=region).toUint16()
+        # return ee.Image(image_id).toUint16()
 
     def search(self, start_date, end_date, region):
         """
@@ -261,17 +264,17 @@ class ImSearch:
         self._im_df = None
         if end_date is None:
             end_date = start_date
-        self._search_date = start_date + (end_date - start_date)/2
+        self._search_date = start_date + (end_date - start_date) / 2
 
         # start_date = date - timedelta(days=day_range)
         # end_date = date + timedelta(days=day_range)
 
         # filter the image collection
-        logger.info(f'Searching for {self._collection_info["ee_collection"]} images between '
+        logger.info(f'Searching for {self.collection_info["ee_collection"]} images between '
                     f'{start_date.strftime("%Y-%m-%d")} and {end_date.strftime("%Y-%m-%d")}')
 
         im_collection = self._get_im_collection(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"),
-                                                      region)
+                                                region)
 
         num_images = im_collection.size().getInfo()
 
@@ -287,7 +290,6 @@ class ImSearch:
         return self._im_df
 
 
-
 ##
 class LandsatImSearch(ImSearch):
     def __init__(self, collection='landsat8_c2_l2'):
@@ -301,22 +303,13 @@ class LandsatImSearch(ImSearch):
         """
         ImSearch.__init__(self, collection=collection)
 
-        if collection == 'landsat8_c2_l2':
-            # self._im_props = {'Valid (%)':'VALID_PORTION', 'Qual. Score ':'QA_SCORE_AVG', 'Geom. RMSE':'GEOMETRIC_RMSE_MODEL',
-            #                   'Solar Azim. (deg)':'SUN_AZIMUTH', 'Solar Elev. (deg)':'SUN_ELEVATION'}  # image properties to include in search results
-            # self._im_props = {'VALID':'VALID_PORTION', 'SCORE':'QA_SCORE_AVG', 'GRMSE':'GEOMETRIC_RMSE_MODEL', 'SAA':'SUN_AZIMUTH', 'SEA':'SUN_ELEVATION'}
-            pass
-        elif collection == 'landsat7_c2_l2':
-            # self._im_props = ['VALID_PORTION', 'QA_SCORE_AVG', 'GEOMETRIC_RMSE_MODEL', 'SUN_AZIMUTH', 'SUN_ELEVATION']
-            # self._im_props = {'VALID':'VALID_PORTION', 'SCORE':'QA_SCORE_AVG', 'GRMSE':'GEOMETRIC_RMSE_MODEL', 'SAA':'SUN_AZIMUTH', 'SEA':'SUN_ELEVATION'}
-            pass
-        else:
-            # TODO: add support for landsat 4-5 collection 2 when they are available
+        # TODO: add support for landsat 4-5 collection 2 when they are available
+        if collection not in ['landsat8_c2_l2', 'landsat7_c2_l2']:
             raise ValueError(f'Unsupported landsat collection: {collection}')
 
         self._valid_portion = 90
         self._apply_valid_mask = False
-        self._im_transform = lambda image : ee.Image.toUint16(image)
+        self._im_transform = lambda image: ee.Image.toUint16(image)
 
     def _process_image(self, image, region=None, apply_mask=True):
         """
@@ -350,7 +343,8 @@ class LandsatImSearch(ImSearch):
         if region is None:
             region = image.geometry()
 
-        image = ImSearch._process_image(self, image, region=region, apply_mask=apply_mask)  # Add TIME_DIST property from base class
+        image = ImSearch._process_image(self, image, region=region,
+                                        apply_mask=apply_mask)  # Add TIME_DIST property from base class
 
         # create a mask of valid (non cloud, shadow and aerosol) pixels
         # bits 1-4 of QA_PIXEL are dilated cloud, cirrus, cloud & cloud shadow, respectively
@@ -366,7 +360,7 @@ class LandsatImSearch(ImSearch):
         cloud_shadow_conf = qa_pixel.rightShift(10).bitwiseAnd(3).rename('CLOUD_SHADOW_CONF')
         cirrus_conf = qa_pixel.rightShift(14).bitwiseAnd(3).rename('CIRRUS_CONF')
 
-        if self._collection_info['ee_collection'] == 'LANDSAT/LC08/C02/T1_L2':  # landsat8_c2_l2
+        if self.collection_info['ee_collection'] == 'LANDSAT/LC08/C02/T1_L2':  # landsat8_c2_l2
             # TODO: is SR_QA_AEROSOL helpful? (Looks suspect for GEF region images)
             # include SR_QA_AEROSOL in valid_mask and q_score
             # bits 6-7 of SR_QA_AEROSOL, are aerosol level where 3 = high, 2=medium, 1=low
@@ -433,7 +427,7 @@ class LandsatImSearch(ImSearch):
         The filtered image collection
         """
         # TODO: make self._apply_valid_mask and self._valid_portion parameters?
-        return (ee.ImageCollection(self._collection_info['ee_collection']).
+        return (ee.ImageCollection(self.collection_info['ee_collection']).
                 filterDate(start_date, end_date).
                 filterBounds(region).
                 map(lambda image: self._process_image(image, region=region, apply_mask=self._apply_valid_mask)).
@@ -537,14 +531,9 @@ class Sentinel2ImSearch(ImSearch):
         """
         ImSearch.__init__(self, collection=collection)
 
-        # self._im_props = {'VALID':'VALID_PORTION', 'RADQ':'RADIOMETRIC_QUALITY', 'GEOMQ':'GEOMETRIC_QUALITY',
-        #                   'SAA':'MEAN_SOLAR_AZIMUTH_ANGLE', 'SZA':'MEAN_SOLAR_ZENITH_ANGLE', 'VAA':'MEAN_INCIDENCE_AZIMUTH_ANGLE_B1',
-        #                   'VZA':'MEAN_INCIDENCE_ZENITH_ANGLE_B1'}
-        # RADIATIVE_TRANSFER_ACCURACY, RADIOMETRIC_QUALITY_FLAG, GENERAL_QUALITY, 'GEOMETRIC_QUALITY', 'RADIOMETRIC_QUALITY',
-
         self._valid_portion = 90
         self._apply_valid_mask = False
-        self._im_transform = lambda image : ee.Image.toUint16(image)
+        self._im_transform = lambda image: ee.Image.toUint16(image)
 
     def _process_image(self, image, region=None, apply_mask=True):
         """
@@ -603,7 +592,7 @@ class Sentinel2ImSearch(ImSearch):
         : ee.ImageCollection
         The filtered image collection
         """
-        return (ee.ImageCollection(self._collection_info['ee_collection']).
+        return (ee.ImageCollection(self.collection_info['ee_collection']).
                 filterDate(start_date, end_date).
                 filterBounds(region).
                 map(lambda image: self._process_image(image, region=region, apply_mask=self._apply_valid_mask)).
@@ -635,7 +624,6 @@ class Sentinel2ImSearch(ImSearch):
         return ImSearch.search(self, start_date, end_date, region)
 
 
-
 ##
 class Sentinel2CloudlessImSearch(ImSearch):
     def __init__(self, collection='sentinel2_toa'):
@@ -650,13 +638,9 @@ class Sentinel2CloudlessImSearch(ImSearch):
         """
         ImSearch.__init__(self, collection=collection)
 
-        # self._im_props = {'VALID':'VALID_PORTION', 'SCORE':'QA_SCORE_AVG', 'RADQ':'RADIOMETRIC_QUALITY', 'GEOMQ':'GEOMETRIC_QUALITY',
-        #                   'SAA':'MEAN_SOLAR_AZIMUTH_ANGLE', 'SZA':'MEAN_SOLAR_ZENITH_ANGLE', 'VAA':'MEAN_INCIDENCE_AZIMUTH_ANGLE_B1',
-        #                   'VZA':'MEAN_INCIDENCE_ZENITH_ANGLE_B1'}
-
         self._valid_portion = 90
         self._apply_valid_mask = False
-        self._im_transform = lambda image : ee.Image.toUint16(image)
+        self._im_transform = lambda image: ee.Image.toUint16(image)
 
         self._cloud_filter = 60  # Maximum image cloud cover percent allowed in image collection
         self._cloud_prob_thresh = 40  # Cloud probability (%); values greater than are considered cloud
@@ -705,7 +689,7 @@ class Sentinel2CloudlessImSearch(ImSearch):
                            select('distance').mask().rename('PROJ_CLOUD_MASK'))
         # .reproject(**{'crs': image.select(0).projection(), 'scale': 100})
 
-        if self._collection_info['ee_collection'] == 'COPERNICUS/S2_SR':  # use SCL to reduce shadow_mask
+        if self.collection_info['ee_collection'] == 'COPERNICUS/S2_SR':  # use SCL to reduce shadow_mask
             # Note: SCL does not classify cloud shadows well, they are often labelled "dark".  Instead of using only
             # cloud shadow areas from this band, we combine it with the projected dark and shadow areas from s2cloudless
             scl = image.select('SCL')
@@ -763,7 +747,7 @@ class Sentinel2CloudlessImSearch(ImSearch):
         """
         # adapted from https://developers.google.com/earth-engine/tutorials/community/sentinel-2-s2cloudless
 
-        s2_sr_toa_col = (ee.ImageCollection(self._collection_info['ee_collection'])
+        s2_sr_toa_col = (ee.ImageCollection(self.collection_info['ee_collection'])
                          .filterBounds(region)
                          .filterDate(start_date, end_date)
                          .filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', self._cloud_filter)))
@@ -782,13 +766,13 @@ class Sentinel2CloudlessImSearch(ImSearch):
             })})).map(lambda image: self._process_image(image, region=region, apply_mask=self._apply_valid_mask)).
                 filter(ee.Filter.gt('VALID_PORTION', self._valid_portion)))
 
-    def get_image(self, id, region=None):
+    def get_image(self, image_id, region=None):
         """
         Retrieve an ee.Image object, adding validity and quality metadata where possible
 
         Parameters
         ----------
-        id : str
+        image_id : str
              Earth engine image ID e.g. 'LANDSAT/LC08/C02/T1_L2/LC08_182037_20190118 2019-01-18'
         region : ee.Geometry, dict, geojson
                  Process image over this region
@@ -798,15 +782,15 @@ class Sentinel2CloudlessImSearch(ImSearch):
         : ee.Image
           The processed image
         """
-        index = id.split('/')[-1]
-        collection = '/'.join(id.split('/')[:-1])
+        index = image_id.split('/')[-1]
+        collection = '/'.join(image_id.split('/')[:-1])
 
-        if collection != self._collection_info['ee_collection']:
-            raise ValueError(f'{id} is not a valid earth engine id for {self.__class__}')
+        if collection != self.collection_info['ee_collection']:
+            raise ValueError(f'{image_id} is not a valid earth engine id for {self.__class__}')
 
         # combine COPERNICUS/S2* and COPERNICUS/S2_CLOUD_PROBABILITY images
         s2_cloud_prob_image = ee.Image(f'COPERNICUS/S2_CLOUD_PROBABILITY/{index}')
-        image = ee.Image(id).set('s2cloudless', s2_cloud_prob_image)
+        image = ee.Image(image_id).set('s2cloudless', s2_cloud_prob_image)
         image = self._process_image(image, region=region).set('s2cloudless', None)
 
         return image.toUint16()
@@ -837,8 +821,6 @@ class Sentinel2CloudlessImSearch(ImSearch):
         return ImSearch.search(self, start_date, end_date, region)
 
 
-
-
 ##
 class ModisNbarImSearch(ImSearch):
     def __init__(self, collection='modis_nbar'):
@@ -848,4 +830,3 @@ class ModisNbarImSearch(ImSearch):
         ImSearch.__init__(self, collection)
 
 ##
-

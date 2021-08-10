@@ -27,13 +27,13 @@ from geedim import search as search_api
 
 logger = get_logger(__name__)
 
-
 # map collection keys to classes
 cls_col_map = {'landsat7_c2_l2': search_api.LandsatImSearch,
                'landsat8_c2_l2': search_api.LandsatImSearch,
                'sentinel2_toa': search_api.Sentinel2CloudlessImSearch,
                'sentinel2_sr': search_api.Sentinel2CloudlessImSearch,
                'modis_nbar': search_api.ModisNbarImSearch}
+
 
 def _parse_region_bbox(region=None, bbox=None, region_buf=5):
     """ create geojson dict from region or bbox """
@@ -58,7 +58,8 @@ def _parse_region_bbox(region=None, bbox=None, region_buf=5):
 
     return region_geojson
 
-def _export_download(id, bbox=None, region=None, path=None, crs=None, scale=None, wait=True, download=True):
+
+def _export_download(ids, bbox=None, region=None, path=None, crs=None, scale=None, wait=True, do_download=True):
     """ download or export image(s), with cloud and shadow masking """
 
     ee.Initialize()
@@ -68,7 +69,7 @@ def _export_download(id, bbox=None, region=None, path=None, crs=None, scale=None
     collection_info = search_api.load_collection_info()
     collection_df = pd.DataFrame.from_dict(collection_info, orient='index')
 
-    for _id in id:
+    for _id in ids:
         ee_collection = '/'.join(_id.split('/')[:-1])
         if not (ee_collection in collection_df.ee_collection.values):
             logger.warning(f'Skipping {_id}: Unknown collection')
@@ -78,19 +79,21 @@ def _export_download(id, bbox=None, region=None, path=None, crs=None, scale=None
 
         if collection == 'modis_nbar' and crs is None:  # workaround MODIS native CRS export issue
             crs = 'EPSG:3857'
-            logger.warning(f'Re-projecting {_id} to {crs} to avoid GEE MODIS CRS bug: https://issuetracker.google.com/issues/194561313.')
+            logger.warning(f'Re-projecting {_id} to {crs} to avoid GEE MODIS CRS bug: '
+                           f'https://issuetracker.google.com/issues/194561313.')
 
         imsearch_obj = cls_col_map[collection](collection=collection)
         image = imsearch_obj.get_image(_id, region=region_geojson)
 
-        if download:
-            band_df = pd.DataFrame.from_dict(imsearch_obj._collection_info['bands'])
+        if do_download:
+            band_df = pd.DataFrame.from_dict(imsearch_obj.collection_info['bands'])
             filename = pathlib.Path(path).joinpath(_id.replace('/', '_') + '.tif')
             download_api.download_image(image, filename, region=region_geojson, crs=crs, scale=scale, band_df=band_df)
         else:
             filename = _id.replace('/', '_')
             download_api.export_image(image, filename, folder=path, region=region_geojson, crs=crs, scale=scale,
-                                  wait=wait)
+                                      wait=wait)
+
 
 # define options common to >1 command
 bbox_option = click.option(
@@ -144,6 +147,7 @@ scale_option = click.option(
     required=False
 )
 
+
 # define the click cli
 @click.group()
 def cli():
@@ -193,7 +197,6 @@ def search(collection, start_date, end_date=None, bbox=None, region=None, output
     if end_date is None:
         end_date = start_date
 
-
     imsearch = cls_col_map[collection](collection=collection)
     region_geojson = _parse_region_bbox(region=region, bbox=bbox, region_buf=region_buf)
 
@@ -214,6 +217,7 @@ def search(collection, start_date, end_date=None, bbox=None, region=None, output
 
 cli.add_command(search)
 
+
 @click.command()
 @image_id_option
 @bbox_option
@@ -230,11 +234,13 @@ cli.add_command(search)
 )
 @crs_option
 @scale_option
-def download(id, bbox=None, region=None, download_dir=os.getcwd(), crs=None, scale=None):
+def download(ids, bbox=None, region=None, download_dir=os.getcwd(), crs=None, scale=None):
     """ Download image(s), with cloud and shadow masking """
-    _export_download(id, bbox=bbox, region=region, path=download_dir, crs=crs, scale=scale, download=True)
+    _export_download(ids, bbox=bbox, region=region, path=download_dir, crs=crs, scale=scale, do_download=True)
+
 
 cli.add_command(download)
+
 
 @click.command()
 @image_id_option
@@ -258,8 +264,10 @@ cli.add_command(download)
     help="Wait / don't wait for export to complete.  [default: wait]",
     required=False,
 )
-def export(id, bbox=None, region=None, drive_folder='', crs=None, scale=None, wait=True):
+def export(ids, bbox=None, region=None, drive_folder='', crs=None, scale=None, wait=True):
     """ Export image(s) to Google Drive, with cloud and shadow masking """
-    _export_download(id, bbox=bbox, region=region, path=drive_folder, crs=crs, scale=scale, wait=wait, download=False)
+    _export_download(ids, bbox=bbox, region=region, path=drive_folder, crs=crs, scale=scale, wait=wait,
+                     do_download=False)
+
 
 cli.add_command(export)

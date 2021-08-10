@@ -28,8 +28,8 @@ if '__file__' in globals():
 else:
     root_path = pathlib.Path(os.getcwd())
 
+
 def get_logger(name):
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
     return logger
-
