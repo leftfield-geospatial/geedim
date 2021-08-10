@@ -105,9 +105,7 @@ class ImSearch:
             raise ValueError(f'Unknown collection: {collection}')
         self._collection_info = collection_info[collection]
         self._im_props = pd.DataFrame(self._collection_info['properties'])  # list of image properties to display in search results
-        self._im_collection = None
         self._im_df = None
-        self._search_region = None
         self._search_date = None
         self._im_transform = lambda image: image
 
@@ -238,8 +236,8 @@ class ImSearch:
         if '/'.join(id.split('/')[:-1]) != self._collection_info['ee_collection']:
             raise ValueError(f'{id} is not a valid earth engine id for {self.__class__}')
 
-        # return self._process_image(ee.Image(id), region=region).toUint16()
-        return ee.Image(id).toUint16()
+        return self._process_image(ee.Image(id), region=region).toUint16()
+        # return ee.Image(id).toUint16()
 
     def search(self, start_date, end_date, region):
         """
@@ -261,8 +259,6 @@ class ImSearch:
         """
         # Initialise
         self._im_df = None
-        self._im_collection = None
-        self._search_region = region
         if end_date is None:
             end_date = start_date
         self._search_date = start_date + (end_date - start_date)/2
@@ -274,10 +270,10 @@ class ImSearch:
         logger.info(f'Searching for {self._collection_info["ee_collection"]} images between '
                     f'{start_date.strftime("%Y-%m-%d")} and {end_date.strftime("%Y-%m-%d")}')
 
-        self._im_collection = self._get_im_collection(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"),
+        im_collection = self._get_im_collection(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"),
                                                       region)
 
-        num_images = self._im_collection.size().getInfo()
+        num_images = im_collection.size().getInfo()
 
         if num_images == 0:
             logger.info(f'Could not find any images matching those criteria')
@@ -285,7 +281,7 @@ class ImSearch:
 
         # print search results
         logger.info(f'Found {num_images} images:')
-        self._im_df = ImSearch._get_collection_df(self._im_collection, self._im_props, do_print=True,
+        self._im_df = ImSearch._get_collection_df(im_collection, self._im_props, do_print=True,
                                                   im_transform=self._im_transform)
 
         return self._im_df
@@ -389,7 +385,6 @@ class LandsatImSearch(ImSearch):
             q_score = cloud_conf.add(cloud_shadow_conf).add(cirrus_conf).multiply(-1).add(9)
 
         # calculate the potion of valid image pixels
-        # TODO: is self._search_region necessary or can it be passed or otherwise referred to?
         valid_portion = (valid_mask.unmask().
                          multiply(100).
                          reduceRegion(reducer='mean', geometry=region,
@@ -582,7 +577,7 @@ class Sentinel2ImSearch(ImSearch):
         # calculate the potion of valid image pixels
         valid_portion = (valid_mask.unmask().
                          multiply(100).
-                         reduceRegion(reducer='mean', geometry=self._search_region, scale=min_scale).
+                         reduceRegion(reducer='mean', geometry=region, scale=min_scale).
                          rename(['VALID_MASK'], ['VALID_PORTION']))
 
         # TODO: what happens if/when pixels aren't filled
@@ -725,12 +720,12 @@ class Sentinel2CloudlessImSearch(ImSearch):
         # calculate the potion of valid image pixels TODO: this is repeated in each class
         valid_portion = (valid_mask.unmask().
                          multiply(100).
-                         reduceRegion(reducer='mean', geometry=self._search_region, scale=min_scale).
+                         reduceRegion(reducer='mean', geometry=region, scale=min_scale).
                          rename(['VALID_MASK'], ['VALID_PORTION']))
 
         # calculate the average quality score
         q_score_avg = (q_score.unmask().
-                       reduceRegion(reducer='mean', geometry=self._search_region, scale=min_scale).
+                       reduceRegion(reducer='mean', geometry=region, scale=min_scale).
                        rename(['QA_SCORE'], ['QA_SCORE_AVG']))
 
         if False:
@@ -812,8 +807,9 @@ class Sentinel2CloudlessImSearch(ImSearch):
         # combine COPERNICUS/S2* and COPERNICUS/S2_CLOUD_PROBABILITY images
         s2_cloud_prob_image = ee.Image(f'COPERNICUS/S2_CLOUD_PROBABILITY/{index}')
         image = ee.Image(id).set('s2cloudless', s2_cloud_prob_image)
+        image = self._process_image(image, region=region).set('s2cloudless', None)
 
-        return self._process_image(image, region=region).toUint16()
+        return image.toUint16()
 
     def search(self, start_date, end_date, region, valid_portion=50, apply_valid_mask=False):
         """

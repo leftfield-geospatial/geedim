@@ -84,8 +84,9 @@ def _export_download(id, bbox=None, region=None, path=None, crs=None, scale=None
         image = imsearch_obj.get_image(_id, region=region_geojson)
 
         if download:
+            band_df = pd.DataFrame.from_dict(imsearch_obj._collection_info['bands'])
             filename = pathlib.Path(path).joinpath(_id.replace('/', '_') + '.tif')
-            download_api.download_image(image, filename, region=region_geojson, crs=crs, scale=scale)
+            download_api.download_image(image, filename, region=region_geojson, crs=crs, scale=scale, band_df=band_df)
         else:
             filename = _id.replace('/', '_')
             download_api.export_image(image, filename, folder=path, region=region_geojson, crs=crs, scale=scale,

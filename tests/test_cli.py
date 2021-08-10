@@ -147,9 +147,11 @@ class TestDownloadCli(unittest.TestCase):
         Test `geedim download` with --bbox option
         """
         # COPERNICUS/S2_SR/20190108T090339_20190108T090341_T35SKT
-        ids = ['LANDSAT/LC08/C02/T1_L2/LC08_172083_20190128', 'MODIS/006/MCD43A4/2019_01_01']
+        # ids = ['COPERNICUS/S2_SR/20190115T080251_20190115T082230_T35HKC', 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190128',
+        #        'MODIS/006/MCD43A4/2019_01_01']
+        ids = ['COPERNICUS/S2_SR/20190115T080251_20190115T082230_T35HKC']
         download_dir = root_path.joinpath('data/outputs/tests')
-        bbox = (23.9, 33.5, 24, 33.6)
+        bbox = (23.95, 33.55, 24, 33.6)
         prefixed_ids = [val for tup in zip(['-i'] * len(ids), ids) for val in tup]
 
         # invoke CLI
@@ -166,7 +168,9 @@ class TestDownloadCli(unittest.TestCase):
         """
         Test `geedim download` with --regeion, --crs and --scale options
         """
-        ids = ['LANDSAT/LC08/C02/T1_L2/LC08_182037_20190118', 'MODIS/006/MCD43A4/2019_01_02']
+        # ids = ['COPERNICUS/S2_SR/20190120T080239_20190120T082812_T35HKC', 'LANDSAT/LC08/C02/T1_L2/LC08_182037_20190118',
+        #        'MODIS/006/MCD43A4/2019_01_02']
+        ids = ['MODIS/006/MCD43A4/2019_01_02']
         region_filename = root_path.joinpath('data/inputs/tests/region.geojson')
         download_dir = root_path.joinpath('data/outputs/tests')
         crs = 'EPSG:3857'

@@ -115,21 +115,22 @@ class TestGeeDimApi(unittest.TestCase):
         # select an image to download/export
         # TODO: change to use get_image()
         im_idx = math.ceil(image_df.shape[0] / 2)
-        image = image_df.IMAGE.iloc[im_idx]
-        image_id = image_df['ID'].iloc[im_idx].replace('/', '_')
+        image_id = str(image_df['ID'].iloc[im_idx])
+        image = imsearch_obj.get_image(image_id, region=region)    #  image_df.IMAGE.iloc[im_idx]
+        image_name = image_id.replace('/', '_')
 
         export_tasks = []
         if self.test_export:  # start export tasks
             export_tasks.append(
-                download.export_image(image, f'{image_id}_None_None', folder='GeedimTest', region=region,
+                download.export_image(image, f'{image_name}_None_None', folder='GeedimTest', region=region,
                                       crs=None, scale=None, wait=False))
-            export_tasks.append(download.export_image(image, f'{image_id}_Epsg32635_240m', folder='GeedimTest',
+            export_tasks.append(download.export_image(image, f'{image_name}_Epsg32635_240m', folder='GeedimTest',
                                                       region=region, crs='EPSG:32635', scale=240, wait=False))
 
         # download in native crs and scale, and validate
-        self._test_download(image, image_id, region, crs=None, scale=None, band_df=band_df)
+        self._test_download(image, image_name, region, crs=None, scale=None, band_df=band_df)
         # download in specified crs and scale, and validate
-        self._test_download(image, image_id, region, crs='EPSG:32635', scale=240, band_df=band_df)  # UTM zone 35N
+        self._test_download(image, image_name, region, crs='EPSG:32635', scale=240, band_df=band_df)  # UTM zone 35N
 
         return export_tasks
 
