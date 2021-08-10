@@ -234,9 +234,9 @@ cli.add_command(search)
 )
 @crs_option
 @scale_option
-def download(ids, bbox=None, region=None, download_dir=os.getcwd(), crs=None, scale=None):
+def download(id, bbox=None, region=None, download_dir=os.getcwd(), crs=None, scale=None):
     """ Download image(s), with cloud and shadow masking """
-    _export_download(ids, bbox=bbox, region=region, path=download_dir, crs=crs, scale=scale, do_download=True)
+    _export_download(id, bbox=bbox, region=region, path=download_dir, crs=crs, scale=scale, do_download=True)
 
 
 cli.add_command(download)
@@ -264,9 +264,9 @@ cli.add_command(download)
     help="Wait / don't wait for export to complete.  [default: wait]",
     required=False,
 )
-def export(ids, bbox=None, region=None, drive_folder='', crs=None, scale=None, wait=True):
+def export(id, bbox=None, region=None, drive_folder='', crs=None, scale=None, wait=True):
     """ Export image(s) to Google Drive, with cloud and shadow masking """
-    _export_download(ids, bbox=bbox, region=region, path=drive_folder, crs=crs, scale=scale, wait=wait,
+    _export_download(id, bbox=bbox, region=region, path=drive_folder, crs=crs, scale=scale, wait=wait,
                      do_download=False)
 
 
