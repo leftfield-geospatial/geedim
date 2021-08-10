@@ -7,6 +7,7 @@ import rasterio as rio
 from rasterio.crs import CRS
 from rasterio.warp import transform_bounds
 
+
 import math
 
 from geedim import download
@@ -108,13 +109,14 @@ class TestGeeDimApi(unittest.TestCase):
 
         # check search results
         self.assertGreater(image_df.shape[0], 0, msg='Search returned one or more images')
-        for im_prop in imsearch_obj._im_props.PROPERTY.values:
+        for im_prop in imsearch_obj._im_props.ABBREV.values:
             self.assertTrue(im_prop in image_df.columns, msg='Search results contain specified properties')
 
         # select an image to download/export
+        # TODO: change to use get_image()
         im_idx = math.ceil(image_df.shape[0] / 2)
         image = image_df.IMAGE.iloc[im_idx]
-        image_id = image_df['system:id'].iloc[im_idx].replace('/', '_')
+        image_id = image_df['ID'].iloc[im_idx].replace('/', '_')
 
         export_tasks = []
         if self.test_export:  # start export tasks

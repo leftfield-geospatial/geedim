@@ -43,7 +43,7 @@ def _parse_region_bbox(region=None, bbox=None, region_buf=5):
 
     if region is not None:  # read region file/string
         region = pathlib.Path(region)
-        if 'json' in region.suffix:  # read region from gejson file
+        if 'json' in region.suffix:  # read region from geojson file
             with open(region) as f:
                 region_geojson = json.load(f)
         else:  # read region from raster file

@@ -49,7 +49,7 @@ def get_image_bounds(filename, expand=5):
 
     Parameters
     ----------
-    filename :  str
+    filename :  str, pathlib.Path
                 name of the image file whose bounds to find
     expand :    int
                 percentage (0-100) by which to expand the bounds (default: 5)

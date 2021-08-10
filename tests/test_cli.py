@@ -15,18 +15,22 @@
 """
 
 import json
+import pathlib
 import unittest
 from datetime import datetime
 
 import pandas as pd
+import rasterio as rio
 from click.testing import CliRunner
+from rasterio.crs import CRS
+from rasterio.warp import transform_bounds
 
 from geedim import root_path, cli
 
 
-class TestGeeDimCli(unittest.TestCase):
+class TestSearchCli(unittest.TestCase):
     """
-    Test command line interface
+    Test geedim search CLI
     """
 
     def _test_search_results(self, collection, start_date, end_date, results_filename):
@@ -94,4 +98,111 @@ class TestGeeDimCli(unittest.TestCase):
         self.assertTrue(result.exit_code == 0, result.exception)  # search returned ok
 
         self._test_search_results(collection, start_date, end_date, results_filename)  # check results
-##
+
+# TODO: consider decreasing testing here as there is somw overlap with test_api
+class TestDownloadCli(unittest.TestCase):
+    """
+    Test geedim download/export CLI
+    """
+
+    def _test_download_files(self, ids, download_dir, region_bounds, crs=None, scale=None):
+        """
+        Test downloaded image file(s) for validity
+
+        Parameters
+        ----------
+        ids : list
+              List of EE ids passed to `geedim download --id ...`
+        download_dir : str, pathlib.Path
+                       Download directory passed to `geedim download`
+        region_bounds : rasterio.coords.BoundingBox
+                        Image region as a rasterio bbox
+        crs : str, optional
+              CRS string passed to `geedim download` if any
+        scale : float, optional
+                Pixel resolution passed to `geedim download` if any
+        """
+
+        for id in ids:
+            image_filename = pathlib.Path(download_dir).joinpath(id.replace('/', '_') + '.tif')
+            self.assertTrue(image_filename.exists(), 'Downloaded image exists')
+
+            with rio.open(image_filename) as im:
+                im_bounds_wgs84 = transform_bounds(im.crs, 'WGS84', *im.bounds)  # convert to WGS84
+                self.assertFalse(rio.coords.disjoint_bounds(region_bounds, im_bounds_wgs84),
+                                 msg='CLI and image region match')
+                self.assertTrue(im.count > 0, 'Image has more than one band')
+
+                if crs is not None:
+                    self.assertEqual(CRS.from_string(crs).to_proj4(), im.crs.to_proj4(),
+                                     msg='CLI and download image CRS match')
+
+                if scale is not None:
+                    self.assertAlmostEqual(scale, im.res[0], places=3, msg='CLI and download image scale match')
+                # TODO: test masking when that is done, perhaps comparing to VALID_PORTION or similar
+
+
+    def test_download_bbox(self):
+        """
+        Test `geedim download` with --bbox option
+        """
+        # COPERNICUS/S2_SR/20190108T090339_20190108T090341_T35SKT
+        ids = ['LANDSAT/LC08/C02/T1_L2/LC08_172083_20190128', 'MODIS/006/MCD43A4/2019_01_01']
+        download_dir = root_path.joinpath('data/outputs/tests')
+        bbox = (23.9, 33.5, 24, 33.6)
+        prefixed_ids = [val for tup in zip(['-i'] * len(ids), ids) for val in tup]
+
+        # invoke CLI
+        result = CliRunner().invoke(cli.cli, ['download', *prefixed_ids, '-b', *bbox, '-dd', str(download_dir)],
+                                    terminal_width=80)
+        self.assertTrue(result.exit_code == 0, result.exception)
+
+        # check downloaded images
+        region_bounds = rio.coords.BoundingBox(*bbox)
+        self._test_download_files(ids, download_dir, region_bounds)
+
+
+    def test_download_region(self):
+        """
+        Test `geedim download` with --regeion, --crs and --scale options
+        """
+        ids = ['LANDSAT/LC08/C02/T1_L2/LC08_182037_20190118', 'MODIS/006/MCD43A4/2019_01_02']
+        region_filename = root_path.joinpath('data/inputs/tests/region.geojson')
+        download_dir = root_path.joinpath('data/outputs/tests')
+        crs = 'EPSG:3857'
+        scale = 100
+
+        prefixed_ids = [val for tup in zip(['-i'] * len(ids), ids) for val in tup]
+
+        # invoke CLI
+        result = CliRunner().invoke(cli.cli, ['download', *prefixed_ids, '-r', str(region_filename),
+                                              '-dd', str(download_dir), '--crs', crs, '--scale', scale],
+                                    terminal_width=80)
+        self.assertTrue(result.exit_code == 0, result.exception)
+
+        # read region into rasterio bounds
+        with open(region_filename) as f:
+            region_bounds_geojson = json.load(f)
+
+        region_arr = pd.DataFrame(region_bounds_geojson['coordinates'][0], columns=['x', 'y'])  # avoid numpy dependency
+        region_bounds = rio.coords.BoundingBox(region_arr.x.min(), region_arr.y.min(), region_arr.x.max(),
+                                               region_arr.y.max())
+
+        # check downloaded images
+        self._test_download_files(ids, download_dir, region_bounds, crs=crs, scale=scale)
+
+
+    def test_export(self):
+        """
+        Test `geedim export` with --bbox option
+        """
+        # test export of one image only to save time, and because we can't check the exported image validity
+        ids = ['LANDSAT/LC08/C02/T1_L2/LC08_182037_20190219']
+        download_dir = root_path.joinpath('data/outputs/tests')
+        bbox = (23.9, 33.5, 24, 33.6)
+        prefixed_ids = [val for tup in zip(['-i'] * len(ids), ids) for val in tup]
+
+        # invoke CLI
+        result = CliRunner().invoke(cli.cli, ['export', *prefixed_ids, '-b', *bbox, '-df', 'geedim_test', '-w'],
+                                    terminal_width=80)
+        self.assertTrue(result.exit_code == 0, result.exception)
