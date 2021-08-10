@@ -19,7 +19,7 @@ class TestGeeDimApi(unittest.TestCase):
     """
     Test backend functionality in search and download modules
     """
-
+    # TODO: separate API search and download testing (?)
     def _test_download(self, image, image_id, region, crs=None, scale=None, band_df=None):
         """
         Test image download
@@ -119,16 +119,24 @@ class TestGeeDimApi(unittest.TestCase):
         image = imsearch_obj.get_image(image_id, region=region)    #  image_df.IMAGE.iloc[im_idx]
         image_name = image_id.replace('/', '_')
 
+        # workaround for GEE MODIS CRS bug
+        if isinstance(imsearch_obj, search.ModisNbarImSearch):
+            _crs = 'EPSG:3857'
+            _scale = 500
+        else:
+            _crs = None
+            _scale = None
+
         export_tasks = []
         if self.test_export:  # start export tasks
             export_tasks.append(
                 download.export_image(image, f'{image_name}_None_None', folder='GeedimTest', region=region,
-                                      crs=None, scale=None, wait=False))
+                                      crs=_crs, scale=None, wait=False))
             export_tasks.append(download.export_image(image, f'{image_name}_Epsg32635_240m', folder='GeedimTest',
                                                       region=region, crs='EPSG:32635', scale=240, wait=False))
 
         # download in native crs and scale, and validate
-        self._test_download(image, image_name, region, crs=None, scale=None, band_df=band_df)
+        self._test_download(image, image_name, region, crs=_crs, scale=None, band_df=band_df)
         # download in specified crs and scale, and validate
         self._test_download(image, image_name, region, crs='EPSG:32635', scale=240, band_df=band_df)  # UTM zone 35N
 
@@ -143,7 +151,7 @@ class TestGeeDimApi(unittest.TestCase):
         ee.Initialize()
 
         # *ImSearch objects to test
-        test_objs = [  # search.ModisNbarImSearch(),
+        test_objs = [search.ModisNbarImSearch(collection='modis_nbar'),
             search.LandsatImSearch(collection='landsat8_c2_l2'),
             search.LandsatImSearch(collection='landsat7_c2_l2'),
             search.Sentinel2ImSearch(collection='sentinel2_toa'),
