@@ -238,7 +238,8 @@ class ImSearch:
         if '/'.join(id.split('/')[:-1]) != self._collection_info['ee_collection']:
             raise ValueError(f'{id} is not a valid earth engine id for {self.__class__}')
 
-        return self._process_image(ee.Image(id), region=region)
+        # return self._process_image(ee.Image(id), region=region).toUint16()
+        return ee.Image(id).toUint16()
 
     def search(self, start_date, end_date, region):
         """
@@ -812,7 +813,7 @@ class Sentinel2CloudlessImSearch(ImSearch):
         s2_cloud_prob_image = ee.Image(f'COPERNICUS/S2_CLOUD_PROBABILITY/{index}')
         image = ee.Image(id).set('s2cloudless', s2_cloud_prob_image)
 
-        return self._process_image(image, region=region)
+        return self._process_image(image, region=region).toUint16()
 
     def search(self, start_date, end_date, region, valid_portion=50, apply_valid_mask=False):
         """
@@ -849,32 +850,6 @@ class ModisNbarImSearch(ImSearch):
         Class for searching the MODIS daily NBAR earth engine image collection
         """
         ImSearch.__init__(self, collection)
-
-    def search(self, start_date, end_date, region):
-        """
-        Search for images based on date and region
-
-        Parameters
-        ----------
-        start_date : datetime.datetime
-                     Python datetime specifying the start image capture date
-        end_date : datetime.datetime
-                   Python datetime specifying the end image capture date (if None, then set to start_date)
-        region : dict, geojson, ee.Geometry, ee.Geometry
-                 Polygon in WGS84 specifying a region that images should intersect
-
-        Returns
-        -------
-        image_df : pandas.DataFrame
-        Dataframe specifying image properties that match the search criteria
-        """
-        self._im_df = ImSearch.search(self, start_date, end_date, region)
-
-        # TODO: a reproject to avoid GEE 'SR-ORG:6974' export bug?
-        # convert all image bands to uint16 in preparation for export
-        im_list = [image.toUint16() for image in self._im_df.IMAGE.values]
-        self._im_df.IMAGE = im_list
-        return self._im_df
 
 ##
 
