@@ -26,6 +26,7 @@ from urllib import request
 from urllib.error import HTTPError
 import zipfile
 import logging
+import click
 
 import ee
 import pandas as pd
@@ -275,19 +276,22 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
         with open(zip_filename, 'wb') as f:
             file_size_dl = 0
             block_size = 8192
-            while file_size_dl <= file_size:
-                buffer = file_link.read(block_size)
-                if not buffer:
-                    break
-                file_size_dl += len(buffer)
-                f.write(buffer)
+            with click.progressbar(length=file_size,
+                                   label='Downloading') as bar:
+                while file_size_dl <= file_size:
+                    buffer = file_link.read(block_size)
+                    if not buffer:
+                        break
+                    file_size_dl += len(buffer)
+                    f.write(buffer)
+                    bar.update(file_size_dl)
 
-                # display progress bar
-                progress = (file_size_dl / file_size)
-                sys.stdout.write('\r')
-                sys.stdout.write('[%-50s] %d%%' % ('=' * int(50 * progress), 100 * progress))
-                sys.stdout.flush()
-            sys.stdout.write('\n')
+            #     # display progress bar
+            #     progress = (file_size_dl / file_size)
+            #     sys.stdout.write('\r')
+            #     sys.stdout.write('[%-50s] %d%%' % ('=' * int(50 * progress), 100 * progress))
+            #     sys.stdout.flush()
+            # sys.stdout.write('\n')
 
     except HTTPError as ex:
         logger.error(f'Could not open URL: HHTP error {ex.code} - {ex.reason}')

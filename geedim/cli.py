@@ -216,9 +216,11 @@ def search(collection, start_date, end_date=None, bbox=None, region=None, valid_
     imsearch = cls_col_map[collection](collection=collection)
     region_geojson = _parse_region_geom(region=region, bbox=bbox, region_buf=region_buf)
 
+    click.echo(f'\nSearching for {imsearch.collection_info["ee_collection"]} images between '
+               f'{start_date.strftime("%Y-%m-%d")} and {end_date.strftime("%Y-%m-%d")}...')
     im_df = imsearch.search(start_date, end_date, region_geojson, valid_portion=valid_portion)
 
-    if (output is not None) and (im_df is not None):
+    if (output is not None):
         if 'IMAGE' in im_df.columns:
             im_df = im_df.drop(columns='IMAGE')
         output = pathlib.Path(output)
@@ -228,7 +230,7 @@ def search(collection, start_date, end_date=None, bbox=None, region=None, valid_
             im_df.to_json(output, orient='index')
         else:
             raise ValueError(f'Unknown output file extension: {output.suffix}')
-    return 0
+    return
 
 
 cli.add_command(search)

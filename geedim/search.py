@@ -20,18 +20,18 @@ import json
 import logging
 from datetime import datetime
 
+import click
 import ee
 import pandas
 import pandas as pd
 import rasterio as rio
 from rasterio.warp import transform_geom
 
-from geedim import download, root_path, get_logger
+from geedim import download, root_path
 
 # from shapely import geometry
 
 ##
-logger = get_logger(__name__)
 
 
 def load_collection_info():
@@ -110,7 +110,6 @@ class ImSearch:
 
         # list of image properties to display in search results
         self._im_props = pd.DataFrame(self.collection_info['properties'])
-        self._im_df = None
         self._search_date = None
         self._im_transform = lambda image: image
 
@@ -195,7 +194,11 @@ class ImSearch:
         # retrieve list of dicts of collection image properties
         im_prop_list = ee.List(im_collection.iterate(aggregrate_props, init_list)).getInfo()
 
-        im_list = im_collection.toList(im_collection.size())  # image objects
+        if len(im_prop_list) == 0:
+            click.echo('No images found')
+            return pandas.DataFrame([], columns=property_df.ABBREV)
+
+        im_list = im_collection.toList(im_collection.size())  # image objects TODO: exclude IMAGE
 
         # add EE image objects and convert ee.Date to python datetime
         for i, prop_dict in enumerate(im_prop_list):
@@ -204,19 +207,20 @@ class ImSearch:
             prop_dict['IMAGE'] = im_transform(ee.Image(im_list.get(i)))  # TODO: remove IMAGE ?
 
         # convert to DataFrame
-        im_prop_df = pandas.DataFrame(im_prop_list)
+        im_prop_df = pandas.DataFrame(im_prop_list, columns=im_prop_list[0].keys())
         im_prop_df = im_prop_df.sort_values(by='system:time_start').reset_index(drop=True)
         im_prop_df = im_prop_df.rename(
             columns=dict(zip(property_df.PROPERTY, property_df.ABBREV)))  # rename cols to abbrev
         im_prop_df = im_prop_df[property_df.ABBREV]     # reorder columns
 
         if do_print:
-            logger.info('\nImage property descriptions:\n' +
+            click.echo(f'{len(im_prop_list)} images found')
+            click.echo('\nImage property descriptions:\n\n' +
                         property_df[['ABBREV', 'DESCRIPTION']].to_string(index=False, justify='right'))
 
-            logger.info('\n' + im_prop_df.to_string(
+            click.echo('\nSearch Results:\n\n' + im_prop_df.to_string(
                 float_format='%.2f',
-                formatters={'system:time_start': lambda x: datetime.strftime(x, '%Y-%m-%d %H:%M')},
+                formatters={'DATE': lambda x: datetime.strftime(x, '%Y-%m-%d %H:%M')},
                 columns=property_df.ABBREV,
                 # header=property_df.ABBREV,
                 index=False,
@@ -245,7 +249,7 @@ class ImSearch:
         if '/'.join(image_id.split('/')[:-1]) != self.collection_info['ee_collection']:
             raise ValueError(f'{image_id} is not a valid earth engine id for {self.__class__}')
 
-        return self._process_image(ee.Image(image_id), region=region, apply_mask=apply_mask).toUint16()
+        return self._im_transform(self._process_image(ee.Image(image_id), region=region, apply_mask=apply_mask))
 
     def search(self, start_date, end_date, region, valid_portion=0, apply_mask=False):
         """
@@ -271,7 +275,6 @@ class ImSearch:
         # Initialise
         self._valid_portion = valid_portion
         self._apply_mask = apply_mask
-        self._im_df = None
         if end_date is None:
             end_date = start_date
         self._search_date = start_date + (end_date - start_date) / 2
@@ -280,24 +283,12 @@ class ImSearch:
         # end_date = date + timedelta(days=day_range)
 
         # filter the image collection
-        logger.info(f'Searching for {self.collection_info["ee_collection"]} images between '
-                    f'{start_date.strftime("%Y-%m-%d")} and {end_date.strftime("%Y-%m-%d")}')
-
         im_collection = self._get_im_collection(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"),
                                                 region)
 
-        num_images = im_collection.size().getInfo()
-
-        if num_images == 0:
-            logger.info(f'Could not find any images matching those criteria')
-            return None
-
-        # print search results
-        logger.info(f'Found {num_images} images:')
-        self._im_df = ImSearch._get_collection_df(im_collection, self._im_props, do_print=True,
+        # convert and print search results
+        return ImSearch._get_collection_df(im_collection, self._im_props, do_print=True,
                                                   im_transform=self._im_transform)
-
-        return self._im_df
 
 
 ##
@@ -317,7 +308,7 @@ class LandsatImSearch(ImSearch):
         if collection not in ['landsat8_c2_l2', 'landsat7_c2_l2']:
             raise ValueError(f'Unsupported landsat collection: {collection}')
 
-        self._im_transform = lambda image: ee.Image.toUint16(image)
+        self._im_transform = ee.Image.toUint16
 
     def _process_image(self, image, region=None, apply_mask=True):
         """
@@ -516,7 +507,7 @@ class Sentinel2ImSearch(ImSearch):
         """
         ImSearch.__init__(self, collection=collection)
 
-        self._im_transform = lambda image: ee.Image.toUint16(image)
+        self._im_transform = ee.Image.toUint16
 
     def _process_image(self, image, region=None, apply_mask=True):
         """
@@ -598,7 +589,7 @@ class Sentinel2CloudlessImSearch(ImSearch):
                      'sentinel_toa' (top of atmosphere - default) or 'sentinel_sr' (surface reflectance)
         """
         ImSearch.__init__(self, collection=collection)
-        self._im_transform = lambda image: ee.Image.toUint16(image)
+        self._im_transform = ee.Image.toUint16
 
         self._cloud_filter = 60  # Maximum image cloud cover percent allowed in image collection
         self._cloud_prob_thresh = 40  # Cloud probability (%); values greater than are considered cloud
@@ -644,7 +635,7 @@ class Sentinel2CloudlessImSearch(ImSearch):
         # project the the cloud mask in the direction of shadows for self._cloud_proj_dist
         proj_dist_px = ee.Number(self._cloud_proj_dist * 1000).divide(min_scale)
         proj_cloud_mask = (cloud_mask.directionalDistanceTransform(shadow_azimuth, proj_dist_px).
-                           select('distance').mask().rename('PROJ_CLOUD_MASK'))     # TODO: why is .mask here?
+                           select('distance').mask().rename('PROJ_CLOUD_MASK'))     # mask converts to boolean?
         # .reproject(**{'crs': image.select(0).projection(), 'scale': 100})
 
         if self.collection_info['ee_collection'] == 'COPERNICUS/S2_SR':  # use SCL to reduce shadow_mask
@@ -755,7 +746,7 @@ class Sentinel2CloudlessImSearch(ImSearch):
         image = ee.Image(image_id).set('s2cloudless', s2_cloud_prob_image)
         image = self._process_image(image, region=region, apply_mask=apply_mask).set('s2cloudless', None)
 
-        return image.toUint16()
+        return self._im_transform(image)
 
 
 ##
