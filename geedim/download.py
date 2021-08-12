@@ -90,7 +90,7 @@ def get_min_projection(image):
     return ee.Projection(bands.iterate(compare_scale, init_proj))
 
 
-def export_image(image, filename, folder=None, region=None, crs=None, scale=None, wait=True):
+def export_image(image, filename, folder='', region=None, crs=None, scale=None, wait=True):
     """
     Export an image to a GeoTiff in Google Drive
 
@@ -117,6 +117,8 @@ def export_image(image, filename, folder=None, region=None, crs=None, scale=None
     """
     # TODO: minimise as far as possible getInfo() calls below
     im_info_dict, band_info_df = get_image_info(image)
+    im_id = im_info_dict['id'] if 'id' in im_info_dict else ''
+    click.echo(f'\nExporting {im_id} to Google Drive:{folder}/{filename}.tif')
 
     # if the image is in WGS84 and has no scale (probable composite), then exit
     if all(band_info_df['crs'] == 'EPSG:4326') and all(band_info_df['scale'] == 1) and \
@@ -212,6 +214,8 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
     """
     # TODO: minimise as far as possible getInfo() calls below
     im_info_dict, band_info_df = get_image_info(image)
+    im_id = im_info_dict['id'] if 'id' in im_info_dict else ''
+    click.echo(f'\nDownloading {im_id} to {filename.name}')
 
     # if the image is in WGS84 and has no scale (probable composite), then exit
     if all(band_info_df['crs'] == 'EPSG:4326') and all(band_info_df['scale'] == 1) and \
@@ -289,19 +293,20 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
             file_link.close()
 
     # extract tif from zip file
+    _tif_filename = zip_filename.parent.joinpath(zipfile.ZipFile(zip_filename, "r").namelist()[0])
     with zipfile.ZipFile(zip_filename, "r") as zip_file:
         zip_file.extractall(zip_filename.parent)
+    os.remove(zip_filename)     # clean up zip file
 
     # rename to extracted file to filename
-    _tif_filename = zip_filename.parent.joinpath(zipfile.ZipFile(zip_filename, "r").namelist()[0])
-    if (_tif_filename != tif_filename) and tif_filename.exists():
-        if overwrite or click.confirm(f'{tif_filename.name} exists, do you want to overwrite?'):
-            os.remove(tif_filename)
-            os.rename(_tif_filename, tif_filename)
-        else:
-            tif_filename = _tif_filename
+    if (_tif_filename != tif_filename):
+        if tif_filename.exists():
+            if overwrite or click.confirm(f'{tif_filename.name} exists, do you want to overwrite?'):
+                os.remove(tif_filename)
+            else:
+                return link
+        os.rename(_tif_filename, tif_filename)
 
-    os.remove(zip_filename)     # clean up zip file
 
     # remove footprint property from im_info_dict before copying to tif file
     if ('properties' in im_info_dict) and ('system:footprint' in im_info_dict['properties']):

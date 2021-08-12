@@ -59,7 +59,7 @@ def _parse_region_geom(region=None, bbox=None, region_buf=5):
     return region_geojson
 
 
-def _export(ids, bbox=None, region=None, path=None, crs=None, scale=None, apply_mask=False, wait=True, overwrite=False,
+def _export(ids, bbox=None, region=None, path='', crs=None, scale=None, apply_mask=False, wait=True, overwrite=False,
             do_download=True):
     """ download or export image(s), with cloud and shadow masking """
 
@@ -88,12 +88,10 @@ def _export(ids, bbox=None, region=None, path=None, crs=None, scale=None, apply_
         if do_download:
             band_df = pd.DataFrame.from_dict(imsearch_obj.collection_info['bands'])
             filename = pathlib.Path(path).joinpath(_id.replace('/', '_') + '.tif')
-            click.echo(f'Downloading {_id} to {filename.name}')
             download_api.download_image(image, filename, region=region_geojson, crs=crs, scale=scale, band_df=band_df,
                                         overwrite=overwrite)
         else:
             filename = _id.replace('/', '_')
-            click.echo(f'Exporting {_id} to Google Drive:{path}/{filename}.tif')
             download_api.export_image(image, filename, folder=path, region=region_geojson, crs=crs, scale=scale,
                                       wait=wait)
 
@@ -184,7 +182,7 @@ def cli():
     "-e",
     "--end-date",
     type=click.DateTime(),
-    help="End date (UTC).  \n[default: start_date]",
+    help="End date (UTC).  \n[default: start_date + 1 day]",
     required=False,
 )
 @bbox_option
@@ -212,14 +210,9 @@ def search(collection, start_date, end_date=None, bbox=None, region=None, valid_
 
     ee.Initialize()
 
-    if end_date is None:
-        end_date = start_date
-
     imsearch = cls_col_map[collection](collection=collection)
     region_geojson = _parse_region_geom(region=region, bbox=bbox, region_buf=region_buf)
 
-    click.echo(f'\nSearching for {imsearch.collection_info["ee_collection"]} images between '
-               f'{start_date.strftime("%Y-%m-%d")} and {end_date.strftime("%Y-%m-%d")}...')
     im_df = imsearch.search(start_date, end_date, region_geojson, valid_portion=valid_portion)
 
     if (output is not None):
@@ -281,10 +274,9 @@ cli.add_command(download)
     "-df",
     "--drive-folder",
     type=click.STRING,
-    default=None,
+    default='',
     help="Export image(s) to this Google Drive folder. [default: root]",
     required=False,
-    show_default=True
 )
 @crs_option
 @scale_option

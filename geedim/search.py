@@ -18,7 +18,7 @@
 # Classes for searching GEE image collections
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import click
 import ee
@@ -275,12 +275,14 @@ class ImSearch:
         # Initialise
         self._valid_portion = valid_portion
         self._apply_mask = apply_mask
-        if end_date is None:
-            end_date = start_date
+        if (end_date is None):
+            end_date = start_date + timedelta(days=1)
+        if (end_date <= start_date):
+            raise Exception('`end_date` must be at least a day later than `start_date`')
         self._search_date = start_date + (end_date - start_date) / 2
 
-        # start_date = date - timedelta(days=day_range)
-        # end_date = date + timedelta(days=day_range)
+        click.echo(f'\nSearching for {self.collection_info["ee_collection"]} images between '
+                   f'{start_date.strftime("%Y-%m-%d")} and {end_date.strftime("%Y-%m-%d")}...')
 
         # filter the image collection
         im_collection = self._get_im_collection(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"),
@@ -756,5 +758,6 @@ class ModisNbarImSearch(ImSearch):
         Class for searching the MODIS daily NBAR earth engine image collection
         """
         ImSearch.__init__(self, collection)
+        self._im_transform = ee.Image.toUint16
 
 ##
