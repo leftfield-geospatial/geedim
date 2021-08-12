@@ -59,7 +59,7 @@ def _parse_region_geom(region=None, bbox=None, region_buf=5):
     return region_geojson
 
 
-def _export(ids, bbox=None, region=None, path=None, crs=None, scale=None, apply_mask=False, wait=True,
+def _export(ids, bbox=None, region=None, path=None, crs=None, scale=None, apply_mask=False, wait=True, overwrite=False,
             do_download=True):
     """ download or export image(s), with cloud and shadow masking """
 
@@ -73,15 +73,14 @@ def _export(ids, bbox=None, region=None, path=None, crs=None, scale=None, apply_
     for _id in ids:
         ee_collection = '/'.join(_id.split('/')[:-1])
         if not (ee_collection in collection_df.ee_collection.values):
-            logger.warning(f'Skipping {_id}: Unknown collection')
+            click.secho(f'Warning: skipping {_id} - unknown collection', fg='red')
             continue
 
         collection = collection_df.index[collection_df.ee_collection == ee_collection][0]
 
         if collection == 'modis_nbar' and crs is None:  # workaround MODIS native CRS export issue
             crs = 'EPSG:3857'
-            logger.warning(f'Re-projecting {_id} to {crs} to avoid GEE MODIS CRS bug: '
-                           f'https://issuetracker.google.com/issues/194561313.')
+            click.secho(f'Re-projecting {_id} to {crs} to avoid bug https://issuetracker.google.com/issues/194561313.')
 
         imsearch_obj = cls_col_map[collection](collection=collection)
         image = imsearch_obj.get_image(_id, region=region_geojson, apply_mask=apply_mask)
@@ -89,9 +88,12 @@ def _export(ids, bbox=None, region=None, path=None, crs=None, scale=None, apply_
         if do_download:
             band_df = pd.DataFrame.from_dict(imsearch_obj.collection_info['bands'])
             filename = pathlib.Path(path).joinpath(_id.replace('/', '_') + '.tif')
-            download_api.download_image(image, filename, region=region_geojson, crs=crs, scale=scale, band_df=band_df)
+            click.echo(f'Downloading {_id} to {filename.name}')
+            download_api.download_image(image, filename, region=region_geojson, crs=crs, scale=scale, band_df=band_df,
+                                        overwrite=overwrite)
         else:
             filename = _id.replace('/', '_')
+            click.echo(f'Exporting {_id} to Google Drive:{path}/{filename}.tif')
             download_api.export_image(image, filename, folder=path, region=region_geojson, crs=crs, scale=scale,
                                       wait=wait)
 
@@ -136,7 +138,7 @@ crs_option = click.option(
     "--crs",
     type=click.STRING,
     default=None,
-    help="Reproject image(s) to this CRS, specified as WKT or EPSG string. \n[default: source CRS]",
+    help="Reproject image(s) to this CRS (WKT or EPSG string). \n[default: source CRS]",
     required=False
 )
 scale_option = click.option(
@@ -151,7 +153,7 @@ mask_option = click.option(
     "-m/-nm",
     "--mask/--no-mask",
     default=False,
-    help="Do/don't apply nodata (cloud and shadow free) mask(s).  [default: no-mask]",
+    help="Do/don't apply (cloud and shadow) nodata mask(s).  [default: no-mask]",
     required=False,
 )
 
@@ -253,9 +255,18 @@ cli.add_command(search)
 @crs_option
 @scale_option
 @mask_option
-def download(id, bbox=None, region=None, download_dir=os.getcwd(), crs=None, scale=None, mask=False):
+@click.option(
+    "-o",
+    "--overwrite",
+    is_flag=True,
+    default=False,
+    help="Overwrite the destination file if it exists.  [default: prompt the user for confirmation]",
+    required=False,
+    show_default=False
+)
+def download(id, bbox=None, region=None, download_dir=os.getcwd(), crs=None, scale=None, mask=False, overwrite=False):
     """ Download image(s), with cloud and shadow masking """
-    _export(id, bbox=bbox, region=region, path=download_dir, crs=crs, scale=scale, apply_mask=mask,
+    _export(id, bbox=bbox, region=region, path=download_dir, crs=crs, scale=scale, apply_mask=mask, overwrite=overwrite,
             do_download=True)
 
 

@@ -33,10 +33,6 @@ import pandas as pd
 import rasterio as rio
 from rasterio.enums import ColorInterp
 
-from geedim import get_logger
-
-logger = get_logger(__name__)
-
 
 def get_image_info(image):
     """
@@ -125,24 +121,24 @@ def export_image(image, filename, folder=None, region=None, crs=None, scale=None
     # if the image is in WGS84 and has no scale (probable composite), then exit
     if all(band_info_df['crs'] == 'EPSG:4326') and all(band_info_df['scale'] == 1) and \
             (crs is None or scale is None):
-        raise Exception(f'This appears to be a composite image in WGS84, specify a destination scale and CRS')
+        raise Exception(f'Image appears to be a composite in WGS84, specify a destination scale and CRS')
 
-    # if it is a native MODIS CRS then exit to avoid GEE bug
+    # if it is a native MODIS CRS then warn about GEE bug
     if any(band_info_df['crs'] == 'SR-ORG:6974') and (crs is None):
-        logger.warning(
-            f'GEE does not populate the export projection correctly when when exporting in the native MODIS CRS')
+        raise Exception(f'There is an earth engine bug exporting in SR-ORG:6974: '
+                        f'https://issuetracker.google.com/issues/194561313')
 
     if crs is None:
         crs = band_info_df['crs'].iloc[band_info_df['scale'].argmin()]  # CRS corresponding to minimum scale
     if region is None:
         region = image.geometry()  # not recommended
-        logger.warning('Region not specified, setting to image bounds')
+        click.secho('Warning: region not specified, setting to granule bounds', fg='red')
     if scale is None:
         scale = band_info_df['scale'].min()  # minimum scale
 
     # warn if some band scales will be changed
     if (band_info_df['crs'].unique().size > 1) or (band_info_df['scale'].unique().size > 1):
-        logger.warning(f'Image bands have different scales, re-projecting all to {crs} at {scale}m resolution')
+        click.echo(f'Re-projecting all bands to {crs} at {scale}m resolution')
 
     if isinstance(region, dict):
         region = ee.Geometry(region)
@@ -157,7 +153,6 @@ def export_image(image, filename, folder=None, region=None, crs=None, scale=None
                                          crs=crs,
                                          maxPixels=1e9)
 
-    logger.info(f'Starting export task {filename}...')
     task.start()
 
     if wait:  # wait for completion
@@ -190,11 +185,10 @@ def monitor_export_task(task):
 
     sys.stdout.write(f'\rExport image {str(status["metadata"]["state"]).lower()}\n')
     if status['metadata']['state'] != 'SUCCEEDED':
-        logger.error(f'{task.name} export failed \n{status}')
         raise Exception(f'{task.name} export failed \n{status}')
 
 
-def download_image(image, filename, region=None, crs=None, scale=None, band_df=None):
+def download_image(image, filename, region=None, crs=None, scale=None, band_df=None, overwrite=False):
     """
     Download an image as a GeoTiff
 
@@ -213,31 +207,36 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
     band_df : pandas.DataFrame, optional
               DataFrame specifying band metadata to be copied to downloaded file.  'id' column should contain band id's
               that match the ee.Image band id's
+    overwrite : bool, optional
+                Overwrite the destination file if it exists (default: prompt)
     """
-
-    # TODO: this first section of code is the same as for export_image
+    # TODO: minimise as far as possible getInfo() calls below
     im_info_dict, band_info_df = get_image_info(image)
 
     # if the image is in WGS84 and has no scale (probable composite), then exit
     if all(band_info_df['crs'] == 'EPSG:4326') and all(band_info_df['scale'] == 1) and \
             (crs is None or scale is None):
-        raise Exception(f'This appears to be a composite image in WGS84, specify a destination scale and CRS')
+        raise Exception(f'Image appears to be a composite in WGS84, specify a destination scale and CRS')
 
+    # if it is a native MODIS CRS then warn about GEE bug
     if any(band_info_df['crs'] == 'SR-ORG:6974') and (crs is None):
-        logger.warning(
-            f'GEE does not populate the export projection correctly when when exporting in the native MODIS CRS')
+        raise Exception(f'There is an earth engine bug exporting in SR-ORG:6974: '
+                        f'https://issuetracker.google.com/issues/194561313')
 
     if crs is None:
-        crs = band_info_df['crs'].iloc[band_info_df['scale'].argmin()]
+        crs = band_info_df['crs'].iloc[band_info_df['scale'].argmin()]  # CRS corresponding to minimum scale
     if region is None:
-        region = image.geometry()
-        logger.warning('Region not specified, setting to granule bounds')
+        region = image.geometry()  # not recommended
+        click.secho('Warning: region not specified, setting to granule bounds', fg='red')
     if scale is None:
-        scale = band_info_df['scale'].min()
+        scale = band_info_df['scale'].min()  # minimum scale
 
     # warn if some band scales will be changed
     if (band_info_df['crs'].unique().size > 1) or (band_info_df['scale'].unique().size > 1):
-        logger.warning(f'Image bands have different scales, re-projecting all to {crs} at {scale}m resolution')
+        click.echo(f'Re-projecting all bands to {crs} at {scale}m resolution')
+
+    if isinstance(region, dict):
+        region = ee.Geometry(region)
 
     # force all bands into same crs and scale
     band_info_df['crs'] = str(crs)
@@ -253,76 +252,56 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
         'filePerBand': False,
         'region': region})
 
-    logger.info(f'Opening link: {link}')
-
-    # open the link
     file_link = None
     try:
         file_link = request.urlopen(link)
         # setup destination zip and tif filenames
-        meta = file_link.info()
-        file_size = int(meta['Content-Length'])
-        logger.info(f'Download size: {file_size / (1024 ** 2):.2f} MB')
+        file_size = int(file_link.info()['Content-Length'])
+        click.echo(f'Download size: {file_size / (1024 ** 2):.2f} MB')
 
         tif_filename = pathlib.Path(filename)
-        tif_filename = tif_filename.joinpath(tif_filename.parent, tif_filename.stem + '.tif')  # force to tif file
-        zip_filename = tif_filename.parent.joinpath('gee_image_download.zip')
-
-        if zip_filename.exists():
-            logger.warning(f'{zip_filename} exists, overwriting...')
+        tif_filename = tif_filename.parent.joinpath(tif_filename.stem + '.tif')  # force to tif file
+        zip_filename = tif_filename.parent.joinpath('geedim_download.zip')
 
         # download the zip file
-        logger.info(f'Downloading to {zip_filename}')
         with open(zip_filename, 'wb') as f:
             file_size_dl = 0
-            block_size = 8192
             with click.progressbar(length=file_size,
                                    label='Downloading') as bar:
                 while file_size_dl <= file_size:
-                    buffer = file_link.read(block_size)
+                    buffer = file_link.read(8192)
                     if not buffer:
                         break
                     file_size_dl += len(buffer)
                     f.write(buffer)
                     bar.update(file_size_dl)
 
-            #     # display progress bar
-            #     progress = (file_size_dl / file_size)
-            #     sys.stdout.write('\r')
-            #     sys.stdout.write('[%-50s] %d%%' % ('=' * int(50 * progress), 100 * progress))
-            #     sys.stdout.flush()
-            # sys.stdout.write('\n')
-
     except HTTPError as ex:
-        logger.error(f'Could not open URL: HHTP error {ex.code} - {ex.reason}')
-
         # check for size limit error
         response = json.loads(ex.read())
         if ('error' in response) and ('message' in response['error']):
-            msg = response['error']['message']
-            logger.error(msg)
-            if msg == 'User memory limit exceeded.':
-                logger.error('There is a 10MB Earth Engine limit on image downloads, '
-                             'either decrease image size, or use export(...)')
+            if response['error']['message'] == 'User memory limit exceeded.':
+                click.secho('There is a 10MB Earth Engine limit on image downloads, '
+                             'either decrease image size, or use export(...)', fg='red')
         raise ex
-
     finally:
         if file_link is not None:
             file_link.close()
 
     # extract tif from zip file
-    logger.info(f'Extracting {zip_filename}')
     with zipfile.ZipFile(zip_filename, "r") as zip_file:
         zip_file.extractall(zip_filename.parent)
 
+    # rename to extracted file to filename
     _tif_filename = zip_filename.parent.joinpath(zipfile.ZipFile(zip_filename, "r").namelist()[0])
-
-    if _tif_filename != tif_filename:
-        if tif_filename.exists():
-            logger.warning(f'{tif_filename} exists, overwriting...')
+    if (_tif_filename != tif_filename) and tif_filename.exists():
+        if overwrite or click.confirm(f'{tif_filename.name} exists, do you want to overwrite?'):
             os.remove(tif_filename)
+            os.rename(_tif_filename, tif_filename)
+        else:
+            tif_filename = _tif_filename
 
-        os.rename(_tif_filename, tif_filename)
+    os.remove(zip_filename)     # clean up zip file
 
     # remove footprint property from im_info_dict before copying to tif file
     if ('properties' in im_info_dict) and ('system:footprint' in im_info_dict['properties']):
@@ -330,15 +309,14 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
 
     # copy metadata to downloaded tif file
     try:
-        # GEE sets tif colorinterp tags incorrectly, suppress rasterio warning relating to this:
-        # 'Sum of Photometric type-related color channels and ExtraSamples doesn't match SamplesPerPixel'
+        # GEE seems to set tif colorinterp tags incorrectly, suppress rasterio warning relating to this:
         logging.getLogger("rasterio").setLevel(logging.ERROR)
 
         with rio.open(tif_filename, 'r+') as im:
             if 'properties' in im_info_dict:
                 im.update_tags(**im_info_dict['properties'])
-            # im.profile['photometric'] = None
-            im.colorinterp = [ColorInterp.black] * im.count
+
+            im.colorinterp = [ColorInterp.undefined] * im.count
 
             if 'bands' in im_info_dict:
                 for band_i, band_info in enumerate(im_info_dict['bands']):
@@ -349,13 +327,13 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
                         band_row = band_df.loc[band_df['id'] == band_info['id']].iloc[0].drop('id')
                         for key, val in band_row.iteritems():
                             im.update_tags(band_i + 1, **{str(key).upper(): val})
-            im.colorinterp = [ColorInterp.undefined] * im.count
     finally:
         logging.getLogger("rasterio").setLevel(logging.WARNING)
 
     return link
 
 
+# TODO: delete the below functions if they remain unused
 def download_im_collection(im_collection, path, region=None, crs=None, scale=None, band_df=None):
     """
     Download each image in a collection
@@ -385,7 +363,7 @@ def download_im_collection(im_collection, path, region=None, crs=None, scale=Non
         image = ee.Image(ee_im_list.get(i))
         image_id = ee.String(image.get('system:id')).getInfo().replace('/', '_')  # TODO: can we remove getInfo() here?
         filename = path.joinpath(f'{image_id}.tif')
-        logger.info(f'Downloading {filename.stem}...')
+        click.echo(f'Downloading {filename.stem}...')
         download_image(image, filename, region=region, crs=crs, scale=scale, band_df=band_df)
 
 
@@ -415,7 +393,7 @@ def download_images(image_df, path, region=None, crs=None, scale=None, band_df=N
 
     for row_i, row in image_df.iterrows():
         filename = path.joinpath(f'{row.EE_ID}.tif')
-        logger.info(f'Downloading {filename.stem}...')
+        click.echo(f'Downloading {filename.stem}...')
         download_image(row.IMAGE, filename, region=region, crs=crs, scale=scale, band_df=band_df)
 
 
@@ -445,7 +423,7 @@ def export_im_collection(im_collection, folder=None, region=None, crs=None, scal
         image = ee.Image(ee_im_list.get(i))
         image_id = ee.String(image.get('system:id')).getInfo().replace('/', '_')
         filename = f'{image_id}.tif'
-        logger.info(f'Exporting {filename}...')
+        click.echo(f'Exporting {filename}...')
         task = export_image(image, filename, folder=folder, region=region, crs=crs, scale=scale, wait=False)
         task_list.append(task)
 
@@ -475,7 +453,7 @@ def export_images(image_df, folder=None, region=None, crs=None, scale=None):
 
     for row_i, row in image_df.iterrows():
         filename = str(row.EE_ID)
-        logger.info(f'Exporting {filename}...')
+        click.echo(f'Exporting {filename}...')
         task = export_image(row.IMAGE, filename, folder=folder, region=region, crs=crs, scale=scale, wait=False)
         task_list.append(task)
 
