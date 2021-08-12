@@ -16,7 +16,7 @@ class TestGeeDimApi(unittest.TestCase):
     Test backend functionality in search and download modules
     """
 
-    # TODO: separate API search and download testing (?)
+    # TODO: separate API search and download testing (?) and or make one _test_download fn that works from api and cli
     def _test_download(self, image, image_id, region, crs=None, scale=None, band_df=None):
         """
         Test image download
@@ -82,6 +82,15 @@ class TestGeeDimApi(unittest.TestCase):
             self.assertFalse(rio.coords.disjoint_bounds(region_bounds, im_bounds_wgs84),
                              msg='Search and image bounds match')
 
+            if 'MODIS' not in image_id:
+                if 'VALID_MASK' in im.descriptions:
+                    valid_mask = im.read(im.descriptions.index('VALID_MASK') + 1)
+                else:
+                    valid_mask = im.read_masks(1)
+
+                self.assertAlmostEqual(100 * valid_mask.mean(), float(im.get_tag_item('VALID_PORTION')), delta=5,
+                                       msg=f'VALID_PORTION matches mask mean for {image_id}')
+
     def _test_imsearch_obj(self, imsearch_obj):
         """
         Test search and download/export on a specified *ImSearch object
@@ -93,12 +102,8 @@ class TestGeeDimApi(unittest.TestCase):
         """
 
         # GEF Baviaanskloof region
-        region = {'type': 'Polygon',
-                  'coordinates': [[(24.018987152147467, -33.58425124616373),
-                                   (24.01823400920558, -33.52008125251578),
-                                   (23.927741869101595, -33.52079213034971),
-                                   (23.92842810355374, -33.58496384476743),
-                                   (24.018987152147467, -33.58425124616373)]]}
+        region = {"type": "Polygon",
+                  "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
         date = datetime.strptime('2019-02-01', '%Y-%m-%d')
         band_df = pd.DataFrame.from_dict(imsearch_obj.collection_info['bands'])
 
@@ -110,13 +115,12 @@ class TestGeeDimApi(unittest.TestCase):
             self.assertTrue(im_prop in image_df.columns, msg='Search results contain specified properties')
 
         # select an image to download/export
-        # TODO: change to use get_image()
         im_idx = math.ceil(image_df.shape[0] / 2)
         image_id = str(image_df['ID'].iloc[im_idx])
         image = imsearch_obj.get_image(image_id, region=region)  # image_df.IMAGE.iloc[im_idx]
         image_name = image_id.replace('/', '_')
 
-        # workaround for GEE MODIS CRS bug
+        # force CRS for MODIS as workaround for GEE CRS bug
         if isinstance(imsearch_obj, search.ModisNbarImSearch):
             _crs = 'EPSG:3857'
             _scale = 500

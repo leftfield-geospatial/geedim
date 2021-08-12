@@ -35,7 +35,7 @@ cls_col_map = {'landsat7_c2_l2': search_api.LandsatImSearch,
                'modis_nbar': search_api.ModisNbarImSearch}
 
 
-def _parse_region_bbox(region=None, bbox=None, region_buf=5):
+def _parse_region_geom(region=None, bbox=None, region_buf=5):
     """ create geojson dict from region or bbox """
 
     if (bbox is None) and (region is None):
@@ -59,12 +59,13 @@ def _parse_region_bbox(region=None, bbox=None, region_buf=5):
     return region_geojson
 
 
-def _export_download(ids, bbox=None, region=None, path=None, crs=None, scale=None, wait=True, do_download=True):
+def _export(ids, bbox=None, region=None, path=None, crs=None, scale=None, apply_mask=False, wait=True,
+            do_download=True):
     """ download or export image(s), with cloud and shadow masking """
 
     ee.Initialize()
 
-    region_geojson = _parse_region_bbox(region=region, bbox=bbox)
+    region_geojson = _parse_region_geom(region=region, bbox=bbox)
 
     collection_info = search_api.load_collection_info()
     collection_df = pd.DataFrame.from_dict(collection_info, orient='index')
@@ -83,7 +84,7 @@ def _export_download(ids, bbox=None, region=None, path=None, crs=None, scale=Non
                            f'https://issuetracker.google.com/issues/194561313.')
 
         imsearch_obj = cls_col_map[collection](collection=collection)
-        image = imsearch_obj.get_image(_id, region=region_geojson)
+        image = imsearch_obj.get_image(_id, region=region_geojson, apply_mask=apply_mask)
 
         if do_download:
             band_df = pd.DataFrame.from_dict(imsearch_obj.collection_info['bands'])
@@ -146,6 +147,13 @@ scale_option = click.option(
     help="Resample image bands to this pixel resolution (m). \n[default: minimum of the source band resolutions]",
     required=False
 )
+mask_option = click.option(
+    "-m/-nm",
+    "--mask/--no-mask",
+    default=False,
+    help="Do/don't apply nodata (cloud and shadow free) mask(s).  [default: no-mask]",
+    required=False,
+)
 
 
 # define the click cli
@@ -180,16 +188,24 @@ def cli():
 @bbox_option
 @region_option
 @click.option(
+    "-vp",
+    "--valid-portion",
+    type=click.FloatRange(min=0, max=100),
+    default=0,
+    help="Lower limit of the portion of valid (cloud and shadow free) pixels (%).",
+    required=False
+)
+@click.option(
     "-o",
     "--output",
     type=click.Path(exists=False, file_okay=True, dir_okay=False, writable=True, readable=False, resolve_path=True,
                     allow_dash=False),
     default=None,
-    help="Write search results to this filename. File type inferred from extension: [.csv|.json]",
+    help="Write results to this filename, file type inferred from extension: [.csv|.json]",
     required=False
 )
 @region_buf_option
-def search(collection, start_date, end_date=None, bbox=None, region=None, output=None, region_buf=5):
+def search(collection, start_date, end_date=None, bbox=None, region=None, valid_portion=0, output=None, region_buf=5):
     """ Search for images """
 
     ee.Initialize()
@@ -198,18 +214,18 @@ def search(collection, start_date, end_date=None, bbox=None, region=None, output
         end_date = start_date
 
     imsearch = cls_col_map[collection](collection=collection)
-    region_geojson = _parse_region_bbox(region=region, bbox=bbox, region_buf=region_buf)
+    region_geojson = _parse_region_geom(region=region, bbox=bbox, region_buf=region_buf)
 
-    im_df = imsearch.search(start_date, end_date, region_geojson)
+    im_df = imsearch.search(start_date, end_date, region_geojson, valid_portion=valid_portion)
 
     if (output is not None) and (im_df is not None):
         if 'IMAGE' in im_df.columns:
             im_df = im_df.drop(columns='IMAGE')
         output = pathlib.Path(output)
         if output.suffix == '.csv':
-            im_df.to_csv(output)
+            im_df.to_csv(output, index=False)
         elif output.suffix == '.json':
-            im_df.to_json(output)
+            im_df.to_json(output, orient='index')
         else:
             raise ValueError(f'Unknown output file extension: {output.suffix}')
     return 0
@@ -234,9 +250,11 @@ cli.add_command(search)
 )
 @crs_option
 @scale_option
-def download(id, bbox=None, region=None, download_dir=os.getcwd(), crs=None, scale=None):
+@mask_option
+def download(id, bbox=None, region=None, download_dir=os.getcwd(), crs=None, scale=None, mask=False):
     """ Download image(s), with cloud and shadow masking """
-    _export_download(id, bbox=bbox, region=region, path=download_dir, crs=crs, scale=scale, do_download=True)
+    _export(id, bbox=bbox, region=region, path=download_dir, crs=crs, scale=scale, apply_mask=mask,
+            do_download=True)
 
 
 cli.add_command(download)
@@ -257,6 +275,7 @@ cli.add_command(download)
 )
 @crs_option
 @scale_option
+@mask_option
 @click.option(
     "-w/-nw",
     "--wait/--no-wait",
@@ -264,10 +283,10 @@ cli.add_command(download)
     help="Wait / don't wait for export to complete.  [default: wait]",
     required=False,
 )
-def export(id, bbox=None, region=None, drive_folder='', crs=None, scale=None, wait=True):
+def export(id, bbox=None, region=None, drive_folder='', crs=None, scale=None, mask=False, wait=True):
     """ Export image(s) to Google Drive, with cloud and shadow masking """
-    _export_download(id, bbox=bbox, region=region, path=drive_folder, crs=crs, scale=scale, wait=wait,
-                     do_download=False)
+    _export(id, bbox=bbox, region=region, path=drive_folder, crs=crs, scale=scale, apply_mask=mask, wait=wait,
+            do_download=False)
 
 
 cli.add_command(export)

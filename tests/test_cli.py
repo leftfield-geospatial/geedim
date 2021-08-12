@@ -43,7 +43,7 @@ class TestSearchCli(unittest.TestCase):
         with open(results_filename) as f:
             res_dict = json.load(f)
 
-        res_df = pd.DataFrame.from_dict(res_dict)
+        res_df = pd.DataFrame.from_dict(res_dict, orient='index')
         res_df.DATE = [datetime.utcfromtimestamp(ts / 1000) for ts in res_df.DATE.values]
         imseach_obj = cli.cls_col_map[collection](collection=collection)
 
@@ -71,7 +71,7 @@ class TestSearchCli(unittest.TestCase):
         end_date = datetime.strptime('2019-03-01', '%Y-%m-%d')
 
         # run command with parameters
-        result = CliRunner().invoke(cli.cli, ['search', '-c', collection, '-b', 23.9, 33.5, 24, 33.6, '-s',
+        result = CliRunner().invoke(cli.cli, ['search', '-c', collection, '-b', 23.9, -33.6, 24, -33.5, '-s',
                                               start_date.strftime("%Y-%m-%d"), '-e', end_date.strftime("%Y-%m-%d"),
                                               '-o',
                                               f'{results_filename}'], terminal_width=80)
@@ -142,6 +142,15 @@ class TestDownloadCli(unittest.TestCase):
                     self.assertAlmostEqual(scale, im.res[0], places=3, msg='CLI and download image scale match')
                 # TODO: test masking when that is done, perhaps comparing to VALID_PORTION or similar
 
+                if 'MODIS' not in _id:
+                    if 'VALID_MASK' in im.descriptions:
+                        valid_mask = im.read(im.descriptions.index('VALID_MASK') + 1)
+                    else:
+                        valid_mask = im.read_masks(1)
+
+                    self.assertAlmostEqual(100 * valid_mask.mean(), float(im.get_tag_item('VALID_PORTION')), delta=5,
+                                           msg=f'VALID_PORTION matches mask mean for {_id}')
+
     def test_download_bbox(self):
         """
         Test `geedim download` with --bbox option
@@ -149,9 +158,9 @@ class TestDownloadCli(unittest.TestCase):
         # COPERNICUS/S2_SR/20190108T090339_20190108T090341_T35SKT
         # ids = ['COPERNICUS/S2_SR/20190115T080251_20190115T082230_T35HKC', 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190128',
         #        'MODIS/006/MCD43A4/2019_01_01']
-        ids = ['COPERNICUS/S2_SR/20190115T080251_20190115T082230_T35HKC']
+        ids = ['COPERNICUS/S2_SR/20190125T080221_20190125T082727_T35HKC']
         download_dir = root_path.joinpath('data/outputs/tests')
-        bbox = (23.95, 33.55, 24, 33.6)
+        bbox = (23.95, -33.6, 24, -33.55)
         prefixed_ids = [val for tup in zip(['-i'] * len(ids), ids) for val in tup]
 
         # invoke CLI
@@ -169,11 +178,11 @@ class TestDownloadCli(unittest.TestCase):
         """
         # ids = ['COPERNICUS/S2_SR/20190120T080239_20190120T082812_T35HKC', 'LANDSAT/LC08/C02/T1_L2/LC08_182037_20190118',
         #        'MODIS/006/MCD43A4/2019_01_02']
-        ids = ['MODIS/006/MCD43A4/2019_01_02']
+        ids = ['LANDSAT/LC08/C02/T1_L2/LC08_172083_20190112']
         region_filename = root_path.joinpath('data/inputs/tests/region.geojson')
         download_dir = root_path.joinpath('data/outputs/tests')
         crs = 'EPSG:3857'
-        scale = 100
+        scale = 30
 
         prefixed_ids = [val for tup in zip(['-i'] * len(ids), ids) for val in tup]
 
@@ -183,7 +192,7 @@ class TestDownloadCli(unittest.TestCase):
                                     terminal_width=80)
         self.assertTrue(result.exit_code == 0, result.exception)
 
-        # read region into rasterio bounds
+        # convert region json file into rasterio bounds
         with open(region_filename) as f:
             region_bounds_geojson = json.load(f)
 
@@ -199,11 +208,14 @@ class TestDownloadCli(unittest.TestCase):
         Test `geedim export` with --bbox option
         """
         # test export of one image only to save time, and because we can't check the exported image validity
-        ids = ['LANDSAT/LC08/C02/T1_L2/LC08_182037_20190219']
-        bbox = (23.9, 33.5, 24, 33.6)
+        ids = ['MODIS/006/MCD43A4/2019_01_02']
+        bbox = (23.9, -33.6, 24, -33.5)
         prefixed_ids = [val for tup in zip(['-i'] * len(ids), ids) for val in tup]
+        crs = 'EPSG:3857'
+        scale = 100
 
         # invoke CLI
-        result = CliRunner().invoke(cli.cli, ['export', *prefixed_ids, '-b', *bbox, '-df', 'geedim_test', '-w'],
+        result = CliRunner().invoke(cli.cli, ['export', *prefixed_ids, '-b', *bbox, '-df', 'geedim_test', '-w',
+                                              '--crs', crs, '--scale', scale],
                                     terminal_width=80)
         self.assertTrue(result.exit_code == 0, result.exception)

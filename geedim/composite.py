@@ -82,7 +82,7 @@ def get_composite_image(self):
         raise Exception('First generate a valid image collection with search(...) method')
 
     if self._apply_valid_mask is None:
-        logger.warning('Calling search(...) with apply_valid_mask=True is recommended composite creation')
+        logger.warning('Calling search(...) with apply_mask=True is recommended composite creation')
 
     comp_im = self._im_collection.mosaic()
 
@@ -103,7 +103,7 @@ def get_composite_image(self):
         raise Exception('First generate a valid image collection with search(...) method')
 
     if self._apply_valid_mask is None:
-        logger.warning('Calling search(...) with apply_valid_mask=True is recommended for composite creation')
+        logger.warning('Calling search(...) with apply_mask=True is recommended for composite creation')
 
     comp_im = self._im_collection.mosaic()
 

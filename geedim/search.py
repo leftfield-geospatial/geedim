@@ -105,6 +105,9 @@ class ImSearch:
         if collection not in collection_info:
             raise ValueError(f'Unknown collection: {collection}')
         self.collection_info = collection_info[collection]
+        self._valid_portion = 0
+        self._apply_mask = False
+
         # list of image properties to display in search results
         self._im_props = pd.DataFrame(self.collection_info['properties'])
         self._im_df = None
@@ -155,7 +158,7 @@ class ImSearch:
         return (ee.ImageCollection(self.collection_info['ee_collection']).
                 filterDate(start_date, end_date).
                 filterBounds(region).
-                map(lambda image: self._process_image(image, region=region)))
+                map(lambda image: self._process_image(image, region=region, apply_mask=self._apply_mask)))
 
     @staticmethod
     def _get_collection_df(im_collection, property_df, im_transform=lambda x: x, do_print=True):
@@ -205,6 +208,7 @@ class ImSearch:
         im_prop_df = im_prop_df.sort_values(by='system:time_start').reset_index(drop=True)
         im_prop_df = im_prop_df.rename(
             columns=dict(zip(property_df.PROPERTY, property_df.ABBREV)))  # rename cols to abbrev
+        im_prop_df = im_prop_df[property_df.ABBREV]     # reorder columns
 
         if do_print:
             logger.info('\nImage property descriptions:\n' +
@@ -220,7 +224,7 @@ class ImSearch:
 
         return im_prop_df
 
-    def get_image(self, image_id, region=None):
+    def get_image(self, image_id, region=None, apply_mask=False):
         """
         Retrieve an ee.Image object, adding validity and quality metadata where possible
 
@@ -230,6 +234,8 @@ class ImSearch:
              Earth engine image ID e.g. 'LANDSAT/LC08/C02/T1_L2/LC08_182037_20190118 2019-01-18'
         region : ee.Geometry, dict, geojson
                  Process image over this region
+        apply_mask : bool
+                     Apply any validity mask to the image by setting nodata
 
         Returns
         -------
@@ -239,21 +245,23 @@ class ImSearch:
         if '/'.join(image_id.split('/')[:-1]) != self.collection_info['ee_collection']:
             raise ValueError(f'{image_id} is not a valid earth engine id for {self.__class__}')
 
-        return self._process_image(ee.Image(image_id), region=region).toUint16()
-        # return ee.Image(image_id).toUint16()
+        return self._process_image(ee.Image(image_id), region=region, apply_mask=apply_mask).toUint16()
 
-    def search(self, start_date, end_date, region):
+    def search(self, start_date, end_date, region, valid_portion=0, apply_mask=False):
         """
-        Search for images based on date and region
+        Search for Sentinel-2 images based on date, region etc criteria
 
         Parameters
-        ----------
         start_date : datetime.datetime
                      Python datetime specifying the start image capture date
         end_date : datetime.datetime
                    Python datetime specifying the end image capture date (if None, then set to start_date)
-        region : dict, geojson, ee.Geometry, ee.Geometry
+        region : dict, geojson, ee.Geometry
                  Polygon in WGS84 specifying a region that images should intersect
+        valid_portion: int, optional
+                       Minimum portion (%) of image pixels that should be valid (not cloud)
+        apply_mask : bool, optional
+                           Mask out clouds in search result images
 
         Returns
         -------
@@ -261,6 +269,8 @@ class ImSearch:
         Dataframe specifying image properties that match the search criteria
         """
         # Initialise
+        self._valid_portion = valid_portion
+        self._apply_mask = apply_mask
         self._im_df = None
         if end_date is None:
             end_date = start_date
@@ -307,8 +317,6 @@ class LandsatImSearch(ImSearch):
         if collection not in ['landsat8_c2_l2', 'landsat7_c2_l2']:
             raise ValueError(f'Unsupported landsat collection: {collection}')
 
-        self._valid_portion = 90
-        self._apply_valid_mask = False
         self._im_transform = lambda image: ee.Image.toUint16(image)
 
     def _process_image(self, image, region=None, apply_mask=True):
@@ -404,7 +412,8 @@ class LandsatImSearch(ImSearch):
         if apply_mask:
             image = image.updateMask(valid_mask)  # mask out cloud, shadow, unfilled etc pixels
         else:
-            image = image.updateMask(fill_mask)  # mask out unfilled pixels only
+            # image = image.updateMask(fill_mask).addBands(valid_mask)  # mask out unfilled pixels only
+            image = image.addBands(valid_mask)  # mask out unfilled pixels only
 
         return image.set(valid_portion).set(q_score_avg).addBands(q_score)
 
@@ -426,37 +435,13 @@ class LandsatImSearch(ImSearch):
         : ee.ImageCollection
         The filtered image collection
         """
-        # TODO: make self._apply_valid_mask and self._valid_portion parameters?
+        # TODO: make self._apply_mask and self._valid_portion parameters?
         return (ee.ImageCollection(self.collection_info['ee_collection']).
                 filterDate(start_date, end_date).
                 filterBounds(region).
-                map(lambda image: self._process_image(image, region=region, apply_mask=self._apply_valid_mask)).
+                map(lambda image: self._process_image(image, region=region, apply_mask=self._apply_mask)).
                 filter(ee.Filter.gt('VALID_PORTION', self._valid_portion)))
 
-    def search(self, start_date, end_date, region, valid_portion=50, apply_valid_mask=False):
-        """
-        Search for Landsat images based on date, region etc criteria
-        
-        Parameters
-        start_date : datetime.datetime
-                     Python datetime specifying the start image capture date
-        end_date : datetime.datetime
-                   Python datetime specifying the end image capture date (if None, then set to start_date)
-        region : dict, geojson, ee.Geometry
-                 Polygon in WGS84 specifying a region that images should intersect
-        valid_portion: int, optional
-                     Minimum portion (%) of image pixels that should be valid (filled, and not cloud or shadow)
-        apply_valid_mask : bool, optional
-                        Mask out clouds, shadows and aerosols in search result images
-
-        Returns
-        -------
-        : pandas.DataFrame
-        Dataframe specifying image properties that match the search criteria
-        """
-        self._valid_portion = valid_portion
-        self._apply_valid_mask = apply_valid_mask
-        return ImSearch.search(self, start_date, end_date, region)
 
     @staticmethod
     def convert_dn_to_sr(image):
@@ -512,7 +497,7 @@ class LandsatImSearch(ImSearch):
         calib_image = image.select(sr_bands).multiply(param_dict.get('mult'))
         calib_image = (calib_image.add(param_dict.get('add'))).multiply(10000.0)
         calib_image = calib_image.addBands(image.select(non_sr_bands))
-        calib_image = calib_image.updateMask(image.mask())
+        calib_image = calib_image.updateMask(image.mask())  # apply any existing mask to refl image
 
         # call toFloat after updateMask
         return ee.Image(calib_image.copyProperties(image)).toFloat()
@@ -531,8 +516,6 @@ class Sentinel2ImSearch(ImSearch):
         """
         ImSearch.__init__(self, collection=collection)
 
-        self._valid_portion = 90
-        self._apply_valid_mask = False
         self._im_transform = lambda image: ee.Image.toUint16(image)
 
     def _process_image(self, image, region=None, apply_mask=True):
@@ -572,6 +555,9 @@ class Sentinel2ImSearch(ImSearch):
         # TODO: what happens if/when pixels aren't filled
         if apply_mask:
             image = image.updateMask(valid_mask)
+        else:
+            image = image.addBands(valid_mask)
+
         return image.set(valid_portion)
 
     def _get_im_collection(self, start_date, end_date, region):
@@ -595,33 +581,8 @@ class Sentinel2ImSearch(ImSearch):
         return (ee.ImageCollection(self.collection_info['ee_collection']).
                 filterDate(start_date, end_date).
                 filterBounds(region).
-                map(lambda image: self._process_image(image, region=region, apply_mask=self._apply_valid_mask)).
+                map(lambda image: self._process_image(image, region=region, apply_mask=self._apply_mask)).
                 filter(ee.Filter.gt('VALID_PORTION', self._valid_portion)))
-
-    def search(self, start_date, end_date, region, valid_portion=50, apply_valid_mask=False):
-        """
-        Search for Sentinel-2 images based on date, region etc criteria
-
-        Parameters
-        start_date : datetime.datetime
-                     Python datetime specifying the start image capture date
-        end_date : datetime.datetime
-                   Python datetime specifying the end image capture date (if None, then set to start_date)
-        region : dict, geojson, ee.Geometry
-                 Polygon in WGS84 specifying a region that images should intersect
-        valid_portion: int, optional
-                     Minimum portion (%) of image pixels that should be valid (not cloud)
-        apply_valid_mask : bool, optional
-                        Mask out clouds in search result images
-
-        Returns
-        -------
-        : pandas.DataFrame
-        Dataframe specifying image properties that match the search criteria
-        """
-        self._valid_portion = valid_portion
-        self._apply_valid_mask = apply_valid_mask
-        return ImSearch.search(self, start_date, end_date, region)
 
 
 ##
@@ -637,9 +598,6 @@ class Sentinel2CloudlessImSearch(ImSearch):
                      'sentinel_toa' (top of atmosphere - default) or 'sentinel_sr' (surface reflectance)
         """
         ImSearch.__init__(self, collection=collection)
-
-        self._valid_portion = 90
-        self._apply_valid_mask = False
         self._im_transform = lambda image: ee.Image.toUint16(image)
 
         self._cloud_filter = 60  # Maximum image cloud cover percent allowed in image collection
@@ -686,7 +644,7 @@ class Sentinel2CloudlessImSearch(ImSearch):
         # project the the cloud mask in the direction of shadows for self._cloud_proj_dist
         proj_dist_px = ee.Number(self._cloud_proj_dist * 1000).divide(min_scale)
         proj_cloud_mask = (cloud_mask.directionalDistanceTransform(shadow_azimuth, proj_dist_px).
-                           select('distance').mask().rename('PROJ_CLOUD_MASK'))
+                           select('distance').mask().rename('PROJ_CLOUD_MASK'))     # TODO: why is .mask here?
         # .reproject(**{'crs': image.select(0).projection(), 'scale': 100})
 
         if self.collection_info['ee_collection'] == 'COPERNICUS/S2_SR':  # use SCL to reduce shadow_mask
@@ -719,10 +677,12 @@ class Sentinel2CloudlessImSearch(ImSearch):
             image = image.addBands(shadow_mask)
             image = image.addBands(valid_mask)
 
-        if self._apply_valid_mask:
+        if apply_mask:
             # NOTE: for export_image, updateMask sets pixels to 0,
             # for download_image, it does the same and sets nodata=0
             image = image.updateMask(valid_mask)
+        else:
+            image = image.addBands(valid_mask)
 
         return image.set(valid_portion).set(q_score_avg).addBands(q_score)
 
@@ -763,10 +723,10 @@ class Sentinel2CloudlessImSearch(ImSearch):
             'condition': ee.Filter.equals(**{
                 'leftField': 'system:index',
                 'rightField': 'system:index'
-            })})).map(lambda image: self._process_image(image, region=region, apply_mask=self._apply_valid_mask)).
+            })})).map(lambda image: self._process_image(image, region=region, apply_mask=self._apply_mask)).
                 filter(ee.Filter.gt('VALID_PORTION', self._valid_portion)))
 
-    def get_image(self, image_id, region=None):
+    def get_image(self, image_id, region=None, apply_mask=False):
         """
         Retrieve an ee.Image object, adding validity and quality metadata where possible
 
@@ -776,6 +736,8 @@ class Sentinel2CloudlessImSearch(ImSearch):
              Earth engine image ID e.g. 'LANDSAT/LC08/C02/T1_L2/LC08_182037_20190118 2019-01-18'
         region : ee.Geometry, dict, geojson
                  Process image over this region
+        apply_mask : bool
+                     Apply any validity mask to the image by setting nodata
 
         Returns
         -------
@@ -791,34 +753,9 @@ class Sentinel2CloudlessImSearch(ImSearch):
         # combine COPERNICUS/S2* and COPERNICUS/S2_CLOUD_PROBABILITY images
         s2_cloud_prob_image = ee.Image(f'COPERNICUS/S2_CLOUD_PROBABILITY/{index}')
         image = ee.Image(image_id).set('s2cloudless', s2_cloud_prob_image)
-        image = self._process_image(image, region=region).set('s2cloudless', None)
+        image = self._process_image(image, region=region, apply_mask=apply_mask).set('s2cloudless', None)
 
         return image.toUint16()
-
-    def search(self, start_date, end_date, region, valid_portion=50, apply_valid_mask=False):
-        """
-        Search for Sentinel-2 images based on date, region etc criteria
-
-        Parameters
-        start_date : datetime.datetime
-                     Python datetime specifying the start image capture date
-        end_date : datetime.datetime
-                   Python datetime specifying the end image capture date (if None, then set to start_date)
-        region : dict, geojson, ee.Geometry
-                 Polygon in WGS84 specifying a region that images should intersect
-        valid_portion: int, optional
-                       Minimum portion (%) of image pixels that should be valid (not cloud)
-        apply_valid_mask : bool, optional
-                           Mask out clouds in search result images
-
-        Returns
-        -------
-        : pandas.DataFrame
-        Dataframe specifying image properties that match the search criteria
-        """
-        self._valid_portion = valid_portion
-        self._apply_valid_mask = apply_valid_mask
-        return ImSearch.search(self, start_date, end_date, region)
 
 
 ##

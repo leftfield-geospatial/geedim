@@ -333,7 +333,7 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
         with rio.open(tif_filename, 'r+') as im:
             if 'properties' in im_info_dict:
                 im.update_tags(**im_info_dict['properties'])
-            # im.profile['photometric'] = None    # TODO: fix warning
+            # im.profile['photometric'] = None
             im.colorinterp = [ColorInterp.black] * im.count
 
             if 'bands' in im_info_dict:
