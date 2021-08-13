@@ -214,6 +214,7 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
     """
     # get ee image info which is used in setting crs, scale and tif metadata (no further calls to getInfo)
     im_info_dict, band_info_df = get_image_info(image)
+    filename = pathlib.Path(filename)
     im_id = im_info_dict['id'] if 'id' in im_info_dict else ''
     click.echo(f'\nDownloading {im_id} to {filename.name}')
 
@@ -263,7 +264,7 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
         file_size = int(file_link.info()['Content-Length'])
         click.echo(f'Download size: {file_size / (1024 ** 2):.2f} MB')
 
-        tif_filename = pathlib.Path(filename)
+        tif_filename = filename
         tif_filename = tif_filename.parent.joinpath(tif_filename.stem + '.tif')  # force to tif file
         zip_filename = tif_filename.parent.joinpath('geedim_download.zip')
 
@@ -320,6 +321,8 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
         with rio.open(tif_filename, 'r+') as im:
             if 'properties' in im_info_dict:
                 im.update_tags(**im_info_dict['properties'])
+            if 'id' in im_info_dict:
+                im.update_tags(id=im_info_dict['id'])
 
             im.colorinterp = [ColorInterp.undefined] * im.count
 

@@ -228,7 +228,7 @@ class ImSearch:
 
         return im_prop_df
 
-    def get_image(self, image_id, region=None, apply_mask=False):
+    def get_image(self, image_id, region=None, apply_mask=False, scale_refl=True):
         """
         Retrieve an ee.Image object, adding validity and quality metadata where possible
 
@@ -236,10 +236,12 @@ class ImSearch:
         ----------
         image_id : str
              Earth engine image ID e.g. 'LANDSAT/LC08/C02/T1_L2/LC08_182037_20190118 2019-01-18'
-        region : ee.Geometry, dict, geojson
-                 Process image over this region
-        apply_mask : bool
-                     Apply any validity mask to the image by setting nodata
+        region : ee.Geometry, dict, geojson, optional
+                 Process image over this region (default: use EE image footprint)
+        apply_mask : bool, optional
+                     Apply any validity mask to the image by setting nodata (default: False)
+        scale_refl : bool, optional
+                     Scale reflectance values from 0-10000 if they are not in that range already (default: True)
 
         Returns
         -------
@@ -449,9 +451,8 @@ class LandsatImSearch(ImSearch):
         Returns
         -------
         : ee.Image
-        Float32 image with SR bands in range 0-10000 & nodata = -inf
+        Image with SR bands in range 0-10000
         """
-        # TODO: can we replace with unitScale?
         # retrieve the names of SR bands
         all_bands = image.bandNames()
         init_bands = ee.List([])
@@ -492,9 +493,77 @@ class LandsatImSearch(ImSearch):
         calib_image = calib_image.addBands(image.select(non_sr_bands))
         calib_image = calib_image.updateMask(image.mask())  # apply any existing mask to refl image
 
-        # call toFloat after updateMask
-        return ee.Image(calib_image.copyProperties(image)).toFloat()
+        return ee.Image(calib_image.copyProperties(image))
 
+    @staticmethod
+    def scale_to_reflectance(image):
+        """
+        Scale and offset landsat pixels in SR bands to surface reflectance (0-10000)
+        Uses hard coded ranges
+
+        Parameters
+        ----------
+        image : ee.Image
+                image to scale and offset
+
+        Returns
+        -------
+        : ee.Image
+        Image with SR bands in range 0-10000
+        """
+        # retrieve the names of SR bands
+        all_bands = image.bandNames()
+        init_bands = ee.List([])
+
+        def add_refl_bands(band, refl_bands):
+            refl_bands = ee.Algorithms.If(ee.String(band).rindex('SR_B').eq(0), ee.List(refl_bands).add(band),
+                                          refl_bands)
+            return refl_bands
+
+        sr_bands = ee.List(all_bands.iterate(add_refl_bands, init_bands))
+        non_sr_bands = all_bands.removeAll(sr_bands)  # all the other non-SR bands
+
+        # scale to new range
+        # low/high values from https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C02_T1_L2?hl=en
+        low = 0.2/2.75e-05
+        high = low + 1/2.75e-05
+        calib_image = image.select(sr_bands).unitScale(low=low, high=high).multiply(10000.0)
+        calib_image = calib_image.addBands(image.select(non_sr_bands))
+        calib_image = calib_image.updateMask(image.mask())  # apply any existing mask to refl image
+
+        for key in ['system:index', 'system:id', 'id']:   # copy id
+            calib_image = calib_image.set(key, ee.String(image.get(key)))
+
+        return ee.Image(calib_image.copyProperties(image))
+
+
+    def get_image(self, image_id, region=None, apply_mask=False, scale_refl=True):
+        """
+        Retrieve an ee.Image object, adding validity and quality metadata where possible
+
+        Parameters
+        ----------
+        image_id : str
+             Earth engine image ID e.g. 'LANDSAT/LC08/C02/T1_L2/LC08_182037_20190118 2019-01-18'
+        region : ee.Geometry, dict, geojson, optional
+                 Process image over this region (default: use EE image footprint)
+        apply_mask : bool, optional
+                     Apply any validity mask to the image by setting nodata (default: False)
+        scale_refl : bool, optional
+                     Scale reflectance values from 0-10000 if they are not in that range already (default: True)
+
+        Returns
+        -------
+        : ee.Image
+          The processed image
+        """
+        if '/'.join(image_id.split('/')[:-1]) != self.collection_info['ee_collection']:
+            raise ValueError(f'{image_id} is not a valid earth engine id for {self.__class__}')
+
+        image = self._process_image(ee.Image(image_id), region=region, apply_mask=apply_mask)
+        if scale_refl:
+            image = LandsatImSearch.scale_to_reflectance(image)
+        return self._im_transform(image)
 
 ##
 class Sentinel2ImSearch(ImSearch):
@@ -719,7 +788,7 @@ class Sentinel2CloudlessImSearch(ImSearch):
             })})).map(lambda image: self._process_image(image, region=region, apply_mask=self._apply_mask)).
                 filter(ee.Filter.gt('VALID_PORTION', self._valid_portion)))
 
-    def get_image(self, image_id, region=None, apply_mask=False):
+    def get_image(self, image_id, region=None, apply_mask=False, scale_refl=True):
         """
         Retrieve an ee.Image object, adding validity and quality metadata where possible
 
@@ -727,10 +796,12 @@ class Sentinel2CloudlessImSearch(ImSearch):
         ----------
         image_id : str
              Earth engine image ID e.g. 'LANDSAT/LC08/C02/T1_L2/LC08_182037_20190118 2019-01-18'
-        region : ee.Geometry, dict, geojson
-                 Process image over this region
-        apply_mask : bool
-                     Apply any validity mask to the image by setting nodata
+        region : ee.Geometry, dict, geojson, optional
+                 Process image over this region (default: use EE image footprint)
+        apply_mask : bool, optional
+                     Apply any validity mask to the image by setting nodata (default: False)
+        scale_refl : bool, optional
+                     Scale reflectance values from 0-10000 if they are not in that range already (default: True)
 
         Returns
         -------

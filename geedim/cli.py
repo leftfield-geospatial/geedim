@@ -56,8 +56,8 @@ def _parse_region_geom(region=None, bbox=None, region_buf=5):
     return region_geojson
 
 
-def _export(ids, bbox=None, region=None, path='', crs=None, scale=None, apply_mask=False, wait=True, overwrite=False,
-            do_download=True):
+def _export(ids, bbox=None, region=None, path='', crs=None, scale=None, apply_mask=False, scale_refl=True, wait=True,
+            overwrite=False, do_download=True):
     """ download or export image(s), with cloud and shadow masking """
 
     ee.Initialize()
@@ -80,7 +80,7 @@ def _export(ids, bbox=None, region=None, path='', crs=None, scale=None, apply_ma
             click.secho(f'Re-projecting {_id} to {crs} to avoid bug https://issuetracker.google.com/issues/194561313.')
 
         imsearch_obj = cls_col_map[collection](collection=collection)
-        image = imsearch_obj.get_image(_id, region=region_geojson, apply_mask=apply_mask)
+        image = imsearch_obj.get_image(_id, region=region_geojson, apply_mask=apply_mask, scale_refl=scale_refl)
 
         if do_download:
             band_df = pd.DataFrame.from_dict(imsearch_obj.collection_info['bands'])
@@ -149,6 +149,13 @@ mask_option = click.option(
     "--mask/--no-mask",
     default=False,
     help="Do/don't apply (cloud and shadow) nodata mask(s).  [default: no-mask]",
+    required=False,
+)
+scale_refl_option = click.option(
+    "-sr/-nsr",
+    "--scale-refl/--no-scale-refl",
+    default=True,
+    help="Scale reflectance bands from 0-10000.  [default: scale-refl]",
     required=False,
 )
 
@@ -245,6 +252,7 @@ cli.add_command(search)
 @crs_option
 @scale_option
 @mask_option
+@scale_refl_option
 @click.option(
     "-o",
     "--overwrite",
@@ -254,10 +262,11 @@ cli.add_command(search)
     required=False,
     show_default=False
 )
-def download(id, bbox=None, region=None, download_dir=os.getcwd(), crs=None, scale=None, mask=False, overwrite=False):
+def download(id, bbox=None, region=None, download_dir=os.getcwd(), crs=None, scale=None, mask=False, scale_refl=True,
+             overwrite=False):
     """ Download image(s), with cloud and shadow masking """
-    _export(id, bbox=bbox, region=region, path=download_dir, crs=crs, scale=scale, apply_mask=mask, overwrite=overwrite,
-            do_download=True)
+    _export(id, bbox=bbox, region=region, path=download_dir, crs=crs, scale=scale, apply_mask=mask,
+            scale_refl=scale_refl, overwrite=overwrite, do_download=True)
 
 
 cli.add_command(download)
@@ -278,6 +287,7 @@ cli.add_command(download)
 @crs_option
 @scale_option
 @mask_option
+@scale_refl_option
 @click.option(
     "-w/-nw",
     "--wait/--no-wait",
@@ -285,10 +295,10 @@ cli.add_command(download)
     help="Wait / don't wait for export to complete.  [default: wait]",
     required=False,
 )
-def export(id, bbox=None, region=None, drive_folder='', crs=None, scale=None, mask=False, wait=True):
+def export(id, bbox=None, region=None, drive_folder='', crs=None, scale=None, mask=False, scale_refl=True, wait=True):
     """ Export image(s) to Google Drive, with cloud and shadow masking """
-    _export(id, bbox=bbox, region=region, path=drive_folder, crs=crs, scale=scale, apply_mask=mask, wait=wait,
-            do_download=False)
+    _export(id, bbox=bbox, region=region, path=drive_folder, crs=crs, scale=scale, apply_mask=mask,
+            scale_refl=scale_refl, wait=wait, do_download=False)
 
 
 cli.add_command(export)
