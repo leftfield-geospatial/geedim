@@ -1,14 +1,14 @@
 # geedim
 Google Earth Engine image masking, compositing and download/export.
 ## Description
-`geedim` provides a command line interface (CLI) and API for downloading and exporting surface reflectance imagery from [Google Earth Engine](https://signup.earthengine.google.com) (GEE). 
+`geedim` provides a command line interface, and API, for downloading and exporting surface reflectance imagery from [Google Earth Engine](https://signup.earthengine.google.com) (GEE). 
 
 Functionality:
 
 - Filtering by date & region
 - Filtering by region-specific validity and quality scores
 - Basic cloud and shadow masking, and cloud-free compositing 
-- Download (<10MB) and export to Google Drive
+- Download, and export to Google Drive
 - Populating image metadata
 
 Supported imagery:
@@ -23,7 +23,7 @@ modis_nbar | [MODIS/006/MCD43A4](https://developers.google.com/earth-engine/data
 
 
 ## Installation
-###`conda`
+### `conda`
 1) Create a conda environment and install dependencies:
 ```shell
 conda create -n <environment name> python=3.8 -c conda-forge 
