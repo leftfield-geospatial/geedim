@@ -264,7 +264,7 @@ cli.add_command(search)
 )
 def download(id, bbox=None, region=None, download_dir=os.getcwd(), crs=None, scale=None, mask=False, scale_refl=True,
              overwrite=False):
-    """ Download image(s), with cloud and shadow masking """
+    """ Download image(s) (up to 10MB), with cloud and shadow masking """
     _export(id, bbox=bbox, region=region, path=download_dir, crs=crs, scale=scale, apply_mask=mask,
             scale_refl=scale_refl, overwrite=overwrite, do_download=True)
 
