@@ -8,7 +8,7 @@ import rasterio as rio
 from rasterio.crs import CRS
 from rasterio.warp import transform_bounds
 
-from geedim import download, search, root_path
+from geedim import export, search, root_path
 
 
 class TestGeeDimApi(unittest.TestCase):
@@ -38,7 +38,7 @@ class TestGeeDimApi(unittest.TestCase):
                   id's that match the ee.Image band id's
         """
         # check image info
-        im_info_dict, band_info_df = download.get_image_info(image)
+        im_info_dict, band_info_df = export.get_image_info(image)
 
         for key in ['bands', 'properties']:
             self.assertTrue(key in im_info_dict.keys(), msg='Image info has bands and properties')
@@ -54,13 +54,13 @@ class TestGeeDimApi(unittest.TestCase):
         image_filename = root_path.joinpath(f'data/outputs/tests/{image_id}_{crs_str}_{scale}m.tif')
 
         # run the download
-        download.download_image(image, image_filename, region=region, crs=crs, scale=scale, band_df=band_df)
+        export.download_image(image, image_filename, region=region, crs=crs, scale=scale, band_df=band_df)
 
         # now set scale and crs to their image defaults as necessary
         if scale is None:
             scale = band_info_df['scale'].min()
         if crs is None:
-            crs = CRS.from_wkt(download.get_min_projection(image).wkt().getInfo())
+            crs = CRS.from_wkt(export.get_min_projection(image).wkt().getInfo())
         elif isinstance(crs, str):
             crs = CRS.from_string(crs)
         else:
@@ -131,10 +131,10 @@ class TestGeeDimApi(unittest.TestCase):
         export_tasks = []
         if self.test_export:  # start export tasks
             export_tasks.append(
-                download.export_image(image, f'{image_name}_None_None', folder='GeedimTest', region=region,
-                                      crs=_crs, scale=None, wait=False))
-            export_tasks.append(download.export_image(image, f'{image_name}_Epsg32635_240m', folder='GeedimTest',
-                                                      region=region, crs='EPSG:32635', scale=240, wait=False))
+                export.export_image(image, f'{image_name}_None_None', folder='GeedimTest', region=region,
+                                    crs=_crs, scale=None, wait=False))
+            export_tasks.append(export.export_image(image, f'{image_name}_Epsg32635_240m', folder='GeedimTest',
+                                                    region=region, crs='EPSG:32635', scale=240, wait=False))
 
         # download in native crs and scale, and validate
         self._test_download(image, image_name, region, crs=_crs, scale=None, band_df=band_df)
@@ -167,6 +167,6 @@ class TestGeeDimApi(unittest.TestCase):
 
         if self.test_export:  # check on export tasks (we can't check on exported files, only the export completed)
             for export_task in export_tasks:
-                download.monitor_export_task(export_task)
+                export.monitor_export_task(export_task)
 
 ##

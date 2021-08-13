@@ -212,7 +212,7 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
     overwrite : bool, optional
                 Overwrite the destination file if it exists (default: prompt)
     """
-    # TODO: minimise as far as possible getInfo() calls below
+    # get ee image info which is used in setting crs, scale and tif metadata (no further calls to getInfo)
     im_info_dict, band_info_df = get_image_info(image)
     im_id = im_info_dict['id'] if 'id' in im_info_dict else ''
     click.echo(f'\nDownloading {im_id} to {filename.name}')
@@ -258,8 +258,8 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
 
     file_link = None
     try:
+        # setup the download
         file_link = request.urlopen(link)
-        # setup destination zip and tif filenames
         file_size = int(file_link.info()['Content-Length'])
         click.echo(f'Download size: {file_size / (1024 ** 2):.2f} MB')
 
@@ -267,7 +267,7 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
         tif_filename = tif_filename.parent.joinpath(tif_filename.stem + '.tif')  # force to tif file
         zip_filename = tif_filename.parent.joinpath('geedim_download.zip')
 
-        # download the zip file
+        # download the file
         with open(zip_filename, 'wb') as f:
             file_size_dl = 0
             with click.progressbar(length=file_size,
@@ -298,7 +298,7 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
         zip_file.extractall(zip_filename.parent)
     os.remove(zip_filename)     # clean up zip file
 
-    # rename to extracted file to filename
+    # rename to extracted tif file to filename
     if (_tif_filename != tif_filename):
         if tif_filename.exists():
             if overwrite or click.confirm(f'{tif_filename.name} exists, do you want to overwrite?'):
@@ -312,9 +312,9 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
     if ('properties' in im_info_dict) and ('system:footprint' in im_info_dict['properties']):
         im_info_dict['properties'].pop('system:footprint')
 
-    # copy metadata to downloaded tif file
+    # copy ee image metadata to downloaded tif file
     try:
-        # GEE seems to set tif colorinterp tags incorrectly, suppress rasterio warning relating to this:
+        # suppress rasterio warnings relating to GEE tag (?) issue
         logging.getLogger("rasterio").setLevel(logging.ERROR)
 
         with rio.open(tif_filename, 'r+') as im:
@@ -336,133 +336,3 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
         logging.getLogger("rasterio").setLevel(logging.WARNING)
 
     return link
-
-
-# TODO: delete the below functions if they remain unused
-def download_im_collection(im_collection, path, region=None, crs=None, scale=None, band_df=None):
-    """
-    Download each image in a collection
-
-    Parameters
-    ----------
-    im_collection : ee.ImageCollection
-                    The image collection to download
-    path : str, pathlib.Path
-           Directory to download image files to.  Image filenames will be derived from their earth engine IDs.
-    region : dict, geojson, ee.Geometry, optional
-             Region of interest (WGS84) to export (default: export the entire image granule if it has one).
-    crs : str, optional
-          WKT, EPSG etc specification of CRS to export to (default: use the image CRS if it has one).
-    scale : float, optional
-            Pixel resolution (m) to export to (default: use the highest resolution of the image bands).
-    band_df : pandas.DataFrame, optional
-              DataFrame specifying band metadata to be copied to downloaded file.  'image_id' column should contain
-              band image_id's that match the ee.Image band image_id's
-    """
-
-    num_images = im_collection.size().getInfo()
-    ee_im_list = im_collection.toList(im_collection.size())
-    path = pathlib.Path(path)
-
-    for i in range(num_images):
-        image = ee.Image(ee_im_list.get(i))
-        image_id = ee.String(image.get('system:id')).getInfo().replace('/', '_')  # TODO: can we remove getInfo() here?
-        filename = path.joinpath(f'{image_id}.tif')
-        click.echo(f'Downloading {filename.stem}...')
-        download_image(image, filename, region=region, crs=crs, scale=scale, band_df=band_df)
-
-
-def download_images(image_df, path, region=None, crs=None, scale=None, band_df=None):
-    """
-    Download a images in search results dataframe
-
-    Parameters
-    ----------
-    image_df : pandas.DataFrame
-               DataFrame containing ee.Image 's to download.  In same format as returned by *ImSearch.search(), i.e.
-               with 'EE_ID' and 'IMAGE' columns specifying the EE image id and ee.Image respectively
-    path : str, pathlib.Path
-           Directory to download image files to.  Image filenames will be derived from their earth engine IDs.
-    region : dict, geojson, ee.Geometry, optional
-             Region of interest (WGS84) to export (default: export the entire image granule if it has one).
-    crs : str, optional
-          WKT, EPSG etc specification of CRS to export to (default: use the image CRS if it has one).
-    scale : float, optional
-            Pixel resolution (m) to export to (default: use the highest resolution of the image bands).
-    band_df : pandas.DataFrame, optional
-              DataFrame specifying band metadata to be copied to downloaded file.  'id' column should contain band id's
-              that match the ee.Image band id's
-    """
-
-    path = pathlib.Path(path)
-
-    for row_i, row in image_df.iterrows():
-        filename = path.joinpath(f'{row.EE_ID}.tif')
-        click.echo(f'Downloading {filename.stem}...')
-        download_image(row.IMAGE, filename, region=region, crs=crs, scale=scale, band_df=band_df)
-
-
-def export_im_collection(im_collection, folder=None, region=None, crs=None, scale=None):
-    """
-    Export each image in a collection to Google Drive
-
-    Parameters
-    ----------
-    im_collection : ee.ImageCollection
-                    The image collection to download
-    folder : str, optional
-             Google Drive folder to export to (default: root).
-    region : dict, geojson, ee.Geometry, optional
-             Region of interest (WGS84) to export (default: export the entire image granule if it has one).
-    crs : str, optional
-          WKT, EPSG etc specification of CRS to export to (default: use the image CRS if it has one).
-    scale : float, optional
-            Pixel resolution (m) to export to (default: use the highest resolution of the image bands).
-    """
-
-    num_images = im_collection.size().getInfo()
-    ee_im_list = im_collection.toList(num_images)
-
-    task_list = []
-    for i in range(num_images):
-        image = ee.Image(ee_im_list.get(i))
-        image_id = ee.String(image.get('system:id')).getInfo().replace('/', '_')
-        filename = f'{image_id}.tif'
-        click.echo(f'Exporting {filename}...')
-        task = export_image(image, filename, folder=folder, region=region, crs=crs, scale=scale, wait=False)
-        task_list.append(task)
-
-    return task_list
-
-
-def export_images(image_df, folder=None, region=None, crs=None, scale=None):
-    """
-    Export each image in a collection to Google Drive
-
-    Parameters
-    ----------
-    image_df : pandas.DataFrame
-               DataFrame containing ee.Image 's to download.  In same format as returned by *ImSearch.search(), i.e.
-               with 'EE_ID' and 'IMAGE' columns specifying the EE image id and ee.Image respectively
-    folder : str, optional
-             Google Drive folder to export to (default: root).
-    region : dict, geojson, ee.Geometry, optional
-             Region of interest (WGS84) to export (default: export the entire image granule if it has one).
-    crs : str, optional
-          WKT, EPSG etc specification of CRS to export to (default: use the image CRS if it has one).
-    scale : float, optional
-            Pixel resolution (m) to export to (default: use the highest resolution of the image bands).
-    """
-
-    task_list = []
-
-    for row_i, row in image_df.iterrows():
-        filename = str(row.EE_ID)
-        click.echo(f'Exporting {filename}...')
-        task = export_image(row.IMAGE, filename, folder=folder, region=region, crs=crs, scale=scale, wait=False)
-        task_list.append(task)
-
-    return task_list
-
-##
-

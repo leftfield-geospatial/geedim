@@ -24,7 +24,7 @@ import pandas
 import rasterio as rio
 from rasterio.warp import transform_geom
 
-from geedim import download
+from geedim import export
 from geedim import get_logger
 
 # from shapely import geometry

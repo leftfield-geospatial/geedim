@@ -21,11 +21,8 @@ import click
 import ee
 import pandas as pd
 
-from geedim import download as download_api
-from geedim import get_logger
+from geedim import export as export_api
 from geedim import search as search_api
-
-logger = get_logger(__name__)
 
 # map collection keys to classes
 cls_col_map = {'landsat7_c2_l2': search_api.LandsatImSearch,
@@ -88,12 +85,12 @@ def _export(ids, bbox=None, region=None, path='', crs=None, scale=None, apply_ma
         if do_download:
             band_df = pd.DataFrame.from_dict(imsearch_obj.collection_info['bands'])
             filename = pathlib.Path(path).joinpath(_id.replace('/', '_') + '.tif')
-            download_api.download_image(image, filename, region=region_geojson, crs=crs, scale=scale, band_df=band_df,
-                                        overwrite=overwrite)
+            export_api.download_image(image, filename, region=region_geojson, crs=crs, scale=scale, band_df=band_df,
+                                      overwrite=overwrite)
         else:
             filename = _id.replace('/', '_')
-            download_api.export_image(image, filename, folder=path, region=region_geojson, crs=crs, scale=scale,
-                                      wait=wait)
+            export_api.export_image(image, filename, folder=path, region=region_geojson, crs=crs, scale=scale,
+                                    wait=wait)
 
 
 # define options common to >1 command

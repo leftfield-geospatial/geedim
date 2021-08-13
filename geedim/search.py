@@ -27,7 +27,7 @@ import pandas as pd
 import rasterio as rio
 from rasterio.warp import transform_geom
 
-from geedim import download, root_path
+from geedim import export, root_path
 
 # from shapely import geometry
 
@@ -191,14 +191,14 @@ class ImSearch:
                 prop = prop.set(prop_key, ee.Algorithms.If(image.get(prop_key), image.get(prop_key), ee.String('None')))
             return ee.List(prop_list).add(prop)
 
-        # retrieve list of dicts of collection image properties
+        # retrieve list of dicts of collection image properties (the only call to getInfo in *ImSearch)
         im_prop_list = ee.List(im_collection.iterate(aggregrate_props, init_list)).getInfo()
 
         if len(im_prop_list) == 0:
             click.echo('No images found')
             return pandas.DataFrame([], columns=property_df.ABBREV)
 
-        im_list = im_collection.toList(im_collection.size())  # image objects TODO: exclude IMAGE
+        im_list = im_collection.toList(im_collection.size())  # image objects
 
         # add EE image objects and convert ee.Date to python datetime
         for i, prop_dict in enumerate(im_prop_list):
@@ -537,7 +537,7 @@ class Sentinel2ImSearch(ImSearch):
         qa = image.select('QA60')
         valid_mask = qa.bitwiseAnd(bit_mask).eq(0).rename('VALID_MASK')
 
-        min_scale = download.get_min_projection(image).nominalScale()
+        min_scale = export.get_min_projection(image).nominalScale()
 
         # calculate the potion of valid image pixels
         valid_portion = (valid_mask.unmask().
@@ -621,7 +621,7 @@ class Sentinel2CloudlessImSearch(ImSearch):
             region = image.geometry()
 
         image = ImSearch._process_image(self, image, region=region, apply_mask=apply_mask)
-        min_scale = download.get_min_projection(image).nominalScale()
+        min_scale = export.get_min_projection(image).nominalScale()
 
         # convert cloud probability in 0-100 quality score
         cloud_prob = ee.Image(image.get('s2cloudless')).select('probability')
