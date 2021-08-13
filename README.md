@@ -6,7 +6,7 @@ Google Earth Engine image masking, compositing and download/export.
 Functionality:
 
 - Filtering by date & region
-- Filtering by region-specific validity and quality scores
+- Filtering by region-limited validity and quality scores
 - Basic cloud and shadow masking, and cloud-free compositing 
 - Download, and export to Google Drive
 - Populating image metadata
@@ -211,4 +211,5 @@ Constributions are welcome.  Please post bugs and questions with the [github iss
 **Dugal Harris** - [dugalh@gmail.com](mailto:dugalh@gmail.com)
 
 ## Credits
-Portions of the compositing code were adapted from [gee_tools](https://github.com/gee-community/gee_tools) under the terms of the [MIT license](https://github.com/gee-community/gee_tools/blob/master/LICENSE).
+- Portions of the compositing code were adapted from [gee_tools](https://github.com/gee-community/gee_tools) under the terms of the [MIT license](https://github.com/gee-community/gee_tools/blob/master/LICENSE).
+- [landsatxplore](https://github.com/yannforget/landsatxplore) gave a starting point for the command line interface.  
