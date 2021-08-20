@@ -117,8 +117,8 @@ def export_image(image, filename, folder='', region=None, crs=None, scale=None, 
     """
     # TODO: minimise as far as possible getInfo() calls below
     im_info_dict, band_info_df = get_image_info(image)
-    im_id = im_info_dict['id'] if 'id' in im_info_dict else ''
-    click.echo(f'\nExporting {im_id} to Google Drive:{folder}/{filename}.tif')
+    im_id = im_info_dict['id'] + ' ' if 'id' in im_info_dict else ''
+    click.echo(f'\nExporting {im_id}to Google Drive:{folder}/{filename}.tif')
 
     # if the image is in WGS84 and has no scale (probable composite), then exit
     if all(band_info_df['crs'] == 'EPSG:4326') and all(band_info_df['scale'] == 1) and \
@@ -215,8 +215,8 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
     # get ee image info which is used in setting crs, scale and tif metadata (no further calls to getInfo)
     im_info_dict, band_info_df = get_image_info(image)
     filename = pathlib.Path(filename)
-    im_id = im_info_dict['id'] if 'id' in im_info_dict else ''
-    click.echo(f'\nDownloading {im_id} to {filename.name}')
+    im_id = im_info_dict['id'] + ' ' if 'id' in im_info_dict else ''
+    click.echo(f'\nDownloading {im_id}to {filename.name}')
 
     # if the image is in WGS84 and has no scale (probable composite), then exit
     if all(band_info_df['crs'] == 'EPSG:4326') and all(band_info_df['scale'] == 1) and \
