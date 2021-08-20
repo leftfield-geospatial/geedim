@@ -23,6 +23,7 @@ import pandas as pd
 
 from geedim import export as export_api
 from geedim import search as search_api
+from geedim import collection
 
 # map collection keys to classes
 cls_col_map = {'landsat7_c2_l2': search_api.LandsatImSearch,
@@ -31,6 +32,11 @@ cls_col_map = {'landsat7_c2_l2': search_api.LandsatImSearch,
                'sentinel2_sr': search_api.Sentinel2CloudlessImSearch,
                'modis_nbar': search_api.ModisNbarImSearch}
 
+cls_col_map_ = {'landsat7_c2_l2': collection.LandsatImCollection,
+               'landsat8_c2_l2': collection.LandsatImCollection,
+               'sentinel2_toa': collection.Sentinel2ClImCollection,
+               'sentinel2_sr': collection.Sentinel2ClImCollection,
+               'modis_nbar': collection.ModisNbarImCollection}
 
 def _parse_region_geom(region=None, bbox=None, region_buf=5):
     """ create geojson dict from region or bbox """
