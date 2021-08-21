@@ -26,11 +26,20 @@ from geedim import export, search
 ##
 class ImCollection:
     def __init__(self, collection):
+        """
+        Earth engine image collection related functions
+
+        Parameters
+        ----------
+        collection : str
+                     Earth engine image collection name:
+                     (possible values are: landsat7_c2_l2|landsat8_c2_l2|sentinel2_toa|sentinel2_sr|modis_nbar)
+        """
         collection_info = search.load_collection_info()
         if collection not in collection_info:
             raise ValueError(f'Unknown collection: {collection}')
         self.collection_info = collection_info[collection]
-        self._im_props = pd.DataFrame(self.collection_info['properties'])
+        self._im_props = pd.DataFrame(self.collection_info['properties'])  # list of image properties of interest
         self._im_transform = lambda image: image
 
     @classmethod
@@ -65,9 +74,35 @@ class ImCollection:
         return col
 
     def get_ee_collection(self):
+        """
+        Returns the unfiltered earth engine image collection
+
+        Returns
+        -------
+        : ee.ImageCollection
+        """
         return ee.ImageCollection(self.collection_info['ee_collection'])
 
     def get_image(self, image_id, apply_mask=False, add_aux_bands=False, scale_refl=False):
+        """
+        Retrieve an ee.Image object, optionally adding metadata and auxillary bands
+
+        Parameters
+        ----------
+        image_id : str
+             Earth engine image ID e.g. 'LANDSAT/LC08/C02/T1_L2/LC08_182037_20190118 2019-01-18'
+        apply_mask : bool, optional
+                     Apply any validity mask to the image by setting nodata (default: False)
+        add_aux_bands: bool, optional
+                       Add auxiliary bands (cloud, shadow, fill & validity masks, and quality score) (default: False)
+        scale_refl : bool, optional
+                     Scale reflectance values from 0-10000 if they are not in that range already (default: True)
+
+        Returns
+        -------
+        : ee.Image
+          The processed image
+        """
         if '/'.join(image_id.split('/')[:-1]) != self.collection_info['ee_collection']:
             raise ValueError(f'{image_id} is not a valid earth engine id for {self.__class__}')
 
@@ -85,6 +120,20 @@ class ImCollection:
         return self._im_transform(image)
 
     def _get_image_masks(self, image):
+        """
+        Derive cloud, shadow, fill and validity masks for an image
+
+        Parameters
+        ----------
+        image : ee.Image
+                Derive masks for this image
+
+        Returns
+        -------
+        masks : dict
+                A dictionary with cloud_mask, shadow_mask, fill_mask and valid_mask keys, and corresponding ee.Image
+                values
+        """
         masks = dict(cloud_mask=ee.Image(0).rename('CLOUD_MASK'),
                      shadow_mask=ee.Image(0).rename('SHADOW_MASK'),
                      fill_mask=ee.Image(1).rename('FILL_MASK'),
@@ -93,6 +142,21 @@ class ImCollection:
         return masks
 
     def set_image_valid_portion(self, image, region=None):
+        """
+        Find the portion of valid image pixels for a given region
+
+        Parameters
+        ----------
+        image : ee.Image
+                Find valid portion for this image
+        region : dict, geojson, ee.Geometry, optional.
+                 Polygon in WGS84 specifying the region. If none, uses the image granule if it exists.
+
+        Returns
+        -------
+        : ee.Image
+        Image with the 'VALID_PORTION' property set
+        """
         masks = self._get_image_masks(image)
         min_scale = export.get_min_projection(image).nominalScale()
         if region is None:
@@ -107,6 +171,20 @@ class ImCollection:
         return image.set(valid_portion)
 
     def get_image_score(self, image, cloud_dist=2000):
+        """
+        Get the cloud distance quality score for this image
+
+        Parameters
+        ----------
+        image : ee.Image
+                Find the score for this image
+        cloud_dist : int, oprtional
+                     The neighbourhood (in meters) in which to search for clouds
+        Returns
+        -------
+        : ee.Image
+        The cloud distance score as a single band image
+        """
         radius = 1.5
         min_proj = export.get_min_projection(image)
         cloud_pix = ee.Number(cloud_dist).divide(min_proj.nominalScale()).toInt()
@@ -187,7 +265,7 @@ class ImCollection:
 class LandsatImCollection(ImCollection):
     def __init__(self, collection='landsat8_c2_l2'):
         """
-        Class for searching Landsat 7-8 earth engine image collections
+        Class for Landsat 7-8 earth engine image collections
 
         Parameters
         ----------
@@ -203,6 +281,21 @@ class LandsatImCollection(ImCollection):
         self._im_transform = ee.Image.toUint16
 
     def _get_image_masks(self, image):
+        """
+        Derive cloud, shadow, fill and validity masks for an image
+
+        Parameters
+        ----------
+        image : ee.Image
+                Derive masks for this image
+
+        Returns
+        -------
+        masks : dict
+                A dictionary with cloud_mask, shadow_mask, fill_mask and valid_mask keys, and corresponding ee.Image
+                values
+        """
+
         masks = ImCollection._get_image_masks(self, image)
 
         # get cloud, shadow and fill masks from QA_PIXEL
@@ -231,6 +324,25 @@ class LandsatImCollection(ImCollection):
 
 
     def get_image(self, image_id, apply_mask=False, add_aux_bands=False, scale_refl=False):
+        """
+        Retrieve an ee.Image object, optionally adding metadata and auxillary bands
+
+        Parameters
+        ----------
+        image_id : str
+             Earth engine image ID e.g. 'LANDSAT/LC08/C02/T1_L2/LC08_182037_20190118 2019-01-18'
+        apply_mask : bool, optional
+                     Apply any validity mask to the image by setting nodata (default: False)
+        add_aux_bands: bool, optional
+                       Add auxiliary bands (cloud, shadow, fill & validity masks, and quality score) (default: False)
+        scale_refl : bool, optional
+                     Scale reflectance values from 0-10000 if they are not in that range already (default: True)
+
+        Returns
+        -------
+        : ee.Image
+          The processed image
+        """
         image = ImCollection.get_image(self, image_id, apply_mask=apply_mask, add_aux_bands=add_aux_bands)
 
         if scale_refl:
@@ -282,12 +394,36 @@ class LandsatImCollection(ImCollection):
 
 
 class Sentinel2ImCollection(ImCollection):
+
     def __init__(self, collection='sentinel2_toa'):
+        """
+        Class for Sentinel-2 TOA and SR earth engine image collections
+
+        Parameters
+        ----------
+        collection : str, optional
+                     'sentinel_toa' (top of atmosphere - default) or 'sentinel_sr' (surface reflectance)
+        """
         ImCollection.__init__(self, collection=collection)
 
         self._im_transform = ee.Image.toUint16
 
     def _get_image_masks(self, image):
+        """
+        Derive cloud, shadow, fill and validity masks for an image
+
+        Parameters
+        ----------
+        image : ee.Image
+                Derive masks for this image
+
+        Returns
+        -------
+        masks : dict
+                A dictionary with cloud_mask, shadow_mask, fill_mask and valid_mask keys, and corresponding ee.Image
+                values
+        """
+
         masks = ImCollection._get_image_masks(self, image)
         qa = image.select('QA60')   # bits 10 and 11 are opaque and cirrus clouds respectively
         cloud_mask = qa.bitwiseAnd((1 << 11) | (1 << 10)).neq(0).rename('CLOUD_MASK')
@@ -298,6 +434,15 @@ class Sentinel2ImCollection(ImCollection):
 
 class Sentinel2ClImCollection(ImCollection):
     def __init__(self, collection='sentinel2_toa'):
+        """
+        Class for Sentinel-2 TOA and SR earth engine image collections. Uses cloud-probability for masking
+        and quality scoring.
+
+        Parameters
+        ----------
+        collection : str, optional
+                     'sentinel_toa' (top of atmosphere - default) or 'sentinel_sr' (surface reflectance)
+        """
         ImCollection.__init__(self, collection=collection)
         self._im_transform = ee.Image.toUint16
 
@@ -309,6 +454,20 @@ class Sentinel2ClImCollection(ImCollection):
 
 
     def _get_image_masks(self, image):
+        """
+        Derive cloud, shadow, fill and validity masks for an image
+
+        Parameters
+        ----------
+        image : ee.Image
+                Derive masks for this image
+
+        Returns
+        -------
+        masks : dict
+                A dictionary with cloud_mask, shadow_mask, fill_mask and valid_mask keys, and corresponding ee.Image
+                values
+        """
         masks = ImCollection._get_image_masks(self, image)
         # qa = image.select('QA60')   # bits 10 and 11 are opaque and cirrus clouds respectively
         # cloud_mask = qa.bitwiseAnd((1 << 11) | (1 << 10)).neq(0).rename('VALID_MASK')
@@ -345,6 +504,15 @@ class Sentinel2ClImCollection(ImCollection):
 
 
     def get_ee_collection(self):
+        """
+        Return the unfiltered earth engine image collection (a join of the sentinel-2 reflectance and cloud probability
+        collections)
+
+        Returns
+        -------
+        : ee.ImageCollection
+        """
+
         # adapted from https://developers.google.com/earth-engine/tutorials/community/sentinel-2-s2cloudless
 
         s2_sr_toa_col = ee.ImageCollection(self.collection_info['ee_collection'])
@@ -362,6 +530,25 @@ class Sentinel2ClImCollection(ImCollection):
                    })))
 
     def get_image(self, image_id, apply_mask=False, add_aux_bands=False, scale_refl=False):
+        """
+        Retrieve an ee.Image object, optionally adding metadata and auxillary bands
+
+        Parameters
+        ----------
+        image_id : str
+             Earth engine image ID e.g. 'LANDSAT/LC08/C02/T1_L2/LC08_182037_20190118 2019-01-18'
+        apply_mask : bool, optional
+                     Apply any validity mask to the image by setting nodata (default: False)
+        add_aux_bands: bool, optional
+                       Add auxiliary bands (cloud, shadow, fill & validity masks, and quality score) (default: False)
+        scale_refl : bool, optional
+                     Scale reflectance values from 0-10000 if they are not in that range already (default: True)
+
+        Returns
+        -------
+        : ee.Image
+          The processed image
+        """
         index = image_id.split('/')[-1]
         collection = '/'.join(image_id.split('/')[:-1])
 
@@ -386,5 +573,11 @@ class Sentinel2ClImCollection(ImCollection):
 
 class ModisNbarImCollection(ImCollection):
     def __init__(self, collection='modis_nbar'):
+        """
+        Class for the MODIS daily NBAR earth engine image collection
+        """
         ImCollection.__init__(self, collection)
         self._im_transform = ee.Image.toUint16
+
+##
+
