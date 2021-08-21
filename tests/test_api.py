@@ -8,7 +8,7 @@ import rasterio as rio
 from rasterio.crs import CRS
 from rasterio.warp import transform_bounds
 
-from geedim import export, search, root_path
+from geedim import export, search, collection, root_path
 
 
 class TestGeeDimApi(unittest.TestCase):
@@ -54,13 +54,15 @@ class TestGeeDimApi(unittest.TestCase):
         image_filename = root_path.joinpath(f'data/outputs/tests/{image_id}_{crs_str}_{scale}m.tif')
 
         # run the download
-        export.download_image(image, image_filename, region=region, crs=crs, scale=scale, band_df=band_df)
+        export.download_image(image, image_filename, region=region, crs=crs, scale=scale, band_df=band_df,
+                              overwrite=True)
 
         # now set scale and crs to their image defaults as necessary
+        min_proj = export.get_min_projection(image)
         if scale is None:
-            scale = band_info_df['scale'].min()
+            scale = min_proj.nominalScale().getInfo()    #band_info_df['scale'].min()
         if crs is None:
-            crs = CRS.from_wkt(export.get_min_projection(image).wkt().getInfo())
+            crs = CRS.from_wkt(min_proj.wkt().getInfo())
         elif isinstance(crs, str):
             crs = CRS.from_string(crs)
         else:
@@ -91,37 +93,38 @@ class TestGeeDimApi(unittest.TestCase):
                 self.assertAlmostEqual(100 * valid_mask.mean(), float(im.get_tag_item('VALID_PORTION')), delta=5,
                                        msg=f'VALID_PORTION matches mask mean for {image_id}')
 
-    def _test_imsearch_obj(self, imsearch_obj):
+    def _test_search(self, im_collection):
         """
-        Test search and download/export on a specified *ImSearch object
+        Test search and download/export on a specified *ImColllection object
 
         Parameters
         ----------
-        imsearch_obj : geedim.search.ImSearch
-                       A *ImSearch object to test
+        im_collection : geedim.collection.ImColllection
+                       A *ImColllection object to test
         """
 
         # GEF Baviaanskloof region
         region = {"type": "Polygon",
                   "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
         date = datetime.strptime('2019-02-01', '%Y-%m-%d')
-        band_df = pd.DataFrame.from_dict(imsearch_obj.collection_info['bands'])
+        band_df = pd.DataFrame.from_dict(im_collection.collection_info['bands'])
 
-        image_df = imsearch_obj.search(date, date + timedelta(days=32), region)
+        image_df = search.search(im_collection, date, date + timedelta(days=32), region)
 
         # check search results
         self.assertGreater(image_df.shape[0], 0, msg='Search returned one or more images')
-        for im_prop in imsearch_obj._im_props.ABBREV.values:
+        for im_prop in im_collection._im_props.ABBREV.values:
             self.assertTrue(im_prop in image_df.columns, msg='Search results contain specified properties')
 
         # select an image to download/export
         im_idx = math.ceil(image_df.shape[0] / 2)
         image_id = str(image_df['ID'].iloc[im_idx])
-        image = imsearch_obj.get_image(image_id, region=region)  # image_df.IMAGE.iloc[im_idx]
+        image = im_collection.get_image(image_id, apply_mask=False, add_aux_bands=True)  # image_df.IMAGE.iloc[im_idx]
+        image = im_collection.set_image_valid_portion(image, region=region)
         image_name = image_id.replace('/', '_')
 
         # force CRS for MODIS as workaround for GEE CRS bug
-        if isinstance(imsearch_obj, search.ModisNbarImSearch):
+        if isinstance(im_collection, collection.ModisNbarImCollection):
             _crs = 'EPSG:3857'
             _scale = 500
         else:
@@ -152,18 +155,18 @@ class TestGeeDimApi(unittest.TestCase):
         ee.Initialize()
 
         # *ImSearch objects to test
-        test_objs = [search.ModisNbarImSearch(collection='modis_nbar'),
-                     search.LandsatImSearch(collection='landsat8_c2_l2'),
-                     search.LandsatImSearch(collection='landsat7_c2_l2'),
-                     search.Sentinel2ImSearch(collection='sentinel2_toa'),
-                     search.Sentinel2ImSearch(collection='sentinel2_sr'),
-                     search.Sentinel2CloudlessImSearch(collection='sentinel2_toa'),
-                     search.Sentinel2CloudlessImSearch(collection='sentinel2_sr')]
+        test_collections = [collection.ModisNbarImCollection(collection='modis_nbar'),
+                     collection.LandsatImCollection(collection='landsat8_c2_l2'),
+                     collection.LandsatImCollection(collection='landsat7_c2_l2'),
+                     collection.Sentinel2ImCollection(collection='sentinel2_toa'),
+                     # collection.Sentinel2ImCollection(collection='sentinel2_sr'),
+                     # collection.Sentinel2CloudlessImSearch(collection='sentinel2_toa'),
+                     collection.Sentinel2ClImCollection(collection='sentinel2_sr')]
 
         # run tests on each object, accumulating export tasks to check on later
         export_tasks = []
-        for test_obj in test_objs:
-            export_tasks += self._test_imsearch_obj(test_obj)
+        for test_collection in test_collections:
+            export_tasks += self._test_search(test_collection)
 
         if self.test_export:  # check on export tasks (we can't check on exported files, only the export completed)
             for export_task in export_tasks:

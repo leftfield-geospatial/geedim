@@ -85,11 +85,12 @@ def _export(ids, bbox=None, region=None, path='', crs=None, scale=None, apply_ma
             crs = 'EPSG:3857'
             click.secho(f'Re-projecting {_id} to {crs} to avoid bug https://issuetracker.google.com/issues/194561313.')
 
-        imsearch_obj = cls_col_map[collection](collection=collection)
-        image = imsearch_obj.get_image(_id, region=region_geojson, apply_mask=apply_mask, scale_refl=scale_refl)
+        im_collection = cls_col_map_[collection](collection=collection)
+        image = im_collection.get_image(_id, apply_mask=apply_mask, scale_refl=scale_refl)
+        # image = im_collection.set_image_valid_portion(image, region=region_geojson)
 
         if do_download:
-            band_df = pd.DataFrame.from_dict(imsearch_obj.collection_info['bands'])
+            band_df = pd.DataFrame.from_dict(im_collection.collection_info['bands'])
             filename = pathlib.Path(path).joinpath(_id.replace('/', '_') + '.tif')
             export_api.download_image(image, filename, region=region_geojson, crs=crs, scale=scale, band_df=band_df,
                                       overwrite=overwrite)
@@ -220,10 +221,10 @@ def search(collection, start_date, end_date=None, bbox=None, region=None, valid_
 
     ee.Initialize()
 
-    imsearch = cls_col_map[collection](collection=collection)
+    im_collection = cls_col_map_[collection](collection=collection)
     region_geojson = _parse_region_geom(region=region, bbox=bbox, region_buf=region_buf)
 
-    im_df = imsearch.search(start_date, end_date, region_geojson, valid_portion=valid_portion)
+    im_df = search_api.search(im_collection, start_date, end_date, region_geojson, valid_portion=valid_portion)
 
     if (output is not None):
         if 'IMAGE' in im_df.columns:

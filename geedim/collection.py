@@ -85,10 +85,10 @@ class ImCollection:
         return self._im_transform(image)
 
     def _get_image_masks(self, image):
-        masks = dict(cloud_mask=ee.Image(False).rename('CLOUD_MASK'),
-                     shadow_mask=ee.Image(False).rename('SHADOW_MASK'),
-                     fill_mask=ee.Image(True).rename('FILL_MASK'),
-                     valid_mask=ee.Image(True).rename('VALID_MASK'))
+        masks = dict(cloud_mask=ee.Image(0).rename('CLOUD_MASK'),
+                     shadow_mask=ee.Image(0).rename('SHADOW_MASK'),
+                     fill_mask=ee.Image(1).rename('FILL_MASK'),
+                     valid_mask=ee.Image(1).rename('VALID_MASK'))
 
         return masks
 
@@ -109,7 +109,7 @@ class ImCollection:
     def get_image_score(self, image, cloud_dist=2000):
         radius = 1.5
         min_proj = export.get_min_projection(image)
-        cloud_pix = ee.Number(cloud_dist).divide(min_proj.nominalScale())
+        cloud_pix = ee.Number(cloud_dist).divide(min_proj.nominalScale()).toInt()
 
         masks = self._get_image_masks(image)
 
@@ -290,8 +290,9 @@ class Sentinel2ImCollection(ImCollection):
     def _get_image_masks(self, image):
         masks = ImCollection._get_image_masks(self, image)
         qa = image.select('QA60')   # bits 10 and 11 are opaque and cirrus clouds respectively
-        cloud_mask = qa.bitwiseAnd((1 << 11) | (1 << 10)).neq(0).rename('VALID_MASK')
-        masks.update(cloud_mask=cloud_mask, valid_mask=cloud_mask.Not())
+        cloud_mask = qa.bitwiseAnd((1 << 11) | (1 << 10)).neq(0).rename('CLOUD_MASK')
+        valid_mask = cloud_mask.Not().rename('VALID_MASK')
+        masks.update(cloud_mask=cloud_mask, valid_mask=valid_mask)
         return masks
 
 

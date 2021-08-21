@@ -89,6 +89,59 @@ def get_min_projection(image):
 
     return ee.Projection(bands.iterate(compare_scale, init_proj))
 
+def _parse_export_args(image, region=None, crs=None, scale=None):
+    """
+    Download an image as a GeoTiff
+
+    Parameters
+    ----------
+    image : ee.Image
+            The image to export
+    region : dict, geojson, ee.Geometry, optional
+             Region of interest (WGS84) to export (default: export the entire image granule if it has one).
+    crs : str, optional
+          WKT, EPSG etc specification of CRS to export to (default: use the image CRS if it has one).
+    scale : float, optional
+            Pixel resolution (m) to export to (default: use the highest resolution of the image bands).
+    """
+    # get ee image info which is used in setting crs, scale and tif metadata (no further calls to getInfo)
+    im_info_dict, band_info_df = get_image_info(image)
+
+    # get minimum scale and corresponding crs, excluding WGS84 bands
+    min_scale_idx = band_info_df[(band_info_df.crs != 'EPSG:4326') & (band_info_df.scale != 1)].scale.idxmin()
+    min_crs, min_scale = band_info_df.loc[min_scale_idx, ['crs', 'scale']]
+
+    # filename = pathlib.Path(filename)
+    # im_id = im_info_dict['id'] + ' ' if 'id' in im_info_dict else ''
+    # click.echo(f'\nDownloading {im_id}to {filename.name}')
+
+    # if the image is in WGS84 and has no scale (probable composite), then exit
+    if all(band_info_df['crs'] == 'EPSG:4326') and all(band_info_df['scale'] == 1) and \
+            (crs is None or scale is None):
+        raise Exception(f'Image appears to be a composite in WGS84, specify a destination scale and CRS')
+
+    # if it is a native MODIS CRS then warn about GEE bug
+    if any(band_info_df['crs'] == 'SR-ORG:6974') and (crs is None):
+        raise Exception(f'There is an earth engine bug exporting in SR-ORG:6974: '
+                        f'https://issuetracker.google.com/issues/194561313')
+
+    if crs is None:
+        crs = min_crs        # CRS corresponding to minimum scale
+    if region is None:
+        region = image.geometry()
+        click.secho('Warning: region not specified, setting to granule bounds', fg='red')
+    if scale is None:
+        scale = min_scale     # minimum scale
+
+    # warn if some band scales will be changed
+    if (band_info_df['crs'].unique().size > 1) or (band_info_df['scale'].unique().size > 1):
+        click.echo(f'Re-projecting all bands to {crs} at {scale}m resolution')
+
+    if isinstance(region, dict):
+        region = ee.Geometry(region)
+
+    return region, crs, scale, im_info_dict
+
 
 def export_image(image, filename, folder='', region=None, crs=None, scale=None, wait=True):
     """
@@ -116,34 +169,10 @@ def export_image(image, filename, folder='', region=None, crs=None, scale=None, 
     task : EE task object
     """
     # TODO: minimise as far as possible getInfo() calls below
-    im_info_dict, band_info_df = get_image_info(image)
-    im_id = im_info_dict['id'] + ' ' if 'id' in im_info_dict else ''
-    click.echo(f'\nExporting {im_id}to Google Drive:{folder}/{filename}.tif')
+    # im_id = im_info_dict['id'] + ' ' if 'id' in im_info_dict else ''
+    click.echo(f'\nExporting image to Google Drive:{folder}/{filename}.tif')
+    region, crs, scale, im_info_dict = _parse_export_args(image, region=region, crs=crs, scale=scale)
 
-    # if the image is in WGS84 and has no scale (probable composite), then exit
-    if all(band_info_df['crs'] == 'EPSG:4326') and all(band_info_df['scale'] == 1) and \
-            (crs is None or scale is None):
-        raise Exception(f'Image appears to be a composite in WGS84, specify a destination scale and CRS')
-
-    # if it is a native MODIS CRS then warn about GEE bug
-    if any(band_info_df['crs'] == 'SR-ORG:6974') and (crs is None):
-        raise Exception(f'There is an earth engine bug exporting in SR-ORG:6974: '
-                        f'https://issuetracker.google.com/issues/194561313')
-
-    if crs is None:
-        crs = band_info_df['crs'].iloc[band_info_df['scale'].argmin()]  # CRS corresponding to minimum scale
-    if region is None:
-        region = image.geometry()  # not recommended
-        click.secho('Warning: region not specified, setting to granule bounds', fg='red')
-    if scale is None:
-        scale = band_info_df['scale'].min()  # minimum scale
-
-    # warn if some band scales will be changed
-    if (band_info_df['crs'].unique().size > 1) or (band_info_df['scale'].unique().size > 1):
-        click.echo(f'Re-projecting all bands to {crs} at {scale}m resolution')
-
-    if isinstance(region, dict):
-        region = ee.Geometry(region)
 
     # create export task and start
     task = ee.batch.Export.image.toDrive(image=image,
@@ -213,47 +242,18 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
                 Overwrite the destination file if it exists (default: prompt)
     """
     # get ee image info which is used in setting crs, scale and tif metadata (no further calls to getInfo)
-    im_info_dict, band_info_df = get_image_info(image)
     filename = pathlib.Path(filename)
-    im_id = im_info_dict['id'] + ' ' if 'id' in im_info_dict else ''
-    click.echo(f'\nDownloading {im_id}to {filename.name}')
+    # im_id = im_info_dict['id'] + ' ' if 'id' in im_info_dict else ''
+    click.echo(f'\nDownloading image to {filename.name}')
+    region, crs, scale, im_info_dict = _parse_export_args(image, region=region, crs=crs, scale=scale)
 
-    # if the image is in WGS84 and has no scale (probable composite), then exit
-    if all(band_info_df['crs'] == 'EPSG:4326') and all(band_info_df['scale'] == 1) and \
-            (crs is None or scale is None):
-        raise Exception(f'Image appears to be a composite in WGS84, specify a destination scale and CRS')
-
-    # if it is a native MODIS CRS then warn about GEE bug
-    if any(band_info_df['crs'] == 'SR-ORG:6974') and (crs is None):
-        raise Exception(f'There is an earth engine bug exporting in SR-ORG:6974: '
-                        f'https://issuetracker.google.com/issues/194561313')
-
-    if crs is None:
-        crs = band_info_df['crs'].iloc[band_info_df['scale'].argmin()]  # CRS corresponding to minimum scale
-    if region is None:
-        region = image.geometry()  # not recommended
-        click.secho('Warning: region not specified, setting to granule bounds', fg='red')
-    if scale is None:
-        scale = band_info_df['scale'].min()  # minimum scale
-
-    # warn if some band scales will be changed
-    if (band_info_df['crs'].unique().size > 1) or (band_info_df['scale'].unique().size > 1):
-        click.echo(f'Re-projecting all bands to {crs} at {scale}m resolution')
-
-    if isinstance(region, dict):
-        region = ee.Geometry(region)
-
-    # force all bands into same crs and scale
-    band_info_df['crs'] = str(crs)
-    band_info_df['scale'] = scale
-    bands_dict = band_info_df[['id', 'crs', 'scale', 'data_type']].to_dict('records')
 
     # get download link
     link = image.getDownloadURL({
         'scale': scale,
         'crs': crs,
         'fileFormat': 'GeoTIFF',
-        'bands': bands_dict,
+        # 'bands': bands_dict,      # TODO: necessary?
         'filePerBand': False,
         'region': region})
 
@@ -305,6 +305,7 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
             if overwrite or click.confirm(f'{tif_filename.name} exists, do you want to overwrite?'):
                 os.remove(tif_filename)
             else:
+                click.secho(f'Warning: {tif_filename} exists, exiting', fg='red')
                 return link
         os.rename(_tif_filename, tif_filename)
 
