@@ -32,13 +32,22 @@ cls_col_map = {'landsat7_c2_l2': collection.LandsatImCollection,
                'sentinel2_sr': collection.Sentinel2ClImCollection,
                'modis_nbar': collection.ModisNbarImCollection}
 
+class Results(object):
+    def __init__(self):
+        self.search_ids = None
+        self.search_region = None
+        self.composite_image = None
+        self.composite_region = None
+
 def _parse_region_geom(region=None, bbox=None, region_buf=5):
     """ create geojson dict from region or bbox """
 
-    if (bbox is None) and (region is None):
-        raise click.BadParameter('Either --region or --bbox must be passed', region)
+    if (bbox is None or len(bbox)==0) and (region is None):
+        raise click.BadOptionUsage('Either pass --region or --bbox', region)
 
-    if region is not None:  # read region file/string
+    if isinstance(region, dict):
+        region_geojson = region
+    elif region is not None:  # read region file/string
         region = pathlib.Path(region)
         if 'json' in region.suffix:  # read region from geojson file
             with open(region) as f:
@@ -56,16 +65,27 @@ def _parse_region_geom(region=None, bbox=None, region_buf=5):
     return region_geojson
 
 
-def _export(ids, bbox=None, region=None, path='', crs=None, scale=None, apply_mask=False, scale_refl=True, wait=True,
-            overwrite=False, do_download=True):
+def _export(res, ids=None, bbox=None, region=None, path='', crs=None, scale=None, apply_mask=False, scale_refl=True, add_aux=True,
+            wait=True, overwrite=False, do_download=True):
     """ download or export image(s), with cloud and shadow masking """
+    if (ids is None or len(ids) == 0):
+        if res.search_ids is None:
+            raise click.BadOptionUsage('Either pass --id, or chain this command with `search`', ids)
+        else:
+            ids = res.search_ids
 
-    ee.Initialize()
-
-    region_geojson = _parse_region_geom(region=region, bbox=bbox)
+    if (region is None) and (bbox is None or len(bbox)==0):
+        if res.search_region is None:
+            raise click.BadOptionUsage('Either pass --region / --box, or chain this command with `search`', region)
+        else:
+            region_geojson = res.search_region
+    else:
+        region_geojson = _parse_region_geom(region=region, bbox=bbox)
 
     collection_info = search_api.load_collection_info()
     collection_df = pd.DataFrame.from_dict(collection_info, orient='index')
+    export_tasks = []
+    click.echo('')
 
     for _id in ids:
         ee_collection = '/'.join(_id.split('/')[:-1])
@@ -80,7 +100,7 @@ def _export(ids, bbox=None, region=None, path='', crs=None, scale=None, apply_ma
             click.secho(f'Re-projecting {_id} to {crs} to avoid bug https://issuetracker.google.com/issues/194561313.')
 
         im_collection = cls_col_map[collection](collection=collection)
-        image = im_collection.get_image(_id, apply_mask=apply_mask, scale_refl=scale_refl)
+        image = im_collection.get_image(_id, apply_mask=apply_mask, scale_refl=scale_refl, add_aux_bands=add_aux)
         # image = im_collection.set_image_valid_portion(image, region=region_geojson)
 
         if do_download:
@@ -90,9 +110,16 @@ def _export(ids, bbox=None, region=None, path='', crs=None, scale=None, apply_ma
                                       overwrite=overwrite)
         else:
             filename = _id.replace('/', '_')
-            export_api.export_image(image, filename, folder=path, region=region_geojson, crs=crs, scale=scale,
-                                    wait=wait)
+            task = export_api.export_image(image, filename, folder=path, region=region_geojson, crs=crs, scale=scale,
+                                    wait=False)
+            task._name = f'{path}/{filename}.tif'
+            export_tasks.append(task)
 
+    if wait:
+        click.echo('')
+        for task in export_tasks:
+            click.echo(f'Waiting for Google Drive:{path}/{filename}.tif ...')
+            export_api.monitor_export_task(task)
 
 # define options common to >1 command
 bbox_option = click.option(
@@ -102,7 +129,8 @@ bbox_option = click.option(
     nargs=4,
     help="Region defined by bounding box co-ordinates in WGS84 (xmin, ymin, xmax, ymax).  "
          "[One of --bbox or --region is required.]",
-    required=False
+    required=False,
+    default=None
 )
 region_option = click.option(
     "-r",
@@ -126,7 +154,7 @@ image_id_option = click.option(
     "--id",
     type=click.STRING,
     help="Earth engine image ID(s).",
-    required=True,
+    required=False,
     multiple=True
 )
 crs_option = click.option(
@@ -159,12 +187,21 @@ scale_refl_option = click.option(
     help="Scale reflectance bands from 0-10000.  [default: scale-refl]",
     required=False,
 )
+add_aux_option = click.option(
+    "-aa/-naa",
+    "--add-aux/--no-add-aux",
+    default=True,
+    help="Add auxiliary bands (masks and quality score) to the image .  [default: add-aux]",
+    required=False,
+)
 
 
 # define the click cli
-@click.group()
-def cli():
-    pass
+@click.group(chain=True)
+@click.pass_context
+def cli(ctx):
+    ee.Initialize()
+    ctx.obj = Results()
 
 
 @click.command()
@@ -210,15 +247,16 @@ def cli():
     required=False
 )
 @region_buf_option
-def search(collection, start_date, end_date=None, bbox=None, region=None, valid_portion=0, output=None, region_buf=5):
+@click.pass_obj
+def search(res, collection, start_date, end_date=None, bbox=None, region=None, valid_portion=0, output=None, region_buf=5):
     """ Search for images """
-
-    ee.Initialize()
 
     im_collection = cls_col_map[collection](collection=collection)
     region_geojson = _parse_region_geom(region=region, bbox=bbox, region_buf=region_buf)
+    res.search_region = region_geojson
 
-    im_df = search_api.search(im_collection, start_date, end_date, region_geojson, valid_portion=valid_portion)
+    im_df = search_api.search(im_collection, start_date, end_date, region_geojson, valid_portion=valid_portion)[0]
+    res.search_ids = im_df.ID.values.tolist()
 
     if (output is not None):
         if 'IMAGE' in im_df.columns:
@@ -254,6 +292,7 @@ cli.add_command(search)
 @scale_option
 @mask_option
 @scale_refl_option
+@add_aux_option
 @click.option(
     "-o",
     "--overwrite",
@@ -263,11 +302,12 @@ cli.add_command(search)
     required=False,
     show_default=False
 )
-def download(id, bbox=None, region=None, download_dir=os.getcwd(), crs=None, scale=None, mask=False, scale_refl=True,
-             overwrite=False):
-    """ Download image(s) (up to 10MB), with cloud and shadow masking """
-    _export(id, bbox=bbox, region=region, path=download_dir, crs=crs, scale=scale, apply_mask=mask,
-            scale_refl=scale_refl, overwrite=overwrite, do_download=True)
+@click.pass_obj
+def download(res, id=None, bbox=None, region=None, download_dir=os.getcwd(), crs=None, scale=None, mask=False, scale_refl=True,
+             add_aux=True, overwrite=False):
+    """ Download image(s), with cloud and shadow masking """
+    _export(res, ids=id, bbox=bbox, region=region, path=download_dir, crs=crs, scale=scale, apply_mask=mask,
+            scale_refl=scale_refl, add_aux=add_aux, overwrite=overwrite, do_download=True)
 
 
 cli.add_command(download)
@@ -289,6 +329,7 @@ cli.add_command(download)
 @scale_option
 @mask_option
 @scale_refl_option
+@add_aux_option
 @click.option(
     "-w/-nw",
     "--wait/--no-wait",
@@ -296,10 +337,12 @@ cli.add_command(download)
     help="Wait / don't wait for export to complete.  [default: wait]",
     required=False,
 )
-def export(id, bbox=None, region=None, drive_folder='', crs=None, scale=None, mask=False, scale_refl=True, wait=True):
+@click.pass_obj
+def export(res, id=None, bbox=None, region=None, drive_folder='', crs=None, scale=None, mask=False, scale_refl=True, add_aux=True,
+           wait=True):
     """ Export image(s) to Google Drive, with cloud and shadow masking """
-    _export(id, bbox=bbox, region=region, path=drive_folder, crs=crs, scale=scale, apply_mask=mask,
-            scale_refl=scale_refl, wait=wait, do_download=False)
+    _export(res, ids=id, bbox=bbox, region=region, path=drive_folder, crs=crs, scale=scale, apply_mask=mask,
+            scale_refl=scale_refl, add_aux=add_aux, wait=wait, do_download=False)
 
 
 cli.add_command(export)

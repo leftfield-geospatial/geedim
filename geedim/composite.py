@@ -153,81 +153,95 @@ def medoid(collection, bands=None, discard_zeros=False):
     comp = medcol.qualityMosaic('sumdist')
     final = tools.image.removeBands(comp, ['sumdist', 'mask'])
     return final
+
+
+#adapted from https://github.com/gee-community/gee_tools/blob/master/geetools/composite.py
+
+def medoidScore(collection, bands=None, discard_zeros=False,
+                bandname='sumdist', normalize=True):
+    """ Compute a score to reflect 'how far' is from the medoid. Same params
+     as medoid() """
+    first_image = ee.Image(collection.first())
+    if not bands:
+        bands = first_image.bandNames()
+
+    # Create a unique id property called 'enumeration'
+    enumerated = tools.imagecollection.enumerateProperty(collection)
+    collist = enumerated.toList(enumerated.size())
+
+    def over_list(im):
+        im = ee.Image(im)
+        n = ee.Number(im.get('enumeration'))
+
+        # Remove the current image from the collection
+        filtered = tools.ee_list.removeIndex(collist, n)
+
+        # Select bands for medoid
+        to_process = im.select(bands)
+
+        def over_collist(img):
+            return ee.Image(img).select(bands)
+        filtered = filtered.map(over_collist)
+
+        # Compute the sum of the euclidean distance between the current image
+        # and every image in the rest of the collection
+        dist = algorithms.sumDistance(
+            to_process, filtered,
+            name=bandname,
+            discard_zeros=discard_zeros)
+
+        # Mask zero values
+        if not normalize:
+            # multiply by -1 to get the lowest value in the qualityMosaic
+            dist = dist.multiply(-1)
+
+        return im.addBands(dist)
+
+    imlist = ee.List(collist.map(over_list))
+
+    medcol = ee.ImageCollection.fromImages(imlist)
+
+    # Normalize result to be between 0 and 1
+    if normalize:
+        min_sumdist = ee.Image(medcol.select(bandname).min())\
+                        .rename('min_sumdist')
+        max_sumdist = ee.Image(medcol.select(bandname).max()) \
+                        .rename('max_sumdist')
+
+        def to_normalize(img):
+            sumdist = img.select(bandname)
+            newband = ee.Image().expression(
+                '1-((val-min)/(max-min))',
+                {'val': sumdist,
+                 'min': min_sumdist,
+                 'max': max_sumdist}
+            ).rename(bandname)
+            return tools.image.replace(img, bandname, newband)
+
+        medcol = medcol.map(to_normalize)
+
+    return medcol
+
+
+def medoid(collection, bands=None, discard_zeros=False):
+    """ Medoid Composite. Adapted from https://www.mdpi.com/2072-4292/5/12/6481
+    :param collection: the collection to composite
+    :type collection: ee.ImageCollection
+    :param bands: the bands to use for computation. The composite will include
+        all bands
+    :type bands: list
+    :param discard_zeros: Masked and pixels with value zero will not be use
+        for computation. Improves dark zones.
+    :type discard_zeros: bool
+    :return: the Medoid Composite
+    :rtype: ee.Image
+    """
+    medcol = medoidScore(collection, bands, discard_zeros)
+    comp = medcol.qualityMosaic('sumdist')
+    final = tools.image.removeBands(comp, ['sumdist', 'mask'])
+    return final
 '''
-
-def get_composite_image(self):
-    """
-    Create a median composite image from search results
-
-    Returns
-    -------
-    : ee.Image
-    Composite image
-    """
-    if self._im_collection is None or self._im_df is None:
-        raise Exception('First generate valid search results with search(...) method')
-
-    comp_image = self._im_collection.median()
-
-    # set metadata to indicate component images
-    return comp_image.set('COMPOSITE_IMAGES', self._im_df[['ID', 'DATE'] + self._im_props].to_string())
-
-
-def get_composite_image(self):
-    """
-    Create a composite image from search results, favouring pixels with the highest quality score
-
-    Returns
-    -------
-    : ee.Image
-    Composite image
-    """
-    if self._im_collection is None:
-        raise Exception('First generate a valid image collection with search(...) method')
-
-    comp_im = self._im_collection.qualityMosaic('QA_SCORE')
-
+'''
     # set metadata to indicate component images
     return comp_im.set('COMPOSITE_IMAGES', self._im_df[['ID', 'DATE'] + self._im_props].to_string()).toUint16()
-
-
-def get_composite_image(self):
-    """
-    Create a composite image from search results
-
-    Returns
-    -------
-    : ee.Image
-    Composite image
-    """
-    if self._im_collection is None:
-        raise Exception('First generate a valid image collection with search(...) method')
-
-    if self._apply_valid_mask is None:
-        logger.warning('Calling search(...) with apply_mask=True is recommended composite creation')
-
-    comp_im = self._im_collection.mosaic()
-
-    # set metadata to indicate component images
-    return comp_im.set('COMPOSITE_IMAGES', self._im_df[['ID', 'DATE'] + self._im_props].to_string()).toUint16()
-
-
-def get_composite_image(self):
-    """
-    Create a composite image from search results, favouring pixels with the highest quality score
-
-    Returns
-    -------
-    : ee.Image
-    Composite image
-    """
-    if self._im_collection is None:
-        raise Exception('First generate a valid image collection with search(...) method')
-
-    if self._apply_valid_mask is None:
-        logger.warning('Calling search(...) with apply_mask=True is recommended for composite creation')
-
-    comp_im = self._im_collection.mosaic()
-
-    # set metadata to indicate component images
-    return comp_im.set('COMPOSITE_IMAGES', self._im_df[['ID', 'DATE'] + self._im_props].to_string()).toUint16()
+'''

@@ -39,6 +39,7 @@ class ImCollection:
         if collection not in collection_info:
             raise ValueError(f'Unknown collection: {collection}')
         self.collection_info = collection_info[collection]
+
         self._im_props = pd.DataFrame(self.collection_info['properties'])  # list of image properties of interest
         self._im_transform = lambda image: image
 
@@ -58,11 +59,18 @@ class ImCollection:
         : ImCollection
         """
 
-        col = cls(collection)
-        ee_collection = collection.collection_info['ee_collection']
-        id_check = [im_id in ee_collection for im_id in ids]
+        collection_info = search.load_collection_info()
+        ee_geedim_map = dict([(v['ee_collection'], k) for k,v in collection_info.items()])
+        id_collection = '/'.join(ids[0].split('/')[:-1])
+
+        if not id_collection in ee_geedim_map.keys():
+            raise ValueError(f'Unsupported collection: {id_collection}')
+
+        id_check = ['/'.join(ids[0].split('/')[:-1]) == id_collection for im_id in ids[1:]]
         if not all(id_check):
-            raise ValueError(f'All IDs must belong to: {ee_collection}')
+            raise ValueError(f'All IDs must belong to the same collection')
+
+        col = cls(collection=ee_geedim_map[id_collection])
 
         im_list = ee.List([])
         for im_id in ids:
@@ -109,15 +117,19 @@ class ImCollection:
         image = ee.Image(image_id)
         masks = self._get_image_masks(image)
 
+        if apply_mask:  # mask before adding aux bands
+            image = image.updateMask(masks['valid_mask'])
+
         if add_aux_bands:
-            score = self.get_image_score(image)
+            score = self.get_image_score(image, masks=masks)
             image = image.addBands(ee.Image(list(masks.values())))
             image = image.addBands(score)
 
-        if apply_mask:
-            image = image.updateMask(masks['valid_mask'])
 
         return self._im_transform(image)
+
+    # TODO: this can be called multiple times (e.g. by score and get_image) - is that a speed issue?
+    #  perhaps set an image property to the masks, if it is not there already, that way it only gets found once
 
     def _get_image_masks(self, image):
         """
@@ -141,7 +153,7 @@ class ImCollection:
 
         return masks
 
-    def set_image_valid_portion(self, image, region=None):
+    def set_image_valid_portion(self, image, region=None, masks=None):
         """
         Find the portion of valid image pixels for a given region
 
@@ -157,20 +169,22 @@ class ImCollection:
         : ee.Image
         Image with the 'VALID_PORTION' property set
         """
-        masks = self._get_image_masks(image)
-        min_scale = export.get_min_projection(image).nominalScale()
+        if masks is None:
+            masks = self._get_image_masks(image)
+
+        max_scale = export.get_projection(image, min=False).nominalScale()  # TODO: this will fail for unprojected bands (composite or constant images)
         if region is None:
             region = image.geometry()
 
         valid_portion = (masks['valid_mask'].unmask().
                          multiply(100).
                          reduceRegion(reducer='mean', geometry=region,
-                                      scale=min_scale).
+                                      scale=max_scale).
                          rename(['VALID_MASK'], ['VALID_PORTION']))
 
         return image.set(valid_portion)
 
-    def get_image_score(self, image, cloud_dist=2000):
+    def get_image_score(self, image, cloud_dist=2000, masks=None):
         """
         Get the cloud distance quality score for this image
 
@@ -180,24 +194,27 @@ class ImCollection:
                 Find the score for this image
         cloud_dist : int, oprtional
                      The neighbourhood (in meters) in which to search for clouds
+        masks : dict, optional
+                Masks returned by _get_image_masks(...)
         Returns
         -------
         : ee.Image
         The cloud distance score as a single band image
         """
         radius = 1.5
-        min_proj = export.get_min_projection(image)
+        min_proj = export.get_projection(image)
         cloud_pix = ee.Number(cloud_dist).divide(min_proj.nominalScale()).toInt()
 
-        masks = self._get_image_masks(image)
+        if masks is None:
+            masks = self._get_image_masks(image)
 
         cloud_shadow_mask = masks['cloud_mask'].Or(masks['shadow_mask'])
-        cloud_shadow_mask = cloud_shadow_mask.Not().focal_min(radius=radius).focal_max(radius=radius)
+        cloud_shadow_mask = cloud_shadow_mask.focal_min(radius=radius).focal_max(radius=radius)
         # TODO: rescale score according to image size, or cloud_dist ??
         score = cloud_shadow_mask.fastDistanceTransform(neighborhood=cloud_pix, units='pixels',
                                                       metric='squared_euclidean').sqrt().rename('SCORE')
 
-        return score.where(masks['fill_mask'].Not(), 0)
+        return score.unmask().where(masks['fill_mask'].unmask().Not(), 0)
 
     def _get_collection_df(self, im_collection, do_print=True):
         """
@@ -244,7 +261,7 @@ class ImCollection:
         im_prop_df = pd.DataFrame(im_prop_list, columns=im_prop_list[0].keys())
         im_prop_df = im_prop_df.sort_values(by='system:time_start').reset_index(drop=True)
         im_prop_df = im_prop_df.rename(columns=dict(zip(self._im_props.PROPERTY, self._im_props.ABBREV)))  # rename cols to abbrev
-        im_prop_df = im_prop_df[self._im_props.ABBREV]     # reorder columns
+        im_prop_df = im_prop_df[self._im_props.ABBREV.to_list() + ['IMAGE']]     # reorder columns
 
         if do_print:
             click.echo(f'{len(im_prop_list)} images found')
@@ -447,7 +464,7 @@ class Sentinel2ClImCollection(ImCollection):
         self._im_transform = ee.Image.toUint16
 
         self._cloud_filter = 60  # Maximum image cloud cover percent allowed in image collection
-        self._cloud_prob_thresh = 40  # Cloud probability (%); values greater than are considered cloud
+        self._cloud_prob_thresh = 35  # Cloud probability (%); values greater than are considered cloud
         # self._nir_drk_thresh = 0.15# Near-infrared reflectance; values less than are considered potential cloud shadow
         self._cloud_proj_dist = 1  # Maximum distance (km) to search for cloud shadows from cloud edges
         self._buffer = 100  # Distance (m) to dilate the edge of cloud-identified objects
@@ -480,7 +497,7 @@ class Sentinel2ClImCollection(ImCollection):
         # TODO: does below work in N hemisphere?
         # See https://en.wikipedia.org/wiki/Solar_azimuth_angle
         shadow_azimuth = ee.Number(-90).add(ee.Number(image.get('MEAN_SOLAR_AZIMUTH_ANGLE')))
-        min_scale = export.get_min_projection(image).nominalScale()
+        min_scale = export.get_projection(image).nominalScale()
 
         # project the the cloud mask in the direction of shadows
         proj_dist_px = ee.Number(self._cloud_proj_dist * 1000).divide(min_scale)
@@ -492,7 +509,9 @@ class Sentinel2ClImCollection(ImCollection):
             # Note: SCL does not classify cloud shadows well, they are often labelled "dark".  Instead of using only
             # cloud shadow areas from this band, we combine it with the projected dark and shadow areas from s2cloudless
             scl = image.select('SCL')
-            dark_shadow_mask = scl.eq(3).Or(scl.eq(2)).focal_max(self._buffer, 'circle', 'meters')
+            dark_shadow_mask = (scl.eq(3).Or(scl.eq(2)).
+                                focal_min(self._buffer, 'circle', 'meters').
+                                focal_max(self._buffer, 'circle', 'meters'))
             shadow_mask = proj_cloud_mask.And(dark_shadow_mask).rename('SHADOW_MASK')
         else:
             shadow_mask = proj_cloud_mask.rename('SHADOW_MASK')  # mask all areas that could be cloud shadow
@@ -521,13 +540,9 @@ class Sentinel2ClImCollection(ImCollection):
         s2_cloudless_col = ee.ImageCollection('COPERNICUS/S2_CLOUD_PROBABILITY')
 
         # join filtered s2cloudless collection to the SR/TOA collection by the 'system:index' property.
-        # TODO: change this join to add s2cloudless band, rather than set a property
         return (ee.ImageCollection(ee.Join.saveFirst('s2cloudless').apply(
-                **{
-                    'primary': s2_sr_toa_col,
-                    'secondary': s2_cloudless_col,
-                    'condition': ee.Filter.equals(**{'leftField': 'system:index', 'rightField': 'system:index'})
-                   })))
+            primary=s2_sr_toa_col, secondary=s2_cloudless_col,
+            condition=ee.Filter.equals(leftField='system:index', rightField='system:index'))))
 
     def get_image(self, image_id, apply_mask=False, add_aux_bands=False, scale_refl=False):
         """
@@ -555,18 +570,19 @@ class Sentinel2ClImCollection(ImCollection):
         if collection != self.collection_info['ee_collection']:
             raise ValueError(f'{image_id} is not a valid earth engine id for {self.__class__}')
 
-        s2_cloud_prob_image = ee.Image(f'COPERNICUS/S2_CLOUD_PROBABILITY/{index}')
-        image = ee.Image(image_id).set('s2cloudless', s2_cloud_prob_image)
+        cloud_prob = ee.Image(f'COPERNICUS/S2_CLOUD_PROBABILITY/{index}')
+        image = ee.Image(image_id).set('s2cloudless', cloud_prob)
 
         masks = self._get_image_masks(image)
 
-        if add_aux_bands:
-            score = self.get_image_score(image)
-            image = image.addBands(ee.Image(list(masks.values())))
-            image = image.addBands(score)
-
         if apply_mask:
             image = image.updateMask(masks['valid_mask'])
+
+        if add_aux_bands:
+            score = self.get_image_score(image, masks=masks)
+            # cloud_prob = ee.Image(image.get('s2cloudless')).select('probability').rename('CLOUD_PROB')
+            image = image.addBands(ee.Image(list(masks.values()) + [cloud_prob, score]))
+            # image = image.set('s2cloudless', None)
 
         return self._im_transform(image)
 

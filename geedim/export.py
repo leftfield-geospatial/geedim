@@ -59,13 +59,17 @@ def get_image_info(image):
     return im_info_dict, band_info_df
 
 
-def get_min_projection(image):
+def get_projection(image, min=True):
     """
-    Server side operations to find the minimum scale projection from image bands.  No calls to getInfo().
+    Server side operations to find the min/max scale projection from image bands.  No calls to getInfo().
 
     Parameters
     ----------
     image : ee.Image
+            The image whose min/max projection to retrieve
+    min: bool, optional
+         Retrieve the projection corresponding to the band with the minimum (True) or maximum (False) scale
+         [default: True]
 
     Returns
     -------
@@ -77,6 +81,11 @@ def get_min_projection(image):
     bands = image.bandNames()
     init_proj = image.select(0).projection()
 
+    if min:
+        compare = ee.Number.lte
+    else:
+        compare = ee.Number.gte
+
     def compare_scale(name, prev_proj):
         prev_proj = ee.Projection(prev_proj)
         prev_scale = prev_proj.nominalScale()
@@ -84,7 +93,7 @@ def get_min_projection(image):
         curr_proj = image.select([name]).projection()
         curr_scale = ee.Number(curr_proj.nominalScale())
 
-        min_proj = ee.Algorithms.If(curr_scale.lte(prev_scale), curr_proj, prev_proj)
+        min_proj = ee.Algorithms.If(compare(curr_scale, prev_scale), curr_proj, prev_proj)
         return ee.Projection(min_proj)
 
     return ee.Projection(bands.iterate(compare_scale, init_proj))
@@ -107,18 +116,19 @@ def _parse_export_args(image, region=None, crs=None, scale=None):
     # get ee image info which is used in setting crs, scale and tif metadata (no further calls to getInfo)
     im_info_dict, band_info_df = get_image_info(image)
 
-    # get minimum scale and corresponding crs, excluding WGS84 bands
-    min_scale_idx = band_info_df[(band_info_df.crs != 'EPSG:4326') & (band_info_df.scale != 1)].scale.idxmin()
-    min_crs, min_scale = band_info_df.loc[min_scale_idx, ['crs', 'scale']]
-
     # filename = pathlib.Path(filename)
     # im_id = im_info_dict['id'] + ' ' if 'id' in im_info_dict else ''
     # click.echo(f'\nDownloading {im_id}to {filename.name}')
 
     # if the image is in WGS84 and has no scale (probable composite), then exit
-    if all(band_info_df['crs'] == 'EPSG:4326') and all(band_info_df['scale'] == 1) and \
-            (crs is None or scale is None):
-        raise Exception(f'Image appears to be a composite in WGS84, specify a destination scale and CRS')
+    if crs is None or scale is None:
+        _band_info_df = band_info_df[(band_info_df.crs != 'EPSG:4326') & (band_info_df.scale != 1)]
+        if _band_info_df.shape[0]==0:
+            raise Exception(f'Image appears to be a composite in WGS84, specify a destination scale and CRS')
+
+        # get minimum scale and corresponding crs, excluding WGS84 bands
+        min_scale_idx = _band_info_df.scale.idxmin()
+        min_crs, min_scale = band_info_df.loc[min_scale_idx, ['crs', 'scale']]
 
     # if it is a native MODIS CRS then warn about GEE bug
     if any(band_info_df['crs'] == 'SR-ORG:6974') and (crs is None):
@@ -170,7 +180,7 @@ def export_image(image, filename, folder='', region=None, crs=None, scale=None, 
     """
     # TODO: minimise as far as possible getInfo() calls below
     # im_id = im_info_dict['id'] + ' ' if 'id' in im_info_dict else ''
-    click.echo(f'\nExporting image to Google Drive:{folder}/{filename}.tif')
+    click.echo(f'Starting export to Google Drive:{folder}/{filename}.tif')
     region, crs, scale, im_info_dict = _parse_export_args(image, region=region, crs=crs, scale=scale)
 
 
@@ -187,6 +197,7 @@ def export_image(image, filename, folder='', region=None, crs=None, scale=None, 
     task.start()
 
     if wait:  # wait for completion
+        # click.echo(f'Waiting for Google Drive:{folder}/{filename}.tif ...')
         monitor_export_task(task)
 
     return task
@@ -209,15 +220,15 @@ def monitor_export_task(task):
         # TODO: interpret totalWorkUnits and completeWorkUnits
 
         # display progress state and toggle
-        sys.stdout.write(f'\rExport image {str(status["metadata"]["state"]).lower()} '
+        sys.stdout.write(f'\rStatus: {str(status["metadata"]["state"]).lower()} '
                          f'[ {toggles[toggle_count % 4]} ]')
         sys.stdout.flush()
         toggle_count += 1
 
-    sys.stdout.write(f'\rExport image {str(status["metadata"]["state"]).lower()}\n')
     if status['metadata']['state'] != 'SUCCEEDED':
         raise Exception(f'{task.name} export failed \n{status}')
-
+    else:
+        click.echo('\rSuccess' + ' '*30)
 
 def download_image(image, filename, region=None, crs=None, scale=None, band_df=None, overwrite=False):
     """
@@ -244,7 +255,7 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
     # get ee image info which is used in setting crs, scale and tif metadata (no further calls to getInfo)
     filename = pathlib.Path(filename)
     # im_id = im_info_dict['id'] + ' ' if 'id' in im_info_dict else ''
-    click.echo(f'\nDownloading image to {filename.name}')
+    click.echo(f'Downloading image to {filename.name}')
     region, crs, scale, im_info_dict = _parse_export_args(image, region=region, crs=crs, scale=scale)
 
 

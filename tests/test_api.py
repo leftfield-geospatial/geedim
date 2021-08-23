@@ -58,7 +58,7 @@ class TestGeeDimApi(unittest.TestCase):
                               overwrite=True)
 
         # now set scale and crs to their image defaults as necessary
-        min_proj = export.get_min_projection(image)
+        min_proj = export.get_projection(image)
         if scale is None:
             scale = min_proj.nominalScale().getInfo()    #band_info_df['scale'].min()
         if crs is None:
