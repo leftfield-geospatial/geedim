@@ -211,5 +211,5 @@ Constributions are welcome.  Please post bugs and questions with the [github iss
 **Dugal Harris** - [dugalh@gmail.com](mailto:dugalh@gmail.com)
 
 ## Credits
-- Portions of the compositing code were adapted from [gee_tools](https://github.com/gee-community/gee_tools) under the terms of the [MIT license](https://github.com/gee-community/gee_tools/blob/master/LICENSE).
+- Medoid compositing was adapted from [gee_tools](https://github.com/gee-community/gee_tools) under the terms of the [MIT license](https://github.com/gee-community/gee_tools/blob/master/LICENSE).
 - [landsatxplore](https://github.com/yannforget/landsatxplore) gave a starting point for the command line interface.  

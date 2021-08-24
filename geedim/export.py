@@ -187,7 +187,7 @@ def export_image(image, filename, folder='', region=None, crs=None, scale=None, 
     # create export task and start
     task = ee.batch.Export.image.toDrive(image=image,
                                          region=region,
-                                         description=filename,
+                                         description=filename[:100],
                                          folder=folder,
                                          fileNamePrefix=filename,
                                          scale=scale,
