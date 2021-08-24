@@ -43,44 +43,6 @@ class ImCollection:
         self._im_props = pd.DataFrame(self.collection_info['properties'])  # list of image properties of interest
         self._im_transform = lambda image: image
 
-    @classmethod
-    def from_ids(cls, ids, collection=None):
-        """
-        Create ImCollection from a list of EE image IDs
-
-        Parameters
-        ----------
-        ids : list[str]
-              list of EE image IDs
-        collection : str, optional
-                     collection name
-        Returns
-        -------
-        : ImCollection
-        """
-
-        collection_info = search.load_collection_info()
-        ee_geedim_map = dict([(v['ee_collection'], k) for k,v in collection_info.items()])
-        id_collection = '/'.join(ids[0].split('/')[:-1])
-
-        if not id_collection in ee_geedim_map.keys():
-            raise ValueError(f'Unsupported collection: {id_collection}')
-
-        id_check = ['/'.join(ids[0].split('/')[:-1]) == id_collection for im_id in ids[1:]]
-        if not all(id_check):
-            raise ValueError(f'All IDs must belong to the same collection')
-
-        col = cls(collection=ee_geedim_map[id_collection])
-
-        im_list = ee.List([])
-        for im_id in ids:
-            im = ee.Image(im_id)
-            im_list.add(im)
-
-        col.base_collection = ee.ImageCollection(im_list)
-
-        return col
-
     def get_ee_collection(self):
         """
         Returns the unfiltered earth engine image collection
@@ -128,8 +90,6 @@ class ImCollection:
 
         return self._im_transform(image)
 
-    # TODO: this can be called multiple times (e.g. by score and get_image) - is that a speed issue?
-    #  perhaps set an image property to the masks, if it is not there already, that way it only gets found once
 
     def _get_image_masks(self, image):
         """
@@ -210,7 +170,7 @@ class ImCollection:
 
         cloud_shadow_mask = masks['cloud_mask'].Or(masks['shadow_mask'])
         cloud_shadow_mask = cloud_shadow_mask.focal_min(radius=radius).focal_max(radius=radius)
-        # TODO: rescale score according to image size, or cloud_dist ??
+        # TODO: rescale score according to image size, or cloud_dist ??  and what about uint16?
         score = cloud_shadow_mask.fastDistanceTransform(neighborhood=cloud_pix, units='pixels',
                                                       metric='squared_euclidean').sqrt().rename('SCORE')
 
@@ -255,7 +215,7 @@ class ImCollection:
         for i, prop_dict in enumerate(im_prop_list):
             if 'system:time_start' in prop_dict:
                 prop_dict['system:time_start'] = datetime.utcfromtimestamp(prop_dict['system:time_start'] / 1000)
-            prop_dict['IMAGE'] = self._im_transform(ee.Image(im_list.get(i)))  # TODO: remove IMAGE ?
+            prop_dict['IMAGE'] = ee.Image(im_list.get(i))
 
         # convert to DataFrame
         im_prop_df = pd.DataFrame(im_prop_list, columns=im_prop_list[0].keys())
@@ -339,7 +299,7 @@ class LandsatImCollection(ImCollection):
         masks.update(cloud_mask=cloud_mask, shadow_mask=shadow_mask, fill_mask=fill_mask, valid_mask=valid_mask)
         return masks
 
-
+    # change this to process image, and allow passing an ee.Image or an ID
     def get_image(self, image_id, apply_mask=False, add_aux_bands=False, scale_refl=False):
         """
         Retrieve an ee.Image object, optionally adding metadata and auxillary bands

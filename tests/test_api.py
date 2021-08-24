@@ -121,7 +121,7 @@ class TestGeeDimApi(unittest.TestCase):
         image_id = str(image_df['ID'].iloc[im_idx])
         image = im_collection.get_image(image_id, apply_mask=False, add_aux_bands=True)  # image_df.IMAGE.iloc[im_idx]
         image = im_collection.set_image_valid_portion(image, region=region)
-        image_name = image_id.replace('/', '_')
+        image_name = image_id.replace('/', '-')
 
         # force CRS for MODIS as workaround for GEE CRS bug
         if isinstance(im_collection, collection.ModisNbarImCollection):

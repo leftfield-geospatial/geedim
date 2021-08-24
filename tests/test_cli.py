@@ -125,7 +125,7 @@ class TestDownloadCli(unittest.TestCase):
         """
 
         for _id in ids:
-            image_filename = pathlib.Path(download_dir).joinpath(_id.replace('/', '_') + '.tif')
+            image_filename = pathlib.Path(download_dir).joinpath(_id.replace('/', '-') + '.tif')
             self.assertTrue(image_filename.exists(), 'Downloaded image exists')
 
             with rio.open(image_filename) as im:
@@ -174,7 +174,7 @@ class TestDownloadCli(unittest.TestCase):
 
     def test_download_region(self):
         """
-        Test `geedim download` with --regeion, --crs and --scale options
+        Test `geedim download` with --region, --crs and --scale options
         """
         # ids = ['COPERNICUS/S2_SR/20190120T080239_20190120T082812_T35HKC', 'LANDSAT/LC08/C02/T1_L2/LC08_182037_20190118',
         #        'MODIS/006/MCD43A4/2019_01_02']

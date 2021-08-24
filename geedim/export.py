@@ -52,7 +52,7 @@ def get_image_info(image):
     im_info_dict = image.getInfo()
 
     band_info_df = pd.DataFrame(im_info_dict['bands'])
-    crs_transforms = band_info_df['crs_transform'].values
+    crs_transforms = band_info_df['crs_transform'].values   # TODO is this always populated? Think composites?
     scales = [abs(float(crs_transform[0])) for crs_transform in crs_transforms]
     band_info_df['scale'] = scales
 

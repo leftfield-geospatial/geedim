@@ -23,6 +23,7 @@ import pandas as pd
 
 from geedim import export as export_api
 from geedim import search as search_api
+from geedim import composite as composite_api
 from geedim import collection
 
 # map collection keys to classes
@@ -36,8 +37,8 @@ class Results(object):
     def __init__(self):
         self.search_ids = None
         self.search_region = None
-        self.composite_image = None
-        self.composite_region = None
+        self.comp_image = None
+        self.comp_name = None
 
 def _parse_region_geom(region=None, bbox=None, region_buf=5):
     """ create geojson dict from region or bbox """
@@ -68,12 +69,6 @@ def _parse_region_geom(region=None, bbox=None, region_buf=5):
 def _export(res, ids=None, bbox=None, region=None, path='', crs=None, scale=None, apply_mask=False, scale_refl=True, add_aux=True,
             wait=True, overwrite=False, do_download=True):
     """ download or export image(s), with cloud and shadow masking """
-    if (ids is None or len(ids) == 0):
-        if res.search_ids is None:
-            raise click.BadOptionUsage('Either pass --id, or chain this command with `search`', ids)
-        else:
-            ids = res.search_ids
-
     if (region is None) and (bbox is None or len(bbox)==0):
         if res.search_region is None:
             raise click.BadOptionUsage('Either pass --region / --box, or chain this command with `search`', region)
@@ -81,6 +76,14 @@ def _export(res, ids=None, bbox=None, region=None, path='', crs=None, scale=None
             region_geojson = res.search_region
     else:
         region_geojson = _parse_region_geom(region=region, bbox=bbox)
+
+    if (ids is None or len(ids) == 0):
+        if res.comp_image is not None:
+            ids = [res.comp_name]
+        elif res.search_ids is not None:
+            ids = res.search_ids
+        else:
+            raise click.BadOptionUsage('Either pass --id, or chain this command with `search` or `composite`', ids)
 
     collection_info = search_api.load_collection_info()
     collection_df = pd.DataFrame.from_dict(collection_info, orient='index')
@@ -100,16 +103,19 @@ def _export(res, ids=None, bbox=None, region=None, path='', crs=None, scale=None
             click.secho(f'Re-projecting {_id} to {crs} to avoid bug https://issuetracker.google.com/issues/194561313.')
 
         im_collection = cls_col_map[collection](collection=collection)
-        image = im_collection.get_image(_id, apply_mask=apply_mask, scale_refl=scale_refl, add_aux_bands=add_aux)
-        # image = im_collection.set_image_valid_portion(image, region=region_geojson)
+        if res.comp_image is not None:
+            image = res.comp_image
+        else:
+            image = im_collection.get_image(_id, apply_mask=apply_mask, scale_refl=scale_refl, add_aux_bands=add_aux)
+            # image = im_collection.set_image_valid_portion(image, region=region_geojson)
 
         if do_download:
             band_df = pd.DataFrame.from_dict(im_collection.collection_info['bands'])
-            filename = pathlib.Path(path).joinpath(_id.replace('/', '_') + '.tif')
+            filename = pathlib.Path(path).joinpath(_id.replace('/', '-') + '.tif')
             export_api.download_image(image, filename, region=region_geojson, crs=crs, scale=scale, band_df=band_df,
                                       overwrite=overwrite)
         else:
-            filename = _id.replace('/', '_')
+            filename = _id.replace('/', '-')
             task = export_api.export_image(image, filename, folder=path, region=region_geojson, crs=crs, scale=scale,
                                     wait=False)
             task._name = f'{path}/{filename}.tif'
@@ -346,3 +352,36 @@ def export(res, id=None, bbox=None, region=None, drive_folder='', crs=None, scal
 
 
 cli.add_command(export)
+
+@click.command()
+@image_id_option
+@click.option(
+    "-m",
+    "--method",
+    type=click.Choice(['q_mosaic', 'mosaic', 'median', 'medoid'], case_sensitive=False),
+    help="Compositing method to use.",
+    default="q_mosaic",
+    required=False
+)
+@click.pass_obj
+def composite(res, id=None, method='q_mosaic'):
+    """ Create a cloud-free composite image """
+
+    if (id is None or len(id) == 0):
+        if res.search_ids is None:
+            raise click.BadOptionUsage('Either pass --id, or chain this command with `search`', id)
+        else:
+            id = res.search_ids
+            res.search_ids = None
+
+    res.comp_image = composite_api.composite(id, method=method)
+
+    # construct a name for this composite
+    id.sort()
+    fn_prefix = os.path.commonprefix(id)
+    res.comp_name = f'{fn_prefix}_{id[0][len(fn_prefix):]}-to-{id[-1][len(fn_prefix):]}-{method.upper()}_COMP'
+
+cli.add_command(composite)
+
+##
+

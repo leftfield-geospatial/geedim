@@ -18,13 +18,14 @@
 
 import logging
 from datetime import timedelta, datetime
+import click
 
 import ee
 import pandas
 import rasterio as rio
 from rasterio.warp import transform_geom
 
-from geedim import export
+from geedim import search, cli
 
 # from shapely import geometry
 
@@ -153,7 +154,7 @@ def medoid(collection, bands=None, discard_zeros=False):
     comp = medcol.qualityMosaic('sumdist')
     final = tools.image.removeBands(comp, ['sumdist', 'mask'])
     return final
-
+'''
 
 #adapted from https://github.com/gee-community/gee_tools/blob/master/geetools/composite.py
 
@@ -240,8 +241,85 @@ def medoid(collection, bands=None, discard_zeros=False):
     comp = medcol.qualityMosaic('sumdist')
     final = tools.image.removeBands(comp, ['sumdist', 'mask'])
     return final
-'''
+
 '''
     # set metadata to indicate component images
     return comp_im.set('COMPOSITE_IMAGES', self._im_df[['ID', 'DATE'] + self._im_props].to_string()).toUint16()
 '''
+
+
+def collection_from_ids(ids, apply_mask=False, add_aux_bands=False, scale_refl=False):
+    """
+    Create ee.ImageCollection of masked and scored images, from a list of EE image IDs
+
+    Parameters
+    ----------
+    ids : list[str]
+          list of EE image IDs
+    apply_mask : bool, optional
+                 Apply any validity mask to the image by setting nodata (default: False)
+    add_aux_bands: bool, optional
+                   Add auxiliary bands (cloud, shadow, fill & validity masks, and quality score) (default: False)
+    scale_refl : bool, optional
+                 Scale reflectance values from 0-10000 if they are not in that range already (default: True)
+
+    Returns
+    -------
+    : ee.ImageCollection
+    """
+
+    collection_info = search.load_collection_info()
+    ee_geedim_map = dict([(v['ee_collection'], k) for k, v in collection_info.items()])
+    id_collection = '/'.join(ids[0].split('/')[:-1])
+
+    if not id_collection in ee_geedim_map.keys():
+        raise ValueError(f'Unsupported collection: {id_collection}')
+
+    id_check = ['/'.join(im_id.split('/')[:-1]) == id_collection for im_id in ids[1:]]
+    if not all(id_check):
+        raise ValueError(f'All IDs must belong to the same collection')
+
+    im_collection = cli.cls_col_map[ee_geedim_map[id_collection]](collection=ee_geedim_map[id_collection])
+
+    im_list = ee.List([])
+    for im_id in ids:
+        im = im_collection.get_image(im_id, apply_mask=apply_mask, add_aux_bands=add_aux_bands, scale_refl=scale_refl)
+        im_list = im_list.add(im)
+
+    return ee.ImageCollection(im_list)
+
+
+def composite(images, method='q_mosaic', apply_mask=True):
+    # qualityMosaic will prefer clear pixels based on SCORE and irrespective of mask, for other methods, the mask
+    # is needed to avoid including cloudy pixels
+    method = str(method).lower()
+
+    if method != 'q_mosaic' and apply_mask == False:
+        apply_mask = True   #
+
+    ee_im_collection = None
+    if isinstance(images, list) and len(images) > 0:
+        if isinstance(images[0], str):
+            ee_im_collection = collection_from_ids(images, apply_mask=apply_mask, add_aux_bands=True)
+        elif isinstance(images[0], ee.Image):
+            im_list = ee.List([])
+            for image in images:
+                im_list = im_list.add(image)
+            ee_im_collection = ee.ImageCollection(im_list)
+    elif isinstance(images, ee.ImageCollection):
+        ee_im_collection = images
+
+    if ee_im_collection is None:
+        raise ValueError(f'Unsupported images parameter format: {type(images)}')
+
+    if method == 'q_mosaic':
+        comp_image = ee_im_collection.qualityMosaic('SCORE')
+    elif method == 'mosaic':
+        comp_image = ee_im_collection.mosaic()
+    elif method == 'median':
+        comp_image = ee_im_collection.median()
+    else:
+        raise ValueError(f'Unsupported composite method: {method}')
+
+    # comp_image.set('COMPOSITE_IMAGES', self._im_df[['ID', 'DATE'] + self._im_props].to_string()).toUint16()
+    return comp_image
