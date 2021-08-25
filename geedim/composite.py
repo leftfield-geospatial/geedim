@@ -327,7 +327,7 @@ def medoidScore(collection, bands=None, discard_zeros=False,
     return medcol
 
 
-def medoid(collection, bands=None, discard_zeros=False):
+def medoid(collection, bands=None, discard_zeros=True):
     """ Medoid Composite. Adapted from https://www.mdpi.com/2072-4292/5/12/6481
     :param collection: the collection to composite
     :type collection: ee.ImageCollection
@@ -342,14 +342,14 @@ def medoid(collection, bands=None, discard_zeros=False):
     """
     medcol = medoidScore(collection, bands, discard_zeros)
     comp = medcol.qualityMosaic('sumdist')
-    final = removeBands(comp, ['sumdist', 'mask'])
+    # final = removeBands(comp, ['sumdist', 'mask'])
+    final = removeBands(comp, ['sumdist'])
     return final
 
 '''
     # set metadata to indicate component images
     return comp_im.set('COMPOSITE_IMAGES', self._im_df[['ID', 'DATE'] + self._im_props].to_string()).toUint16()
 '''
-
 
 def collection_from_ids(ids, apply_mask=False, add_aux_bands=False, scale_refl=False):
     """
@@ -397,11 +397,8 @@ def composite(images, method='q_mosaic', apply_mask=True):
     # is needed to avoid including cloudy pixels
     method = str(method).lower()
 
-    if method != 'q_mosaic' and apply_mask == False:
-        apply_mask = True   #
-
     ee_im_collection = None
-    if isinstance(images, list) and len(images) > 0:
+    if (isinstance(images, list) or isinstance(images, tuple)) and len(images) > 0:
         if isinstance(images[0], str):
             ee_im_collection, im_collection = collection_from_ids(images, apply_mask=apply_mask, add_aux_bands=True)
         elif isinstance(images[0], ee.Image):
@@ -413,7 +410,7 @@ def composite(images, method='q_mosaic', apply_mask=True):
         ee_im_collection = images
 
     if ee_im_collection is None:
-        raise ValueError(f'Unsupported images parameter format: {type(images)}')
+        raise ValueError(f'Unsupported images type: {type(images)}')
 
     if method == 'q_mosaic':
         comp_image = ee_im_collection.qualityMosaic('SCORE')
@@ -427,5 +424,22 @@ def composite(images, method='q_mosaic', apply_mask=True):
     else:
         raise ValueError(f'Unsupported composite method: {method}')
 
-    # comp_image.set('COMPOSITE_IMAGES', self._im_df[['ID', 'DATE'] + self._im_props].to_string()).toUint16()
-    return comp_image
+    # populate image metadata with info on component images
+    im_prop_df = im_collection._get_collection_df(ee_im_collection, do_print=False)
+    comp_str = im_prop_df.to_string(
+                float_format='%.2f',
+                formatters={'DATE': lambda x: datetime.strftime(x, '%Y-%m-%d %H:%M')},
+                columns=im_collection._im_props.ABBREV,
+                # header=property_df.ABBREV,
+                index=False,
+                justify='center')
+
+    comp_image = comp_image.set('COMPOSITE_IMAGES', comp_str)
+
+    # name the composite
+    start_date = im_prop_df.DATE.iloc[0].strftime('%Y_%m_%d')
+    end_date = im_prop_df.DATE.iloc[-1].strftime('%Y_%m_%d')
+    ee_col_name = '/'.join(im_prop_df.ID.values[0].split('/')[:-1])
+    comp_name = f'{ee_col_name}/{start_date}-{end_date}-{method.upper()}_COMP'
+
+    return comp_image, comp_name

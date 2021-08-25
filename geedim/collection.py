@@ -79,14 +79,13 @@ class ImCollection:
         image = ee.Image(image_id)
         masks = self._get_image_masks(image)
 
-        if apply_mask:  # mask before adding aux bands
-            image = image.updateMask(masks['valid_mask'])
-
         if add_aux_bands:
             score = self.get_image_score(image, masks=masks)
             image = image.addBands(ee.Image(list(masks.values())))
             image = image.addBands(score)
 
+        if apply_mask:  # mask before adding aux bands
+            image = image.updateMask(masks['valid_mask'])
 
         return self._im_transform(image)
 
@@ -535,14 +534,15 @@ class Sentinel2ClImCollection(ImCollection):
 
         masks = self._get_image_masks(image)
 
-        if apply_mask:
-            image = image.updateMask(masks['valid_mask'])
-
         if add_aux_bands:
             score = self.get_image_score(image, masks=masks)
             # cloud_prob = ee.Image(image.get('s2cloudless')).select('probability').rename('CLOUD_PROB')
             image = image.addBands(ee.Image(list(masks.values()) + [cloud_prob, score]))
             # image = image.set('s2cloudless', None)
+
+        if apply_mask:
+            image = image.updateMask(masks['valid_mask'])
+
 
         return self._im_transform(image)
 

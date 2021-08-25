@@ -122,9 +122,9 @@ def _export(res, ids=None, bbox=None, region=None, path='', crs=None, scale=None
             export_tasks.append(task)
 
     if wait:
-        click.echo('')
+        click.echo('') if len(ids) > 1 else None
         for task in export_tasks:
-            click.echo(f'Waiting for Google Drive:{path}/{filename}.tif ...')
+            click.echo(f'Waiting for Google Drive:{path}/{filename}.tif ...') if len(ids) > 1 else None
             export_api.monitor_export_task(task)
 
 # define options common to >1 command
@@ -356,15 +356,23 @@ cli.add_command(export)
 @click.command()
 @image_id_option
 @click.option(
-    "-m",
+    "-cm",
     "--method",
     type=click.Choice(['q_mosaic', 'mosaic', 'median', 'medoid'], case_sensitive=False),
     help="Compositing method to use.",
     default="q_mosaic",
+    show_default = True,
     required=False
 )
+@click.option(
+    "-m/-nm",
+    "--mask/--no-mask",
+    default=True,
+    help="Do/don't apply (cloud and shadow) nodata mask(s) before compositing.  [default: mask]",
+    required=False,
+)
 @click.pass_obj
-def composite(res, id=None, method='q_mosaic'):
+def composite(res, id=None, mask=True, method='q_mosaic'):
     """ Create a cloud-free composite image """
 
     if (id is None or len(id) == 0):
@@ -374,12 +382,15 @@ def composite(res, id=None, method='q_mosaic'):
             id = res.search_ids
             res.search_ids = None
 
-    res.comp_image = composite_api.composite(id, method=method)
+    id = list(id)
+    res.comp_image, res.comp_name = composite_api.composite(id, method=method, apply_mask=mask)
 
-    # construct a name for this composite
-    id.sort()
-    fn_prefix = os.path.commonprefix(id)
-    res.comp_name = f'{fn_prefix}_{id[0][len(fn_prefix):]}-to-{id[-1][len(fn_prefix):]}-{method.upper()}_COMP'
+    # # construct a name for this composite
+    # idxs = [_id.split('/')[-1] for _id in id]
+    # idxs.sort()
+    # fn_prefix = os.path.commonprefix(idxs)
+    # res.comp_name = f'{fn_prefix}_{id[0][len(fn_prefix):]}-to-{id[-1][len(fn_prefix):]}-{method.upper()}_COMP'
+    # # res.comp_name = f'{fn_prefix}-{method.upper()}_COMP'
 
 cli.add_command(composite)
 
