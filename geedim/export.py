@@ -117,8 +117,7 @@ def _parse_export_args(image, region=None, crs=None, scale=None):
     im_info_dict, band_info_df = get_image_info(image)
 
     # filename = pathlib.Path(filename)
-    # im_id = im_info_dict['id'] + ' ' if 'id' in im_info_dict else ''
-    # click.echo(f'\nDownloading {im_id}to {filename.name}')
+    im_id = im_info_dict['id'] if 'id' in im_info_dict else ''
 
     # if the image is in WGS84 and has no scale (probable composite), then exit
     if crs is None or scale is None:
@@ -132,20 +131,20 @@ def _parse_export_args(image, region=None, crs=None, scale=None):
 
     # if it is a native MODIS CRS then warn about GEE bug
     if any(band_info_df['crs'] == 'SR-ORG:6974') and (crs is None):
-        raise Exception(f'There is an earth engine bug exporting in SR-ORG:6974: '
+        raise Exception(f'There is an earth engine bug exporting in SR-ORG:6974, specify another CRS: '
                         f'https://issuetracker.google.com/issues/194561313')
 
     if crs is None:
         crs = min_crs        # CRS corresponding to minimum scale
     if region is None:
         region = image.geometry()
-        click.secho('Warning: region not specified, setting to granule bounds', fg='red')
+        # click.secho('Warning: region not specified, setting to granule bounds', fg='red')
     if scale is None:
         scale = min_scale     # minimum scale
 
     # warn if some band scales will be changed
-    if (band_info_df['crs'].unique().size > 1) or (band_info_df['scale'].unique().size > 1):
-        click.echo(f'Re-projecting all bands to {crs} at {scale}m resolution')
+    # if (band_info_df['crs'].unique().size > 1) or (band_info_df['scale'].unique().size > 1):
+    #     click.echo(f'Re-projecting all bands to {crs} at {scale}m resolution')
 
     if isinstance(region, dict):
         region = ee.Geometry(region)
@@ -180,7 +179,7 @@ def export_image(image, filename, folder='', region=None, crs=None, scale=None, 
     """
     # TODO: minimise as far as possible getInfo() calls below
     # im_id = im_info_dict['id'] + ' ' if 'id' in im_info_dict else ''
-    click.echo(f'Starting export to Google Drive:{folder}/{filename}.tif')
+    # click.echo(f'Exporting to Google Drive:{folder}/{filename}.tif')
     region, crs, scale, im_info_dict = _parse_export_args(image, region=region, crs=crs, scale=scale)
 
 
@@ -203,32 +202,39 @@ def export_image(image, filename, folder='', region=None, crs=None, scale=None, 
     return task
 
 
-def monitor_export_task(task):
+def monitor_export_task(task, label=None):
     """
 
     Parameters
     ----------
     task : ee task to monitor
     """
-    status = ee.data.getOperation(task.name)
     toggles = r'-\|/'
     toggle_count = 0
+    pause = 0.5
+    bar_len = 100
+    status = ee.data.getOperation(task.name)
 
-    while ('done' not in status) or (not status['done']):
-        time.sleep(.5)
+    if label is None:
+        label = f'{status["metadata"]["description"][:80]}'
+
+    while (not 'progress' in status['metadata']):
+        time.sleep(pause)
         status = ee.data.getOperation(task.name)  # get task status
-        # TODO: interpret totalWorkUnits and completeWorkUnits
-
-        # display progress state and toggle
-        sys.stdout.write(f'\rStatus: {str(status["metadata"]["state"]).lower()} '
-                         f'[ {toggles[toggle_count % 4]} ]')
-        sys.stdout.flush()
+        click.echo(f'\rPreparing {label}: {toggles[toggle_count % 4]}', nl='')
         toggle_count += 1
+    click.echo(f'\rPreparing {label}: done')
+
+    with click.progressbar(length=bar_len, label=f'Exporting {label}:') as bar:
+        while ('done' not in status) or (not status['done']):
+            time.sleep(pause)
+            status = ee.data.getOperation(task.name)  # get task status
+            progress = status['metadata']['progress']*bar_len
+            bar.update(progress - bar.pos)
+        bar.update(bar_len - bar.pos)
 
     if status['metadata']['state'] != 'SUCCEEDED':
-        raise Exception(f'{task.name} export failed \n{status}')
-    else:
-        click.echo('\rSuccess' + ' '*30)
+        raise Exception(f'Export failed \n{status}')
 
 def download_image(image, filename, region=None, crs=None, scale=None, band_df=None, overwrite=False):
     """
@@ -255,7 +261,7 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
     # get ee image info which is used in setting crs, scale and tif metadata (no further calls to getInfo)
     filename = pathlib.Path(filename)
     # im_id = im_info_dict['id'] + ' ' if 'id' in im_info_dict else ''
-    click.echo(f'Downloading image to {filename.name}')
+    # click.echo(f'Downloading to {filename.name}')
     region, crs, scale, im_info_dict = _parse_export_args(image, region=region, crs=crs, scale=scale)
 
 
@@ -264,16 +270,16 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
         'scale': scale,
         'crs': crs,
         'fileFormat': 'GeoTIFF',
-        # 'bands': bands_dict,      # TODO: necessary?
+        # 'bands': bands_dict,
         'filePerBand': False,
-        'region': region})
+        'region': region})  # TODO: file size error
 
     file_link = None
     try:
         # setup the download
         file_link = request.urlopen(link)
         file_size = int(file_link.info()['Content-Length'])
-        click.echo(f'Download size: {file_size / (1024 ** 2):.2f} MB')
+        # click.echo(f'Download size: {file_size / (1024 ** 2):.2f} MB')
 
         tif_filename = filename
         tif_filename = tif_filename.parent.joinpath(tif_filename.stem + '.tif')  # force to tif file
@@ -282,23 +288,23 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
         # download the file
         with open(zip_filename, 'wb') as f:
             file_size_dl = 0
-            with click.progressbar(length=file_size,
-                                   label='Downloading') as bar:
+            with click.progressbar(length=file_size, label=filename.stem[:80], show_pos=True) as bar:
+                bar.format_pos = lambda : f'{bar.pos/(1024**2):.1f}/{bar.length/(1024**2):.1f} MB'
                 while file_size_dl <= file_size:
                     buffer = file_link.read(8192)
                     if not buffer:
                         break
                     file_size_dl += len(buffer)
                     f.write(buffer)
-                    bar.update(file_size_dl)
+                    bar.update(len(buffer))
 
     except HTTPError as ex:
         # check for size limit error
         response = json.loads(ex.read())
         if ('error' in response) and ('message' in response['error']):
             if response['error']['message'] == 'User memory limit exceeded.':
-                click.secho('There is a 10MB Earth Engine limit on image downloads, '
-                             'either decrease image size, or use export(...)', fg='red')
+                click.echo('There is a 10MB Earth Engine limit on image downloads, '
+                             'either decrease image size, or use export(...)', err=True)
         raise ex
     finally:
         if file_link is not None:
@@ -316,7 +322,7 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
             if overwrite or click.confirm(f'{tif_filename.name} exists, do you want to overwrite?'):
                 os.remove(tif_filename)
             else:
-                click.secho(f'Warning: {tif_filename} exists, exiting', fg='red')
+                click.secho(f'Warning: {tif_filename} exists, exiting', fg='red')   # TODO: get another filename
                 return link
         os.rename(_tif_filename, tif_filename)
 

@@ -88,7 +88,10 @@ def _export(res, ids=None, bbox=None, region=None, path='', crs=None, scale=None
     collection_info = search_api.load_collection_info()
     collection_df = pd.DataFrame.from_dict(collection_info, orient='index')
     export_tasks = []
-    click.echo('')
+    if do_download:
+        click.echo('\nDownloading:\n')
+    else:
+        click.echo('\nExporting:\n')
 
     for _id in ids:
         ee_collection = '/'.join(_id.split('/')[:-1])
@@ -122,9 +125,10 @@ def _export(res, ids=None, bbox=None, region=None, path='', crs=None, scale=None
             export_tasks.append(task)
 
     if wait:
-        click.echo('') if len(ids) > 1 else None
+        # click.echo('Waiting for exports') if len(ids) > 1 else None
+        # click.echo(f'\rStarting exports: done')
         for task in export_tasks:
-            click.echo(f'Waiting for Google Drive:{path}/{filename}.tif ...') if len(ids) > 1 else None
+            # click.echo(f'Exporting Google Drive:{path}/{filename}.tif') if len(ids) > 1 else None
             export_api.monitor_export_task(task)
 
 # define options common to >1 command
@@ -395,4 +399,3 @@ def composite(res, id=None, mask=True, method='q_mosaic'):
 cli.add_command(composite)
 
 ##
-
