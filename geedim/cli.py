@@ -19,7 +19,6 @@ import pathlib
 
 import click
 import ee
-import pandas as pd
 
 from geedim import export as export_api
 from geedim import search as search_api
@@ -27,11 +26,8 @@ from geedim import composite as composite_api
 from geedim import collection
 
 # map collection names to classes
-cls_col_map = {'landsat7_c2_l2': collection.Landsat7ImCollection,
-               'landsat8_c2_l2': collection.Landsat8ImCollection,
-               'sentinel2_toa': collection.Sentinel2ToaClImCollection,
-               'sentinel2_sr': collection.Sentinel2SrClImCollection,
-               'modis_nbar': collection.ModisNbarImCollection}
+from geedim.collection import cls_col_map
+
 
 class Results(object):
     def __init__(self):
@@ -85,8 +81,6 @@ def _export(res, ids=None, bbox=None, region=None, path='', crs=None, scale=None
         else:
             raise click.BadOptionUsage('Either pass --id, or chain this command with `search` or `composite`', ids)
 
-    collection_info = search_api.load_collection_info()
-    collection_df = pd.DataFrame.from_dict(collection_info, orient='index')
     export_tasks = []
 
     if do_download:
@@ -95,18 +89,17 @@ def _export(res, ids=None, bbox=None, region=None, path='', crs=None, scale=None
         click.echo('\nExporting:\n')
 
     for _id in ids:
-        ee_coll_name = '/'.join(_id.split('/')[:-1])
-        if not (ee_coll_name in collection_df.ee_coll_name.values):
-            click.secho(f'Warning: skipping {_id} - unknown collection', fg='red')
+        ee_coll_name = collection.ee_split(_id)[0]
+        if not ee_coll_name in collection.ee_to_gd_map():
+            click.secho(f'Warning: unsupported collection: {ee_coll_name}, skipping {_id}', fg='red')
             continue
+        gd_coll_name = collection.ee_to_gd_map()[ee_coll_name]
 
-        gd_coll_key = collection_df.index[collection_df.ee_coll_name == ee_coll_name][0]
-
-        if gd_coll_key == 'modis_nbar' and crs is None:  # workaround MODIS native CRS export issue
+        if gd_coll_name == 'modis_nbar' and crs is None:  # workaround MODIS native CRS export issue
             crs = 'EPSG:3857'
             click.secho(f'Re-projecting {_id} to {crs} to avoid bug https://issuetracker.google.com/issues/194561313.')
 
-        gd_collection = cls_col_map[gd_coll_key]()
+        gd_collection = cls_col_map[gd_coll_name]()
 
         if res.comp_image is not None:
             image = res.comp_image
@@ -270,8 +263,6 @@ def search(res, collection, start_date, end_date=None, bbox=None, region=None, v
     res.search_ids = im_df.ID.values.tolist()
 
     if (output is not None):
-        if 'IMAGE' in im_df.columns:
-            im_df = im_df.drop(columns='IMAGE')
         output = pathlib.Path(output)
         if output.suffix == '.csv':
             im_df.to_csv(output, index=False)

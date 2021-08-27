@@ -144,13 +144,13 @@ def _parse_export_args(image, region=None, crs=None, scale=None):
         crs = min_crs        # CRS corresponding to minimum scale
     if region is None:
         region = image.geometry()
-        # click.secho('Warning: region not specified, setting to granule bounds', fg='red')
+        click.secho('Warning: region not specified, setting to granule bounds', fg='red')
     if scale is None:
         scale = min_scale     # minimum scale
 
     # warn if some band scales will be changed
     if (band_info_df['crs'].unique().size > 1) or (band_info_df['scale'].unique().size > 1):
-        click.echo(f'Re-projecting all bands to {crs} at {scale:.2f}m resolution')
+        click.echo(f'Re-projecting all bands to {crs} at {scale:.1f} m resolution')
 
     if isinstance(region, dict):
         region = ee.Geometry(region)

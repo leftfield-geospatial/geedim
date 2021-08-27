@@ -25,6 +25,7 @@ from click.testing import CliRunner
 from rasterio.crs import CRS
 from rasterio.warp import transform_bounds
 
+import geedim.collection
 from geedim import root_path, cli
 
 
@@ -45,7 +46,7 @@ class TestSearchCli(unittest.TestCase):
 
         res_df = pd.DataFrame.from_dict(res_dict, orient='index')
         res_df.DATE = [datetime.utcfromtimestamp(ts / 1000) for ts in res_df.DATE.values]
-        gd_collection = cli.cls_col_map[gd_coll_name]()
+        gd_collection = geedim.collection.cls_col_map[gd_coll_name]()
 
         # check results have correct columns, and sensible values
         self.assertGreater(res_df.shape[0], 0, 'Search returned one or more results')

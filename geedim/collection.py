@@ -20,10 +20,13 @@ from datetime import datetime
 import ee
 import pandas as pd
 import click
+import json
 
-from geedim import export, search
+from geedim import export, search, root_path
 
-##
+
+
+## Collection classes
 class ImCollection:
     def __init__(self, gd_coll_name):
         """
@@ -35,10 +38,9 @@ class ImCollection:
                      Earth engine image collection name:
                      (possible values are: landsat7_c2_l2|landsat8_c2_l2|sentinel2_toa|sentinel2_sr|modis_nbar)
         """
-        collection_info = search.load_collection_info()
-        if gd_coll_name not in collection_info:
+        if gd_coll_name not in collection_info():
             raise ValueError(f'Unknown collection: {gd_coll_name}')
-        self.collection_info = collection_info[gd_coll_name]
+        self.collection_info = collection_info()[gd_coll_name]
         self.gd_coll_name = gd_coll_name
         self.ee_coll_name = self.collection_info['ee_coll_name']
         self.band_df = pd.DataFrame.from_dict(self.collection_info['bands'])
@@ -76,7 +78,7 @@ class ImCollection:
         : ee.Image
           The processed image
         """
-        if '/'.join(image_id.split('/')[:-1]) != self.ee_coll_name:
+        if ee_split(image_id)[0] != self.ee_coll_name:
             raise ValueError(f'{image_id} is not a valid earth engine id for {self.__class__}')
 
         image = ee.Image(image_id)
@@ -217,13 +219,13 @@ class ImCollection:
         for i, prop_dict in enumerate(im_prop_list):
             if 'system:time_start' in prop_dict:
                 prop_dict['system:time_start'] = datetime.utcfromtimestamp(prop_dict['system:time_start'] / 1000)
-            prop_dict['IMAGE'] = ee.Image(im_list.get(i))
+            # prop_dict['IMAGE'] = ee.Image(im_list.get(i))
 
         # convert to DataFrame
         im_prop_df = pd.DataFrame(im_prop_list, columns=im_prop_list[0].keys())
         im_prop_df = im_prop_df.sort_values(by='system:time_start').reset_index(drop=True)
         im_prop_df = im_prop_df.rename(columns=dict(zip(self._im_props.PROPERTY, self._im_props.ABBREV)))  # rename cols to abbrev
-        im_prop_df = im_prop_df[self._im_props.ABBREV.to_list() + ['IMAGE']]     # reorder columns
+        im_prop_df = im_prop_df[self._im_props.ABBREV.to_list()] #+ ['IMAGE']]     # reorder columns
 
         if do_print:
             click.echo(f'{len(im_prop_list)} images found')
@@ -542,8 +544,7 @@ class Sentinel2ClImCollection(ImCollection):
         : ee.Image
           The processed image
         """
-        index = image_id.split('/')[-1]
-        ee_coll_name = '/'.join(image_id.split('/')[:-1])
+        ee_coll_name, index = ee_split(image_id)
 
         if ee_coll_name != self.ee_coll_name:
             raise ValueError(f'{image_id} is not a valid earth engine id for {self.__class__}')
@@ -581,4 +582,35 @@ class ModisNbarImCollection(ImCollection):
         self._im_transform = ee.Image.toUint16
 
 ##
+## Utility functions for converting between geedim and Earth Engine collection names etc
 
+_collection_info = None
+
+cls_col_map = {'landsat7_c2_l2': Landsat7ImCollection,
+               'landsat8_c2_l2': Landsat8ImCollection,
+               'sentinel2_toa': Sentinel2ToaClImCollection,
+               'sentinel2_sr': Sentinel2SrClImCollection,
+               'modis_nbar': ModisNbarImCollection}
+
+def collection_info():
+    """ Loads the satellite band etc information from json file into a dict """
+    global _collection_info
+    if _collection_info is None:
+        with open(root_path.joinpath('data/inputs/collection_info.json')) as f:
+            _collection_info = json.load(f)
+
+    return _collection_info
+
+def ee_split(image_id):
+    """ Split Earth Engine image ID to collection and index components """
+    index = image_id.split('/')[-1]
+    coll = '/'.join(image_id.split('/')[:-1])
+    return coll, index
+
+def gd_to_ee_map():
+    """ Returns a dict with keys = geedim collection names, and values = Earth Engine collection names """
+    return dict([(k, v['ee_coll_name']) for k, v in collection_info().items()])
+
+def ee_to_gd_map():
+    """ Returns a dict with keys = Earth Engine collection names, and values = geedim collection names """
+    return dict([(v['ee_coll_name'], k) for k, v in collection_info().items()])

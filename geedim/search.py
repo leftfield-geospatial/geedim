@@ -35,15 +35,6 @@ from geedim import export, root_path, collection
 ##
 
 
-def load_collection_info():
-    """
-    Loads the satellite band etc information from json file into a dict
-    """
-    with open(root_path.joinpath('data/inputs/collection_info.json')) as f:
-        satellite_info = json.load(f)
-
-    return satellite_info
-
 
 def get_image_bounds(filename, expand=5):
     """
@@ -92,7 +83,7 @@ def get_image_bounds(filename, expand=5):
 
 
 ##
-def search(collection, start_date, end_date, region, valid_portion=0, apply_mask=False):
+def search(gd_collection, start_date, end_date, region, valid_portion=0, apply_mask=False):
     """
     Search for images based on date, region etc criteria
 
@@ -120,15 +111,15 @@ def search(collection, start_date, end_date, region, valid_portion=0, apply_mask
     if (end_date <= start_date):
         raise Exception('`end_date` must be at least a day later than `start_date`')
 
-    click.echo(f'\nSearching for {collection.collection_info["ee_coll_name"]} images between '
+    click.echo(f'\nSearching for {gd_collection.collection_info["ee_coll_name"]} images between '
                f'{start_date.strftime("%Y-%m-%d")} and {end_date.strftime("%Y-%m-%d")}...')
 
     # filter the image collection
-    ee_collection = (collection.get_ee_collection().
+    ee_collection = (gd_collection.get_ee_collection().
                      filterDate(start_date, end_date).
                      filterBounds(region).
-                     map(lambda image : collection.set_image_valid_portion(image, region=region)).
+                     map(lambda image : gd_collection.set_image_valid_portion(image, region=region)).
                      filter(ee.Filter.gt('VALID_PORTION', valid_portion)))
 
     # convert and print search results
-    return collection._get_collection_df(ee_collection, do_print=True)
+    return gd_collection._get_collection_df(ee_collection, do_print=True)

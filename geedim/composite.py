@@ -25,7 +25,8 @@ import pandas
 import rasterio as rio
 from rasterio.warp import transform_geom
 
-from geedim import search, cli
+import geedim.collection
+from geedim import search, cli, collection
 
 # from shapely import geometry
 
@@ -371,18 +372,17 @@ def collection_from_ids(ids, apply_mask=False, add_aux_bands=False, scale_refl=F
     : ee.ImageCollection
     """
 
-    collection_info = search.load_collection_info()
-    ee_geedim_map = dict([(v['ee_coll_name'], k) for k, v in collection_info.items()])
-    ee_coll_name = '/'.join(ids[0].split('/')[:-1])
-
-    if not ee_coll_name in ee_geedim_map.keys():
+    ee_coll_name = collection.ee_split(ids[0])[0]
+    if not ee_coll_name in collection.ee_to_gd_map():
         raise ValueError(f'Unsupported collection: {ee_coll_name}')
 
-    id_check = ['/'.join(im_id.split('/')[:-1]) == ee_coll_name for im_id in ids[1:]]
-    if not all(id_check):
-        raise ValueError(f'All IDs must belong to the same collection')
+    gd_coll_name = collection.ee_to_gd_map()[ee_coll_name]
 
-    gd_collection = cli.cls_col_map[ee_geedim_map[ee_coll_name]]()
+    id_check = [collection.ee_split(im_id)[0] == ee_coll_name for im_id in ids[1:]]
+    if not all(id_check):
+        raise ValueError(f'All images must belong to the same collection')
+
+    gd_collection = collection.cls_col_map[gd_coll_name]()
 
     im_list = ee.List([])
     for im_id in ids:
@@ -439,7 +439,7 @@ def composite(images, method='q_mosaic', apply_mask=True):
     # name the composite
     start_date = im_prop_df.DATE.iloc[0].strftime('%Y_%m_%d')
     end_date = im_prop_df.DATE.iloc[-1].strftime('%Y_%m_%d')
-    ee_coll_name = '/'.join(im_prop_df.ID.values[0].split('/')[:-1])
+    ee_coll_name = collection.ee_split(im_prop_df.ID.values[0])[0]
     comp_name = f'{ee_coll_name}/{start_date}-{end_date}-{method.upper()}_COMP'
 
     return comp_image, comp_name
