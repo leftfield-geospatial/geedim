@@ -149,8 +149,8 @@ def _parse_export_args(image, region=None, crs=None, scale=None):
         scale = min_scale     # minimum scale
 
     # warn if some band scales will be changed
-    # if (band_info_df['crs'].unique().size > 1) or (band_info_df['scale'].unique().size > 1):
-    #     click.echo(f'Re-projecting all bands to {crs} at {scale}m resolution')
+    if (band_info_df['crs'].unique().size > 1) or (band_info_df['scale'].unique().size > 1):
+        click.echo(f'Re-projecting all bands to {crs} at {scale:.2f}m resolution')
 
     if isinstance(region, dict):
         region = ee.Geometry(region)

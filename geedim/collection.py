@@ -25,20 +25,23 @@ from geedim import export, search
 
 ##
 class ImCollection:
-    def __init__(self, collection):
+    def __init__(self, gd_coll_name):
         """
         Earth engine image collection related functions
 
         Parameters
         ----------
-        collection : str
+        gd_coll_name : str
                      Earth engine image collection name:
                      (possible values are: landsat7_c2_l2|landsat8_c2_l2|sentinel2_toa|sentinel2_sr|modis_nbar)
         """
         collection_info = search.load_collection_info()
-        if collection not in collection_info:
-            raise ValueError(f'Unknown collection: {collection}')
-        self.collection_info = collection_info[collection]
+        if gd_coll_name not in collection_info:
+            raise ValueError(f'Unknown collection: {gd_coll_name}')
+        self.collection_info = collection_info[gd_coll_name]
+        self.gd_coll_name = gd_coll_name
+        self.ee_coll_name = self.collection_info['ee_coll_name']
+        self.band_df = pd.DataFrame.from_dict(self.collection_info['bands'])
 
         self._im_props = pd.DataFrame(self.collection_info['properties'])  # list of image properties of interest
         self._im_transform = lambda image: image
@@ -51,7 +54,7 @@ class ImCollection:
         -------
         : ee.ImageCollection
         """
-        return ee.ImageCollection(self.collection_info['ee_collection'])
+        return ee.ImageCollection(self.ee_coll_name)
 
     def get_image(self, image_id, apply_mask=False, add_aux_bands=False, scale_refl=False):
         """
@@ -73,7 +76,7 @@ class ImCollection:
         : ee.Image
           The processed image
         """
-        if '/'.join(image_id.split('/')[:-1]) != self.collection_info['ee_collection']:
+        if '/'.join(image_id.split('/')[:-1]) != self.ee_coll_name:
             raise ValueError(f'{image_id} is not a valid earth engine id for {self.__class__}')
 
         image = ee.Image(image_id)
@@ -175,13 +178,13 @@ class ImCollection:
 
         return score.unmask().where(masks['fill_mask'].unmask().Not(), 0)
 
-    def _get_collection_df(self, im_collection, do_print=True):
+    def _get_collection_df(self, ee_collection, do_print=True):
         """
         Convert a filtered image collection to a pandas dataframe of images and their properties
 
         Parameters
         ----------
-        im_collection : ee.ImageCollection
+        ee_collection : ee.ImageCollection
                         Filtered image collection
         do_print : bool, optional
                    Print the dataframe
@@ -194,7 +197,7 @@ class ImCollection:
 
         init_list = ee.List([])
 
-        # aggregate relevant properties of im_collection images
+        # aggregate relevant properties of ee_collection images
         def aggregrate_props(image, prop_list):
             prop = ee.Dictionary()
             for prop_key in self._im_props.PROPERTY.values:
@@ -202,13 +205,13 @@ class ImCollection:
             return ee.List(prop_list).add(prop)
 
         # retrieve list of dicts of collection image properties (the only call to getInfo in *ImSearch)
-        im_prop_list = ee.List(im_collection.iterate(aggregrate_props, init_list)).getInfo()
+        im_prop_list = ee.List(ee_collection.iterate(aggregrate_props, init_list)).getInfo()
 
         if len(im_prop_list) == 0:
             click.echo('No images found')
             return pd.DataFrame([], columns=self._im_props.ABBREV)
 
-        im_list = im_collection.toList(im_collection.size())  # image objects
+        im_list = ee_collection.toList(ee_collection.size())  # image objects
 
         # add EE image objects and convert ee.Date to python datetime
         for i, prop_dict in enumerate(im_prop_list):
@@ -239,20 +242,20 @@ class ImCollection:
 
 
 class LandsatImCollection(ImCollection):
-    def __init__(self, collection='landsat8_c2_l2'):
+    def __init__(self, gd_coll_name='landsat8_c2_l2'):
         """
         Class for Landsat 7-8 earth engine image collections
 
         Parameters
         ----------
-        collection : str, optional
+        gd_coll_name : str, optional
                      'landsat7_c2_l2' or 'landsat8_c2_l2' (default)
         """
-        ImCollection.__init__(self, collection=collection)
+        ImCollection.__init__(self, gd_coll_name=gd_coll_name)
 
         # TODO: add support for landsat 4-5 collection 2 when they are available
-        if collection not in ['landsat8_c2_l2', 'landsat7_c2_l2']:
-            raise ValueError(f'Unsupported landsat collection: {collection}')
+        if gd_coll_name not in ['landsat8_c2_l2', 'landsat7_c2_l2']:
+            raise ValueError(f'Unsupported landsat collection: {gd_coll_name}')
 
         self._im_transform = ee.Image.toUint16
 
@@ -285,7 +288,7 @@ class LandsatImCollection(ImCollection):
         # cloud_shadow_conf = qa_pixel.rightShift(10).bitwiseAnd(3).rename('CLOUD_SHADOW_CONF')
         # cirrus_conf = qa_pixel.rightShift(14).bitwiseAnd(3).rename('CIRRUS_CONF')
 
-        if self.collection_info['ee_collection'] == 'LANDSAT/LC08/C02/T1_L2':  # landsat8_c2_l2
+        if self.gd_coll_name == 'landsat8_c2_l2':
             # TODO: is SR_QA_AEROSOL helpful? (Looks suspect for GEF region images)
             # Add SR_QA_AEROSOL to cloud mask
             # bits 6-7 of SR_QA_AEROSOL, are aerosol level where 3 = high, 2=medium, 1=low
@@ -370,24 +373,24 @@ class LandsatImCollection(ImCollection):
 
 class Landsat8ImCollection(LandsatImCollection):
     def __init__(self):
-        LandsatImCollection.__init__(self, collection='landsat8_c2_l2')
+        LandsatImCollection.__init__(self, gd_coll_name='landsat8_c2_l2')
 
 class Landsat7ImCollection(LandsatImCollection):
     def __init__(self):
-        LandsatImCollection.__init__(self, collection='landsat7_c2_l2')
+        LandsatImCollection.__init__(self, gd_coll_name='landsat7_c2_l2')
 
 class Sentinel2ImCollection(ImCollection):
 
-    def __init__(self, collection='sentinel2_toa'):
+    def __init__(self, gd_coll_name='sentinel2_toa'):
         """
         Class for Sentinel-2 TOA and SR earth engine image collections
 
         Parameters
         ----------
-        collection : str, optional
+        gd_coll_name : str, optional
                      'sentinel_toa' (top of atmosphere - default) or 'sentinel_sr' (surface reflectance)
         """
-        ImCollection.__init__(self, collection=collection)
+        ImCollection.__init__(self, gd_coll_name=gd_coll_name)
 
         self._im_transform = ee.Image.toUint16
 
@@ -417,25 +420,25 @@ class Sentinel2ImCollection(ImCollection):
 
 class Sentinel2SrImCollection(Sentinel2ImCollection):
     def __init__(self):
-        Sentinel2ImCollection.__init__(self, collection='sentinel2_sr')
+        Sentinel2ImCollection.__init__(self, gd_coll_name='sentinel2_sr')
 
 class Sentinel2ToaImCollection(Sentinel2ImCollection):
     def __init__(self):
-        Sentinel2ImCollection.__init__(self, collection='sentinel2_toa')
+        Sentinel2ImCollection.__init__(self, gd_coll_name='sentinel2_toa')
 
 
 class Sentinel2ClImCollection(ImCollection):
-    def __init__(self, collection='sentinel2_toa'):
+    def __init__(self, gd_coll_name='sentinel2_toa'):
         """
         Class for Sentinel-2 TOA and SR earth engine image collections. Uses cloud-probability for masking
         and quality scoring.
 
         Parameters
         ----------
-        collection : str, optional
+        gd_coll_name : str, optional
                      'sentinel_toa' (top of atmosphere - default) or 'sentinel_sr' (surface reflectance)
         """
-        ImCollection.__init__(self, collection=collection)
+        ImCollection.__init__(self, gd_coll_name=gd_coll_name)
         self._im_transform = ee.Image.toUint16
 
         self._cloud_filter = 60  # Maximum image cloud cover percent allowed in image collection
@@ -480,7 +483,7 @@ class Sentinel2ClImCollection(ImCollection):
                            select('distance').mask().rename('PROJ_CLOUD_MASK'))     # mask converts to boolean?
         # .reproject(**{'crs': image.select(0).projection(), 'scale': 100})
 
-        if self.collection_info['ee_collection'] == 'COPERNICUS/S2_SR':  # use SCL to reduce shadow_mask
+        if self.gd_coll_name == 'sentinel2_sr':  # use SCL to reduce shadow_mask
             # Note: SCL does not classify cloud shadows well, they are often labelled "dark".  Instead of using only
             # cloud shadow areas from this band, we combine it with the projected dark and shadow areas from s2cloudless
             scl = image.select('SCL')
@@ -509,7 +512,7 @@ class Sentinel2ClImCollection(ImCollection):
 
         # adapted from https://developers.google.com/earth-engine/tutorials/community/sentinel-2-s2cloudless
 
-        s2_sr_toa_col = ee.ImageCollection(self.collection_info['ee_collection'])
+        s2_sr_toa_col = ee.ImageCollection(self.ee_coll_name)
                          #.filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', self._cloud_filter))) # TODO: add this back?
 
         s2_cloudless_col = ee.ImageCollection('COPERNICUS/S2_CLOUD_PROBABILITY')
@@ -540,9 +543,9 @@ class Sentinel2ClImCollection(ImCollection):
           The processed image
         """
         index = image_id.split('/')[-1]
-        collection = '/'.join(image_id.split('/')[:-1])
+        ee_coll_name = '/'.join(image_id.split('/')[:-1])
 
-        if collection != self.collection_info['ee_collection']:
+        if ee_coll_name != self.ee_coll_name:
             raise ValueError(f'{image_id} is not a valid earth engine id for {self.__class__}')
 
         cloud_prob = ee.Image(f'COPERNICUS/S2_CLOUD_PROBABILITY/{index}')
@@ -559,23 +562,22 @@ class Sentinel2ClImCollection(ImCollection):
         if apply_mask:
             image = image.updateMask(masks['valid_mask'])
 
-
         return self._im_transform(image)
 
 class Sentinel2SrClImCollection(Sentinel2ClImCollection):
     def __init__(self):
-        Sentinel2ClImCollection.__init__(self, collection='sentinel2_sr')
+        Sentinel2ClImCollection.__init__(self, gd_coll_name='sentinel2_sr')
 
 class Sentinel2ToaClImCollection(Sentinel2ClImCollection):
     def __init__(self):
-        Sentinel2ClImCollection.__init__(self, collection='sentinel2_toa')
+        Sentinel2ClImCollection.__init__(self, gd_coll_name='sentinel2_toa')
 
 class ModisNbarImCollection(ImCollection):
     def __init__(self):
         """
         Class for the MODIS daily NBAR earth engine image collection
         """
-        ImCollection.__init__(self, collection='modis_nbar')
+        ImCollection.__init__(self, gd_coll_name='modis_nbar')
         self._im_transform = ee.Image.toUint16
 
 ##

@@ -33,7 +33,7 @@ class TestSearchCli(unittest.TestCase):
     Test geedim search CLI
     """
 
-    def _test_search_results(self, collection, start_date, end_date, results_filename):
+    def _test_search_results(self, gd_coll_name, start_date, end_date, results_filename):
         """ checking search results from geojson file are valid"""
 
         # check file exists
@@ -45,16 +45,16 @@ class TestSearchCli(unittest.TestCase):
 
         res_df = pd.DataFrame.from_dict(res_dict, orient='index')
         res_df.DATE = [datetime.utcfromtimestamp(ts / 1000) for ts in res_df.DATE.values]
-        im_collection = cli.cls_col_map[collection]()
+        gd_collection = cli.cls_col_map[gd_coll_name]()
 
         # check results have correct columns, and sensible values
         self.assertGreater(res_df.shape[0], 0, 'Search returned one or more results')
         self.assertGreater(res_df.shape[1], 1, 'Search results contain two or more columns')
-        self.assertTrue(set(res_df.columns) == set(im_collection._im_props.ABBREV),
+        self.assertTrue(set(res_df.columns) == set(gd_collection._im_props.ABBREV),
                         'Search results have correct columns')
         self.assertTrue(all(res_df.DATE >= start_date) and all(res_df.DATE <= end_date),
                         'Search results are in correct date range')
-        self.assertTrue(all([im_collection.collection_info['ee_collection'] in im_id for im_id in res_df.ID.values]),
+        self.assertTrue(all([gd_collection.ee_coll_name in im_id for im_id in res_df.ID.values]),
                         'Search results have correct EE ID')
         self.assertTrue(all(res_df.VALID >= 0) and all(res_df.VALID <= 100),
                         'Search results have correct validity range')

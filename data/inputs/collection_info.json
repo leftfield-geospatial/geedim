@@ -2,7 +2,7 @@
 "landsat7_c2_l2":{
     "start_date": "1999-01-01",
     "end_date": null,
-    "ee_collection": "LANDSAT/LE07/C02/T1_L2",
+    "ee_coll_name": "LANDSAT/LE07/C02/T1_L2",
     "bands": [
         {"id": "SR_B1", "name": "blue", "abbrev": "B", "bw_start": 0.45, "bw_end": 0.52, "res": 30},
         {"id": "SR_B2", "name": "green", "abbrev": "G", "bw_start": 0.52, "bw_end": 0.60, "res": 30},
@@ -24,7 +24,7 @@
 "landsat8_c2_l2":{
     "start_date": "2013-04-11",
     "end_date": null,
-    "ee_collection": "LANDSAT/LC08/C02/T1_L2",
+    "ee_coll_name": "LANDSAT/LC08/C02/T1_L2",
     "bands": [
         {"id": "SR_B1", "name": "ultra blue", "abbrev": "UB", "bw_start": 0.435, "bw_end": 0.451, "res": 30},
         {"id": "SR_B2", "name": "blue", "abbrev": "B", "bw_start": 0.452, "bw_end": 0.512, "res": 30},
@@ -47,7 +47,7 @@
 "sentinel2_toa":{
     "start_date": "2015-06-23",
     "end_date": null,
-    "ee_collection": "COPERNICUS/S2",
+    "ee_coll_name": "COPERNICUS/S2",
     "bands": [
         {"id": "B1", "name": "aerosols", "abbrev": "UB", "bw_start": 0.421, "bw_end": 0.447, "res": 60},
         {"id": "B2", "name": "blue", "abbrev": "B", "bw_start": 0.439, "bw_end": 0.535, "res": 10},
@@ -76,7 +76,7 @@
 "sentinel2_sr":{
     "start_date": "2017-03-28",
     "end_date": null,
-    "ee_collection": "COPERNICUS/S2_SR",
+    "ee_coll_name": "COPERNICUS/S2_SR",
     "bands": [
         {"id": "B1", "name": "aerosols", "abbrev": "UB", "bw_start": 0.421, "bw_end": 0.447, "res": 60},
         {"id": "B2", "name": "blue", "abbrev": "B", "bw_start": 0.439, "bw_end": 0.535, "res": 10},
@@ -106,7 +106,7 @@
 "modis_nbar":{
     "start_date": "2000-02-18",
     "end_date": null,
-    "ee_collection": "MODIS/006/MCD43A4",
+    "ee_coll_name": "MODIS/006/MCD43A4",
     "bands": [
         {"id": "Nadir_Reflectance_Band1", "name": "red", "abbrev": "R", "bw_start": 0.620, "bw_end": 0.670, "res": 500},
         {"id": "Nadir_Reflectance_Band2", "name": "near infrared", "abbrev": "NIR", "bw_start": 0.841, "bw_end": 0.876, "res": 500},

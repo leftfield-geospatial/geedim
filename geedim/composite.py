@@ -372,24 +372,24 @@ def collection_from_ids(ids, apply_mask=False, add_aux_bands=False, scale_refl=F
     """
 
     collection_info = search.load_collection_info()
-    ee_geedim_map = dict([(v['ee_collection'], k) for k, v in collection_info.items()])
-    id_collection = '/'.join(ids[0].split('/')[:-1])
+    ee_geedim_map = dict([(v['ee_coll_name'], k) for k, v in collection_info.items()])
+    ee_coll_name = '/'.join(ids[0].split('/')[:-1])
 
-    if not id_collection in ee_geedim_map.keys():
-        raise ValueError(f'Unsupported collection: {id_collection}')
+    if not ee_coll_name in ee_geedim_map.keys():
+        raise ValueError(f'Unsupported collection: {ee_coll_name}')
 
-    id_check = ['/'.join(im_id.split('/')[:-1]) == id_collection for im_id in ids[1:]]
+    id_check = ['/'.join(im_id.split('/')[:-1]) == ee_coll_name for im_id in ids[1:]]
     if not all(id_check):
         raise ValueError(f'All IDs must belong to the same collection')
 
-    im_collection = cli.cls_col_map[ee_geedim_map[id_collection]]()
+    gd_collection = cli.cls_col_map[ee_geedim_map[ee_coll_name]]()
 
     im_list = ee.List([])
     for im_id in ids:
-        im = im_collection.get_image(im_id, apply_mask=apply_mask, add_aux_bands=add_aux_bands, scale_refl=scale_refl)
+        im = gd_collection.get_image(im_id, apply_mask=apply_mask, add_aux_bands=add_aux_bands, scale_refl=scale_refl)
         im_list = im_list.add(im)
 
-    return ee.ImageCollection(im_list), im_collection
+    return ee.ImageCollection(im_list), gd_collection
 
 
 def composite(images, method='q_mosaic', apply_mask=True):
@@ -397,39 +397,39 @@ def composite(images, method='q_mosaic', apply_mask=True):
     # is needed to avoid including cloudy pixels
     method = str(method).lower()
 
-    ee_im_collection = None
+    ee_collection = None
     if (isinstance(images, list) or isinstance(images, tuple)) and len(images) > 0:
         if isinstance(images[0], str):
-            ee_im_collection, im_collection = collection_from_ids(images, apply_mask=apply_mask, add_aux_bands=True)
+            ee_collection, gd_collection = collection_from_ids(images, apply_mask=apply_mask, add_aux_bands=True)
         elif isinstance(images[0], ee.Image):
             im_list = ee.List([])
             for image in images:
                 im_list = im_list.add(image)
-            ee_im_collection = ee.ImageCollection(im_list)
+            ee_collection = ee.ImageCollection(im_list)
     elif isinstance(images, ee.ImageCollection):
-        ee_im_collection = images
+        ee_collection = images
 
-    if ee_im_collection is None:
+    if ee_collection is None:
         raise ValueError(f'Unsupported images type: {type(images)}')
 
     if method == 'q_mosaic':
-        comp_image = ee_im_collection.qualityMosaic('SCORE')
+        comp_image = ee_collection.qualityMosaic('SCORE')
     elif method == 'mosaic':
-        comp_image = ee_im_collection.mosaic()
+        comp_image = ee_collection.mosaic()
     elif method == 'median':
-        comp_image = ee_im_collection.median()
+        comp_image = ee_collection.median()
     elif method == 'medoid':
-        bands = [band_dict['id'] for band_dict in im_collection.collection_info['bands']]
-        comp_image = medoid(ee_im_collection, bands=bands)
+        bands = [band_dict['id'] for band_dict in gd_collection.collection_info['bands']]
+        comp_image = medoid(ee_collection, bands=bands)
     else:
         raise ValueError(f'Unsupported composite method: {method}')
 
     # populate image metadata with info on component images
-    im_prop_df = im_collection._get_collection_df(ee_im_collection, do_print=False)
+    im_prop_df = gd_collection._get_collection_df(ee_collection, do_print=False)
     comp_str = im_prop_df.to_string(
                 float_format='%.2f',
                 formatters={'DATE': lambda x: datetime.strftime(x, '%Y-%m-%d %H:%M')},
-                columns=im_collection._im_props.ABBREV,
+                columns=gd_collection._im_props.ABBREV,
                 # header=property_df.ABBREV,
                 index=False,
                 justify='center')
@@ -439,7 +439,7 @@ def composite(images, method='q_mosaic', apply_mask=True):
     # name the composite
     start_date = im_prop_df.DATE.iloc[0].strftime('%Y_%m_%d')
     end_date = im_prop_df.DATE.iloc[-1].strftime('%Y_%m_%d')
-    ee_col_name = '/'.join(im_prop_df.ID.values[0].split('/')[:-1])
-    comp_name = f'{ee_col_name}/{start_date}-{end_date}-{method.upper()}_COMP'
+    ee_coll_name = '/'.join(im_prop_df.ID.values[0].split('/')[:-1])
+    comp_name = f'{ee_coll_name}/{start_date}-{end_date}-{method.upper()}_COMP'
 
     return comp_image, comp_name

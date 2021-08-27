@@ -93,38 +93,38 @@ class TestGeeDimApi(unittest.TestCase):
                 self.assertAlmostEqual(100 * valid_mask.mean(), float(im.get_tag_item('VALID_PORTION')), delta=5,
                                        msg=f'VALID_PORTION matches mask mean for {image_id}')
 
-    def _test_search(self, im_collection):
+    def _test_search(self, gd_collection):
         """
         Test search and download/export on a specified *ImColllection object
 
         Parameters
         ----------
-        im_collection : geedim.collection.ImColllection
-                       A *ImColllection object to test
+        gd_collection : geedim.collection.ImCollection
+                       A *ImCollection object to test
         """
 
         # GEF Baviaanskloof region
         region = {"type": "Polygon",
                   "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
         date = datetime.strptime('2019-02-01', '%Y-%m-%d')
-        band_df = pd.DataFrame.from_dict(im_collection.collection_info['bands'])
+        band_df = gd_collection.band_df
 
-        image_df = search.search(im_collection, date, date + timedelta(days=32), region)
+        image_df = search.search(gd_collection, date, date + timedelta(days=32), region)
 
         # check search results
         self.assertGreater(image_df.shape[0], 0, msg='Search returned one or more images')
-        for im_prop in im_collection._im_props.ABBREV.values:
+        for im_prop in gd_collection._im_props.ABBREV.values:
             self.assertTrue(im_prop in image_df.columns, msg='Search results contain specified properties')
 
         # select an image to download/export
         im_idx = math.ceil(image_df.shape[0] / 2)
         image_id = str(image_df['ID'].iloc[im_idx])
-        image = im_collection.get_image(image_id, apply_mask=False, add_aux_bands=True)  # image_df.IMAGE.iloc[im_idx]
-        image = im_collection.set_image_valid_portion(image, region=region)
+        image = gd_collection.get_image(image_id, apply_mask=False, add_aux_bands=True)  # image_df.IMAGE.iloc[im_idx]
+        image = gd_collection.set_image_valid_portion(image, region=region)
         image_name = image_id.replace('/', '-')
 
         # force CRS for MODIS as workaround for GEE CRS bug
-        if isinstance(im_collection, collection.ModisNbarImCollection):
+        if isinstance(gd_collection, collection.ModisNbarImCollection):
             _crs = 'EPSG:3857'
             _scale = 500
         else:

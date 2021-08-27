@@ -120,15 +120,15 @@ def search(collection, start_date, end_date, region, valid_portion=0, apply_mask
     if (end_date <= start_date):
         raise Exception('`end_date` must be at least a day later than `start_date`')
 
-    click.echo(f'\nSearching for {collection.collection_info["ee_collection"]} images between '
+    click.echo(f'\nSearching for {collection.collection_info["ee_coll_name"]} images between '
                f'{start_date.strftime("%Y-%m-%d")} and {end_date.strftime("%Y-%m-%d")}...')
 
     # filter the image collection
-    im_collection = (collection.get_ee_collection().
+    ee_collection = (collection.get_ee_collection().
                      filterDate(start_date, end_date).
                      filterBounds(region).
                      map(lambda image : collection.set_image_valid_portion(image, region=region)).
                      filter(ee.Filter.gt('VALID_PORTION', valid_portion)))
 
     # convert and print search results
-    return collection._get_collection_df(im_collection, do_print=True)
+    return collection._get_collection_df(ee_collection, do_print=True)

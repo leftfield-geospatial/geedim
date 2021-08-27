@@ -26,7 +26,7 @@ from geedim import search as search_api
 from geedim import composite as composite_api
 from geedim import collection
 
-# map collection keys to classes
+# map collection names to classes
 cls_col_map = {'landsat7_c2_l2': collection.Landsat7ImCollection,
                'landsat8_c2_l2': collection.Landsat8ImCollection,
                'sentinel2_toa': collection.Sentinel2ToaClImCollection,
@@ -88,35 +88,36 @@ def _export(res, ids=None, bbox=None, region=None, path='', crs=None, scale=None
     collection_info = search_api.load_collection_info()
     collection_df = pd.DataFrame.from_dict(collection_info, orient='index')
     export_tasks = []
+
     if do_download:
         click.echo('\nDownloading:\n')
     else:
         click.echo('\nExporting:\n')
 
     for _id in ids:
-        ee_collection = '/'.join(_id.split('/')[:-1])
-        if not (ee_collection in collection_df.ee_collection.values):
+        ee_coll_name = '/'.join(_id.split('/')[:-1])
+        if not (ee_coll_name in collection_df.ee_coll_name.values):
             click.secho(f'Warning: skipping {_id} - unknown collection', fg='red')
             continue
 
-        collection = collection_df.index[collection_df.ee_collection == ee_collection][0]
+        gd_coll_key = collection_df.index[collection_df.ee_coll_name == ee_coll_name][0]
 
-        if collection == 'modis_nbar' and crs is None:  # workaround MODIS native CRS export issue
+        if gd_coll_key == 'modis_nbar' and crs is None:  # workaround MODIS native CRS export issue
             crs = 'EPSG:3857'
             click.secho(f'Re-projecting {_id} to {crs} to avoid bug https://issuetracker.google.com/issues/194561313.')
 
-        im_collection = cls_col_map[collection]()
+        gd_collection = cls_col_map[gd_coll_key]()
+
         if res.comp_image is not None:
             image = res.comp_image
         else:
-            image = im_collection.get_image(_id, apply_mask=apply_mask, scale_refl=scale_refl, add_aux_bands=add_aux)
-            # image = im_collection.set_image_valid_portion(image, region=region_geojson)
+            image = gd_collection.get_image(_id, apply_mask=apply_mask, scale_refl=scale_refl, add_aux_bands=add_aux)
+            # image = gd_collection.set_image_valid_portion(image, region=region_geojson)
 
         if do_download:
-            band_df = pd.DataFrame.from_dict(im_collection.collection_info['bands'])
             filename = pathlib.Path(path).joinpath(_id.replace('/', '-') + '.tif')
-            export_api.download_image(image, filename, region=region_geojson, crs=crs, scale=scale, band_df=band_df,
-                                      overwrite=overwrite)
+            export_api.download_image(image, filename, region=region_geojson, crs=crs, scale=scale,
+                                      band_df=gd_collection.band_df, overwrite=overwrite)
         else:
             filename = _id.replace('/', '-')
             task = export_api.export_image(image, filename, folder=path, region=region_geojson, crs=crs, scale=scale,
@@ -261,11 +262,11 @@ def cli(ctx):
 def search(res, collection, start_date, end_date=None, bbox=None, region=None, valid_portion=0, output=None, region_buf=5):
     """ Search for images """
 
-    im_collection = cls_col_map[collection]()
+    gd_collection = cls_col_map[collection]()
     region_geojson = _parse_region_geom(region=region, bbox=bbox, region_buf=region_buf)
     res.search_region = region_geojson
 
-    im_df = search_api.search(im_collection, start_date, end_date, region_geojson, valid_portion=valid_portion)
+    im_df = search_api.search(gd_collection, start_date, end_date, region_geojson, valid_portion=valid_portion)
     res.search_ids = im_df.ID.values.tolist()
 
     if (output is not None):
