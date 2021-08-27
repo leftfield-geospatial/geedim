@@ -155,13 +155,13 @@ class TestGeeDimApi(unittest.TestCase):
         ee.Initialize()
 
         # *ImSearch objects to test
-        test_collections = [collection.ModisNbarImCollection(collection='modis_nbar'),
-                     collection.LandsatImCollection(collection='landsat8_c2_l2'),
-                     collection.LandsatImCollection(collection='landsat7_c2_l2'),
-                     collection.Sentinel2ImCollection(collection='sentinel2_toa'),
+        test_collections = [collection.ModisNbarImCollection(),
+                     collection.Landsat8ImCollection(),
+                     collection.Landsat7ImCollection(),
+                     collection.Sentinel2ToaImCollection(),
                      # collection.Sentinel2ImCollection(collection='sentinel2_sr'),
                      # collection.Sentinel2CloudlessImSearch(collection='sentinel2_toa'),
-                     collection.Sentinel2ClImCollection(collection='sentinel2_sr')]
+                     collection.Sentinel2SrClImCollection()]
 
         # run tests on each object, accumulating export tasks to check on later
         export_tasks = []

@@ -252,7 +252,7 @@ def replace(image, to_replace, to_add):
     :return: Same Image provided with the band replaced
     :rtype: ee.Image
     """
-    # TODO: see Image.addBands({overwrite:True})
+
     band = to_add.select([0])
     bands = image.bandNames()
     resto = bands.remove(to_replace)
@@ -382,7 +382,7 @@ def collection_from_ids(ids, apply_mask=False, add_aux_bands=False, scale_refl=F
     if not all(id_check):
         raise ValueError(f'All IDs must belong to the same collection')
 
-    im_collection = cli.cls_col_map[ee_geedim_map[id_collection]](collection=ee_geedim_map[id_collection])
+    im_collection = cli.cls_col_map[ee_geedim_map[id_collection]]()
 
     im_list = ee.List([])
     for im_id in ids:

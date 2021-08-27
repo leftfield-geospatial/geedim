@@ -131,4 +131,4 @@ def search(collection, start_date, end_date, region, valid_portion=0, apply_mask
                      filter(ee.Filter.gt('VALID_PORTION', valid_portion)))
 
     # convert and print search results
-    return collection._get_collection_df(im_collection, do_print=True), im_collection
+    return collection._get_collection_df(im_collection, do_print=True)

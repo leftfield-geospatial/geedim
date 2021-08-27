@@ -45,7 +45,7 @@ class TestSearchCli(unittest.TestCase):
 
         res_df = pd.DataFrame.from_dict(res_dict, orient='index')
         res_df.DATE = [datetime.utcfromtimestamp(ts / 1000) for ts in res_df.DATE.values]
-        im_collection = cli.cls_col_map[collection](collection=collection)
+        im_collection = cli.cls_col_map[collection]()
 
         # check results have correct columns, and sensible values
         self.assertGreater(res_df.shape[0], 0, 'Search returned one or more results')

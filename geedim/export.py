@@ -52,7 +52,7 @@ def get_image_info(image):
     im_info_dict = image.getInfo()
 
     band_info_df = pd.DataFrame(im_info_dict['bands'])
-    crs_transforms = band_info_df['crs_transform'].values   # TODO is this always populated? Think composites?
+    crs_transforms = band_info_df['crs_transform'].values
     scales = [abs(float(crs_transform[0])) for crs_transform in crs_transforms]
     band_info_df['scale'] = scales
 
@@ -93,8 +93,14 @@ def get_projection(image, min=True):
         curr_proj = image.select([name]).projection()
         curr_scale = ee.Number(curr_proj.nominalScale())
 
-        min_proj = ee.Algorithms.If(compare(curr_scale, prev_scale), curr_proj, prev_proj)
-        return ee.Projection(min_proj)
+        # exclude WGS84 bands (constant or composite bands)
+        # (curr_scale <= / >= prev_scale) and (curr_proj.crs != EPSG:4326 )
+        condition = (compare(curr_scale, prev_scale).
+                     And(curr_proj.crs().compareTo(ee.String('EPSG:4326')))
+                     .neq(ee.Number(0)))
+
+        comp_proj = ee.Algorithms.If(condition, curr_proj, prev_proj)
+        return ee.Projection(comp_proj)
 
     return ee.Projection(bands.iterate(compare_scale, init_proj))
 

@@ -131,14 +131,14 @@ class ImCollection:
         if masks is None:
             masks = self._get_image_masks(image)
 
-        max_scale = export.get_projection(image, min=False).nominalScale()  # TODO: this will fail for unprojected bands (composite or constant images)
+        max_scale = export.get_projection(image, min=False).nominalScale()
         if region is None:
             region = image.geometry()
 
-        valid_portion = (masks['valid_mask'].unmask().
+        valid_portion = (masks['valid_mask'].
+                         unmask().
                          multiply(100).
-                         reduceRegion(reducer='mean', geometry=region,
-                                      scale=max_scale).
+                         reduceRegion(reducer='mean', geometry=region, scale=max_scale).
                          rename(['VALID_MASK'], ['VALID_PORTION']))
 
         return image.set(valid_portion)
@@ -169,7 +169,7 @@ class ImCollection:
 
         cloud_shadow_mask = masks['cloud_mask'].Or(masks['shadow_mask'])
         cloud_shadow_mask = cloud_shadow_mask.focal_min(radius=radius).focal_max(radius=radius)
-        # TODO: rescale score according to image size, or cloud_dist ??  and what about uint16?
+
         score = cloud_shadow_mask.fastDistanceTransform(neighborhood=cloud_pix, units='pixels',
                                                       metric='squared_euclidean').sqrt().rename('SCORE')
 
@@ -281,9 +281,9 @@ class LandsatImCollection(ImCollection):
         fill_mask = qa_pixel.bitwiseAnd(1).eq(0).rename('FILL_MASK')
 
         # extract cloud etc quality scores (2 bits)
-        cloud_conf = qa_pixel.rightShift(8).bitwiseAnd(3).rename('CLOUD_CONF')
-        cloud_shadow_conf = qa_pixel.rightShift(10).bitwiseAnd(3).rename('CLOUD_SHADOW_CONF')
-        cirrus_conf = qa_pixel.rightShift(14).bitwiseAnd(3).rename('CIRRUS_CONF')
+        # cloud_conf = qa_pixel.rightShift(8).bitwiseAnd(3).rename('CLOUD_CONF')
+        # cloud_shadow_conf = qa_pixel.rightShift(10).bitwiseAnd(3).rename('CLOUD_SHADOW_CONF')
+        # cirrus_conf = qa_pixel.rightShift(14).bitwiseAnd(3).rename('CIRRUS_CONF')
 
         if self.collection_info['ee_collection'] == 'LANDSAT/LC08/C02/T1_L2':  # landsat8_c2_l2
             # TODO: is SR_QA_AEROSOL helpful? (Looks suspect for GEF region images)
@@ -368,6 +368,13 @@ class LandsatImCollection(ImCollection):
 
         return ee.Image(calib_image.copyProperties(image))
 
+class Landsat8ImCollection(LandsatImCollection):
+    def __init__(self):
+        LandsatImCollection.__init__(self, collection='landsat8_c2_l2')
+
+class Landsat7ImCollection(LandsatImCollection):
+    def __init__(self):
+        LandsatImCollection.__init__(self, collection='landsat7_c2_l2')
 
 class Sentinel2ImCollection(ImCollection):
 
@@ -405,7 +412,16 @@ class Sentinel2ImCollection(ImCollection):
         cloud_mask = qa.bitwiseAnd((1 << 11) | (1 << 10)).neq(0).rename('CLOUD_MASK')
         valid_mask = cloud_mask.Not().rename('VALID_MASK')
         masks.update(cloud_mask=cloud_mask, valid_mask=valid_mask)
+        # masks.update(cloud_mask=cloud_mask, valid_mask=valid_mask)
         return masks
+
+class Sentinel2SrImCollection(Sentinel2ImCollection):
+    def __init__(self):
+        Sentinel2ImCollection.__init__(self, collection='sentinel2_sr')
+
+class Sentinel2ToaImCollection(Sentinel2ImCollection):
+    def __init__(self):
+        Sentinel2ImCollection.__init__(self, collection='sentinel2_toa')
 
 
 class Sentinel2ClImCollection(ImCollection):
@@ -546,13 +562,20 @@ class Sentinel2ClImCollection(ImCollection):
 
         return self._im_transform(image)
 
+class Sentinel2SrClImCollection(Sentinel2ClImCollection):
+    def __init__(self):
+        Sentinel2ClImCollection.__init__(self, collection='sentinel2_sr')
+
+class Sentinel2ToaClImCollection(Sentinel2ClImCollection):
+    def __init__(self):
+        Sentinel2ClImCollection.__init__(self, collection='sentinel2_toa')
 
 class ModisNbarImCollection(ImCollection):
-    def __init__(self, collection='modis_nbar'):
+    def __init__(self):
         """
         Class for the MODIS daily NBAR earth engine image collection
         """
-        ImCollection.__init__(self, collection)
+        ImCollection.__init__(self, collection='modis_nbar')
         self._im_transform = ee.Image.toUint16
 
 ##

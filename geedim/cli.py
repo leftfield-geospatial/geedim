@@ -27,10 +27,10 @@ from geedim import composite as composite_api
 from geedim import collection
 
 # map collection keys to classes
-cls_col_map = {'landsat7_c2_l2': collection.LandsatImCollection,
-               'landsat8_c2_l2': collection.LandsatImCollection,
-               'sentinel2_toa': collection.Sentinel2ClImCollection,
-               'sentinel2_sr': collection.Sentinel2ClImCollection,
+cls_col_map = {'landsat7_c2_l2': collection.Landsat7ImCollection,
+               'landsat8_c2_l2': collection.Landsat8ImCollection,
+               'sentinel2_toa': collection.Sentinel2ToaClImCollection,
+               'sentinel2_sr': collection.Sentinel2SrClImCollection,
                'modis_nbar': collection.ModisNbarImCollection}
 
 class Results(object):
@@ -105,7 +105,7 @@ def _export(res, ids=None, bbox=None, region=None, path='', crs=None, scale=None
             crs = 'EPSG:3857'
             click.secho(f'Re-projecting {_id} to {crs} to avoid bug https://issuetracker.google.com/issues/194561313.')
 
-        im_collection = cls_col_map[collection](collection=collection)
+        im_collection = cls_col_map[collection]()
         if res.comp_image is not None:
             image = res.comp_image
         else:
@@ -261,11 +261,11 @@ def cli(ctx):
 def search(res, collection, start_date, end_date=None, bbox=None, region=None, valid_portion=0, output=None, region_buf=5):
     """ Search for images """
 
-    im_collection = cls_col_map[collection](collection=collection)
+    im_collection = cls_col_map[collection]()
     region_geojson = _parse_region_geom(region=region, bbox=bbox, region_buf=region_buf)
     res.search_region = region_geojson
 
-    im_df = search_api.search(im_collection, start_date, end_date, region_geojson, valid_portion=valid_portion)[0]
+    im_df = search_api.search(im_collection, start_date, end_date, region_geojson, valid_portion=valid_portion)
     res.search_ids = im_df.ID.values.tolist()
 
     if (output is not None):
@@ -386,8 +386,8 @@ def composite(res, id=None, mask=True, method='q_mosaic'):
             id = res.search_ids
             res.search_ids = None
 
-    id = list(id)
-    res.comp_image, res.comp_name = composite_api.composite(id, method=method, apply_mask=mask)
+    ids = list(id)
+    res.comp_image, res.comp_name = composite_api.composite(ids, method=method, apply_mask=mask)
 
     # # construct a name for this composite
     # idxs = [_id.split('/')[-1] for _id in id]
