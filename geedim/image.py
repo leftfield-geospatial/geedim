@@ -78,7 +78,7 @@ class Image(object):
             raise ValueError(f'{cls} only supports images from the {info.gd_to_ee_map[cls._gd_coll_name]} collection')
 
         ee_image = ee.Image(image_id)
-        return cls.__init__(ee_image, mask=mask, scale_refl=scale_refl)
+        return cls(ee_image, mask=mask, scale_refl=scale_refl)
 
     _gd_coll_name = ''
     @property
@@ -239,8 +239,8 @@ class LandsatImage(Image):
         scale_refl : bool, optional
                      Scale reflectance bands 0-10000 if they are not in that range already (default: False)
         """
-        Image.__init__(self, ee_image, mask=mask, scale_refl=scale_refl)
         self._im_transform = ee.Image.toUint16
+        Image.__init__(self, ee_image, mask=mask, scale_refl=scale_refl)
 
     def _get_image_masks(self, ee_image):
         """
@@ -344,17 +344,17 @@ class Sentinel2Image(Image):
         scale_refl : bool, optional
                      Scale reflectance bands 0-10000 if they are not in that range already (default: False)
         """
-        Image.__init__(self, ee_image, mask=mask, scale_refl=scale_refl)
         self._im_transform = ee.Image.toUint16
+        Image.__init__(self, ee_image, mask=mask, scale_refl=scale_refl)
 
 
-    def _get_image_masks(self, image):
+    def _get_image_masks(self, ee_image):
         """
         Derive cloud, shadow, fill and validity masks for an image
 
         Parameters
         ----------
-        image : ee.Image
+        ee_image : ee.Image
                 Derive masks for this image
 
         Returns
@@ -364,8 +364,8 @@ class Sentinel2Image(Image):
                 values
         """
 
-        masks = Image._get_image_masks(self, image)
-        qa = image.select('QA60')   # bits 10 and 11 are opaque and cirrus clouds respectively
+        masks = Image._get_image_masks(self, ee_image)
+        qa = ee_image.select('QA60')   # bits 10 and 11 are opaque and cirrus clouds respectively
         cloud_mask = qa.bitwiseAnd((1 << 11) | (1 << 10)).neq(0).rename('CLOUD_MASK')
         valid_mask = cloud_mask.Not().rename('VALID_MASK')
         masks.update(cloud_mask=cloud_mask, valid_mask=valid_mask)
@@ -394,18 +394,46 @@ class Sentinel2ClImage(Image):
         scale_refl : bool, optional
                      Scale reflectance bands 0-10000 if they are not in that range already (default: False)
         """
-        Image.__init__(self, ee_image, mask=mask, scale_refl=scale_refl)
-        self._im_transform = ee.Image.toUint16
-
-        # add the cloud probability to the image
-        cloud_prob = ee.Image(ee.String('COPERNICUS/S2_CLOUD_PROBABILITY/').cat(self._ee_image.id))
-        self._ee_image = self._ee_image.set('s2cloudless', cloud_prob)
 
         self._cloud_filter = 60  # Maximum image cloud cover percent allowed in image collection
         self._cloud_prob_thresh = 35  # Cloud probability (%); values greater than are considered cloud
         # self._nir_drk_thresh = 0.15# Near-infrared reflectance; values less than are considered potential cloud shadow
         self._cloud_proj_dist = 1  # Maximum distance (km) to search for cloud shadows from cloud edges
         self._buffer = 100  # Distance (m) to dilate the edge of cloud-identified objects
+        self._im_transform = ee.Image.toUint16
+
+        Image.__init__(self, ee_image, mask=mask, scale_refl=scale_refl)
+
+    @classmethod
+    def from_id(cls, image_id, mask=False, scale_refl=False):
+        """
+        Earth engine image wrapper for cloud/shadow masking and quality scoring
+
+        Parameters
+        ----------
+        image_id : str
+                   ID of earth engine image to wrap
+        mask : bool, optional
+               Apply a validity (cloud & shadow) mask to the image (default: False)
+        scale_refl : bool, optional
+                     Scale reflectance bands 0-10000 if they are not in that range already (default: False)
+        """
+        ee_coll_name = ee_split(image_id)[0]
+        if ee_coll_name not in info.ee_to_gd_map:
+            raise ValueError(f'Unsupported collection: {ee_coll_name}')
+
+        gd_coll_name = info.ee_to_gd_map[ee_coll_name]
+        if gd_coll_name != cls._gd_coll_name:
+            raise ValueError(f'{cls} only supports images from the {info.gd_to_ee_map[cls._gd_coll_name]} collection')
+
+        ee_image = ee.Image(image_id)
+
+        # add cloud probability to the image
+        cloud_prob = ee.Image(f'COPERNICUS/S2_CLOUD_PROBABILITY/{ee_split(image_id)[1]}')
+        ee_image = ee_image.set('s2cloudless', cloud_prob)
+
+        return cls(ee_image, mask=mask, scale_refl=scale_refl)
+
 
 
     def _get_image_masks(self, ee_image):
