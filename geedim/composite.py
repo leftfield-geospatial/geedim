@@ -25,8 +25,7 @@ import pandas
 import rasterio as rio
 from rasterio.warp import transform_geom
 
-import geedim.collection
-from geedim import search, cli, collection
+from geedim import collection
 
 # from shapely import geometry
 
@@ -351,7 +350,7 @@ def medoid(collection, bands=None, discard_zeros=True):
     # set metadata to indicate component images
     return comp_im.set('COMPOSITE_IMAGES', self._im_df[['ID', 'DATE'] + self._im_props].to_string()).toUint16()
 '''
-
+'''
 def collection_from_ids(ids, apply_mask=False, add_aux_bands=False, scale_refl=False):
     """
     Create ee.ImageCollection of masked and scored images, from a list of EE image IDs
@@ -443,3 +442,4 @@ def composite(images, method='q_mosaic', apply_mask=True):
     comp_name = f'{ee_coll_name}/{start_date}-{end_date}-{method.upper()}_COMP'
 
     return comp_image, comp_name
+'''

@@ -229,7 +229,7 @@ def monitor_export_task(task, label=None):
         status = ee.data.getOperation(task.name)  # get task status
         click.echo(f'\rPreparing {label}: {toggles[toggle_count % 4]}', nl='')
         toggle_count += 1
-    click.echo(f'\rPreparing {label}: done')
+    click.echo(f'\rPreparing {label}:  done')
 
     with click.progressbar(length=bar_len, label=f'Exporting {label}:') as bar:
         while ('done' not in status) or (not status['done']):

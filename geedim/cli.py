@@ -26,7 +26,7 @@ from geedim import composite as composite_api
 from geedim import collection
 
 # map collection names to classes
-from geedim.collection import cls_col_map
+# from geedim.collection import coll_to_im_cls_map
 
 
 class Results(object):
@@ -99,7 +99,7 @@ def _export(res, ids=None, bbox=None, region=None, path='', crs=None, scale=None
             crs = 'EPSG:3857'
             click.secho(f'Re-projecting {_id} to {crs} to avoid bug https://issuetracker.google.com/issues/194561313.')
 
-        gd_collection = cls_col_map[gd_coll_name]()
+        gd_collection = collection.cls_col_map[gd_coll_name]()
 
         if res.comp_image is not None:
             image = res.comp_image
@@ -212,7 +212,7 @@ def cli(ctx):
 @click.option(
     "-c",
     "--collection",
-    type=click.Choice(list(cls_col_map.keys()), case_sensitive=False),
+    type=click.Choice(list(collection.cls_col_map.keys()), case_sensitive=False),
     help="Earth Engine image collection to search.",
     default="landsat8_c2_l2",
     required=True
@@ -255,7 +255,7 @@ def cli(ctx):
 def search(res, collection, start_date, end_date=None, bbox=None, region=None, valid_portion=0, output=None, region_buf=5):
     """ Search for images """
 
-    gd_collection = cls_col_map[collection]()
+    gd_collection = collection.cls_col_map[collection]()
     region_geojson = _parse_region_geom(region=region, bbox=bbox, region_buf=region_buf)
     res.search_region = region_geojson
 
