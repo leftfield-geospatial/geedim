@@ -16,13 +16,12 @@
 
 ##
 # Classes wrapping, cloud/shadow masking and scoring Earth Engine images
-from datetime import datetime
 import ee
 import pandas as pd
-import click
-import json
+import rasterio as rio
+import logging
 
-from geedim import export, info, root_path
+from geedim import info
 
 ## Image classes
 class Image(object):
@@ -40,18 +39,18 @@ class Image(object):
         scale_refl : bool, optional
                      Scale reflectance bands 0-10000 if they are not in that range already (default: False)
         """
+        # TODO: sort out who keeps this info between Image and Collection
         self.collection_info = info.collection_info[self.gd_coll_name]
         self.ee_coll_name = self.collection_info['ee_coll_name']
         self.band_df = pd.DataFrame.from_dict(self.collection_info['bands'])
         self._im_props = pd.DataFrame(self.collection_info['properties'])  # list of image properties of interest
-        self._im_transform = lambda image: image
 
         self._masks = self._get_image_masks(ee_image)
         self._score = self._get_image_score(ee_image)
         self._ee_image = self._process_image(ee_image,
                                              masks=self._masks,
                                              score=self._score,
-                                             apply_mask=mask,
+                                             mask=mask,
                                              scale_refl=scale_refl)
 
 
@@ -75,7 +74,7 @@ class Image(object):
 
         gd_coll_name = info.ee_to_gd_map[ee_coll_name]
         if gd_coll_name != cls._gd_coll_name:
-            raise ValueError(f'{cls} only supports images from the {info.gd_to_ee_map[cls._gd_coll_name]} collection')
+            raise ValueError(f'{cls.__name__} only supports images from the {info.gd_to_ee_map[cls._gd_coll_name]} collection')
 
         ee_image = ee.Image(image_id)
         return cls(ee_image, mask=mask, scale_refl=scale_refl)
@@ -100,6 +99,9 @@ class Image(object):
     @classmethod
     def ee_collection(cls):
         return ee.ImageCollection(info.gd_to_ee_map[cls._gd_coll_name])
+
+    def _im_transform(self, ee_image):
+        return ee_image
 
     def _scale_refl(self, ee_image):
         return ee_image
@@ -144,7 +146,7 @@ class Image(object):
         The cloud distance score as a single band image
         """
         radius = 1.5
-        min_proj = export.get_projection(image)
+        min_proj = get_projection(image)
         cloud_pix = ee.Number(cloud_dist).divide(min_proj.nominalScale()).toInt()
 
         if masks is None:
@@ -158,7 +160,7 @@ class Image(object):
 
         return score.unmask().where(masks['fill_mask'].unmask().Not(), 0)
 
-    def _process_image(self, ee_image, masks=None, score=None, apply_mask=False, scale_refl=False):
+    def _process_image(self, ee_image, masks=None, score=None, mask=False, scale_refl=False):
         """
         Adds mask and score bands to a raw Earth Engine image
 
@@ -166,7 +168,7 @@ class Image(object):
         ----------
         ee_image : ee.Image
                     Earth engine image to add bands to
-        apply_mask : bool, optional
+        mask : bool, optional
                      Apply any validity mask to the image by setting nodata (default: False)
         scale_refl : bool, optional
                      Scale reflectance values from 0-10000 if they are not in that range already (default: False)
@@ -184,7 +186,7 @@ class Image(object):
         ee_image = ee_image.addBands(ee.Image(list(masks.values())))
         ee_image = ee_image.addBands(score)
 
-        if apply_mask:  # mask before adding aux bands
+        if mask:  # mask before adding aux bands
             ee_image = ee_image.updateMask(masks['valid_mask'])
 
         if scale_refl:
@@ -212,7 +214,7 @@ class Image(object):
         if masks is None:
             masks = self._get_image_masks(image)
 
-        max_scale = export.get_projection(image, min=False).nominalScale()
+        max_scale = get_projection(image, min=False).nominalScale()
         if region is None:
             region = image.geometry()
 
@@ -226,21 +228,9 @@ class Image(object):
 
 
 class LandsatImage(Image):
-    def __init__(self, ee_image, mask=False, scale_refl=False):
-        """
-        Earth engine image wrapper for cloud/shadow masking and quality scoring
 
-        Parameters
-        ----------
-        ee_image : ee.Image
-                   Earth engine image to wrap
-        mask : bool, optional
-               Apply a validity (cloud & shadow) mask to the image (default: False)
-        scale_refl : bool, optional
-                     Scale reflectance bands 0-10000 if they are not in that range already (default: False)
-        """
-        self._im_transform = ee.Image.toUint16
-        Image.__init__(self, ee_image, mask=mask, scale_refl=scale_refl)
+    def _im_transform(self, ee_image):
+        return ee.Image.toUint16(ee_image)
 
     def _get_image_masks(self, ee_image):
         """
@@ -318,7 +308,8 @@ class LandsatImage(Image):
         calib_image = calib_image.addBands(ee_image.select(non_sr_bands))
         calib_image = calib_image.updateMask(ee_image.mask())  # apply any existing mask to refl image
 
-        for key in ['system:index', 'system:id', 'id']:   # copy id
+        # copy required system properties that are not copied in copyProperties below
+        for key in ['system:index', 'system:id', 'id', 'system:time_start', 'system:time_end']:
             calib_image = calib_image.set(key, ee.String(ee_image.get(key)))
 
         return ee.Image(calib_image.copyProperties(ee_image))
@@ -331,22 +322,9 @@ class Landsat7Image(LandsatImage):
 
 
 class Sentinel2Image(Image):
-    def __init__(self, ee_image, mask=False, scale_refl=False):
-        """
-        Earth engine image wrapper for cloud/shadow masking and quality scoring
 
-        Parameters
-        ----------
-        ee_image : ee.Image
-                   Earth engine image to wrap
-        mask : bool, optional
-               Apply a validity (cloud & shadow) mask to the image (default: False)
-        scale_refl : bool, optional
-                     Scale reflectance bands 0-10000 if they are not in that range already (default: False)
-        """
-        self._im_transform = ee.Image.toUint16
-        Image.__init__(self, ee_image, mask=mask, scale_refl=scale_refl)
-
+    def _im_transform(self, ee_image):
+        return ee.Image.toUint16(ee_image)
 
     def _get_image_masks(self, ee_image):
         """
@@ -400,9 +378,13 @@ class Sentinel2ClImage(Image):
         # self._nir_drk_thresh = 0.15# Near-infrared reflectance; values less than are considered potential cloud shadow
         self._cloud_proj_dist = 1  # Maximum distance (km) to search for cloud shadows from cloud edges
         self._buffer = 100  # Distance (m) to dilate the edge of cloud-identified objects
-        self._im_transform = ee.Image.toUint16
 
+        # TODO: this pattern of setting attributes above and then calling base __init__ is suspect, as base __init__
+        #  will overwrite any attributes we may be attempting to override above
         Image.__init__(self, ee_image, mask=mask, scale_refl=scale_refl)
+
+    def _im_transform(self, ee_image):
+        return ee.Image.toUint16(ee_image)
 
     @classmethod
     def from_id(cls, image_id, mask=False, scale_refl=False):
@@ -424,7 +406,7 @@ class Sentinel2ClImage(Image):
 
         gd_coll_name = info.ee_to_gd_map[ee_coll_name]
         if gd_coll_name != cls._gd_coll_name:
-            raise ValueError(f'{cls} only supports images from the {info.gd_to_ee_map[cls._gd_coll_name]} collection')
+            raise ValueError(f'{cls.__name__} only supports images from the {info.gd_to_ee_map[cls._gd_coll_name]} collection')
 
         ee_image = ee.Image(image_id)
 
@@ -463,7 +445,7 @@ class Sentinel2ClImage(Image):
         # TODO: does below work in N hemisphere?
         # See https://en.wikipedia.org/wiki/Solar_azimuth_angle
         shadow_azimuth = ee.Number(-90).add(ee.Number(ee_image.get('MEAN_SOLAR_AZIMUTH_ANGLE')))
-        min_scale = export.get_projection(ee_image).nominalScale()
+        min_scale = get_projection(ee_image).nominalScale()
 
         # project the the cloud mask in the direction of shadows
         proj_dist_px = ee.Number(self._cloud_proj_dist * 1000).divide(min_scale)
@@ -518,25 +500,58 @@ class Sentinel2ToaClImage(Sentinel2ClImage):
     _gd_coll_name = 'sentinel2_toa'
 
 class ModisNbarImage(Image):
-    def __init__(self, ee_image, mask=False, scale_refl=False):
-        """
-        Earth engine image wrapper for cloud/shadow masking and quality scoring
-
-        Parameters
-        ----------
-        ee_image : ee.Image
-                   Earth engine image to wrap
-        mask : bool, optional
-               Apply a validity (cloud & shadow) mask to the image (default: False)
-        scale_refl : bool, optional
-                     Scale reflectance bands 0-10000 if they are not in that range already (default: False)
-        """
-        Image.__init__(self, ee_image, mask=mask, scale_refl=scale_refl)
-        self._im_transform = ee.Image.toUint16
+    def _im_transform(self, ee_image):
+        return ee.Image.toUint16(ee_image)
+    _gd_coll_name = 'modis_nbar'
 
 ##
+def get_image_bounds(filename, expand=5):
+    """
+    Get a WGS84 geojson polygon representing the optionally expanded bounds of an image
 
-coll_to_im_cls_map = {'landsat7_c2_l2': Landsat7Image,
+    Parameters
+    ----------
+    filename :  str, pathlib.Path
+                name of the image file whose bounds to find
+    expand :    int
+                percentage (0-100) by which to expand the bounds (default: 5)
+
+    Returns
+    -------
+    bounds : geojson
+             polygon of bounds in WGS84
+    crs: str
+         WKT CRS string of image file
+    """
+    try:
+        # GEE sets tif colorinterp tags incorrectly, suppress rasterio warning relating to this:
+        # 'Sum of Photometric type-related color channels and ExtraSamples doesn't match SamplesPerPixel'
+        logging.getLogger("rasterio").setLevel(logging.ERROR)
+        with rio.open(filename) as im:
+            bbox = im.bounds
+            if (im.crs.linear_units == 'metre') and (expand > 0):  # expand the bounding box
+                expand_x = (bbox.right - bbox.left) * expand / 100.
+                expand_y = (bbox.top - bbox.bottom) * expand / 100.
+                bbox_expand = rio.coords.BoundingBox(bbox.left - expand_x, bbox.bottom - expand_y,
+                                                     bbox.right + expand_x, bbox.top + expand_y)
+            else:
+                bbox_expand = bbox
+
+            coordinates = [[bbox_expand.right, bbox_expand.bottom],
+                           [bbox_expand.right, bbox_expand.top],
+                           [bbox_expand.left, bbox_expand.top],
+                           [bbox_expand.left, bbox_expand.bottom],
+                           [bbox_expand.right, bbox_expand.bottom]]
+
+            bbox_expand_dict = dict(type='Polygon', coordinates=[coordinates])
+            src_bbox_wgs84 = transform_geom(im.crs, 'WGS84', bbox_expand_dict)  # convert to WGS84 geojson
+    finally:
+        logging.getLogger("rasterio").setLevel(logging.WARNING)
+
+    return src_bbox_wgs84, im.crs.to_wkt()
+
+##
+coll_to_cls_map = {'landsat7_c2_l2': Landsat7Image,
                'landsat8_c2_l2': Landsat8Image,
                'sentinel2_toa': Sentinel2ToaClImage,
                'sentinel2_sr': Sentinel2SrClImage,
@@ -547,3 +562,74 @@ def ee_split(image_id):
     index = image_id.split('/')[-1]
     coll = '/'.join(image_id.split('/')[:-1])
     return coll, index
+
+
+def get_image_info(image):
+    """
+    Retrieve image info, and create a pandas DataFrame of band properties
+
+    Parameters
+    ----------
+    image : ee.Image
+
+    Returns
+    -------
+    im_info_dict : dict
+                   Image properties
+    band_info_df : pandas.DataFrame
+                   Band properties including scale
+    """
+    im_info_dict = image.getInfo()
+
+    band_info_df = pd.DataFrame(im_info_dict['bands'])
+    crs_transforms = band_info_df['crs_transform'].values
+    scales = [abs(float(crs_transform[0])) for crs_transform in crs_transforms]
+    band_info_df['scale'] = scales
+
+    return im_info_dict, band_info_df
+
+
+def get_projection(image, min=True):
+    """
+    Server side operations to find the min/max scale projection from image bands.  No calls to getInfo().
+
+    Parameters
+    ----------
+    image : ee.Image
+            The image whose min/max projection to retrieve
+    min: bool, optional
+         Retrieve the projection corresponding to the band with the minimum (True) or maximum (False) scale
+         [default: True]
+
+    Returns
+    -------
+    : ee.Projection
+      The projection with the smallest scale
+    """
+
+    # Adapted from from https://github.com/gee-community/gee_tools, MIT license
+    bands = image.bandNames()
+    init_proj = image.select(0).projection()
+
+    if min:
+        compare = ee.Number.lte
+    else:
+        compare = ee.Number.gte
+
+    def compare_scale(name, prev_proj):
+        prev_proj = ee.Projection(prev_proj)
+        prev_scale = prev_proj.nominalScale()
+
+        curr_proj = image.select([name]).projection()
+        curr_scale = ee.Number(curr_proj.nominalScale())
+
+        # exclude WGS84 bands (constant or composite bands)
+        # (curr_scale <= / >= prev_scale) and (curr_proj.crs != EPSG:4326 )
+        condition = (compare(curr_scale, prev_scale).
+                     And(curr_proj.crs().compareTo(ee.String('EPSG:4326')))
+                     .neq(ee.Number(0)))
+
+        comp_proj = ee.Algorithms.If(condition, curr_proj, prev_proj)
+        return ee.Projection(comp_proj)
+
+    return ee.Projection(bands.iterate(compare_scale, init_proj))

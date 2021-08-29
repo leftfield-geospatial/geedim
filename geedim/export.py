@@ -20,7 +20,6 @@
 import json
 import os
 import pathlib
-import sys
 import time
 from urllib import request
 from urllib.error import HTTPError
@@ -29,88 +28,18 @@ import logging
 import click
 
 import ee
-import pandas as pd
 import rasterio as rio
 from rasterio.enums import ColorInterp
+from geedim import image
 
 
-def get_image_info(image):
-    """
-    Retrieve image info, and create a pandas DataFrame of band properties
-
-    Parameters
-    ----------
-    image : ee.Image
-
-    Returns
-    -------
-    im_info_dict : dict
-                   Image properties
-    band_info_df : pandas.DataFrame
-                   Band properties including scale
-    """
-    im_info_dict = image.getInfo()
-
-    band_info_df = pd.DataFrame(im_info_dict['bands'])
-    crs_transforms = band_info_df['crs_transform'].values
-    scales = [abs(float(crs_transform[0])) for crs_transform in crs_transforms]
-    band_info_df['scale'] = scales
-
-    return im_info_dict, band_info_df
-
-
-def get_projection(image, min=True):
-    """
-    Server side operations to find the min/max scale projection from image bands.  No calls to getInfo().
-
-    Parameters
-    ----------
-    image : ee.Image
-            The image whose min/max projection to retrieve
-    min: bool, optional
-         Retrieve the projection corresponding to the band with the minimum (True) or maximum (False) scale
-         [default: True]
-
-    Returns
-    -------
-    : ee.Projection
-      The projection with the smallest scale
-    """
-
-    # Adapted from from https://github.com/gee-community/gee_tools, MIT license
-    bands = image.bandNames()
-    init_proj = image.select(0).projection()
-
-    if min:
-        compare = ee.Number.lte
-    else:
-        compare = ee.Number.gte
-
-    def compare_scale(name, prev_proj):
-        prev_proj = ee.Projection(prev_proj)
-        prev_scale = prev_proj.nominalScale()
-
-        curr_proj = image.select([name]).projection()
-        curr_scale = ee.Number(curr_proj.nominalScale())
-
-        # exclude WGS84 bands (constant or composite bands)
-        # (curr_scale <= / >= prev_scale) and (curr_proj.crs != EPSG:4326 )
-        condition = (compare(curr_scale, prev_scale).
-                     And(curr_proj.crs().compareTo(ee.String('EPSG:4326')))
-                     .neq(ee.Number(0)))
-
-        comp_proj = ee.Algorithms.If(condition, curr_proj, prev_proj)
-        return ee.Projection(comp_proj)
-
-    return ee.Projection(bands.iterate(compare_scale, init_proj))
-
-def _parse_export_args(image, region=None, crs=None, scale=None):
+def _parse_export_args(ee_image, region=None, crs=None, scale=None):
     """
     Download an image as a GeoTiff
 
     Parameters
     ----------
-    image : ee.Image
+    ee_image : ee.Image
             The image to export
     region : dict, geojson, ee.Geometry, optional
              Region of interest (WGS84) to export (default: export the entire image granule if it has one).
@@ -120,7 +49,7 @@ def _parse_export_args(image, region=None, crs=None, scale=None):
             Pixel resolution (m) to export to (default: use the highest resolution of the image bands).
     """
     # get ee image info which is used in setting crs, scale and tif metadata (no further calls to getInfo)
-    im_info_dict, band_info_df = get_image_info(image)
+    im_info_dict, band_info_df = image.get_image_info(ee_image)
 
     # filename = pathlib.Path(filename)
     im_id = im_info_dict['id'] if 'id' in im_info_dict else ''
@@ -143,7 +72,7 @@ def _parse_export_args(image, region=None, crs=None, scale=None):
     if crs is None:
         crs = min_crs        # CRS corresponding to minimum scale
     if region is None:
-        region = image.geometry()
+        region = ee_image.geometry()
         click.secho('Warning: region not specified, setting to granule bounds', fg='red')
     if scale is None:
         scale = min_scale     # minimum scale
@@ -158,13 +87,13 @@ def _parse_export_args(image, region=None, crs=None, scale=None):
     return region, crs, scale, im_info_dict
 
 
-def export_image(image, filename, folder='', region=None, crs=None, scale=None, wait=True):
+def export_image(ee_image, filename, folder='', region=None, crs=None, scale=None, wait=True):
     """
     Export an image to a GeoTiff in Google Drive
 
     Parameters
     ----------
-    image : ee.Image
+    ee_image : ee.Image
             The image to export
     filename : str
                The name of the task and destination file
@@ -186,11 +115,11 @@ def export_image(image, filename, folder='', region=None, crs=None, scale=None, 
     # TODO: minimise as far as possible getInfo() calls below
     # im_id = im_info_dict['id'] + ' ' if 'id' in im_info_dict else ''
     # click.echo(f'Exporting to Google Drive:{folder}/{filename}.tif')
-    region, crs, scale, im_info_dict = _parse_export_args(image, region=region, crs=crs, scale=scale)
+    region, crs, scale, im_info_dict = _parse_export_args(ee_image, region=region, crs=crs, scale=scale)
 
 
     # create export task and start
-    task = ee.batch.Export.image.toDrive(image=image,
+    task = ee.batch.Export.image.toDrive(image=ee_image,
                                          region=region,
                                          description=filename[:100],
                                          folder=folder,
@@ -242,13 +171,13 @@ def monitor_export_task(task, label=None):
     if status['metadata']['state'] != 'SUCCEEDED':
         raise Exception(f'Export failed \n{status}')
 
-def download_image(image, filename, region=None, crs=None, scale=None, band_df=None, overwrite=False):
+def download_image(ee_image, filename, region=None, crs=None, scale=None, band_df=None, overwrite=False):
     """
     Download an image as a GeoTiff
 
     Parameters
     ----------
-    image : ee.Image
+    ee_image : ee.Image
             The image to export
     filename : str, pathlib.Path
                Name of the destination file
@@ -268,11 +197,11 @@ def download_image(image, filename, region=None, crs=None, scale=None, band_df=N
     filename = pathlib.Path(filename)
     # im_id = im_info_dict['id'] + ' ' if 'id' in im_info_dict else ''
     # click.echo(f'Downloading to {filename.name}')
-    region, crs, scale, im_info_dict = _parse_export_args(image, region=region, crs=crs, scale=scale)
+    region, crs, scale, im_info_dict = _parse_export_args(ee_image, region=region, crs=crs, scale=scale)
 
 
     # get download link
-    link = image.getDownloadURL({
+    link = ee_image.getDownloadURL({
         'scale': scale,
         'crs': crs,
         'fileFormat': 'GeoTIFF',

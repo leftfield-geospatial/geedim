@@ -25,8 +25,7 @@ from click.testing import CliRunner
 from rasterio.crs import CRS
 from rasterio.warp import transform_bounds
 
-import geedim.collection
-from geedim import root_path, cli
+from geedim import root_path, cli, collection, info
 
 
 class TestSearchCli(unittest.TestCase):
@@ -46,7 +45,7 @@ class TestSearchCli(unittest.TestCase):
 
         res_df = pd.DataFrame.from_dict(res_dict, orient='index')
         res_df.DATE = [datetime.utcfromtimestamp(ts / 1000) for ts in res_df.DATE.values]
-        gd_collection = geedim.collection.cls_col_map[gd_coll_name]()
+        gd_collection = collection.Collection(gd_coll_name)
 
         # check results have correct columns, and sensible values
         self.assertGreater(res_df.shape[0], 0, 'Search returned one or more results')
@@ -55,7 +54,7 @@ class TestSearchCli(unittest.TestCase):
                         'Search results have correct columns')
         self.assertTrue(all(res_df.DATE >= start_date) and all(res_df.DATE <= end_date),
                         'Search results are in correct date range')
-        self.assertTrue(all([gd_collection.ee_coll_name in im_id for im_id in res_df.ID.values]),
+        self.assertTrue(all([info.gd_to_ee_map[gd_coll_name] in im_id for im_id in res_df.ID.values]),
                         'Search results have correct EE ID')
         self.assertTrue(all(res_df.VALID >= 0) and all(res_df.VALID <= 100),
                         'Search results have correct validity range')

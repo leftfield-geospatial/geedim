@@ -21,12 +21,11 @@ import click
 import ee
 
 from geedim import export as export_api
-from geedim import search as search_api
-from geedim import composite as composite_api
-from geedim import collection
+from geedim import collection as coll_api
+from geedim import info, image
 
 # map collection names to classes
-# from geedim.collection import coll_to_im_cls_map
+# from geedim.collection import coll_to_cls_map
 
 
 class Results(object):
@@ -51,7 +50,7 @@ def _parse_region_geom(region=None, bbox=None, region_buf=5):
                 region_geojson = json.load(f)
         else:  # read region from raster file
             try:
-                region_geojson, _ = search_api.get_image_bounds(region, region_buf)
+                region_geojson, _ = image.get_image_bounds(region, region_buf)
             except Exception as ex:
                 raise click.BadParameter(f'{region} is not a valid geojson or raster file. \n{ex}')
     else:  # convert bbox to geojson
@@ -62,7 +61,7 @@ def _parse_region_geom(region=None, bbox=None, region_buf=5):
     return region_geojson
 
 
-def _export(res, ids=None, bbox=None, region=None, path='', crs=None, scale=None, apply_mask=False, scale_refl=True, add_aux=True,
+def _export(res, ids=None, bbox=None, region=None, path='', crs=None, scale=None, mask=False, scale_refl=True, add_aux=True,
             wait=True, overwrite=False, do_download=True):
     """ download or export image(s), with cloud and shadow masking """
     if (region is None) and (bbox is None or len(bbox)==0):
@@ -89,31 +88,31 @@ def _export(res, ids=None, bbox=None, region=None, path='', crs=None, scale=None
         click.echo('\nExporting:\n')
 
     for _id in ids:
-        ee_coll_name = collection.ee_split(_id)[0]
-        if not ee_coll_name in collection.ee_to_gd_map():
+        ee_coll_name = image.ee_split(_id)[0]
+        if not ee_coll_name in info.ee_to_gd_map:
             click.secho(f'Warning: unsupported collection: {ee_coll_name}, skipping {_id}', fg='red')
             continue
-        gd_coll_name = collection.ee_to_gd_map()[ee_coll_name]
+        gd_coll_name = info.ee_to_gd_map[ee_coll_name]
 
         if gd_coll_name == 'modis_nbar' and crs is None:  # workaround MODIS native CRS export issue
             crs = 'EPSG:3857'
             click.secho(f'Re-projecting {_id} to {crs} to avoid bug https://issuetracker.google.com/issues/194561313.')
 
-        gd_collection = collection.cls_col_map[gd_coll_name]()
-
         if res.comp_image is not None:
-            image = res.comp_image
+            ee_image = res.comp_image
+            band_df = None  # TODO: somehow make this loop independent of composite/other ims, and band_df comes with image
         else:
-            image = gd_collection.get_image(_id, apply_mask=apply_mask, scale_refl=scale_refl, add_aux_bands=add_aux)
-            # image = gd_collection.set_image_valid_portion(image, region=region_geojson)
+            gd_image = image.coll_to_cls_map[gd_coll_name].from_id(_id, mask=mask, scale_refl=scale_refl)
+            ee_image = gd_image.ee_image
+            band_df = gd_image.band_df
 
         if do_download:
             filename = pathlib.Path(path).joinpath(_id.replace('/', '-') + '.tif')
-            export_api.download_image(image, filename, region=region_geojson, crs=crs, scale=scale,
-                                      band_df=gd_collection.band_df, overwrite=overwrite)
+            export_api.download_image(ee_image, filename, region=region_geojson, crs=crs, scale=scale,
+                                      band_df=band_df, overwrite=overwrite)
         else:
             filename = _id.replace('/', '-')
-            task = export_api.export_image(image, filename, folder=path, region=region_geojson, crs=crs, scale=scale,
+            task = export_api.export_image(ee_image, filename, folder=path, region=region_geojson, crs=crs, scale=scale,
                                     wait=False)
             task._name = f'{path}/{filename}.tif'
             export_tasks.append(task)
@@ -212,7 +211,7 @@ def cli(ctx):
 @click.option(
     "-c",
     "--collection",
-    type=click.Choice(list(collection.cls_col_map.keys()), case_sensitive=False),
+    type=click.Choice(list(info.gd_to_ee_map.keys()), case_sensitive=False),
     help="Earth Engine image collection to search.",
     default="landsat8_c2_l2",
     required=True
@@ -255,11 +254,11 @@ def cli(ctx):
 def search(res, collection, start_date, end_date=None, bbox=None, region=None, valid_portion=0, output=None, region_buf=5):
     """ Search for images """
 
-    gd_collection = collection.cls_col_map[collection]()
-    region_geojson = _parse_region_geom(region=region, bbox=bbox, region_buf=region_buf)
-    res.search_region = region_geojson
+    # gd_collection = collection
+    res.search_region = _parse_region_geom(region=region, bbox=bbox, region_buf=region_buf)
 
-    im_df = search_api.search(gd_collection, start_date, end_date, region_geojson, valid_portion=valid_portion)
+    gd_collection = coll_api.Collection(collection)
+    im_df = gd_collection.search(start_date, end_date, res.search_region, valid_portion=valid_portion)
     res.search_ids = im_df.ID.values.tolist()
 
     if (output is not None):
@@ -308,7 +307,7 @@ cli.add_command(search)
 def download(res, id=None, bbox=None, region=None, download_dir=os.getcwd(), crs=None, scale=None, mask=False, scale_refl=True,
              add_aux=True, overwrite=False):
     """ Download image(s), with cloud and shadow masking """
-    _export(res, ids=id, bbox=bbox, region=region, path=download_dir, crs=crs, scale=scale, apply_mask=mask,
+    _export(res, ids=id, bbox=bbox, region=region, path=download_dir, crs=crs, scale=scale, mask=mask,
             scale_refl=scale_refl, add_aux=add_aux, overwrite=overwrite, do_download=True)
 
 
@@ -343,7 +342,7 @@ cli.add_command(download)
 def export(res, id=None, bbox=None, region=None, drive_folder='', crs=None, scale=None, mask=False, scale_refl=True, add_aux=True,
            wait=True):
     """ Export image(s) to Google Drive, with cloud and shadow masking """
-    _export(res, ids=id, bbox=bbox, region=region, path=drive_folder, crs=crs, scale=scale, apply_mask=mask,
+    _export(res, ids=id, bbox=bbox, region=region, path=drive_folder, crs=crs, scale=scale, mask=mask,
             scale_refl=scale_refl, add_aux=add_aux, wait=wait, do_download=False)
 
 
@@ -367,8 +366,9 @@ cli.add_command(export)
     help="Do/don't apply (cloud and shadow) nodata mask(s) before compositing.  [default: mask]",
     required=False,
 )
+@scale_refl_option
 @click.pass_obj
-def composite(res, id=None, mask=True, method='q_mosaic'):
+def composite(res, id=None, mask=True, scale_refl=False, method='q_mosaic'):
     """ Create a cloud-free composite image """
 
     if (id is None or len(id) == 0):
@@ -379,14 +379,8 @@ def composite(res, id=None, mask=True, method='q_mosaic'):
             res.search_ids = None
 
     ids = list(id)
-    res.comp_image, res.comp_name = composite_api.composite(ids, method=method, apply_mask=mask)
-
-    # # construct a name for this composite
-    # idxs = [_id.split('/')[-1] for _id in id]
-    # idxs.sort()
-    # fn_prefix = os.path.commonprefix(idxs)
-    # res.comp_name = f'{fn_prefix}_{id[0][len(fn_prefix):]}-to-{id[-1][len(fn_prefix):]}-{method.upper()}_COMP'
-    # # res.comp_name = f'{fn_prefix}-{method.upper()}_COMP'
+    gd_collection = coll_api.Collection.from_ids(ids, mask=mask, scale_refl=scale_refl)
+    res.comp_image, res.comp_name = gd_collection.composite(method=method)
 
 cli.add_command(composite)
 
