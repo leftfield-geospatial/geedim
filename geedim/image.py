@@ -80,6 +80,11 @@ class Image(object):
         return cls(ee_image, mask=mask, scale_refl=scale_refl)
 
     _gd_coll_name = ''
+
+    @staticmethod
+    def _im_transform(ee_image):
+        return ee_image
+
     @property
     def gd_coll_name(self):
         return self._gd_coll_name
@@ -99,9 +104,6 @@ class Image(object):
     @classmethod
     def ee_collection(cls):
         return ee.ImageCollection(info.gd_to_ee_map[cls._gd_coll_name])
-
-    def _im_transform(self, ee_image):
-        return ee_image
 
     def _scale_refl(self, ee_image):
         return ee_image
@@ -183,8 +185,8 @@ class Image(object):
         if score is None:
             score = self._get_image_score(ee_image, masks=masks)
 
-        ee_image = ee_image.addBands(ee.Image(list(masks.values())), overwrite=True)
-        ee_image = ee_image.addBands(score, overwrite=True)
+        ee_image = ee_image.addBands(ee.Image(list(masks.values())), overwrite=False)
+        ee_image = ee_image.addBands(score, overwrite=False)
 
         if mask:  # mask before adding aux bands
             ee_image = ee_image.updateMask(masks['valid_mask'])
@@ -229,7 +231,8 @@ class Image(object):
 
 class LandsatImage(Image):
 
-    def _im_transform(self, ee_image):
+    @staticmethod
+    def _im_transform(ee_image):
         return ee.Image.toUint16(ee_image)
 
     def _get_image_masks(self, ee_image):
@@ -323,7 +326,8 @@ class Landsat7Image(LandsatImage):
 
 class Sentinel2Image(Image):
 
-    def _im_transform(self, ee_image):
+    @staticmethod
+    def _im_transform(ee_image):
         return ee.Image.toUint16(ee_image)
 
     def _get_image_masks(self, ee_image):
@@ -383,7 +387,8 @@ class Sentinel2ClImage(Image):
         #  will overwrite any attributes we may be attempting to override above
         Image.__init__(self, ee_image, mask=mask, scale_refl=scale_refl)
 
-    def _im_transform(self, ee_image):
+    @staticmethod
+    def _im_transform(ee_image):
         return ee.Image.toUint16(ee_image)
 
     @classmethod
@@ -508,7 +513,8 @@ class Sentinel2ToaClImage(Sentinel2ClImage):
     _gd_coll_name = 'sentinel2_toa'
 
 class ModisNbarImage(Image):
-    def _im_transform(self, ee_image):
+    @staticmethod
+    def _im_transform(ee_image):
         return ee.Image.toUint16(ee_image)
     _gd_coll_name = 'modis_nbar'
 

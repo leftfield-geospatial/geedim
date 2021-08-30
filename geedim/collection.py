@@ -140,7 +140,8 @@ class Collection(object):
         elif method == 'mosaic':
             comp_image = self._ee_mapped_coll.mosaic()
         elif method == 'median':
-            comp_image = self._ee_mapped_coll.median()  # TODO this creates a double, we need to convert to uint16 as appropriate
+            comp_image = self._ee_mapped_coll.median()  # TODO this finds median of mask, q bands which may not be meaningful, find median of sr bands only as in medoid, if appropriate
+            comp_image = self._gd_image_cls._im_transform(comp_image)
         elif method == 'medoid':
             bands = [band_dict['id'] for band_dict in self._collection_info['bands']]
             comp_image = medoid.medoid(self._ee_mapped_coll, bands=bands)

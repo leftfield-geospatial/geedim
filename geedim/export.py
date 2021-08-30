@@ -21,8 +21,9 @@ import json
 import os
 import pathlib
 import time
-from urllib import request
-from urllib.error import HTTPError
+# from urllib import request
+# from urllib.error import HTTPError
+import requests
 import zipfile
 import logging
 import click
@@ -163,9 +164,9 @@ def monitor_export_task(task, label=None):
     while (not 'progress' in status['metadata']):
         time.sleep(pause)
         status = ee.data.getOperation(task.name)  # get task status
-        click.echo(f'\rPreparing {label}: {toggles[toggle_count % 4]}', nl='')
+        click.echo(f'\rPreparing {label} {toggles[toggle_count % 4]}', nl='')
         toggle_count += 1
-    click.echo(f'\rPreparing {label}:  done')
+    click.echo(f'\rPreparing {label}  done')
 
     with click.progressbar(length=bar_len, label=f'Exporting {label}:') as bar:
         while ('done' not in status) or (not status['done']):
@@ -178,7 +179,7 @@ def monitor_export_task(task, label=None):
     if status['metadata']['state'] != 'SUCCEEDED':
         raise Exception(f'Export failed \n{status}')
 
-def download_image(ee_image, filename, region=None, crs=None, scale=None, band_df=None, overwrite=False):
+def download_image(ee_image, filename, region=None, crs=None, scale=None, band_df=None, overwrite=True):
     """
     Download an image as a GeoTiff
 
@@ -198,7 +199,7 @@ def download_image(ee_image, filename, region=None, crs=None, scale=None, band_d
               DataFrame specifying band metadata to be copied to downloaded file.  'id' column should contain band id's
               that match the ee.Image band id's
     overwrite : bool, optional
-                Overwrite the destination file if it exists (default: prompt)
+                Overwrite the destination file if it exists, otherwise prompt the user (default: True)
     """
     # get ee image info which is used in setting crs, scale and tif metadata (no further calls to getInfo)
     filename = pathlib.Path(filename)
@@ -216,42 +217,19 @@ def download_image(ee_image, filename, region=None, crs=None, scale=None, band_d
         'filePerBand': False,
         'region': region})  # TODO: file size error
 
-    file_link = None
-    try:
-        # setup the download
-        file_link = request.urlopen(link)
-        file_size = int(file_link.info()['Content-Length'])
-        # click.echo(f'Download size: {file_size / (1024 ** 2):.2f} MB')
-
-        tif_filename = filename
-        tif_filename = tif_filename.parent.joinpath(tif_filename.stem + '.tif')  # force to tif file
-        zip_filename = tif_filename.parent.joinpath('geedim_download.zip')
-
-        # download the file
+    tif_filename = filename.parent.joinpath(filename.stem + '.tif')  # force to tif file
+    zip_filename = tif_filename.parent.joinpath('geedim_download.zip')
+    with requests.get(link, stream=True) as r:
+        r.raise_for_status()
         with open(zip_filename, 'wb') as f:
-            file_size_dl = 0
-            with click.progressbar(length=file_size, label=f'{filename.stem[:80]}:', show_pos=True) as bar:
-                bar.format_pos = lambda : f'{bar.pos/(1024**2):.1f}/{bar.length/(1024**2):.1f} MB'
-                while file_size_dl <= file_size:
-                    buffer = file_link.read(8192)
-                    if not buffer:
-                        break
-                    file_size_dl += len(buffer)
-                    f.write(buffer)
-                    bar.update(len(buffer))
-
-    except HTTPError as ex:
-        # check for size limit error
-        response = json.loads(ex.read())
-        # TODO: catch this in CLI and print a message
-        if ('error' in response) and ('message' in response['error']):
-            if response['error']['message'] == 'User memory limit exceeded.':
-                click.echo('There is a 10MB Earth Engine limit on image downloads, '
-                             'either decrease image size, or use export(...)', err=True)
-        raise ex
-    finally:
-        if file_link is not None:
-            file_link.close()
+            csize = 8192
+            with click.progressbar(r.iter_content(chunk_size=csize),
+                                   label=f'{filename.stem[:80]}:',
+                                   length=int(r.headers['Content-length'])/csize,
+                                   show_pos=True) as bar:
+                bar.format_pos = lambda: f'{bar.pos * csize / (1024**2):.1f}/{bar.length * csize / (1024**2):.1f} MB'
+                for chunk in bar:
+                    f.write(chunk)
 
     # extract tif from zip file
     _tif_filename = zip_filename.parent.joinpath(zipfile.ZipFile(zip_filename, "r").namelist()[0])
@@ -261,12 +239,12 @@ def download_image(ee_image, filename, region=None, crs=None, scale=None, band_d
 
     # rename to extracted tif file to filename
     if (_tif_filename != tif_filename):
-        if tif_filename.exists():
-            if overwrite or click.confirm(f'{tif_filename.name} exists, do you want to overwrite?'):
+        while tif_filename.exists():
+            if overwrite or click.confirm(f'{tif_filename.name} exists, do you want to overwrite?', default='n'):
                 os.remove(tif_filename)
             else:
-                click.secho(f'Warning: {tif_filename} exists, exiting', fg='red')   # TODO: get another filename
-                return link
+                tif_filename = click.prompt('Please enter another filename', type=str, default=None)
+                tif_filename = pathlib.Path(tif_filename)
         os.rename(_tif_filename, tif_filename)
 
 
@@ -300,3 +278,39 @@ def download_image(ee_image, filename, region=None, crs=None, scale=None, band_d
         logging.getLogger("rasterio").setLevel(logging.WARNING)
 
     return link
+
+'''
+    file_link = None
+    try:
+        # setup the download
+        file_link = request.urlopen(link)
+        file_size = int(file_link.info()['Content-Length'])
+        # click.echo(f'Download size: {file_size / (1024 ** 2):.2f} MB')
+
+
+        # download the file
+        with open(zip_filename, 'wb') as f:
+            file_size_dl = 0
+            with click.progressbar(length=file_size, label=f'{filename.stem[:80]}:', show_pos=True) as bar:
+                bar.format_pos = lambda : f'{bar.pos/(1024**2):.1f}/{bar.length/(1024**2):.1f} MB'
+                while file_size_dl <= file_size:
+                    buffer = file_link.read(8192)
+                    if not buffer:
+                        break
+                    file_size_dl += len(buffer)
+                    f.write(buffer)
+                    bar.update(len(buffer))
+
+    except HTTPError as ex:
+        # check for size limit error
+        response = json.loads(ex.read())
+        # TODO: catch this in CLI and print a message
+        if ('error' in response) and ('message' in response['error']):
+            if response['error']['message'] == 'User memory limit exceeded.':
+                click.echo('There is a 10MB Earth Engine limit on image downloads, '
+                             'either decrease image size, or use export(...)', err=True)
+        raise ex
+    finally:
+        if file_link is not None:
+            file_link.close()
+'''
