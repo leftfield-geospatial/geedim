@@ -79,7 +79,7 @@ class Collection(object):
 
         return self._get_collection_df(self._ee_mapped_coll)
 
-    def search(self, start_date, end_date, region, valid_portion=0):
+    def search(self, start_date, end_date, region, valid_portion=0, mask=False, scale_refl=False):
         """
         Search for images based on date, region etc criteria
 
@@ -110,7 +110,7 @@ class Collection(object):
 
         def set_valid_portion(ee_image):
             max_scale = geedim.image.get_projection(ee_image, min=False).nominalScale()
-            gd_image = self._gd_image_cls(ee_image, mask=False, scale_refl=False)
+            gd_image = self._gd_image_cls(ee_image, mask=mask, scale_refl=scale_refl)
 
             valid_portion = (gd_image.masks['valid_mask'].
                              unmask().
@@ -140,9 +140,9 @@ class Collection(object):
         elif method == 'mosaic':
             comp_image = self._ee_mapped_coll.mosaic()
         elif method == 'median':
-            comp_image = self._ee_mapped_coll.median()
+            comp_image = self._ee_mapped_coll.median()  # TODO this creates a double, we need to convert to uint16 as appropriate
         elif method == 'medoid':
-            bands = [band_dict['id'] for band_dict in self.collection_info['bands']]
+            bands = [band_dict['id'] for band_dict in self._collection_info['bands']]
             comp_image = medoid.medoid(self._ee_mapped_coll, bands=bands)
         else:
             raise ValueError(f'Unsupported composite method: {method}')
@@ -164,10 +164,11 @@ class Collection(object):
         end_date = im_prop_df.DATE.iloc[-1].strftime('%Y_%m_%d')
         ee_coll_name = image.ee_split(im_prop_df.ID.values[0])[0]
         comp_name = f'{ee_coll_name}/{start_date}-{end_date}-{method.upper()}_COMP'
+        comp_image = comp_image.set('system:id', comp_name)
 
         return comp_image, comp_name
 
-
+    # TODO: get this once per collection, and make a property?  update on each search, once only
     def _get_collection_df(self, ee_collection, do_print=True):
         """
         Convert a filtered image collection to a pandas dataframe of images and their properties

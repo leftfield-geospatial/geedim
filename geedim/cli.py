@@ -35,7 +35,7 @@ class Results(object):
         self.comp_image = None
         self.comp_name = None
 
-def _parse_region_geom(region=None, bbox=None, region_buf=5):
+def _extract_region_geojson(region=None, bbox=None, region_buf=5):
     """ create geojson dict from region or bbox """
 
     if (bbox is None or len(bbox)==0) and (region is None):
@@ -70,7 +70,7 @@ def _export(res, ids=None, bbox=None, region=None, path='', crs=None, scale=None
         else:
             region_geojson = res.search_region
     else:
-        region_geojson = _parse_region_geom(region=region, bbox=bbox)
+        region_geojson = _extract_region_geojson(region=region, bbox=bbox)
 
     if (ids is None or len(ids) == 0):
         if res.comp_image is not None:
@@ -255,7 +255,7 @@ def search(res, collection, start_date, end_date=None, bbox=None, region=None, v
     """ Search for images """
 
     # gd_collection = collection
-    res.search_region = _parse_region_geom(region=region, bbox=bbox, region_buf=region_buf)
+    res.search_region = _extract_region_geojson(region=region, bbox=bbox, region_buf=region_buf)
 
     gd_collection = coll_api.Collection(collection)
     im_df = gd_collection.search(start_date, end_date, res.search_region, valid_portion=valid_portion)

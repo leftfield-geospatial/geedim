@@ -33,7 +33,7 @@ from rasterio.enums import ColorInterp
 from geedim import image
 
 
-def _parse_export_args(ee_image, region=None, crs=None, scale=None):
+def _parse_export_args(ee_image, filename=None, region=None, crs=None, scale=None):
     """
     Download an image as a GeoTiff
 
@@ -52,13 +52,16 @@ def _parse_export_args(ee_image, region=None, crs=None, scale=None):
     im_info_dict, band_info_df = image.get_image_info(ee_image)
 
     # filename = pathlib.Path(filename)
-    im_id = im_info_dict['id'] if 'id' in im_info_dict else ''
+    if filename is None:
+        im_id = im_info_dict['id'] if 'id' in im_info_dict else 'Image'
+    else:
+        im_id = pathlib.Path(filename).stem
 
     # if the image is in WGS84 and has no scale (probable composite), then exit
     if crs is None or scale is None:
         _band_info_df = band_info_df[(band_info_df.crs != 'EPSG:4326') & (band_info_df.scale != 1)]
         if _band_info_df.shape[0]==0:
-            raise Exception(f'Image appears to be a composite in WGS84, specify a destination scale and CRS')
+            raise Exception(f'{im_id} appears to be a composite in WGS84, specify a destination scale and CRS')
 
         # get minimum scale and corresponding crs, excluding WGS84 bands
         min_scale_idx = _band_info_df.scale.idxmin()
@@ -72,14 +75,18 @@ def _parse_export_args(ee_image, region=None, crs=None, scale=None):
     if crs is None:
         crs = min_crs        # CRS corresponding to minimum scale
     if region is None:
-        region = ee_image.geometry()
-        click.secho('Warning: region not specified, setting to granule bounds', fg='red')
+        if 'system:footprint' in im_info_dict:
+            region = im_info_dict['system:footprint']
+            click.secho(f'{im_id}: region not specified, setting to image footprint')
+        else:
+            raise AttributeError(f'{im_id} does not have a footprint, specify a region to download')
+
     if scale is None:
         scale = min_scale     # minimum scale
 
     # warn if some band scales will be changed
     if (band_info_df['crs'].unique().size > 1) or (band_info_df['scale'].unique().size > 1):
-        click.echo(f'Re-projecting all bands to {crs} at {scale:.1f} m resolution')
+        click.echo(f'{im_id}: re-projecting all bands to {crs} at {scale:.1f}m')
 
     if isinstance(region, dict):
         region = ee.Geometry(region)
@@ -115,7 +122,7 @@ def export_image(ee_image, filename, folder='', region=None, crs=None, scale=Non
     # TODO: minimise as far as possible getInfo() calls below
     # im_id = im_info_dict['id'] + ' ' if 'id' in im_info_dict else ''
     # click.echo(f'Exporting to Google Drive:{folder}/{filename}.tif')
-    region, crs, scale, im_info_dict = _parse_export_args(ee_image, region=region, crs=crs, scale=scale)
+    region, crs, scale, im_info_dict = _parse_export_args(ee_image, filename=filename, region=region, crs=crs, scale=scale)
 
 
     # create export task and start
@@ -151,7 +158,7 @@ def monitor_export_task(task, label=None):
     status = ee.data.getOperation(task.name)
 
     if label is None:
-        label = f'{status["metadata"]["description"][:80]}'
+        label = f'{status["metadata"]["description"][:80]}:'
 
     while (not 'progress' in status['metadata']):
         time.sleep(pause)
@@ -197,7 +204,7 @@ def download_image(ee_image, filename, region=None, crs=None, scale=None, band_d
     filename = pathlib.Path(filename)
     # im_id = im_info_dict['id'] + ' ' if 'id' in im_info_dict else ''
     # click.echo(f'Downloading to {filename.name}')
-    region, crs, scale, im_info_dict = _parse_export_args(ee_image, region=region, crs=crs, scale=scale)
+    region, crs, scale, im_info_dict = _parse_export_args(ee_image, filename=filename, region=region, crs=crs, scale=scale)
 
 
     # get download link
@@ -223,7 +230,7 @@ def download_image(ee_image, filename, region=None, crs=None, scale=None, band_d
         # download the file
         with open(zip_filename, 'wb') as f:
             file_size_dl = 0
-            with click.progressbar(length=file_size, label=filename.stem[:80], show_pos=True) as bar:
+            with click.progressbar(length=file_size, label=f'{filename.stem[:80]}:', show_pos=True) as bar:
                 bar.format_pos = lambda : f'{bar.pos/(1024**2):.1f}/{bar.length/(1024**2):.1f} MB'
                 while file_size_dl <= file_size:
                     buffer = file_link.read(8192)
@@ -236,6 +243,7 @@ def download_image(ee_image, filename, region=None, crs=None, scale=None, band_d
     except HTTPError as ex:
         # check for size limit error
         response = json.loads(ex.read())
+        # TODO: catch this in CLI and print a message
         if ('error' in response) and ('message' in response['error']):
             if response['error']['message'] == 'User memory limit exceeded.':
                 click.echo('There is a 10MB Earth Engine limit on image downloads, '

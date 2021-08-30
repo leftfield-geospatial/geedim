@@ -183,8 +183,8 @@ class Image(object):
         if score is None:
             score = self._get_image_score(ee_image, masks=masks)
 
-        ee_image = ee_image.addBands(ee.Image(list(masks.values())))
-        ee_image = ee_image.addBands(score)
+        ee_image = ee_image.addBands(ee.Image(list(masks.values())), overwrite=True)
+        ee_image = ee_image.addBands(score, overwrite=True)
 
         if mask:  # mask before adding aux bands
             ee_image = ee_image.updateMask(masks['valid_mask'])
@@ -412,7 +412,7 @@ class Sentinel2ClImage(Image):
 
         # add cloud probability to the image
         cloud_prob = ee.Image(f'COPERNICUS/S2_CLOUD_PROBABILITY/{ee_split(image_id)[1]}')
-        ee_image = ee_image.set('s2cloudless', cloud_prob)
+        ee_image = ee_image.addBands(cloud_prob, overwrite=True)
 
         return cls(ee_image, mask=mask, scale_refl=scale_refl)
 
@@ -438,7 +438,9 @@ class Sentinel2ClImage(Image):
         # cloud_mask = qa.bitwiseAnd((1 << 11) | (1 << 10)).neq(0).rename('VALID_MASK')
 
         # convert cloud probability in 0-100 quality score
-        cloud_prob = ee.Image(ee_image.get('s2cloudless')).select('probability')
+        # cloud_prob = ee.Image(ee_image.get('s2cloudless')).select('probability')
+        # cloud_prob_id = ee.String('COPERNICUS/S2_CLOUD_PROBABILITY/').cat(ee_image.get('system:index'))
+        cloud_prob = ee_image.select('probability')
         cloud_mask = cloud_prob.gt(self._cloud_prob_thresh).rename('CLOUD_MASK')
 
         # TODO: dilate valid_mask by _buffer ?
@@ -484,13 +486,19 @@ class Sentinel2ClImage(Image):
 
         s2_sr_toa_col = ee.ImageCollection(info.gd_to_ee_map[cls._gd_coll_name])
                          #.filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', self._cloud_filter))) # TODO: add this back?
-
         s2_cloudless_col = ee.ImageCollection('COPERNICUS/S2_CLOUD_PROBABILITY')
 
         # join filtered s2cloudless collection to the SR/TOA collection by the 'system:index' property.
-        return (ee.ImageCollection(ee.Join.saveFirst('s2cloudless').apply(
-            primary=s2_sr_toa_col, secondary=s2_cloudless_col,
-            condition=ee.Filter.equals(leftField='system:index', rightField='system:index'))))
+        if False:
+            return (ee.ImageCollection(ee.Join.saveFirst('s2cloudless').apply(
+                primary=s2_sr_toa_col, secondary=s2_cloudless_col,
+                condition=ee.Filter.equals(leftField='system:index', rightField='system:index'))))
+        else:
+            filter = ee.Filter.equals(leftField='system:index', rightField='system:index')
+            inner_join = ee.ImageCollection(ee.Join.inner().apply(s2_sr_toa_col, s2_cloudless_col, filter))
+            def map(feature):
+                return ee.Image.cat(feature.get('primary'), feature.get('secondary'))
+            return inner_join.map(map)
 
 
 class Sentinel2SrClImage(Sentinel2ClImage):
@@ -505,6 +513,12 @@ class ModisNbarImage(Image):
     _gd_coll_name = 'modis_nbar'
 
 ##
+coll_to_cls_map = {'landsat7_c2_l2': Landsat7Image,
+               'landsat8_c2_l2': Landsat8Image,
+               'sentinel2_toa': Sentinel2ToaClImage,
+               'sentinel2_sr': Sentinel2SrClImage,
+               'modis_nbar': ModisNbarImage}
+
 def get_image_bounds(filename, expand=5):
     """
     Get a WGS84 geojson polygon representing the optionally expanded bounds of an image
@@ -550,12 +564,6 @@ def get_image_bounds(filename, expand=5):
 
     return src_bbox_wgs84, im.crs.to_wkt()
 
-##
-coll_to_cls_map = {'landsat7_c2_l2': Landsat7Image,
-               'landsat8_c2_l2': Landsat8Image,
-               'sentinel2_toa': Sentinel2ToaClImage,
-               'sentinel2_sr': Sentinel2SrClImage,
-               'modis_nbar': ModisNbarImage}
 
 def ee_split(image_id):
     """ Split Earth Engine image ID to collection and index components """
