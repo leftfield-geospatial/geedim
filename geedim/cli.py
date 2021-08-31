@@ -257,9 +257,22 @@ def search(res, collection, start_date, end_date=None, bbox=None, region=None, v
     # gd_collection = collection
     res.search_region = _extract_region_geojson(region=region, bbox=bbox, region_buf=region_buf)
 
+    click.echo(f'\nSearching for {info.gd_to_ee_map[collection]} images between '
+               f'{start_date.strftime("%Y-%m-%d")} and {end_date.strftime("%Y-%m-%d")}...')
+
     gd_collection = coll_api.Collection(collection)
     im_df = gd_collection.search(start_date, end_date, res.search_region, valid_portion=valid_portion)
     res.search_ids = im_df.ID.values.tolist()
+
+    if len(res.search_ids) == 0:
+        click.echo('No images found\n')
+    else:
+        click.echo(f'{len(res.search_ids)} images found\n')
+        click.echo('Image property descriptions:\n\n' +
+                   gd_collection.prop_df[['ABBREV', 'DESCRIPTION']].
+                   to_string(index=False, justify='right'))
+
+        click.echo('\nSearch Results:\n\n' + gd_collection.summary_string)
 
     if (output is not None):
         output = pathlib.Path(output)

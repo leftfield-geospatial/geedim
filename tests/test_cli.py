@@ -50,7 +50,7 @@ class TestSearchCli(unittest.TestCase):
         # check results have correct columns, and sensible values
         self.assertGreater(res_df.shape[0], 0, 'Search returned one or more results')
         self.assertGreater(res_df.shape[1], 1, 'Search results contain two or more columns')
-        self.assertTrue(set(res_df.columns) == set(gd_collection._im_props.ABBREV),
+        self.assertTrue(set(res_df.columns) == set(gd_collection.prop_df.ABBREV),
                         'Search results have correct columns')
         self.assertTrue(all(res_df.DATE >= start_date) and all(res_df.DATE <= end_date),
                         'Search results are in correct date range')

@@ -16,7 +16,7 @@
         {"PROPERTY": "system:id", "ABBREV": "ID", "DESCRIPTION": "Earth Engine image id"},
         {"PROPERTY": "system:time_start", "ABBREV": "DATE", "DESCRIPTION": "Image capture date/time (UTC)"},
         {"PROPERTY": "VALID_PORTION", "ABBREV": "VALID", "DESCRIPTION": "Portion of cloud and shadow free pixels (%)"},
-        {"PROPERTY": "QA_SCORE_AVG", "ABBREV": "SCORE", "DESCRIPTION": "Cloud/shadow free confidence score "},
+        {"PROPERTY": "AVG_SCORE", "ABBREV": "SCORE", "DESCRIPTION": "Cloud/shadow free confidence score "},
         {"PROPERTY": "GEOMETRIC_RMSE_MODEL", "ABBREV": "GRMSE", "DESCRIPTION": "Orthorectification RMSE (m)"},
         {"PROPERTY": "SUN_AZIMUTH", "ABBREV": "SAA", "DESCRIPTION": "Solar azimuth angle (deg)"},
         {"PROPERTY": "SUN_ELEVATION", "ABBREV": "SEA", "DESCRIPTION": "Solar elevation angle (deg)"}
@@ -39,7 +39,7 @@
         {"PROPERTY": "system:id", "ABBREV": "ID", "DESCRIPTION": "Earth Engine image id"},
         {"PROPERTY": "system:time_start", "ABBREV": "DATE", "DESCRIPTION": "Image capture date/time (UTC)"},
         {"PROPERTY": "VALID_PORTION", "ABBREV": "VALID", "DESCRIPTION": "Portion of cloud and shadow free pixels (%)"},
-        {"PROPERTY": "QA_SCORE_AVG", "ABBREV": "SCORE", "DESCRIPTION": "Cloud/shadow free confidence score "},
+        {"PROPERTY": "AVG_SCORE", "ABBREV": "SCORE", "DESCRIPTION": "Cloud/shadow free confidence score "},
         {"PROPERTY": "GEOMETRIC_RMSE_MODEL", "ABBREV": "GRMSE", "DESCRIPTION": "Orthorectification RMSE (m)"},
         {"PROPERTY": "SUN_AZIMUTH", "ABBREV": "SAA", "DESCRIPTION": "Solar azimuth angle (deg)"},
         {"PROPERTY": "SUN_ELEVATION", "ABBREV": "SEA", "DESCRIPTION": "Solar elevation angle (deg)"}
@@ -95,7 +95,7 @@
         {"PROPERTY": "system:id", "ABBREV": "ID", "DESCRIPTION": "Earth Engine image id"},
         {"PROPERTY": "system:time_start", "ABBREV": "DATE", "DESCRIPTION": "Image capture date/time (UTC)"},
         {"PROPERTY": "VALID_PORTION", "ABBREV": "VALID", "DESCRIPTION": "Portion of cloud and shadow free pixels (%)"},
-        {"PROPERTY": "QA_SCORE_AVG", "ABBREV": "SCORE", "DESCRIPTION": "Cloudless probability from S2_CLOUD_PROBABILITY (%)"},
+        {"PROPERTY": "AVG_SCORE", "ABBREV": "SCORE", "DESCRIPTION": "Cloudless probability from S2_CLOUD_PROBABILITY (%)"},
         {"PROPERTY": "RADIOMETRIC_QUALITY", "ABBREV": "RADQ", "DESCRIPTION": "Radiometric quality check"},
         {"PROPERTY": "GEOMETRIC_QUALITY", "ABBREV": "GEOMQ", "DESCRIPTION": "Geometric quality check"},
         {"PROPERTY": "MEAN_SOLAR_AZIMUTH_ANGLE", "ABBREV": "SAA", "DESCRIPTION": "Solar azimuth angle (deg)"},

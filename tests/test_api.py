@@ -111,7 +111,7 @@ class TestGeeDimApi(unittest.TestCase):
 
         # check search results
         self.assertGreater(image_df.shape[0], 0, msg='Search returned one or more images')
-        for im_prop in gd_collection._im_props.ABBREV.values:
+        for im_prop in gd_collection.prop_df.ABBREV.values:
             self.assertTrue(im_prop in image_df.columns, msg='Search results contain specified properties')
 
         # select an image to download/export

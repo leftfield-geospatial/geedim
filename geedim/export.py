@@ -76,8 +76,8 @@ def _parse_export_args(ee_image, filename=None, region=None, crs=None, scale=Non
     if crs is None:
         crs = min_crs        # CRS corresponding to minimum scale
     if region is None:
-        if 'system:footprint' in im_info_dict:
-            region = im_info_dict['system:footprint']
+        if 'system:footprint' in im_info_dict['properties']:
+            region = im_info_dict['properties']['system:footprint']
             click.secho(f'{im_id}: region not specified, setting to image footprint')
         else:
             raise AttributeError(f'{im_id} does not have a footprint, specify a region to download')
@@ -102,7 +102,7 @@ def export_image(ee_image, filename, folder='', region=None, crs=None, scale=Non
     Parameters
     ----------
     ee_image : ee.Image
-            The image to export
+               The image to export
     filename : str
                The name of the task and destination file
     folder : str, optional
@@ -110,9 +110,12 @@ def export_image(ee_image, filename, folder='', region=None, crs=None, scale=Non
     region : dict, geojson, ee.Geometry, optional
              Region of interest (WGS84) to export (default: export the entire image granule if it has one).
     crs : str, optional
-          WKT, EPSG etc specification of CRS to export to (default: use the image CRS if it has one).
+          WKT, EPSG etc specification of CRS to export to.  Where image bands have different CRSs, all are re-projected
+          to this CRS.
+          (default: use the CRS of the minimum scale band if available).
     scale : float, optional
-            Pixel resolution (m) to export to (default: use the highest resolution of the image bands).
+            Pixel scale (m) to export to.  Where image bands have different scales, all are re-projected to this scale.
+            (default: use the minimum scale of image bands if available).
     wait : bool
            Wait for the export to complete before returning (default: True)
 
@@ -186,15 +189,18 @@ def download_image(ee_image, filename, region=None, crs=None, scale=None, band_d
     Parameters
     ----------
     ee_image : ee.Image
-            The image to export
+               The image to export
     filename : str, pathlib.Path
                Name of the destination file
     region : dict, geojson, ee.Geometry, optional
              Region of interest (WGS84) to export (default: export the entire image granule if it has one).
     crs : str, optional
-          WKT, EPSG etc specification of CRS to export to (default: use the image CRS if it has one).
+          WKT, EPSG etc specification of CRS to export to.  Where image bands have different CRSs, all are re-projected
+          to this CRS.
+          (default: use the CRS of the minimum scale band if available).
     scale : float, optional
-            Pixel resolution (m) to export to (default: use the highest resolution of the image bands).
+            Pixel scale (m) to export to.  Where image bands have different scales, all are re-projected to this scale.
+            (default: use the minimum scale of image bands if available).
     band_df : pandas.DataFrame, optional
               DataFrame specifying band metadata to be copied to downloaded file.  'id' column should contain band id's
               that match the ee.Image band id's
@@ -232,20 +238,20 @@ def download_image(ee_image, filename, region=None, crs=None, scale=None, band_d
                     f.write(chunk)
 
     # extract tif from zip file
-    _tif_filename = zip_filename.parent.joinpath(zipfile.ZipFile(zip_filename, "r").namelist()[0])
-    with zipfile.ZipFile(zip_filename, "r") as zip_file:
+    zip_tif_filename = zip_filename.parent.joinpath(zipfile.ZipFile(zip_filename, 'r').namelist()[0])
+    with zipfile.ZipFile(zip_filename, 'r') as zip_file:
         zip_file.extractall(zip_filename.parent)
     os.remove(zip_filename)     # clean up zip file
 
-    # rename to extracted tif file to filename
-    if (_tif_filename != tif_filename):
+    # rename to extracted tif file to tif_filename
+    if (zip_tif_filename != tif_filename):
         while tif_filename.exists():
             if overwrite or click.confirm(f'{tif_filename.name} exists, do you want to overwrite?', default='n'):
                 os.remove(tif_filename)
             else:
                 tif_filename = click.prompt('Please enter another filename', type=str, default=None)
                 tif_filename = pathlib.Path(tif_filename)
-        os.rename(_tif_filename, tif_filename)
+        os.rename(zip_tif_filename, tif_filename)
 
 
     # remove footprint property from im_info_dict before copying to tif file

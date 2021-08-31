@@ -39,12 +39,16 @@ class Collection(object):
         """
         if not gd_coll_name in info.collection_info:
             raise ValueError(f'Unsupported collection: {gd_coll_name}')
-        self._collection_info = info.collection_info[gd_coll_name]
-        self.band_df = pd.DataFrame.from_dict(self._collection_info['bands'])
-        self._im_props = pd.DataFrame(self._collection_info['properties'])  # TODO: rather get this from image class? as it is the thing providing the properties
+        self._gd_coll_name = gd_coll_name
+        self._ee_coll_name = info.gd_to_ee_map[self._gd_coll_name]
+        self._collection_info = info.collection_info[gd_coll_name]      # ee collection metadata
+        self._gd_image_cls =  image.coll_to_cls_map[gd_coll_name]       # geedim.image.*Image class
+        self._ee_collection = None                                      # the wrapped ee.ImageCollection
 
-        self._gd_image_cls =  image.coll_to_cls_map[gd_coll_name]
-        self._ee_mapped_coll = None
+        self.band_df = pd.DataFrame.from_dict(self._collection_info['bands'])
+        self.prop_df = pd.DataFrame(self._collection_info['properties'])
+        self._summary_df = None
+
 
     @classmethod
     def from_ids(cls, image_ids, mask=False, scale_refl=False):
@@ -65,19 +69,30 @@ class Collection(object):
             gd_image = gd_collection._gd_image_cls.from_id(im_id, mask=mask, scale_refl=scale_refl)
             im_list = im_list.add(gd_image.ee_image)
 
-        gd_collection._ee_mapped_coll = ee.ImageCollection(im_list)
+        gd_collection._ee_collection = ee.ImageCollection(im_list)
         return gd_collection
 
     @property
     def ee_collection(self):
-        return self._ee_mapped_coll
+        return self._ee_collection
 
     @property
-    def metadata(self):
-        if self._ee_mapped_coll is None:
-            return pd.DataFrame([], columns=self._im_props.ABBREV)
+    def summary_df(self):
+        if self._ee_collection is None:
+            return pd.DataFrame([], columns=self.prop_df.ABBREV)
+        if self._summary_df is None:
+            self._summary_df = self._get_summary_df(self._ee_collection)
+        return self._summary_df
 
-        return self._get_collection_df(self._ee_mapped_coll)
+    @property
+    def summary_string(self):
+        return self.summary_df.to_string(
+            float_format='%.2f',
+            formatters={'DATE': lambda x: datetime.strftime(x, '%Y-%m-%d %H:%M')},
+            columns=self.prop_df.ABBREV,
+            # header=property_df.ABBREV,
+            index=False,
+            justify='center')
 
     def search(self, start_date, end_date, region, valid_portion=0, mask=False, scale_refl=False):
         """
@@ -105,30 +120,28 @@ class Collection(object):
         if (end_date <= start_date):
             raise Exception('`end_date` must be at least a day later than `start_date`')
 
-        click.echo(f'\nSearching for {self._collection_info["ee_coll_name"]} images between '
-                   f'{start_date.strftime("%Y-%m-%d")} and {end_date.strftime("%Y-%m-%d")}...')
-
-        def set_valid_portion(ee_image):
+        def calc_stats(ee_image):
             max_scale = geedim.image.get_projection(ee_image, min=False).nominalScale()
             gd_image = self._gd_image_cls(ee_image, mask=mask, scale_refl=scale_refl)
 
-            valid_portion = (gd_image.masks['valid_mask'].
-                             unmask().
-                             multiply(100).
-                             reduceRegion(reducer='mean', geometry=region, scale=max_scale).
-                             rename(['VALID_MASK'], ['VALID_PORTION']))
+            stats = (ee.Image([gd_image.masks['valid_mask'], gd_image.score]).
+                     unmask().
+                     reduceRegion(reducer='mean', geometry=region, scale=max_scale).
+                     rename(['VALID_MASK', 'SCORE'], ['VALID_PORTION', 'AVG_SCORE']))
 
-            return gd_image.ee_image.set(valid_portion)
+            stats = stats.set('VALID_PORTION', ee.Number(stats.get('VALID_PORTION')).multiply(100))
+            return gd_image.ee_image.set(stats)
 
         # filter the image collection
-        self._ee_mapped_coll = (self._gd_image_cls.ee_collection().
-                                filterDate(start_date, end_date).
-                                filterBounds(region).
-                                map(set_valid_portion).
-                                filter(ee.Filter.gt('VALID_PORTION', valid_portion)))
+        self._ee_collection = (self._gd_image_cls.ee_collection().
+                               filterDate(start_date, end_date).
+                               filterBounds(region).
+                               map(calc_stats).
+                               filter(ee.Filter.gt('VALID_PORTION', valid_portion)))
 
-        # convert and print search results
-        return self._get_collection_df(self._ee_mapped_coll, do_print=True)
+        # fetch metadata and wrap it in a pandas dataframe
+        self._summary_df = self._get_summary_df(self._ee_collection, do_print=True)
+        return self._summary_df
 
     def composite(self, method='q_mosaic'):
         # qualityMosaic will prefer clear pixels based on SCORE and irrespective of mask, for other methods, the mask
@@ -136,41 +149,32 @@ class Collection(object):
         method = str(method).lower()
 
         if method == 'q_mosaic':
-            comp_image = self._ee_mapped_coll.qualityMosaic('SCORE')
+            comp_image = self._ee_collection.qualityMosaic('SCORE')
         elif method == 'mosaic':
-            comp_image = self._ee_mapped_coll.mosaic()
+            comp_image = self._ee_collection.mosaic()
         elif method == 'median':
-            comp_image = self._ee_mapped_coll.median()  # TODO this finds median of mask, q bands which may not be meaningful, find median of sr bands only as in medoid, if appropriate
+            comp_image = self._ee_collection.median()  # TODO this finds median of mask, q bands which may not be meaningful, find median of sr bands only as in medoid, if appropriate
             comp_image = self._gd_image_cls._im_transform(comp_image)
         elif method == 'medoid':
-            bands = [band_dict['id'] for band_dict in self._collection_info['bands']]
-            comp_image = medoid.medoid(self._ee_mapped_coll, bands=bands)
+            bands = self.band_df.id.tolist()
+            comp_image = medoid.medoid(self._ee_collection, bands=bands)
         else:
             raise ValueError(f'Unsupported composite method: {method}')
 
         # populate image metadata with info on component images
-        im_prop_df = self._get_collection_df(self._ee_mapped_coll, do_print=False)
-        comp_str = im_prop_df.to_string(
-            float_format='%.2f',
-            formatters={'DATE': lambda x: datetime.strftime(x, '%Y-%m-%d %H:%M')},
-            columns=self._im_props.ABBREV,
-            # header=property_df.ABBREV,
-            index=False,
-            justify='center')
-
-        comp_image = comp_image.set('COMPOSITE_IMAGES', comp_str)
+        comp_image = comp_image.set('COMPOSITE_IMAGES', self.summary_string)
 
         # name the composite
-        start_date = im_prop_df.DATE.iloc[0].strftime('%Y_%m_%d')
-        end_date = im_prop_df.DATE.iloc[-1].strftime('%Y_%m_%d')
-        ee_coll_name = image.ee_split(im_prop_df.ID.values[0])[0]
-        comp_name = f'{ee_coll_name}/{start_date}-{end_date}-{method.upper()}_COMP'
+        start_date = self.summary_df.DATE.iloc[0].strftime('%Y_%m_%d')
+        end_date = self.summary_df.DATE.iloc[-1].strftime('%Y_%m_%d')
+
+        comp_name = f'{self._ee_coll_name}/{start_date}-{end_date}-{method.upper()}_COMP'
         comp_image = comp_image.set('system:id', comp_name)
 
         return comp_image, comp_name
 
     # TODO: get this once per collection, and make a property?  update on each search, once only
-    def _get_collection_df(self, ee_collection, do_print=True):
+    def _get_summary_df(self, ee_collection, do_print=False):
         """
         Convert a filtered image collection to a pandas dataframe of images and their properties
 
@@ -186,13 +190,15 @@ class Collection(object):
         : pandas.DataFrame
         Dataframe of ee.Image objects and their properties
         """
+        if ee_collection is None:
+            return pd.DataFrame([], columns=self.prop_df.ABBREV)
 
         init_list = ee.List([])
 
         # aggregate relevant properties of ee_collection images
         def aggregrate_props(image, prop_list):
             prop = ee.Dictionary()
-            for prop_key in self._im_props.PROPERTY.values:
+            for prop_key in self.prop_df.PROPERTY.values:
                 prop = prop.set(prop_key, ee.Algorithms.If(image.get(prop_key), image.get(prop_key), ee.String('None')))
             return ee.List(prop_list).add(prop)
 
@@ -200,8 +206,7 @@ class Collection(object):
         im_prop_list = ee.List(ee_collection.iterate(aggregrate_props, init_list)).getInfo()
 
         if len(im_prop_list) == 0:
-            click.echo('No images found')   # TODO: put this in CLI
-            return pd.DataFrame([], columns=self._im_props.ABBREV)
+            return pd.DataFrame([], columns=self.prop_df.ABBREV)
 
         # im_list = ee_collection.toList(ee_collection.size())  # image objects
 
@@ -214,20 +219,7 @@ class Collection(object):
         # convert to DataFrame
         im_prop_df = pd.DataFrame(im_prop_list, columns=im_prop_list[0].keys())
         im_prop_df = im_prop_df.sort_values(by='system:time_start').reset_index(drop=True)
-        im_prop_df = im_prop_df.rename(columns=dict(zip(self._im_props.PROPERTY, self._im_props.ABBREV)))  # rename cols to abbrev
-        im_prop_df = im_prop_df[self._im_props.ABBREV.to_list()] #+ ['IMAGE']]     # reorder columns
-
-        if do_print:
-            click.echo(f'{len(im_prop_list)} images found')
-            click.echo('\nImage property descriptions:\n\n' +
-                        self._im_props[['ABBREV', 'DESCRIPTION']].to_string(index=False, justify='right'))
-
-            click.echo('\nSearch Results:\n\n' + im_prop_df.to_string(
-                float_format='%.2f',
-                formatters={'DATE': lambda x: datetime.strftime(x, '%Y-%m-%d %H:%M')},
-                columns=self._im_props.ABBREV,
-                # header=property_df.ABBREV,
-                index=False,
-                justify='center'))
+        im_prop_df = im_prop_df.rename(columns=dict(zip(self.prop_df.PROPERTY, self.prop_df.ABBREV)))  # rename cols to abbrev
+        im_prop_df = im_prop_df[self.prop_df.ABBREV.to_list()] #+ ['IMAGE']]     # reorder columns
 
         return im_prop_df

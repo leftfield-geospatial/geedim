@@ -48,10 +48,10 @@ class Image(object):
         self._masks = self._get_image_masks(ee_image)
         self._score = self._get_image_score(ee_image)
         self._ee_image = self._process_image(ee_image,
-                                             masks=self._masks,
-                                             score=self._score,
                                              mask=mask,
-                                             scale_refl=scale_refl)
+                                             scale_refl=scale_refl,
+                                             masks=self._masks,
+                                             score=self._score)
 
 
     @classmethod
@@ -74,7 +74,7 @@ class Image(object):
 
         gd_coll_name = info.ee_to_gd_map[ee_coll_name]
         if gd_coll_name != cls._gd_coll_name:
-            raise ValueError(f'{cls.__name__} only supports images from the {info.gd_to_ee_map[cls._gd_coll_name]} collection')
+            raise ValueError(f'{cls.__name__} only supports images from {info.gd_to_ee_map[cls._gd_coll_name]}')
 
         ee_image = ee.Image(image_id)
         return cls(ee_image, mask=mask, scale_refl=scale_refl)
@@ -108,13 +108,13 @@ class Image(object):
     def _scale_refl(self, ee_image):
         return ee_image
 
-    def _get_image_masks(self, image):
+    def _get_image_masks(self, ee_image):
         """
         Derive cloud, shadow, fill and validity masks for an image
 
         Parameters
         ----------
-        image : ee.Image
+        ee_image : ee.Image
                 Derive masks for this image
 
         Returns
@@ -130,13 +130,13 @@ class Image(object):
 
         return masks
 
-    def _get_image_score(self, image, cloud_dist=2000, masks=None):
+    def _get_image_score(self, ee_image, cloud_dist=5000, masks=None):
         """
         Get the cloud distance quality score for this image
 
         Parameters
         ----------
-        image : ee.Image
+        ee_image : ee.Image
                 Find the score for this image
         cloud_dist : int, oprtional
                      The neighbourhood (in meters) in which to search for clouds
@@ -148,21 +148,26 @@ class Image(object):
         The cloud distance score as a single band image
         """
         radius = 1.5
-        min_proj = get_projection(image)
+        min_proj = get_projection(ee_image)
         cloud_pix = ee.Number(cloud_dist).divide(min_proj.nominalScale()).toInt()
 
         if masks is None:
-            masks = self._get_image_masks(image)
+            masks = self._get_image_masks(ee_image)
 
         cloud_shadow_mask = masks['cloud_mask'].Or(masks['shadow_mask'])
         cloud_shadow_mask = cloud_shadow_mask.focal_min(radius=radius).focal_max(radius=radius)
 
-        score = cloud_shadow_mask.fastDistanceTransform(neighborhood=cloud_pix, units='pixels',
-                                                      metric='squared_euclidean').sqrt().rename('SCORE')
+        score = (cloud_shadow_mask.
+                 fastDistanceTransform(neighborhood=cloud_pix, units='pixels', metric='squared_euclidean').
+                 sqrt().
+                 multiply(min_proj.nominalScale()).
+                 rename('SCORE'))
 
-        return score.unmask().where(masks['fill_mask'].unmask().Not(), 0)
+        return (score.unmask().
+                where(score.gt(ee.Image(cloud_dist)), cloud_dist).
+                where(masks['fill_mask'].unmask().Not(), 0))
 
-    def _process_image(self, ee_image, masks=None, score=None, mask=False, scale_refl=False):
+    def _process_image(self, ee_image, mask=False, scale_refl=False, masks=None, score=None):
         """
         Adds mask and score bands to a raw Earth Engine image
 
@@ -189,7 +194,7 @@ class Image(object):
         ee_image = ee_image.addBands(score, overwrite=False)
 
         if mask:  # mask before adding aux bands
-            ee_image = ee_image.updateMask(masks['valid_mask'])
+            ee_image = ee_image.updateMask(self._masks['valid_mask'])
 
         if scale_refl:
             ee_image = self._scale_refl(ee_image)
@@ -422,7 +427,6 @@ class Sentinel2ClImage(Image):
         return cls(ee_image, mask=mask, scale_refl=scale_refl)
 
 
-
     def _get_image_masks(self, ee_image):
         """
         Derive cloud, shadow, fill and validity masks for an image
@@ -494,16 +498,11 @@ class Sentinel2ClImage(Image):
         s2_cloudless_col = ee.ImageCollection('COPERNICUS/S2_CLOUD_PROBABILITY')
 
         # join filtered s2cloudless collection to the SR/TOA collection by the 'system:index' property.
-        if False:
-            return (ee.ImageCollection(ee.Join.saveFirst('s2cloudless').apply(
-                primary=s2_sr_toa_col, secondary=s2_cloudless_col,
-                condition=ee.Filter.equals(leftField='system:index', rightField='system:index'))))
-        else:
-            filter = ee.Filter.equals(leftField='system:index', rightField='system:index')
-            inner_join = ee.ImageCollection(ee.Join.inner().apply(s2_sr_toa_col, s2_cloudless_col, filter))
-            def map(feature):
-                return ee.Image.cat(feature.get('primary'), feature.get('secondary'))
-            return inner_join.map(map)
+        filter = ee.Filter.equals(leftField='system:index', rightField='system:index')
+        inner_join = ee.ImageCollection(ee.Join.inner().apply(s2_sr_toa_col, s2_cloudless_col, filter))
+        def map(feature):
+            return ee.Image.cat(feature.get('primary'), feature.get('secondary'))
+        return inner_join.map(map)
 
 
 class Sentinel2SrClImage(Sentinel2ClImage):
