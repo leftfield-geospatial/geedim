@@ -19,6 +19,7 @@
 from datetime import datetime, timedelta
 import ee
 import pandas as pd
+from collections import namedtuple
 import click
 import json
 
@@ -78,8 +79,6 @@ class Collection(object):
 
     @property
     def summary_df(self):
-        if self._ee_collection is None:
-            return pd.DataFrame([], columns=self.prop_df.ABBREV)
         if self._summary_df is None:
             self._summary_df = self._get_summary_df(self._ee_collection)
         return self._summary_df
@@ -120,27 +119,29 @@ class Collection(object):
         if (end_date <= start_date):
             raise Exception('`end_date` must be at least a day later than `start_date`')
 
-        def calc_stats(ee_image):
-            max_scale = geedim.image.get_projection(ee_image, min=False).nominalScale()
-            gd_image = self._gd_image_cls(ee_image, mask=mask, scale_refl=scale_refl)
+        try:
+            def calc_stats(ee_image):
+                max_scale = geedim.image.get_projection(ee_image, min=False).nominalScale()
+                gd_image = self._gd_image_cls(ee_image, mask=mask, scale_refl=scale_refl)
 
-            stats = (ee.Image([gd_image.masks['valid_mask'], gd_image.score]).
-                     unmask().
-                     reduceRegion(reducer='mean', geometry=region, scale=max_scale).
-                     rename(['VALID_MASK', 'SCORE'], ['VALID_PORTION', 'AVG_SCORE']))
+                stats = (ee.Image([gd_image.masks['valid_mask'], gd_image.score]).
+                         unmask().
+                         reduceRegion(reducer='mean', geometry=region, scale=max_scale).
+                         rename(['VALID_MASK', 'SCORE'], ['VALID_PORTION', 'AVG_SCORE']))
 
-            stats = stats.set('VALID_PORTION', ee.Number(stats.get('VALID_PORTION')).multiply(100))
-            return gd_image.ee_image.set(stats)
+                stats = stats.set('VALID_PORTION', ee.Number(stats.get('VALID_PORTION')).multiply(100))
+                return gd_image.ee_image.set(stats)
 
-        # filter the image collection
-        self._ee_collection = (self._gd_image_cls.ee_collection().
-                               filterDate(start_date, end_date).
-                               filterBounds(region).
-                               map(calc_stats).
-                               filter(ee.Filter.gt('VALID_PORTION', valid_portion)))
+            # filter the image collection
+            self._ee_collection = (self._gd_image_cls.ee_collection().
+                                   filterDate(start_date, end_date).
+                                   filterBounds(region).
+                                   map(calc_stats).
+                                   filter(ee.Filter.gt('VALID_PORTION', valid_portion)))
+        finally:
+            # fetch metadata and wrap it in a pandas dataframe
+            self._summary_df = self._get_summary_df(self._ee_collection)
 
-        # fetch metadata and wrap it in a pandas dataframe
-        self._summary_df = self._get_summary_df(self._ee_collection, do_print=True)
         return self._summary_df
 
     def composite(self, method='q_mosaic'):
@@ -153,7 +154,7 @@ class Collection(object):
         elif method == 'mosaic':
             comp_image = self._ee_collection.mosaic()
         elif method == 'median':
-            comp_image = self._ee_collection.median()  # TODO this finds median of mask, q bands which may not be meaningful, find median of sr bands only as in medoid, if appropriate
+            comp_image = self._ee_collection.median()
             comp_image = self._gd_image_cls._im_transform(comp_image)
         elif method == 'medoid':
             bands = self.band_df.id.tolist()
@@ -173,17 +174,14 @@ class Collection(object):
 
         return comp_image, comp_name
 
-    # TODO: get this once per collection, and make a property?  update on each search, once only
-    def _get_summary_df(self, ee_collection, do_print=False):
+    def _get_summary_df(self, ee_collection):
         """
-        Convert a filtered image collection to a pandas dataframe of images and their properties
+        Convert a filtered image collection to a pandas dataframe of image properties
 
         Parameters
         ----------
         ee_collection : ee.ImageCollection
                         Filtered image collection
-        do_print : bool, optional
-                   Print the dataframe
 
         Returns
         -------

@@ -18,8 +18,8 @@
 # Classes wrapping, cloud/shadow masking and scoring Earth Engine images
 import ee
 import pandas as pd
-import rasterio as rio
 import logging
+import importlib.util
 
 from geedim import info
 
@@ -39,11 +39,8 @@ class Image(object):
         scale_refl : bool, optional
                      Scale reflectance bands 0-10000 if they are not in that range already (default: False)
         """
-        # TODO: sort out who keeps this info between Image and Collection
-        self.collection_info = info.collection_info[self.gd_coll_name]
-        self.ee_coll_name = self.collection_info['ee_coll_name']
-        self.band_df = pd.DataFrame.from_dict(self.collection_info['bands'])
-        self._im_props = pd.DataFrame(self.collection_info['properties'])  # list of image properties of interest
+        self._collection_info = info.collection_info[self.gd_coll_name]
+        self.band_df = pd.DataFrame.from_dict(self._collection_info['bands'])
 
         self._masks = self._get_image_masks(ee_image)
         self._score = self._get_image_score(ee_image)
@@ -130,6 +127,7 @@ class Image(object):
 
         return masks
 
+    # TODO: provide cli access to cloud_dist
     def _get_image_score(self, ee_image, cloud_dist=5000, masks=None):
         """
         Get the cloud distance quality score for this image
@@ -200,38 +198,6 @@ class Image(object):
             ee_image = self._scale_refl(ee_image)
 
         return self._im_transform(ee_image)
-
-    # TODO: do this on masks in search and delete from here
-    def set_image_valid_portion(self, image, region=None, masks=None):
-        """
-        Find the portion of valid image pixels for a given region
-
-        Parameters
-        ----------
-        image : ee.Image
-                Find valid portion for this image
-        region : dict, geojson, ee.Geometry, optional.
-                 Polygon in WGS84 specifying the region. If none, uses the image granule if it exists.
-
-        Returns
-        -------
-        : ee.Image
-        Image with the 'VALID_PORTION' property set
-        """
-        if masks is None:
-            masks = self._get_image_masks(image)
-
-        max_scale = get_projection(image, min=False).nominalScale()
-        if region is None:
-            region = image.geometry()
-
-        valid_portion = (masks['valid_mask'].
-                         unmask().
-                         multiply(100).
-                         reduceRegion(reducer='mean', geometry=region, scale=max_scale).
-                         rename(['VALID_MASK'], ['VALID_PORTION']))
-
-        return image.set(valid_portion)
 
 
 class LandsatImage(Image):
@@ -322,8 +288,10 @@ class LandsatImage(Image):
 
         return ee.Image(calib_image.copyProperties(ee_image))
 
+
 class Landsat8Image(LandsatImage):
     _gd_coll_name = 'landsat8_c2_l2'
+
 
 class Landsat7Image(LandsatImage):
     _gd_coll_name = 'landsat7_c2_l2'
@@ -381,20 +349,20 @@ class Sentinel2ClImage(Image):
         scale_refl : bool, optional
                      Scale reflectance bands 0-10000 if they are not in that range already (default: False)
         """
-
+        # TODO: provide cli access to these
         self._cloud_filter = 60  # Maximum image cloud cover percent allowed in image collection
         self._cloud_prob_thresh = 35  # Cloud probability (%); values greater than are considered cloud
         # self._nir_drk_thresh = 0.15# Near-infrared reflectance; values less than are considered potential cloud shadow
         self._cloud_proj_dist = 1  # Maximum distance (km) to search for cloud shadows from cloud edges
         self._buffer = 100  # Distance (m) to dilate the edge of cloud-identified objects
 
-        # TODO: this pattern of setting attributes above and then calling base __init__ is suspect, as base __init__
-        #  will overwrite any attributes we may be attempting to override above
         Image.__init__(self, ee_image, mask=mask, scale_refl=scale_refl)
+
 
     @staticmethod
     def _im_transform(ee_image):
         return ee.Image.toUint16(ee_image)
+
 
     @classmethod
     def from_id(cls, image_id, mask=False, scale_refl=False):
@@ -524,50 +492,53 @@ coll_to_cls_map = {'landsat7_c2_l2': Landsat7Image,
                'sentinel2_sr': Sentinel2SrClImage,
                'modis_nbar': ModisNbarImage}
 
-def get_image_bounds(filename, expand=5):
-    """
-    Get a WGS84 geojson polygon representing the optionally expanded bounds of an image
+if importlib.util.find_spec('rasterio'):
+    import rasterio as rio
+    from rasterio.warp import transform_geom
+    def get_image_bounds(filename, expand=5):
+        """
+        Get a WGS84 geojson polygon representing the optionally expanded bounds of an image
 
-    Parameters
-    ----------
-    filename :  str, pathlib.Path
-                name of the image file whose bounds to find
-    expand :    int
-                percentage (0-100) by which to expand the bounds (default: 5)
+        Parameters
+        ----------
+        filename :  str, pathlib.Path
+                    name of the image file whose bounds to find
+        expand :    int
+                    percentage (0-100) by which to expand the bounds (default: 5)
 
-    Returns
-    -------
-    bounds : geojson
-             polygon of bounds in WGS84
-    crs: str
-         WKT CRS string of image file
-    """
-    try:
-        # GEE sets tif colorinterp tags incorrectly, suppress rasterio warning relating to this:
-        # 'Sum of Photometric type-related color channels and ExtraSamples doesn't match SamplesPerPixel'
-        logging.getLogger("rasterio").setLevel(logging.ERROR)
-        with rio.open(filename) as im:
-            bbox = im.bounds
-            if (im.crs.linear_units == 'metre') and (expand > 0):  # expand the bounding box
-                expand_x = (bbox.right - bbox.left) * expand / 100.
-                expand_y = (bbox.top - bbox.bottom) * expand / 100.
-                bbox_expand = rio.coords.BoundingBox(bbox.left - expand_x, bbox.bottom - expand_y,
-                                                     bbox.right + expand_x, bbox.top + expand_y)
-            else:
-                bbox_expand = bbox
+        Returns
+        -------
+        bounds : geojson
+                 polygon of bounds in WGS84
+        crs: str
+             WKT CRS string of image file
+        """
+        try:
+            # GEE sets tif colorinterp tags incorrectly, suppress rasterio warning relating to this:
+            # 'Sum of Photometric type-related color channels and ExtraSamples doesn't match SamplesPerPixel'
+            logging.getLogger("rasterio").setLevel(logging.ERROR)
+            with rio.open(filename) as im:
+                bbox = im.bounds
+                if (im.crs.linear_units == 'metre') and (expand > 0):  # expand the bounding box
+                    expand_x = (bbox.right - bbox.left) * expand / 100.
+                    expand_y = (bbox.top - bbox.bottom) * expand / 100.
+                    bbox_expand = rio.coords.BoundingBox(bbox.left - expand_x, bbox.bottom - expand_y,
+                                                         bbox.right + expand_x, bbox.top + expand_y)
+                else:
+                    bbox_expand = bbox
 
-            coordinates = [[bbox_expand.right, bbox_expand.bottom],
-                           [bbox_expand.right, bbox_expand.top],
-                           [bbox_expand.left, bbox_expand.top],
-                           [bbox_expand.left, bbox_expand.bottom],
-                           [bbox_expand.right, bbox_expand.bottom]]
+                coordinates = [[bbox_expand.right, bbox_expand.bottom],
+                               [bbox_expand.right, bbox_expand.top],
+                               [bbox_expand.left, bbox_expand.top],
+                               [bbox_expand.left, bbox_expand.bottom],
+                               [bbox_expand.right, bbox_expand.bottom]]
 
-            bbox_expand_dict = dict(type='Polygon', coordinates=[coordinates])
-            src_bbox_wgs84 = transform_geom(im.crs, 'WGS84', bbox_expand_dict)  # convert to WGS84 geojson
-    finally:
-        logging.getLogger("rasterio").setLevel(logging.WARNING)
+                bbox_expand_dict = dict(type='Polygon', coordinates=[coordinates])
+                src_bbox_wgs84 = transform_geom(im.crs, 'WGS84', bbox_expand_dict)  # convert to WGS84 geojson
+        finally:
+            logging.getLogger("rasterio").setLevel(logging.WARNING)
 
-    return src_bbox_wgs84, im.crs.to_wkt()
+        return src_bbox_wgs84, im.crs.to_wkt()
 
 
 def ee_split(image_id):
@@ -601,7 +572,7 @@ def get_image_info(image):
 
     return im_info_dict, band_info_df
 
-
+# Adapted from from https://github.com/gee-community/gee_tools, MIT license
 def get_projection(image, min=True):
     """
     Server side operations to find the min/max scale projection from image bands.  No calls to getInfo().
@@ -620,7 +591,6 @@ def get_projection(image, min=True):
       The projection with the smallest scale
     """
 
-    # Adapted from from https://github.com/gee-community/gee_tools, MIT license
     bands = image.bandNames()
     init_proj = image.select(0).projection()
 
@@ -646,3 +616,4 @@ def get_projection(image, min=True):
         return ee.Projection(comp_proj)
 
     return ee.Projection(bands.iterate(compare_scale, init_proj))
+

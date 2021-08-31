@@ -21,6 +21,7 @@ import json
 import os
 import pathlib
 import time
+import re
 # from urllib import request
 # from urllib.error import HTTPError
 import requests
@@ -62,7 +63,7 @@ def _parse_export_args(ee_image, filename=None, region=None, crs=None, scale=Non
     if crs is None or scale is None:
         _band_info_df = band_info_df[(band_info_df.crs != 'EPSG:4326') & (band_info_df.scale != 1)]
         if _band_info_df.shape[0]==0:
-            raise Exception(f'{im_id} appears to be a composite in WGS84, specify a destination scale and CRS')
+            raise Exception(f'{im_id} appears to be a composite in WGS84, specify a scale and CRS')
 
         # get minimum scale and corresponding crs, excluding WGS84 bands
         min_scale_idx = _band_info_df.scale.idxmin()
@@ -86,8 +87,8 @@ def _parse_export_args(ee_image, filename=None, region=None, crs=None, scale=Non
         scale = min_scale     # minimum scale
 
     # warn if some band scales will be changed
-    if (band_info_df['crs'].unique().size > 1) or (band_info_df['scale'].unique().size > 1):
-        click.echo(f'{im_id}: re-projecting all bands to {crs} at {scale:.1f}m')
+    # if (band_info_df['crs'].unique().size > 1) or (band_info_df['scale'].unique().size > 1):
+    #     click.echo(f'{im_id}: re-projecting all bands to {crs} at {scale:.1f}m')
 
     if isinstance(region, dict):
         region = ee.Geometry(region)
@@ -123,7 +124,6 @@ def export_image(ee_image, filename, folder='', region=None, crs=None, scale=Non
     -------
     task : EE task object
     """
-    # TODO: minimise as far as possible getInfo() calls below
     # im_id = im_info_dict['id'] + ' ' if 'id' in im_info_dict else ''
     # click.echo(f'Exporting to Google Drive:{folder}/{filename}.tif')
     region, crs, scale, im_info_dict = _parse_export_args(ee_image, filename=filename, region=region, crs=crs, scale=scale)
@@ -215,13 +215,20 @@ def download_image(ee_image, filename, region=None, crs=None, scale=None, band_d
 
 
     # get download link
-    link = ee_image.getDownloadURL({
-        'scale': scale,
-        'crs': crs,
-        'fileFormat': 'GeoTIFF',
-        # 'bands': bands_dict,
-        'filePerBand': False,
-        'region': region})  # TODO: file size error
+    try:
+        link = ee_image.getDownloadURL({
+            'scale': scale,
+            'crs': crs,
+            'fileFormat': 'GeoTIFF',
+            # 'bands': bands_dict,
+            'filePerBand': False,
+            'region': region})
+    except ee.ee_exception.EEException as ex:
+        if re.match(r'Total request size \(.*\) must be less than or equal to .*', str(ex)):
+            raise Exception(f'The requested image is too large, reduce its size, or use `export`\n({str(ex)})')
+        else:
+            raise ex
+
 
     tif_filename = filename.parent.joinpath(filename.stem + '.tif')  # force to tif file
     zip_filename = tif_filename.parent.joinpath('geedim_download.zip')
