@@ -38,12 +38,12 @@ class Collection(object):
                      Earth engine image collection name:
                      (possible values are: landsat7_c2_l2|landsat8_c2_l2|sentinel2_toa|sentinel2_sr|modis_nbar)
         """
-        if not gd_coll_name in info.collection_info:
+        if not gd_coll_name in info.gd_to_ee:
             raise ValueError(f'Unsupported collection: {gd_coll_name}')
         self._gd_coll_name = gd_coll_name
-        self._ee_coll_name = info.gd_to_ee_map[self._gd_coll_name]
+        self._ee_coll_name = info.gd_to_ee[self._gd_coll_name]
         self._collection_info = info.collection_info[gd_coll_name]      # ee collection metadata
-        self._gd_image_cls =  image.coll_to_cls_map[gd_coll_name]       # geedim.image.*Image class
+        self._image_class =  image.get_class(gd_coll_name)       # geedim.image.*Image class
         self._ee_collection = None                                      # the wrapped ee.ImageCollection
 
         self.band_df = pd.DataFrame.from_dict(self._collection_info['bands'])
@@ -54,20 +54,20 @@ class Collection(object):
     @classmethod
     def from_ids(cls, image_ids, mask=False, scale_refl=False):
         ee_coll_name = image.ee_split(image_ids[0])[0]
-        if not ee_coll_name in info.ee_to_gd_map:
+        if not ee_coll_name in info.ee_to_gd:
             raise ValueError(f'Unsupported collection: {ee_coll_name}')
 
         id_check = [image.ee_split(im_id)[0] == ee_coll_name for im_id in image_ids[1:]]
         if not all(id_check):
             raise ValueError(f'All images must belong to the same collection')
 
-        gd_coll_name = info.ee_to_gd_map[ee_coll_name]
+        gd_coll_name = info.ee_to_gd[ee_coll_name]
         gd_collection = cls(gd_coll_name)
 
         # build an ee.ImageCollection of processed (masked and scored) images
         im_list = ee.List([])
         for im_id in image_ids:
-            gd_image = gd_collection._gd_image_cls.from_id(im_id, mask=mask, scale_refl=scale_refl)
+            gd_image = gd_collection._image_class.from_id(im_id, mask=mask, scale_refl=scale_refl)
             im_list = im_list.add(gd_image.ee_image)
 
         gd_collection._ee_collection = ee.ImageCollection(im_list)
@@ -122,7 +122,7 @@ class Collection(object):
         try:
             def calc_stats(ee_image):
                 max_scale = geedim.image.get_projection(ee_image, min=False).nominalScale()
-                gd_image = self._gd_image_cls(ee_image, mask=mask, scale_refl=scale_refl)
+                gd_image = self._image_class(ee_image, mask=mask, scale_refl=scale_refl)
 
                 stats = (ee.Image([gd_image.masks['valid_mask'], gd_image.score]).
                          unmask().
@@ -133,7 +133,7 @@ class Collection(object):
                 return gd_image.ee_image.set(stats)
 
             # filter the image collection
-            self._ee_collection = (self._gd_image_cls.ee_collection().
+            self._ee_collection = (self._image_class.ee_collection().
                                    filterDate(start_date, end_date).
                                    filterBounds(region).
                                    map(calc_stats).
@@ -155,7 +155,7 @@ class Collection(object):
             comp_image = self._ee_collection.mosaic()
         elif method == 'median':
             comp_image = self._ee_collection.median()
-            comp_image = self._gd_image_cls._im_transform(comp_image)
+            comp_image = self._image_class._im_transform(comp_image)
         elif method == 'medoid':
             bands = self.band_df.id.tolist()
             comp_image = medoid.medoid(self._ee_collection, bands=bands)

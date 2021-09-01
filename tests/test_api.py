@@ -117,7 +117,7 @@ class TestGeeDimApi(unittest.TestCase):
         # select an image to download/export
         im_idx = math.ceil(image_df.shape[0] / 2)
         image_id = str(image_df['ID'].iloc[im_idx])
-        ee_image = image.coll_to_cls_map[gd_coll_name].from_id(image_id, mask=False, scale_refl=False).ee_image
+        ee_image = image.get_class(gd_coll_name).from_id(image_id, mask=False, scale_refl=False).ee_image
         image_name = image_id.replace('/', '-')
 
         # force CRS for MODIS as workaround for GEE CRS bug

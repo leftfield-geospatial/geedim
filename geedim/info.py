@@ -14,6 +14,8 @@
     limitations under the License.
 """
 
+import pandas as pd
+
 """ Metadata for supported Earth Engine collections """
 collection_info = {
 "landsat7_c2_l2":{
@@ -140,8 +142,11 @@ collection_info = {
     ]}
 }
 """ Dict to convert from geedim to Earth Engine collection names """
-gd_to_ee_map = dict([(k, v['ee_coll_name']) for k, v in collection_info.items()])
+gd_to_ee = dict([(k, v['ee_coll_name']) for k, v in collection_info.items()])
 
 """ Dict to convert from Earth Engine to geedim collection names """
-ee_to_gd_map = dict([(v['ee_coll_name'], k) for k, v in collection_info.items()])
+ee_to_gd = dict([(v['ee_coll_name'], k) for k, v in collection_info.items()])
+
+""" Two way dict to convert Earth Engine to/from geedim collection names """
+coll_names = dict(**gd_to_ee, **ee_to_gd)
 

@@ -28,11 +28,96 @@ import requests
 import zipfile
 import logging
 import click
+from xml.etree import ElementTree as etree
+from xml.dom import minidom
 
 import ee
 import rasterio as rio
 from rasterio.enums import ColorInterp
-from geedim import image
+
+from geedim import image, info
+
+
+'''
+<PAMDataset>
+  <Metadata>
+    <MDI key="AOT_RETRIEVAL_ACCURACY">0</MDI>
+    <MDI key="CLOUDY_PIXEL_PERCENTAGE">56.769975</MDI>
+    <MDI key="CLOUD_COVERAGE_ASSESSMENT">56.769975</MDI>
+    <MDI key="CLOUD_SHADOW_PERCENTAGE">1.086251</MDI>
+    <MDI key="DARK_FEATURES_PERCENTAGE">2.990541</MDI>
+    <MDI key="DATASTRIP_ID">S2A_OPER_MSI_L2A_DS_SGS__20190125T115717_S20190125T082727_N02.11</MDI>
+    <MDI key="DATATAKE_IDENTIFIER">GS2A_20190125T080221_018765_N02.11</MDI>
+    <MDI key="DATATAKE_TYPE">INS-NOBS</MDI>
+    <MDI key="DEGRADED_MSI_DATA_PERCENTAGE">0</MDI>
+    ...
+  </Metadata>
+  <PAMRasterBand band="1">
+    <Description>SR_B1</Description>
+    <Metadata>
+      <MDI key="ABBREV">UB</MDI>
+      <MDI key="BW_END">0.451</MDI>
+      <MDI key="BW_START">0.435</MDI>
+      <MDI key="ID">SR_B1</MDI>
+      <MDI key="NAME">ultra blue</MDI>
+      <MDI key="RES">30</MDI>
+      <MDI key="STATISTICS_MAXIMUM">12740</MDI>
+      <MDI key="STATISTICS_MEAN">9187.6409516068</MDI>
+      <MDI key="STATISTICS_MINIMUM">7863</MDI>
+      <MDI key="STATISTICS_STDDEV">329.45495946535</MDI>
+      <MDI key="STATISTICS_VALID_PERCENT">99.54</MDI>
+    </Metadata>
+  </PAMRasterBand>
+...
+  <PAMRasterBand band="5">
+    <Description>SR_B5</Description>
+    <Metadata>
+      <MDI key="ABBREV">NIR</MDI>
+      <MDI key="BW_END">0.879</MDI>
+      <MDI key="BW_START">0.851</MDI>
+      <MDI key="ID">SR_B5</MDI>
+      <MDI key="NAME">near infrared</MDI>
+      <MDI key="RES">30</MDI>
+    </Metadata>
+  </PAMRasterBand>
+</PAMDataset>
+'''
+def save_image_metadata(img, filename):
+    if isinstance(img, dict):
+        img_info = img
+    elif isinstance(img, ee.Image):
+        img_info = img.getInfo()
+    elif isinstance(img, image.Image):
+        img_info = img.info
+    else:
+        raise TypeError(f'Unsupported type: {img.__class__}')
+
+    aux_band_info = None
+    if 'id' in img_info:
+        ee_coll_name, idx = image.ee_split(img_info['id'])
+        if ee_coll_name in info.ee_to_gd:
+            gd_coll_name = info.ee_to_gd[ee_coll_name]
+            coll_info = info.collection_info[gd_coll_name]
+
+
+
+
+def band_df_to_pamxml(band_df, filename):
+    root = etree.Element('PAMDataset')
+
+    for i, row in band_df.iterrows():
+        band = etree.SubElement(root, 'PAMRasterBand', attrib=dict(band=str(i+1)))
+        if 'id' in row:
+            desc = etree.SubElement(band, 'Description')
+            desc.text = row.id
+        metadata = etree.SubElement(band, 'Metadata')
+        for col_name, col_val in row.iteritems():
+            item = etree.SubElement(metadata, 'MDI', attrib=dict(key=col_name.upper()))
+            item.text = str(col_val)
+
+    xml_str = minidom.parseString(etree.tostring(root)).toprettyxml(indent="   ")
+    with open(filename, 'w') as f:
+        f.write(xml_str)
 
 
 def _parse_export_args(ee_image, filename=None, region=None, crs=None, scale=None):
@@ -182,7 +267,7 @@ def monitor_export_task(task, label=None):
     if status['metadata']['state'] != 'SUCCEEDED':
         raise Exception(f'Export failed \n{status}')
 
-def download_image(ee_image, filename, region=None, crs=None, scale=None, band_df=None, overwrite=True):
+def download_image(ee_image, filename, region=None, crs=None, scale=None, band_df=None, overwrite=False):
     """
     Download an image as a GeoTiff
 
@@ -261,9 +346,11 @@ def download_image(ee_image, filename, region=None, crs=None, scale=None, band_d
         os.rename(zip_tif_filename, tif_filename)
 
 
+
+    return link
+
+'''
     # remove footprint property from im_info_dict before copying to tif file
-    if ('properties' in im_info_dict) and ('system:footprint' in im_info_dict['properties']):
-        im_info_dict['properties'].pop('system:footprint')
 
     # copy ee image metadata to downloaded tif file
     try:
@@ -289,41 +376,4 @@ def download_image(ee_image, filename, region=None, crs=None, scale=None, band_d
                             im.update_tags(band_i + 1, **{str(key).upper(): val})
     finally:
         logging.getLogger("rasterio").setLevel(logging.WARNING)
-
-    return link
-
-'''
-    file_link = None
-    try:
-        # setup the download
-        file_link = request.urlopen(link)
-        file_size = int(file_link.info()['Content-Length'])
-        # click.echo(f'Download size: {file_size / (1024 ** 2):.2f} MB')
-
-
-        # download the file
-        with open(zip_filename, 'wb') as f:
-            file_size_dl = 0
-            with click.progressbar(length=file_size, label=f'{filename.stem[:80]}:', show_pos=True) as bar:
-                bar.format_pos = lambda : f'{bar.pos/(1024**2):.1f}/{bar.length/(1024**2):.1f} MB'
-                while file_size_dl <= file_size:
-                    buffer = file_link.read(8192)
-                    if not buffer:
-                        break
-                    file_size_dl += len(buffer)
-                    f.write(buffer)
-                    bar.update(len(buffer))
-
-    except HTTPError as ex:
-        # check for size limit error
-        response = json.loads(ex.read())
-        # TODO: catch this in CLI and print a message
-        if ('error' in response) and ('message' in response['error']):
-            if response['error']['message'] == 'User memory limit exceeded.':
-                click.echo('There is a 10MB Earth Engine limit on image downloads, '
-                             'either decrease image size, or use export(...)', err=True)
-        raise ex
-    finally:
-        if file_link is not None:
-            file_link.close()
 '''

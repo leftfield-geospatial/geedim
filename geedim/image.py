@@ -20,8 +20,8 @@ import ee
 import pandas as pd
 import logging
 import importlib.util
-
 from geedim import info
+import inspect
 
 ## Image classes
 class Image(object):
@@ -39,6 +39,10 @@ class Image(object):
         scale_refl : bool, optional
                      Scale reflectance bands 0-10000 if they are not in that range already (default: False)
         """
+        # prevent instantiation of this (non-abstract) base class
+        if not self.gd_coll_name in info.collection_info:
+            raise Exception('This base class cannot be instantiated, use a derived class')
+
         self._collection_info = info.collection_info[self.gd_coll_name]
         self.band_df = pd.DataFrame.from_dict(self._collection_info['bands'])
 
@@ -49,6 +53,7 @@ class Image(object):
                                              scale_refl=scale_refl,
                                              masks=self._masks,
                                              score=self._score)
+        self._info = None
 
 
     @classmethod
@@ -66,12 +71,12 @@ class Image(object):
                      Scale reflectance bands 0-10000 if they are not in that range already (default: False)
         """
         ee_coll_name = ee_split(image_id)[0]
-        if ee_coll_name not in info.ee_to_gd_map:
+        if ee_coll_name not in info.ee_to_gd:
             raise ValueError(f'Unsupported collection: {ee_coll_name}')
 
-        gd_coll_name = info.ee_to_gd_map[ee_coll_name]
+        gd_coll_name = info.ee_to_gd[ee_coll_name]
         if gd_coll_name != cls._gd_coll_name:
-            raise ValueError(f'{cls.__name__} only supports images from {info.gd_to_ee_map[cls._gd_coll_name]}')
+            raise ValueError(f'{cls.__name__} only supports images from {info.gd_to_ee[cls._gd_coll_name]}')
 
         ee_image = ee.Image(image_id)
         return cls(ee_image, mask=mask, scale_refl=scale_refl)
@@ -98,9 +103,15 @@ class Image(object):
     def score(self):
         return self._score
 
+    @property
+    def info(self):
+        if self._info is None:
+            self._info = self._ee_image.getInfo()
+        return self._info
+
     @classmethod
     def ee_collection(cls):
-        return ee.ImageCollection(info.gd_to_ee_map[cls._gd_coll_name])
+        return ee.ImageCollection(info.gd_to_ee[cls._gd_coll_name])
 
     def _scale_refl(self, ee_image):
         return ee_image
@@ -379,12 +390,12 @@ class Sentinel2ClImage(Image):
                      Scale reflectance bands 0-10000 if they are not in that range already (default: False)
         """
         ee_coll_name = ee_split(image_id)[0]
-        if ee_coll_name not in info.ee_to_gd_map:
+        if ee_coll_name not in info.ee_to_gd:
             raise ValueError(f'Unsupported collection: {ee_coll_name}')
 
-        gd_coll_name = info.ee_to_gd_map[ee_coll_name]
+        gd_coll_name = info.ee_to_gd[ee_coll_name]
         if gd_coll_name != cls._gd_coll_name:
-            raise ValueError(f'{cls.__name__} only supports images from the {info.gd_to_ee_map[cls._gd_coll_name]} collection')
+            raise ValueError(f'{cls.__name__} only supports images from the {info.gd_to_ee[cls._gd_coll_name]} collection')
 
         ee_image = ee.Image(image_id)
 
@@ -393,7 +404,6 @@ class Sentinel2ClImage(Image):
         ee_image = ee_image.addBands(cloud_prob, overwrite=True)
 
         return cls(ee_image, mask=mask, scale_refl=scale_refl)
-
 
     def _get_image_masks(self, ee_image):
         """
@@ -461,7 +471,7 @@ class Sentinel2ClImage(Image):
 
         # adapted from https://developers.google.com/earth-engine/tutorials/community/sentinel-2-s2cloudless
 
-        s2_sr_toa_col = ee.ImageCollection(info.gd_to_ee_map[cls._gd_coll_name])
+        s2_sr_toa_col = ee.ImageCollection(info.gd_to_ee[cls._gd_coll_name])
                          #.filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', self._cloud_filter))) # TODO: add this back?
         s2_cloudless_col = ee.ImageCollection('COPERNICUS/S2_CLOUD_PROBABILITY')
 
@@ -486,11 +496,31 @@ class ModisNbarImage(Image):
     _gd_coll_name = 'modis_nbar'
 
 ##
-coll_to_cls_map = {'landsat7_c2_l2': Landsat7Image,
-               'landsat8_c2_l2': Landsat8Image,
-               'sentinel2_toa': Sentinel2ToaClImage,
-               'sentinel2_sr': Sentinel2SrClImage,
-               'modis_nbar': ModisNbarImage}
+
+def get_class(coll_name):
+    #TODO: populate this list by traversing the class heirarchy
+    # import inspect
+    # from geedim import image
+    # def find_subclasses():
+    #     image_classes = {cls._gd_coll_name: cls for name, cls in inspect.getmembers(image)
+    #                      if inspect.isclass(cls) and issubclass(cls, image.Image) and not cls is image.Image}
+    #
+    #     return image_classes
+
+    gd_coll_name_map = dict(
+        landsat7_c2_l2=Landsat7Image,
+        landsat8_c2_l2=Landsat8Image,
+        sentinel2_toa=Sentinel2ToaClImage,
+        sentinel2_sr=Sentinel2SrClImage,
+        modis_nbar=ModisNbarImage
+    )
+    if coll_name in gd_coll_name_map:
+        return gd_coll_name_map[coll_name]
+    elif coll_name in info.ee_to_gd:
+        return gd_coll_name_map[info.ee_to_gd[coll_name]]
+    else:
+        raise ValueError(f'Unknown collection name: {coll_name}')
+
 
 if importlib.util.find_spec('rasterio'):
     import rasterio as rio

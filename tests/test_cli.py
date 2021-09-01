@@ -54,7 +54,7 @@ class TestSearchCli(unittest.TestCase):
                         'Search results have correct columns')
         self.assertTrue(all(res_df.DATE >= start_date) and all(res_df.DATE <= end_date),
                         'Search results are in correct date range')
-        self.assertTrue(all([info.gd_to_ee_map[gd_coll_name] in im_id for im_id in res_df.ID.values]),
+        self.assertTrue(all([info.gd_to_ee[gd_coll_name] in im_id for im_id in res_df.ID.values]),
                         'Search results have correct EE ID')
         self.assertTrue(all(res_df.VALID >= 0) and all(res_df.VALID <= 100),
                         'Search results have correct validity range')

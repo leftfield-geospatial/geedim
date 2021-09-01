@@ -27,7 +27,7 @@ from geedim import collection as coll_api
 from geedim import info, image
 
 # map collection names to classes
-# from geedim.collection import coll_to_cls_map
+# from geedim.collection import cls_from_coll
 
 
 class CmdResults(object):
@@ -38,7 +38,7 @@ class CmdResults(object):
         self.comp_name = None
         self.comp_band_df = None
 
-def extract_region(region=None, bbox=None, region_buf=5):
+def _extract_region(region=None, bbox=None, region_buf=5):
     """ create geojson dict from region or bbox """
 
     if (bbox is None or len(bbox)==0) and (region is None):
@@ -63,13 +63,13 @@ def extract_region(region=None, bbox=None, region_buf=5):
 
     return region_geojson
 
-def export_im_list(im_list, path='', wait=True, overwrite=False, do_download=True, **kwargs):
+def _export_im_list(im_list, path='', wait=True, overwrite=False, download=True, **kwargs):
 
-    click.echo('\nDownloading:\n') if do_download else click.echo('\nExporting:\n')
+    click.echo('\nDownloading:\n') if download else click.echo('\nExporting:\n')
     export_tasks = []
 
     for im_dict in im_list:
-        if do_download:
+        if download:
             filename = pathlib.Path(path).joinpath(im_dict['name'] + '.tif')
             export_api.download_image(im_dict['image'], filename, band_df=im_dict['band_df'], overwrite=overwrite,
                                       **kwargs)
@@ -82,27 +82,25 @@ def export_im_list(im_list, path='', wait=True, overwrite=False, do_download=Tru
         for task in export_tasks:
             export_api.monitor_export_task(task)
 
-def create_im_list(ids, **kwargs):
+def _create_im_list(ids, **kwargs):
     im_list = []
 
     for im_id in ids:
         ee_coll_name, im_idx = image.ee_split(im_id)
 
-        if not ee_coll_name in info.ee_to_gd_map:
+        if not ee_coll_name in info.ee_to_gd:
             im_list.append(dict(image=ee.Image(im_id), name=im_id.replace('/','-'), band_df=None))
         else:
-            gd_coll_name = info.ee_to_gd_map[ee_coll_name]
-            gd_image = image.coll_to_cls_map[gd_coll_name].from_id(im_id, **kwargs)
+            gd_image = image.get_class(ee_coll_name).from_id(im_id, **kwargs)
             im_list.append(dict(image=gd_image.ee_image, name=im_id.replace('/','-'), band_df=gd_image.band_df))
 
     return im_list
 
-def export_download(ctx, do_download=True, **kwargs):
+def _export_download(res=CmdResults(), download=True, **kwargs):
 
     # unpack arguments into a named tuple
-    arg_tuple = collections.namedtuple('arg_tuple', ctx.params)
-    params = arg_tuple(**ctx.params)
-    res = ctx.obj
+    arg_tuple = collections.namedtuple('arg_tuple', kwargs)
+    params = arg_tuple(**kwargs)
 
     if (params.region is None) and (params.bbox is None or len(params.bbox)==0):
         if res.search_region is None:
@@ -110,25 +108,25 @@ def export_download(ctx, do_download=True, **kwargs):
         else:
             region = res.search_region
     else:
-        region = extract_region(region=params.region, bbox=params.bbox)
+        region = _extract_region(region=params.region, bbox=params.bbox)
 
     im_list=[]
     if res.comp_image is not None:
         im_list.append(dict(image=res.comp_image, name=res.comp_name.replace('/', '-'),
                             band_df=res.comp_band_df))
     elif res.search_ids is not None:
-        im_list = create_im_list(res.search_ids, mask=params.mask, scale_refl=params.scale_refl)
+        im_list = _create_im_list(res.search_ids, mask=params.mask, scale_refl=params.scale_refl)
     elif len(params.id) > 0:
-        im_list = create_im_list(params.id, mask=params.mask, scale_refl=params.scale_refl)
+        im_list = _create_im_list(params.id, mask=params.mask, scale_refl=params.scale_refl)
     else:
         raise click.BadOptionUsage('Either pass --id, or chain this command with `search` or `composite`', id)
 
-    if do_download:
-        export_im_list(im_list, region=region, path=params.download_dir, crs=params.crs, scale=params.scale,
-                       overwrite=params.overwrite, do_download=True)
+    if download:
+        _export_im_list(im_list, region=region, path=params.download_dir, crs=params.crs, scale=params.scale,
+                        overwrite=params.overwrite, download=True)
     else:
-        export_im_list(im_list, region=region, path=params.drive_folder, crs=params.crs, scale=params.scale,
-                       do_download=False)
+        _export_im_list(im_list, region=region, path=params.drive_folder, crs=params.crs, scale=params.scale,
+                        download=False)
 
 
 # define options common to >1 command
@@ -218,7 +216,7 @@ def cli(ctx):
 @click.option(
     "-c",
     "--collection",
-    type=click.Choice(list(info.gd_to_ee_map.keys()), case_sensitive=False),
+    type=click.Choice(list(info.gd_to_ee.keys()), case_sensitive=False),
     help="Earth Engine image collection to search.",
     default="landsat8_c2_l2",
     required=True
@@ -261,9 +259,9 @@ def cli(ctx):
 def search(res, collection, start_date, end_date=None, bbox=None, region=None, valid_portion=0, output=None, region_buf=5):
     """ Search for images """
 
-    res.search_region = extract_region(region=region, bbox=bbox, region_buf=region_buf)
+    res.search_region = _extract_region(region=region, bbox=bbox, region_buf=region_buf)
 
-    click.echo(f'\nSearching for {info.gd_to_ee_map[collection]} images between '
+    click.echo(f'\nSearching for {info.gd_to_ee[collection]} images between '
                f'{start_date.strftime("%Y-%m-%d")} and {end_date.strftime("%Y-%m-%d")}...')
 
     gd_collection = coll_api.Collection(collection)
@@ -325,32 +323,7 @@ cli.add_command(search)
 def download(ctx, id=[], bbox=None, region=None, download_dir=os.getcwd(), crs=None, scale=None, mask=False, scale_refl=True,
              overwrite=False):
     """ Download image(s), with cloud and shadow masking """
-    export_download(ctx, do_download=True)
-'''    
-    if (region is None) and (bbox is None or len(bbox)==0):
-        if res.search_region is None:
-            raise click.BadOptionUsage('Either pass --region / --box, or chain this command with `search`', region)
-        else:
-            region = res.search_region
-    else:
-        region = extract_region(region=region, bbox=bbox)
-
-    im_list=[]
-    if res.comp_image is not None:
-        im_list.append(dict(image=res.comp_image, name=res.comp_name.replace('/', '-'), band_df=res.comp_band_df))
-    elif res.search_ids is not None:
-        im_list = create_im_list(res.search_ids, mask=mask, scale_refl=scale_refl)
-    elif len(id) > 0:
-        im_list = create_im_list(id, mask=mask, scale_refl=scale_refl)
-    else:
-        raise click.BadOptionUsage('Either pass --id, or chain this command with `search` or `composite`', id)
-
-    export_im_list(im_list, region=region, path=download_dir, crs=crs, scale=scale, overwrite=overwrite,
-                   do_download=True)
-
-    # _export(ctx.obj, ids=id, region=region_geojson, path=download_dir, crs=crs, scale=scale, mask=mask,
-    #         scale_refl=scale_refl, overwrite=overwrite, do_download=True)
-'''
+    _export_download(res=ctx.obj, download=True, **ctx.params)
 
 cli.add_command(download)
 
@@ -382,28 +355,7 @@ cli.add_command(download)
 def export(ctx, id=[], bbox=None, region=None, drive_folder='', crs=None, scale=None, mask=False, scale_refl=True,
            wait=True):
     """ Export image(s) to Google Drive, with cloud and shadow masking """
-    export_download(ctx, do_download=False)
-'''
-    if (region is None) and (bbox is None or len(bbox)==0):
-        if res.search_region is None:
-            raise click.BadOptionUsage('Either pass --region / --box, or chain this command with `search`', region)
-        else:
-            region = res.search_region
-    else:
-        region = extract_region(region=region, bbox=bbox)
-
-    im_list=[]
-    if res.comp_image is not None:
-        im_list.append(dict(image=res.comp_image, name=res.comp_name.replace('/', '-'), band_df=res.comp_band_df))
-    elif res.search_ids is not None:
-        im_list = create_im_list(res.search_ids, mask=mask, scale_refl=scale_refl)
-    elif len(id) > 0:
-        im_list = create_im_list(id, mask=mask, scale_refl=scale_refl)
-    else:
-        raise click.BadOptionUsage('Either pass --id, or chain this command with `search` or `composite`', id)
-
-    export_im_list(im_list, region=region, path=drive_folder, crs=crs, scale=scale, do_download=False)
-'''
+    _export_download(res=ctx.obj, download=False, **ctx.params)
 
 cli.add_command(export)
 
