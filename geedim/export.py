@@ -82,23 +82,35 @@ from geedim import image, info
   </PAMRasterBand>
 </PAMDataset>
 '''
-def save_image_metadata(img, filename):
-    if isinstance(img, dict):
-        img_info = img
-    elif isinstance(img, ee.Image):
-        img_info = img.getInfo()
-    elif isinstance(img, image.Image):
-        img_info = img.info
+def write_pam_xml(obj, filename):
+    if isinstance(obj, dict):
+        gd_info = obj
+    elif isinstance(obj, ee.Image):
+        gd_info = image.get_info(obj)
+    elif isinstance(obj, image.Image):
+        gd_info = obj.info
     else:
-        raise TypeError(f'Unsupported type: {img.__class__}')
+        raise TypeError(f'Unsupported type: {obj.__class__}')
 
-    aux_band_info = None
-    if 'id' in img_info:
-        ee_coll_name, idx = image.ee_split(img_info['id'])
-        if ee_coll_name in info.ee_to_gd:
-            gd_coll_name = info.ee_to_gd[ee_coll_name]
-            coll_info = info.collection_info[gd_coll_name]
+    root = etree.Element('PAMDataset')
+    prop_meta = etree.SubElement(root, 'Metadata')
+    for key, val in gd_info['properties'].items():
+        item = etree.SubElement(prop_meta, 'MDI', attrib=dict(key=key))
+        item.text = str(val)
 
+    for band_i, band_dict in enumerate(gd_info['bands']):
+        band_elem = etree.SubElement(root, 'PAMRasterBand', attrib=dict(band=str(band_i+1)))
+        if 'id' in band_dict:
+            desc = etree.SubElement(band_elem, 'Description')
+            desc.text = band_dict['id']
+        band_meta = etree.SubElement(band_elem, 'Metadata')
+        for key, val in band_dict.items():
+            item = etree.SubElement(band_meta, 'MDI', attrib=dict(key=key.upper()))
+            item.text = str(val)
+
+    xml_str = minidom.parseString(etree.tostring(root)).toprettyxml(indent="   ")
+    with open(filename, 'w') as f:
+        f.write(xml_str)
 
 
 

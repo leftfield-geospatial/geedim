@@ -53,11 +53,11 @@ class Collection(object):
 
     @classmethod
     def from_ids(cls, image_ids, mask=False, scale_refl=False):
-        ee_coll_name = image.ee_split(image_ids[0])[0]
+        ee_coll_name = image.split_id(image_ids[0])[0]
         if not ee_coll_name in info.ee_to_gd:
             raise ValueError(f'Unsupported collection: {ee_coll_name}')
 
-        id_check = [image.ee_split(im_id)[0] == ee_coll_name for im_id in image_ids[1:]]
+        id_check = [image.split_id(im_id)[0] == ee_coll_name for im_id in image_ids[1:]]
         if not all(id_check):
             raise ValueError(f'All images must belong to the same collection')
 

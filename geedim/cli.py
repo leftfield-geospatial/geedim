@@ -86,13 +86,13 @@ def _create_im_list(ids, **kwargs):
     im_list = []
 
     for im_id in ids:
-        ee_coll_name, im_idx = image.ee_split(im_id)
-
+        ee_coll_name, im_idx = image.split_id(im_id)
+        # TODO: remove band_df
         if not ee_coll_name in info.ee_to_gd:
             im_list.append(dict(image=ee.Image(im_id), name=im_id.replace('/','-'), band_df=None))
         else:
             gd_image = image.get_class(ee_coll_name).from_id(im_id, **kwargs)
-            im_list.append(dict(image=gd_image.ee_image, name=im_id.replace('/','-'), band_df=gd_image.band_df))
+            im_list.append(dict(image=gd_image.ee_image, name=im_id.replace('/','-'), band_df=None))
 
     return im_list
 

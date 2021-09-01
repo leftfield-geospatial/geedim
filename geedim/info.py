@@ -17,6 +17,7 @@
 import pandas as pd
 
 """ Metadata for supported Earth Engine collections """
+#TODO: remove res, it is redundant
 collection_info = {
 "landsat7_c2_l2":{
     "start_date": "1999-01-01",

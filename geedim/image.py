@@ -43,8 +43,8 @@ class Image(object):
         if not self.gd_coll_name in info.collection_info:
             raise Exception('This base class cannot be instantiated, use a derived class')
 
-        self._collection_info = info.collection_info[self.gd_coll_name]
-        self.band_df = pd.DataFrame.from_dict(self._collection_info['bands'])
+        # self._collection_info = info.collection_info[self.gd_coll_name]
+        # self.band_df = pd.DataFrame.from_dict(self._collection_info['bands'])
 
         self._masks = self._get_image_masks(ee_image)
         self._score = self._get_image_score(ee_image)
@@ -54,6 +54,7 @@ class Image(object):
                                              masks=self._masks,
                                              score=self._score)
         self._info = None
+        self._projection = None
 
 
     @classmethod
@@ -70,7 +71,7 @@ class Image(object):
         scale_refl : bool, optional
                      Scale reflectance bands 0-10000 if they are not in that range already (default: False)
         """
-        ee_coll_name = ee_split(image_id)[0]
+        ee_coll_name = split_id(image_id)[0]
         if ee_coll_name not in info.ee_to_gd:
             raise ValueError(f'Unsupported collection: {ee_coll_name}')
 
@@ -106,8 +107,14 @@ class Image(object):
     @property
     def info(self):
         if self._info is None:
-            self._info = self._ee_image.getInfo()
+            self._info = get_info(self._ee_image)
         return self._info
+
+    @property
+    def projection(self):
+        if self._projection is None:
+            self._projection = get_projection(self._ee_image)
+        return self._projection
 
     @classmethod
     def ee_collection(cls):
@@ -389,7 +396,7 @@ class Sentinel2ClImage(Image):
         scale_refl : bool, optional
                      Scale reflectance bands 0-10000 if they are not in that range already (default: False)
         """
-        ee_coll_name = ee_split(image_id)[0]
+        ee_coll_name = split_id(image_id)[0]
         if ee_coll_name not in info.ee_to_gd:
             raise ValueError(f'Unsupported collection: {ee_coll_name}')
 
@@ -400,7 +407,7 @@ class Sentinel2ClImage(Image):
         ee_image = ee.Image(image_id)
 
         # add cloud probability to the image
-        cloud_prob = ee.Image(f'COPERNICUS/S2_CLOUD_PROBABILITY/{ee_split(image_id)[1]}')
+        cloud_prob = ee.Image(f'COPERNICUS/S2_CLOUD_PROBABILITY/{split_id(image_id)[1]}')
         ee_image = ee_image.addBands(cloud_prob, overwrite=True)
 
         return cls(ee_image, mask=mask, scale_refl=scale_refl)
@@ -571,11 +578,57 @@ if importlib.util.find_spec('rasterio'):
         return src_bbox_wgs84, im.crs.to_wkt()
 
 
-def ee_split(image_id):
+def split_id(image_id):
     """ Split Earth Engine image ID to collection and index components """
     index = image_id.split('/')[-1]
-    coll = '/'.join(image_id.split('/')[:-1])
-    return coll, index
+    ee_coll_name = '/'.join(image_id.split('/')[:-1])
+    return ee_coll_name, index
+
+def get_info(image, min=True):
+    """
+    Retrieve earth engine image information
+
+    Parameters
+    ----------
+    image : ee.Image
+    min : bool, optional
+          Retrieve the crs & scale corresponding to the band with the minimum (True) or maximum (False) scale
+          [default: True]
+
+    Returns
+    -------
+    : dict(id=None, properties={}, bands={}, crs=None, scale=None)
+      dictionary of image information
+    """
+    gd_info = dict(id=None, properties={}, bands=[], crs=None, scale=None)
+    ee_info = image.getInfo()
+
+    if 'id' in ee_info:
+        gd_info['id'] = ee_info['id']
+
+        # get sr band metadata if it exists
+        ee_coll_name = split_id(gd_info['id'])[0]
+        if ee_coll_name in info.ee_to_gd:
+            gd_info['bands'] = info.collection_info[info.ee_to_gd[ee_coll_name]]['bands']
+
+    if 'properties' in ee_info:
+        gd_info['properties'] = ee_info['properties']
+
+    if 'bands' in ee_info:
+        # get scale & crs corresponding to min/max scale band, excluding 'EPSG:4326' (composite/constant) bands
+        band_df = pd.DataFrame(ee_info['bands'])
+        scales = pd.DataFrame(band_df['crs_transform'].tolist())[0].abs().astype(float)
+        band_df['scale'] = scales
+
+        filt_band_df = band_df[(band_df.crs != 'EPSG:4326') & (band_df.scale != 1)]
+        if filt_band_df.shape[0]==0:
+            gd_info['crs'] = 'EPSG:4326'
+            gd_info['scale'] = 1
+        else:
+            idx = filt_band_df.scale.idxmin() if min else filt_band_df.scale.idxmax()
+            gd_info['crs'], gd_info['scale'] = filt_band_df.loc[idx, ['crs', 'scale']]
+
+    return gd_info
 
 
 def get_image_info(image):
@@ -629,6 +682,7 @@ def get_projection(image, min=True):
     else:
         compare = ee.Number.gte
 
+    # TODO: this will fail if the first band is wgs84 with scale>>1 and min==False
     def compare_scale(name, prev_proj):
         prev_proj = ee.Projection(prev_proj)
         prev_scale = prev_proj.nominalScale()
