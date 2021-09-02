@@ -17,13 +17,13 @@ class TestGeeDimApi(unittest.TestCase):
     """
 
     # TODO: separate API search and download testing (?) and or make one _test_download fn that works from api and cli
-    def _test_download(self, ee_image, image_id, region, crs=None, scale=None, band_df=None):
+    def _test_download(self, gd_image, image_id, region, crs=None, scale=None):
         """
         Test image download
 
         Parameters
         ----------
-        ee_image: ee.Image
+        gd_image: geedim.image.Image
                 The image to download
         image_id : str
                    A string describing the image, will be used as filename
@@ -38,7 +38,7 @@ class TestGeeDimApi(unittest.TestCase):
                   id's that match the ee.Image band id's
         """
         # check image info
-        gd_info = image.get_info(ee_image)
+        gd_info = gd_image.info
 
         for key in ['bands', 'properties', 'id', 'crs', 'scale']:
             self.assertTrue(key in gd_info.keys(), msg='Image info ok')
@@ -55,11 +55,10 @@ class TestGeeDimApi(unittest.TestCase):
         image_filename = root_path.joinpath(f'data/outputs/tests/{image_id}_{crs_str}_{scale}m.tif')
 
         # run the download
-        export.download_image(ee_image, image_filename, region=region, crs=crs, scale=scale, band_df=band_df,
-                              overwrite=True)
+        export.download_image(gd_image, image_filename, region=region, crs=crs, scale=scale, overwrite=True)
 
         # now set scale and crs to their image defaults as necessary
-        min_proj = image.get_projection(ee_image)
+        min_proj = image.get_projection(gd_image.ee_image)
         if scale is None:
             scale = min_proj.nominalScale().getInfo()    #band_info_df['scale'].min()
         if crs is None:
@@ -118,7 +117,7 @@ class TestGeeDimApi(unittest.TestCase):
         # select an image to download/export
         im_idx = math.ceil(image_df.shape[0] / 2)
         image_id = str(image_df['ID'].iloc[im_idx])
-        ee_image = image.get_class(gd_coll_name).from_id(image_id, mask=False, scale_refl=False).ee_image
+        gd_image = image.get_class(gd_coll_name).from_id(image_id, mask=False, scale_refl=False)
         image_name = image_id.replace('/', '-')
 
         # force CRS for MODIS as workaround for GEE CRS bug
@@ -132,16 +131,15 @@ class TestGeeDimApi(unittest.TestCase):
         export_tasks = []
         if self.test_export:  # start export tasks
             export_tasks.append(
-                export.export_image(ee_image, f'{image_name}_None_None', folder='GeedimTest', region=region,
+                export.export_image(gd_image, f'{image_name}_None_None', folder='GeedimTest', region=region,
                                     crs=_crs, scale=None, wait=False))
-            export_tasks.append(export.export_image(ee_image, f'{image_name}_Epsg32635_240m', folder='GeedimTest',
+            export_tasks.append(export.export_image(gd_image, f'{image_name}_Epsg32635_240m', folder='GeedimTest',
                                                     region=region, crs='EPSG:32635', scale=240, wait=False))
 
         # download in native crs and scale, and validate
-        band_df = gd_collection.band_df
-        self._test_download(ee_image, image_name, region, crs=_crs, scale=None, band_df=band_df)
+        self._test_download(gd_image, image_name, region, crs=_crs, scale=None)
         # download in specified crs and scale, and validate
-        self._test_download(ee_image, image_name, region, crs='EPSG:32635', scale=240, band_df=band_df)  # UTM zone 35N
+        self._test_download(gd_image, image_name, region, crs='EPSG:32635', scale=240)  # UTM zone 35N
 
         return export_tasks
 

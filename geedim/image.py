@@ -660,6 +660,8 @@ def get_projection(image, min=True):
     : ee.Projection
       The projection with the smallest scale
     """
+    if isinstance(image, Image):
+        image = image.ee_image
 
     bands = image.bandNames()
     init_proj = image.select(0).projection()

@@ -71,88 +71,65 @@ def write_pam_xml(obj, filename):
         f.write(xml_str)
 
 
-
-def band_df_to_pamxml(band_df, filename):
-    root = etree.Element('PAMDataset')
-
-    for i, row in band_df.iterrows():
-        band = etree.SubElement(root, 'PAMRasterBand', attrib=dict(band=str(i+1)))
-        if 'id' in row:
-            desc = etree.SubElement(band, 'Description')
-            desc.text = row.id
-        metadata = etree.SubElement(band, 'Metadata')
-        for col_name, col_val in row.iteritems():
-            item = etree.SubElement(metadata, 'MDI', attrib=dict(key=col_name.upper()))
-            item.text = str(col_val)
-
-    xml_str = minidom.parseString(etree.tostring(root)).toprettyxml(indent="   ")
-    with open(filename, 'w') as f:
-        f.write(xml_str)
-
-
-def _parse_export_args(ee_image, filename=None, region=None, crs=None, scale=None):
-    """
-    Download an image as a GeoTiff
-
-    Parameters
-    ----------
-    ee_image : ee.Image, geedim.image.Image
-               The image to export
-    region : dict, geojson, ee.Geometry, optional
-             Region of interest (WGS84) to export (default: export the entire image granule if it has one).
-    crs : str, optional
-          WKT, EPSG etc specification of CRS to export to (default: use the image CRS if it has one).
-    scale : float, optional
-            Pixel resolution (m) to export to (default: use the highest resolution of the image bands).
-    """
-    # get ee image info which is used in setting crs, scale and tif metadata (no further calls to getInfo)
-    if isinstance(ee_image, image.Image):
-        gd_info = ee_image.info
-    else:
-        gd_info = image.get_info(ee_image)
-
-    # filename = pathlib.Path(filename)
-    if gd_info['id'] is None:
-        gd_info['id'] = pathlib.Path(filename).stem
-
-    # if the image is in WGS84 and has no scale (probable composite), then exit
-    if gd_info['crs'] is None or gd_info['scale'] is None:
-        raise Exception(f'{gd_info["id"]} appears to be a composite in WGS84, specify a scale and CRS')
-
-    # if it is a native MODIS CRS then warn about GEE bug
-    if (gd_info['crs'] == 'SR-ORG:6974') and (crs is None):
-        raise Exception(f'There is an earth engine bug exporting in SR-ORG:6974, specify another CRS: '
-                        f'https://issuetracker.google.com/issues/194561313')
-
-    if crs is None:
-        crs = gd_info['crs']        # CRS corresponding to minimum scale
-    if region is None:
-        if 'system:footprint' in gd_info['properties']:
-            region = gd_info['properties']['system:footprint']
-            click.secho(f'{gd_info["id"]}: region not specified, setting to image footprint')
+class _ImContainer(object):
+    """ Container for download and export parameters """
+    def __init__(self, image_obj, name='Image', dest_region=None, dest_crs=None, dest_scale=None):
+        if isinstance(image_obj, image.Image):
+            self.ee_image = image_obj.ee_image
+            self.info = image_obj.info
         else:
-            raise AttributeError(f'{gd_info["id"]} does not have a footprint, specify a region to download')
+            self.ee_image = image_obj
+            self.info = image.get_info(image_obj)
 
-    if scale is None:
-        scale = gd_info['scale']     # minimum scale
+        self.name = name
+        self.dest_region = dest_region
+        self.dest_crs = dest_crs
+        self.dest_scale = dest_scale
 
-    # warn if some band scales will be changed
-    # if (band_info_df['crs'].unique().size > 1) or (band_info_df['scale'].unique().size > 1):
-    #     click.echo(f'{im_id}: re-projecting all bands to {crs} at {scale:.1f}m')
+    def parse_attributes(self):
+        # filename = pathlib.Path(filename)
 
-    if isinstance(region, dict):
-        region = ee.Geometry(region)
+        if self.info['id'] is None:
+            self.info['id'] = pathlib.Path(self.name).stem
 
-    return region, crs, scale, gd_info
+        # if the image is in WGS84 and has no scale (probable composite), then exit
+        if self.info['crs'] is None or self.info['scale'] is None:
+            raise Exception(f'{self.info["id"]} appears to be a composite in WGS84, specify a scale and CRS')
+
+        # if it is a native MODIS CRS then warn about GEE bug
+        if (self.info['crs'] == 'SR-ORG:6974') and (self.dest_crs is None):
+            raise Exception(f'There is an earth engine bug exporting in SR-ORG:6974, specify another CRS: '
+                            f'https://issuetracker.google.com/issues/194561313')
+
+        if self.dest_crs is None:
+            self.dest_crs = self.info['crs']  # CRS corresponding to minimum scale
+        if self.dest_region is None:
+            if 'system:footprint' in self.info['properties']:
+                self.dest_region = self.info['properties']['system:footprint']
+                click.secho(f'{self.info["id"]}: region not specified, setting to image footprint')
+            else:
+                raise AttributeError(f'{self.info["id"]} does not have a footprint, specify a region to download')
+
+        if self.dest_scale is None:
+            self.dest_scale = self.info['scale']  # minimum scale
+
+        # warn if some band scales will be changed
+        # if (band_info_df['crs'].unique().size > 1) or (band_info_df['scale'].unique().size > 1):
+        #     click.echo(f'{im_id}: re-projecting all bands to {crs} at {scale:.1f}m')
+
+        if isinstance(self.dest_region, dict):
+            self.dest_region = ee.Geometry(self.dest_region)
+
+        return self
 
 
-def export_image(ee_image, filename, folder='', region=None, crs=None, scale=None, wait=True):
+def export_image(image_obj, filename, folder='', region=None, crs=None, scale=None, wait=True):
     """
     Export an image to a GeoTiff in Google Drive
 
     Parameters
     ----------
-    ee_image : ee.Image
+    image_obj : ee.Image, geedim.image.Image
                The image to export
     filename : str
                The name of the task and destination file
@@ -174,17 +151,17 @@ def export_image(ee_image, filename, folder='', region=None, crs=None, scale=Non
     -------
     task : EE task object
     """
-    region, crs, scale, _ = _parse_export_args(ee_image, filename=filename, region=region, crs=crs, scale=scale)
-
+    d_image = _ImContainer(image_obj, name=filename, dest_region=region, dest_crs=crs, dest_scale=scale)
+    d_image.parse_attributes()
 
     # create export task and start
-    task = ee.batch.Export.image.toDrive(image=ee_image,
-                                         region=region,
+    task = ee.batch.Export.image.toDrive(image=d_image.ee_image,
+                                         region=d_image.dest_region,
                                          description=filename[:100],
                                          folder=folder,
                                          fileNamePrefix=filename,
-                                         scale=scale,
-                                         crs=crs,
+                                         scale=d_image.dest_scale,
+                                         crs=d_image.dest_crs,
                                          maxPixels=1e9)
 
     task.start()
@@ -230,13 +207,13 @@ def monitor_export_task(task, label=None):
         raise Exception(f'Export failed \n{status}')
 
 
-def download_image(ee_image, filename, region=None, crs=None, scale=None, band_df=None, overwrite=False):
+def download_image(image_obj, filename, region=None, crs=None, scale=None, overwrite=False):
     """
     Download an image as a GeoTiff
 
     Parameters
     ----------
-    ee_image : ee.Image
+    image_obj : ee.Image, geedim.image.Image
                The image to export
     filename : str, pathlib.Path
                Name of the destination file
@@ -249,25 +226,23 @@ def download_image(ee_image, filename, region=None, crs=None, scale=None, band_d
     scale : float, optional
             Pixel scale (m) to export to.  Where image bands have different scales, all are re-projected to this scale.
             (default: use the minimum scale of image bands if available).
-    band_df : pandas.DataFrame, optional
-              DataFrame specifying band metadata to be copied to downloaded file.  'id' column should contain band id's
-              that match the ee.Image band id's
     overwrite : bool, optional
                 Overwrite the destination file if it exists, otherwise prompt the user (default: True)
     """
     filename = pathlib.Path(filename)
-    region, crs, scale, gd_info = _parse_export_args(ee_image, filename=filename, region=region, crs=crs, scale=scale)
+    d_image = _ImContainer(image_obj, name=filename, dest_region=region, dest_crs=crs, dest_scale=scale)
+    d_image.parse_attributes()
 
 
     # get download link
     try:
-        link = ee_image.getDownloadURL({
-            'scale': scale,
-            'crs': crs,
+        link = d_image.ee_image.getDownloadURL({
+            'scale': d_image.dest_scale,
+            'crs': d_image.dest_crs,
             'fileFormat': 'GeoTIFF',
             # 'bands': bands_dict,
             'filePerBand': False,
-            'region': region})
+            'region': d_image.dest_region})
     except ee.ee_exception.EEException as ex:
         if re.match(r'Total request size \(.*\) must be less than or equal to .*', str(ex)):
             raise Exception(f'The requested image is too large, reduce its size, or use `export`\n({str(ex)})')
@@ -306,6 +281,6 @@ def download_image(ee_image, filename, region=None, crs=None, scale=None, band_d
         os.rename(zip_tif_filename, tif_filename)
 
     # write image metadata to pam xml file
-    write_pam_xml(gd_info, str(tif_filename) + '.aux.xml')
+    write_pam_xml(d_image.info, str(tif_filename) + '.aux.xml')
 
     return link

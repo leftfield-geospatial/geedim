@@ -36,7 +36,6 @@ class CmdResults(object):
         self.search_region = None
         self.comp_image = None
         self.comp_name = None
-        self.comp_band_df = None
 
 def _extract_region(region=None, bbox=None, region_buf=5):
     """ create geojson dict from region or bbox """
@@ -71,9 +70,7 @@ def _export_im_list(im_list, path='', wait=True, overwrite=False, download=True,
     for im_dict in im_list:
         if download:
             filename = pathlib.Path(path).joinpath(im_dict['name'] + '.tif')
-            export_api.download_image(im_dict['image'], filename, band_df=im_dict['band_df'], overwrite=overwrite,
-                                      **kwargs)
-            # region = region_geojson, crs = crs, scale = scale,
+            export_api.download_image(im_dict['image'], filename, overwrite=overwrite, **kwargs)
         else:
             task = export_api.export_image(im_dict['image'], im_dict['name'], folder=path, wait=False, **kwargs)
             export_tasks.append(task)
@@ -87,12 +84,11 @@ def _create_im_list(ids, **kwargs):
 
     for im_id in ids:
         ee_coll_name, im_idx = image.split_id(im_id)
-        # TODO: remove band_df
         if not ee_coll_name in info.ee_to_gd:
-            im_list.append(dict(image=ee.Image(im_id), name=im_id.replace('/','-'), band_df=None))
+            im_list.append(dict(image=ee.Image(im_id), name=im_id.replace('/','-')))
         else:
             gd_image = image.get_class(ee_coll_name).from_id(im_id, **kwargs)
-            im_list.append(dict(image=gd_image.ee_image, name=im_id.replace('/','-'), band_df=None))
+            im_list.append(dict(image=gd_image, name=im_id.replace('/','-')))
 
     return im_list
 
@@ -112,8 +108,7 @@ def _export_download(res=CmdResults(), download=True, **kwargs):
 
     im_list=[]
     if res.comp_image is not None:
-        im_list.append(dict(image=res.comp_image, name=res.comp_name.replace('/', '-'),
-                            band_df=res.comp_band_df))
+        im_list.append(dict(image=res.comp_image, name=res.comp_name.replace('/', '-')))
     elif res.search_ids is not None:
         im_list = _create_im_list(res.search_ids, mask=params.mask, scale_refl=params.scale_refl)
     elif len(params.id) > 0:
@@ -392,7 +387,6 @@ def composite(res, id=None, mask=True, scale_refl=False, method='q_mosaic'):
 
     gd_collection = coll_api.Collection.from_ids(id, mask=mask, scale_refl=scale_refl)
 
-    res.comp_band_df = gd_collection.band_df
     res.comp_image, res.comp_name = gd_collection.composite(method=method)
 
 cli.add_command(composite)
