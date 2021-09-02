@@ -46,8 +46,7 @@ class Collection(object):
         self._image_class =  image.get_class(gd_coll_name)       # geedim.image.*Image class
         self._ee_collection = None                                      # the wrapped ee.ImageCollection
 
-        self.band_df = pd.DataFrame.from_dict(self._collection_info['bands'])
-        self.prop_df = pd.DataFrame(self._collection_info['properties'])
+        self._summary_key_df = pd.DataFrame(self._collection_info['properties'])
         self._summary_df = None
 
 
@@ -78,17 +77,25 @@ class Collection(object):
         return self._ee_collection
 
     @property
+    def summary_key_df(self):
+        return self._summary_key_df
+
+    @property
     def summary_df(self):
         if self._summary_df is None:
             self._summary_df = self._get_summary_df(self._ee_collection)
         return self._summary_df
 
     @property
-    def summary_string(self):
+    def summary_key(self):
+        return self._summary_key_df[['ABBREV', 'DESCRIPTION']].to_string(index=False, justify='right')
+
+    @property
+    def summary(self):
         return self.summary_df.to_string(
             float_format='%.2f',
             formatters={'DATE': lambda x: datetime.strftime(x, '%Y-%m-%d %H:%M')},
-            columns=self.prop_df.ABBREV,
+            columns=self._summary_key_df.ABBREV,
             # header=property_df.ABBREV,
             index=False,
             justify='center')
@@ -157,13 +164,13 @@ class Collection(object):
             comp_image = self._ee_collection.median()
             comp_image = self._image_class._im_transform(comp_image)
         elif method == 'medoid':
-            bands = self.band_df.id.tolist()
-            comp_image = medoid.medoid(self._ee_collection, bands=bands)
+            sr_bands = [band_dict['id'] for band_dict in self._collection_info['bands']]
+            comp_image = medoid.medoid(self._ee_collection, bands=sr_bands)
         else:
             raise ValueError(f'Unsupported composite method: {method}')
 
         # populate image metadata with info on component images
-        comp_image = comp_image.set('COMPOSITE_IMAGES', self.summary_string)
+        comp_image = comp_image.set('COMPOSITE_IMAGES', self.summary)
 
         # name the composite
         start_date = self.summary_df.DATE.iloc[0].strftime('%Y_%m_%d')
@@ -189,14 +196,14 @@ class Collection(object):
         Dataframe of ee.Image objects and their properties
         """
         if ee_collection is None:
-            return pd.DataFrame([], columns=self.prop_df.ABBREV)
+            return pd.DataFrame([], columns=self._summary_key_df.ABBREV)
 
         init_list = ee.List([])
 
         # aggregate relevant properties of ee_collection images
         def aggregrate_props(image, prop_list):
             prop = ee.Dictionary()
-            for prop_key in self.prop_df.PROPERTY.values:
+            for prop_key in self._summary_key_df.PROPERTY.values:
                 prop = prop.set(prop_key, ee.Algorithms.If(image.get(prop_key), image.get(prop_key), ee.String('None')))
             return ee.List(prop_list).add(prop)
 
@@ -204,7 +211,7 @@ class Collection(object):
         im_prop_list = ee.List(ee_collection.iterate(aggregrate_props, init_list)).getInfo()
 
         if len(im_prop_list) == 0:
-            return pd.DataFrame([], columns=self.prop_df.ABBREV)
+            return pd.DataFrame([], columns=self._summary_key_df.ABBREV)
 
         # im_list = ee_collection.toList(ee_collection.size())  # image objects
 
@@ -217,7 +224,7 @@ class Collection(object):
         # convert to DataFrame
         im_prop_df = pd.DataFrame(im_prop_list, columns=im_prop_list[0].keys())
         im_prop_df = im_prop_df.sort_values(by='system:time_start').reset_index(drop=True)
-        im_prop_df = im_prop_df.rename(columns=dict(zip(self.prop_df.PROPERTY, self.prop_df.ABBREV)))  # rename cols to abbrev
-        im_prop_df = im_prop_df[self.prop_df.ABBREV.to_list()] #+ ['IMAGE']]     # reorder columns
+        im_prop_df = im_prop_df.rename(columns=dict(zip(self._summary_key_df.PROPERTY, self._summary_key_df.ABBREV)))  # rename cols to abbrev
+        im_prop_df = im_prop_df[self._summary_key_df.ABBREV.to_list()] #+ ['IMAGE']]     # reorder columns
 
         return im_prop_df

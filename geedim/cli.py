@@ -267,11 +267,8 @@ def search(res, collection, start_date, end_date=None, bbox=None, region=None, v
         click.echo('No images found\n')
     else:
         click.echo(f'{len(res.search_ids)} images found\n')
-        click.echo('Image property descriptions:\n\n' +
-                   gd_collection.prop_df[['ABBREV', 'DESCRIPTION']].
-                   to_string(index=False, justify='right'))
-
-        click.echo('\nSearch Results:\n\n' + gd_collection.summary_string)
+        click.echo(f'Image property descriptions:\n\n{gd_collection.summary_key}\n')
+        click.echo(f'Search Results:\n\n{gd_collection.summary}')
 
     if (output is not None):
         output = pathlib.Path(output)
