@@ -16,15 +16,13 @@
 
 ##
 # Classes for searching GEE image collections
+import collections
 from datetime import datetime, timedelta
 import ee
 import pandas as pd
-from collections import namedtuple
-import click
-import json
 
 import geedim.image
-from geedim import export, image, info, medoid, root_path
+from geedim import image, info, medoid
 
 ##
 class Collection(object):
@@ -179,7 +177,8 @@ class Collection(object):
         comp_name = f'{self._ee_coll_name}/{start_date}-{end_date}-{method.upper()}_COMP'
         comp_image = comp_image.set('system:id', comp_name)
 
-        return comp_image, comp_name
+        CompositeResult = collections.namedtuple('CompositeResult', ['image', 'name'])
+        return CompositeResult(comp_image, comp_name)
 
     def _get_summary_df(self, ee_collection):
         """

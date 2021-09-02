@@ -19,21 +19,16 @@ from setuptools import setup, find_packages
 #    pip install -e .
 
 setup(
-    name='geedim',
-    version='0.1.0',
-    description='Google Earth Engine image download',
-    author='Dugal Harris',
-    author_email='dugalh@gmail.com',
-    url='https://github.com/dugalh/geedim/blob/main/setup-py',
-    license='Apache-2.0',
+    name="geedim",
+    version="0.1.0",
+    description="Google Earth Engine image download",
+    author="Dugal Harris",
+    author_email="dugalh@gmail.com",
+    url="https://github.com/dugalh/geedim/blob/main/setup-py",
+    license="Apache-2.0",
     packages=find_packages(),
-    python_requires='>=3.8',
-    install_requires=[
-        'rasterio>=1.2',
-        'pandas>=1.3',
-        'earthengine-api >= 0.1.2',
-        'click >= 7.1'
-    ],
-    entry_points={'console_scripts': ['geedim=geedim.cli:cli']},
+    python_requires=">=3.8",
+    install_requires=["pandas>=1.3", "earthengine-api >= 0.1.2", "click >= 7.1"],
+    entry_points={"console_scripts": ["geedim=geedim.cli:cli"]},
     # scripts=['scripts/ortho_im.py', 'scripts/batch_recompress.bat']
 )

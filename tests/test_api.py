@@ -23,7 +23,7 @@ class TestGeeDimApi(unittest.TestCase):
 
         Parameters
         ----------
-        gd_image: geedim.image.Image
+        gd_image: geedim.image.ProcImage
                 The image to download
         image_id : str
                    A string describing the image, will be used as filename

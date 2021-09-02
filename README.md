@@ -28,7 +28,7 @@ modis_nbar | [MODIS/006/MCD43A4](https://developers.google.com/earth-engine/data
 ```shell
 conda create -n <environment name> python=3.8 -c conda-forge 
 conda activate <environment name> 
-conda install -c conda-forge rasterio pandas click earthengine-api
+conda install -c conda-forge pandas click earthengine-api
 ````
 2) Clone the git repository and link into the conda environment:
 ``` shell
@@ -43,7 +43,6 @@ earthengine authenticate
 The following dependencies are installed in the process above.
   
   - python >= 3.8
-  - rasterio >= 1.2
   - pandas >= 1.2
   - earthengine-api >= 0.1
  

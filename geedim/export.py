@@ -17,25 +17,19 @@
 ##
 # Functions to download and export GEE images
 
-import json
 import os
 import pathlib
 import time
 import re
-# from urllib import request
-# from urllib.error import HTTPError
 import requests
 import zipfile
-import logging
 import click
 from xml.etree import ElementTree as etree
 from xml.dom import minidom
 
 import ee
-import rasterio as rio
-from rasterio.enums import ColorInterp
 
-from geedim import image, info
+from geedim import image
 
 def write_pam_xml(obj, filename):
     if isinstance(obj, dict):
@@ -71,15 +65,15 @@ def write_pam_xml(obj, filename):
         f.write(xml_str)
 
 
-class _ImContainer(object):
+class _ExportImage(image.Image):
     """ Container for download and export parameters """
     def __init__(self, image_obj, name='Image', dest_region=None, dest_crs=None, dest_scale=None):
         if isinstance(image_obj, image.Image):
-            self.ee_image = image_obj.ee_image
-            self.info = image_obj.info
+            self._ee_image = image_obj.ee_image
+            self._info = image_obj.info
         else:
-            self.ee_image = image_obj
-            self.info = image.get_info(image_obj)
+            self._ee_image = image_obj
+            self._info = image.get_info(image_obj)
 
         self.name = name
         self.dest_region = dest_region
@@ -89,20 +83,20 @@ class _ImContainer(object):
     def parse_attributes(self):
         # filename = pathlib.Path(filename)
 
-        if self.info['id'] is None:
-            self.info['id'] = pathlib.Path(self.name).stem
+        if self.id is None:
+            self._info['id'] = pathlib.Path(self.name).stem
 
         # if the image is in WGS84 and has no scale (probable composite), then exit
-        if (self.info['scale'] is None) and (self.dest_scale is None):
+        if (self.scale is None) and (self.dest_scale is None):
             raise Exception(f'{self.info["id"]} appears to be a composite in WGS84, specify a scale and CRS')
 
         # if it is a native MODIS CRS then warn about GEE bug
-        if (self.info['crs'] == 'SR-ORG:6974') and (self.dest_crs is None):
+        if (self.crs == 'SR-ORG:6974') and (self.dest_crs is None):
             raise Exception(f'There is an earth engine bug exporting in SR-ORG:6974, specify another CRS: '
                             f'https://issuetracker.google.com/issues/194561313')
 
         if self.dest_crs is None:
-            self.dest_crs = self.info['crs']  # CRS corresponding to minimum scale
+            self.dest_crs = self.crs  # CRS corresponding to minimum scale
         if self.dest_region is None:
             if 'system:footprint' in self.info['properties']:
                 self.dest_region = self.info['properties']['system:footprint']
@@ -111,7 +105,7 @@ class _ImContainer(object):
                 raise AttributeError(f'{self.info["id"]} does not have a footprint, specify a region to download')
 
         if self.dest_scale is None:
-            self.dest_scale = self.info['scale']  # minimum scale
+            self.dest_scale = self.scale  # minimum scale
 
         # warn if some band scales will be changed
         # if (band_info_df['crs'].unique().size > 1) or (band_info_df['scale'].unique().size > 1):
@@ -120,7 +114,6 @@ class _ImContainer(object):
         if isinstance(self.dest_region, dict):
             self.dest_region = ee.Geometry(self.dest_region)
 
-        return self
 
 
 def export_image(image_obj, filename, folder='', region=None, crs=None, scale=None, wait=True):
@@ -151,17 +144,17 @@ def export_image(image_obj, filename, folder='', region=None, crs=None, scale=No
     -------
     task : EE task object
     """
-    d_image = _ImContainer(image_obj, name=filename, dest_region=region, dest_crs=crs, dest_scale=scale)
-    d_image.parse_attributes()
+    exp_image = _ExportImage(image_obj, name=filename, dest_region=region, dest_crs=crs, dest_scale=scale)
+    exp_image.parse_attributes()
 
     # create export task and start
-    task = ee.batch.Export.image.toDrive(image=d_image.ee_image,
-                                         region=d_image.dest_region,
+    task = ee.batch.Export.image.toDrive(image=exp_image.ee_image,
+                                         region=exp_image.dest_region,
                                          description=filename[:100],
                                          folder=folder,
                                          fileNamePrefix=filename,
-                                         scale=d_image.dest_scale,
-                                         crs=d_image.dest_crs,
+                                         scale=exp_image.dest_scale,
+                                         crs=exp_image.dest_crs,
                                          maxPixels=1e9)
 
     task.start()
@@ -230,19 +223,19 @@ def download_image(image_obj, filename, region=None, crs=None, scale=None, overw
                 Overwrite the destination file if it exists, otherwise prompt the user (default: True)
     """
     filename = pathlib.Path(filename)
-    d_image = _ImContainer(image_obj, name=filename, dest_region=region, dest_crs=crs, dest_scale=scale)
-    d_image.parse_attributes()
+    exp_image = _ExportImage(image_obj, name=filename, dest_region=region, dest_crs=crs, dest_scale=scale)
+    exp_image.parse_attributes()
 
 
     # get download link
     try:
-        link = d_image.ee_image.getDownloadURL({
-            'scale': d_image.dest_scale,
-            'crs': d_image.dest_crs,
+        link = exp_image.ee_image.getDownloadURL({
+            'scale': exp_image.dest_scale,
+            'crs': exp_image.dest_crs,
             'fileFormat': 'GeoTIFF',
             # 'bands': bands_dict,
             'filePerBand': False,
-            'region': d_image.dest_region})
+            'region': exp_image.dest_region})
     except ee.ee_exception.EEException as ex:
         if re.match(r'Total request size \(.*\) must be less than or equal to .*', str(ex)):
             raise Exception(f'The requested image is too large, reduce its size, or use `export`\n({str(ex)})')
@@ -281,6 +274,6 @@ def download_image(image_obj, filename, region=None, crs=None, scale=None, overw
         os.rename(zip_tif_filename, tif_filename)
 
     # write image metadata to pam xml file
-    write_pam_xml(d_image.info, str(tif_filename) + '.aux.xml')
+    write_pam_xml(exp_image.info, str(tif_filename) + '.aux.xml')
 
     return link

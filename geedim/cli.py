@@ -95,7 +95,7 @@ def _create_im_list(ids, **kwargs):
 def _export_download(res=_CmdChainResults(), download=True, **kwargs):
 
     # unpack arguments into a named tuple
-    arg_tuple = collections.namedtuple('arg_tuple', kwargs)
+    arg_tuple = namedtuple('arg_tuple', kwargs)
     params = arg_tuple(**kwargs)
 
     if (params.region is None) and (params.bbox is None or len(params.bbox)==0):
