@@ -93,7 +93,7 @@ class _ImContainer(object):
             self.info['id'] = pathlib.Path(self.name).stem
 
         # if the image is in WGS84 and has no scale (probable composite), then exit
-        if self.info['crs'] is None or self.info['scale'] is None:
+        if (self.info['scale'] is None) and (self.dest_scale is None):
             raise Exception(f'{self.info["id"]} appears to be a composite in WGS84, specify a scale and CRS')
 
         # if it is a native MODIS CRS then warn about GEE bug

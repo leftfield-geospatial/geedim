@@ -30,7 +30,7 @@ from geedim import info, image
 # from geedim.collection import cls_from_coll
 
 
-class CmdResults(object):
+class _CmdChainResults(object):
     def __init__(self):
         self.search_ids = None
         self.search_region = None
@@ -92,7 +92,7 @@ def _create_im_list(ids, **kwargs):
 
     return im_list
 
-def _export_download(res=CmdResults(), download=True, **kwargs):
+def _export_download(res=_CmdChainResults(), download=True, **kwargs):
 
     # unpack arguments into a named tuple
     arg_tuple = collections.namedtuple('arg_tuple', kwargs)
@@ -204,7 +204,7 @@ add_aux_option = click.option(
 @click.pass_context
 def cli(ctx):
     ee.Initialize()
-    ctx.obj = CmdResults()
+    ctx.obj = _CmdChainResults()
 
 
 @click.command()

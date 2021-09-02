@@ -170,7 +170,7 @@ class Collection(object):
             raise ValueError(f'Unsupported composite method: {method}')
 
         # populate image metadata with info on component images
-        comp_image = comp_image.set('COMPOSITE_IMAGES', self.summary)
+        comp_image = comp_image.set('COMPONENT_IMAGES', self.summary)
 
         # name the composite
         start_date = self.summary_df.DATE.iloc[0].strftime('%Y_%m_%d')
