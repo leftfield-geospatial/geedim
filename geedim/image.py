@@ -111,10 +111,16 @@ class Image(object):
         return self._info
 
     @property
-    def projection(self):
-        if self._projection is None:
-            self._projection = get_projection(self._ee_image)
-        return self._projection
+    def id(self):
+        return self.info['id']
+
+    @property
+    def crs(self):
+        return self.info['crs']
+
+    @property
+    def scale(self):
+        return self.info['scale']
 
     @classmethod
     def ee_collection(cls):
@@ -584,6 +590,7 @@ def split_id(image_id):
     ee_coll_name = '/'.join(image_id.split('/')[:-1])
     return ee_coll_name, index
 
+
 def get_info(image, min=True):
     """
     Retrieve earth engine image information
@@ -606,11 +613,6 @@ def get_info(image, min=True):
     if 'id' in ee_info:
         gd_info['id'] = ee_info['id']
 
-        # get sr band metadata if it exists
-        ee_coll_name = split_id(gd_info['id'])[0]
-        if ee_coll_name in info.ee_to_gd:
-            gd_info['bands'] = info.collection_info[info.ee_to_gd[ee_coll_name]]['bands']
-
     if 'properties' in ee_info:
         gd_info['properties'] = ee_info['properties']
 
@@ -621,39 +623,24 @@ def get_info(image, min=True):
         band_df['scale'] = scales
 
         filt_band_df = band_df[(band_df.crs != 'EPSG:4326') & (band_df.scale != 1)]
-        if filt_band_df.shape[0]==0:
-            gd_info['crs'] = 'EPSG:4326'
-            gd_info['scale'] = 1
-        else:
+        if filt_band_df.shape[0] > 0:
             idx = filt_band_df.scale.idxmin() if min else filt_band_df.scale.idxmax()
             gd_info['crs'], gd_info['scale'] = filt_band_df.loc[idx, ['crs', 'scale']]
 
+        # get sr band metadata if it exists
+        ee_coll_name = split_id(str(gd_info['id']))[0]
+        if ee_coll_name in info.ee_to_gd:
+            # concatenate sr band metadata from collection_info with band ids from ee.Image
+            gd_info['bands'] = info.collection_info[info.ee_to_gd[ee_coll_name]]['bands']
+            sr_band_df = pd.DataFrame.from_dict(gd_info['bands'])
+            band_df.index = band_df.id
+            band_df = band_df.drop(index=sr_band_df.id)
+            gd_info['bands'] += band_df[['id']].to_dict('records')
+        else:
+            gd_info['bands'] = band_df[['id']].to_dict('records')
+
     return gd_info
 
-
-def get_image_info(image):
-    """
-    Retrieve image info, and create a pandas DataFrame of band properties
-
-    Parameters
-    ----------
-    image : ee.Image
-
-    Returns
-    -------
-    im_info_dict : dict
-                   Image properties
-    band_info_df : pandas.DataFrame
-                   Band properties including scale
-    """
-    im_info_dict = image.getInfo()
-
-    band_info_df = pd.DataFrame(im_info_dict['bands'])
-    crs_transforms = band_info_df['crs_transform'].values
-    scales = [abs(float(crs_transform[0])) for crs_transform in crs_transforms]
-    band_info_df['scale'] = scales
-
-    return im_info_dict, band_info_df
 
 # Adapted from from https://github.com/gee-community/gee_tools, MIT license
 def get_projection(image, min=True):

@@ -37,51 +37,6 @@ from rasterio.enums import ColorInterp
 
 from geedim import image, info
 
-
-'''
-<PAMDataset>
-  <Metadata>
-    <MDI key="AOT_RETRIEVAL_ACCURACY">0</MDI>
-    <MDI key="CLOUDY_PIXEL_PERCENTAGE">56.769975</MDI>
-    <MDI key="CLOUD_COVERAGE_ASSESSMENT">56.769975</MDI>
-    <MDI key="CLOUD_SHADOW_PERCENTAGE">1.086251</MDI>
-    <MDI key="DARK_FEATURES_PERCENTAGE">2.990541</MDI>
-    <MDI key="DATASTRIP_ID">S2A_OPER_MSI_L2A_DS_SGS__20190125T115717_S20190125T082727_N02.11</MDI>
-    <MDI key="DATATAKE_IDENTIFIER">GS2A_20190125T080221_018765_N02.11</MDI>
-    <MDI key="DATATAKE_TYPE">INS-NOBS</MDI>
-    <MDI key="DEGRADED_MSI_DATA_PERCENTAGE">0</MDI>
-    ...
-  </Metadata>
-  <PAMRasterBand band="1">
-    <Description>SR_B1</Description>
-    <Metadata>
-      <MDI key="ABBREV">UB</MDI>
-      <MDI key="BW_END">0.451</MDI>
-      <MDI key="BW_START">0.435</MDI>
-      <MDI key="ID">SR_B1</MDI>
-      <MDI key="NAME">ultra blue</MDI>
-      <MDI key="RES">30</MDI>
-      <MDI key="STATISTICS_MAXIMUM">12740</MDI>
-      <MDI key="STATISTICS_MEAN">9187.6409516068</MDI>
-      <MDI key="STATISTICS_MINIMUM">7863</MDI>
-      <MDI key="STATISTICS_STDDEV">329.45495946535</MDI>
-      <MDI key="STATISTICS_VALID_PERCENT">99.54</MDI>
-    </Metadata>
-  </PAMRasterBand>
-...
-  <PAMRasterBand band="5">
-    <Description>SR_B5</Description>
-    <Metadata>
-      <MDI key="ABBREV">NIR</MDI>
-      <MDI key="BW_END">0.879</MDI>
-      <MDI key="BW_START">0.851</MDI>
-      <MDI key="ID">SR_B5</MDI>
-      <MDI key="NAME">near infrared</MDI>
-      <MDI key="RES">30</MDI>
-    </Metadata>
-  </PAMRasterBand>
-</PAMDataset>
-'''
 def write_pam_xml(obj, filename):
     if isinstance(obj, dict):
         gd_info = obj
@@ -91,6 +46,9 @@ def write_pam_xml(obj, filename):
         gd_info = obj.info
     else:
         raise TypeError(f'Unsupported type: {obj.__class__}')
+
+    if 'system:footprint' in gd_info['properties']:
+        gd_info['properties'].pop('system:footprint')
 
     root = etree.Element('PAMDataset')
     prop_meta = etree.SubElement(root, 'Metadata')
@@ -108,7 +66,7 @@ def write_pam_xml(obj, filename):
             item = etree.SubElement(band_meta, 'MDI', attrib=dict(key=key.upper()))
             item.text = str(val)
 
-    xml_str = minidom.parseString(etree.tostring(root)).toprettyxml(indent="   ")
+    xml_str = minidom.parseString(etree.tostring(root)).childNodes[0].toprettyxml(indent="   ")
     with open(filename, 'w') as f:
         f.write(xml_str)
 
@@ -138,8 +96,8 @@ def _parse_export_args(ee_image, filename=None, region=None, crs=None, scale=Non
 
     Parameters
     ----------
-    ee_image : ee.Image
-            The image to export
+    ee_image : ee.Image, geedim.image.Image
+               The image to export
     region : dict, geojson, ee.Geometry, optional
              Region of interest (WGS84) to export (default: export the entire image granule if it has one).
     crs : str, optional
@@ -148,40 +106,35 @@ def _parse_export_args(ee_image, filename=None, region=None, crs=None, scale=Non
             Pixel resolution (m) to export to (default: use the highest resolution of the image bands).
     """
     # get ee image info which is used in setting crs, scale and tif metadata (no further calls to getInfo)
-    im_info_dict, band_info_df = image.get_image_info(ee_image)
+    if isinstance(ee_image, image.Image):
+        gd_info = ee_image.info
+    else:
+        gd_info = image.get_info(ee_image)
 
     # filename = pathlib.Path(filename)
-    if filename is None:
-        im_id = im_info_dict['id'] if 'id' in im_info_dict else 'Image'
-    else:
-        im_id = pathlib.Path(filename).stem
+    if gd_info['id'] is None:
+        gd_info['id'] = pathlib.Path(filename).stem
 
     # if the image is in WGS84 and has no scale (probable composite), then exit
-    if crs is None or scale is None:
-        _band_info_df = band_info_df[(band_info_df.crs != 'EPSG:4326') & (band_info_df.scale != 1)]
-        if _band_info_df.shape[0]==0:
-            raise Exception(f'{im_id} appears to be a composite in WGS84, specify a scale and CRS')
-
-        # get minimum scale and corresponding crs, excluding WGS84 bands
-        min_scale_idx = _band_info_df.scale.idxmin()
-        min_crs, min_scale = band_info_df.loc[min_scale_idx, ['crs', 'scale']]
+    if gd_info['crs'] is None or gd_info['scale'] is None:
+        raise Exception(f'{gd_info["id"]} appears to be a composite in WGS84, specify a scale and CRS')
 
     # if it is a native MODIS CRS then warn about GEE bug
-    if any(band_info_df['crs'] == 'SR-ORG:6974') and (crs is None):
+    if (gd_info['crs'] == 'SR-ORG:6974') and (crs is None):
         raise Exception(f'There is an earth engine bug exporting in SR-ORG:6974, specify another CRS: '
                         f'https://issuetracker.google.com/issues/194561313')
 
     if crs is None:
-        crs = min_crs        # CRS corresponding to minimum scale
+        crs = gd_info['crs']        # CRS corresponding to minimum scale
     if region is None:
-        if 'system:footprint' in im_info_dict['properties']:
-            region = im_info_dict['properties']['system:footprint']
-            click.secho(f'{im_id}: region not specified, setting to image footprint')
+        if 'system:footprint' in gd_info['properties']:
+            region = gd_info['properties']['system:footprint']
+            click.secho(f'{gd_info["id"]}: region not specified, setting to image footprint')
         else:
-            raise AttributeError(f'{im_id} does not have a footprint, specify a region to download')
+            raise AttributeError(f'{gd_info["id"]} does not have a footprint, specify a region to download')
 
     if scale is None:
-        scale = min_scale     # minimum scale
+        scale = gd_info['scale']     # minimum scale
 
     # warn if some band scales will be changed
     # if (band_info_df['crs'].unique().size > 1) or (band_info_df['scale'].unique().size > 1):
@@ -190,7 +143,7 @@ def _parse_export_args(ee_image, filename=None, region=None, crs=None, scale=Non
     if isinstance(region, dict):
         region = ee.Geometry(region)
 
-    return region, crs, scale, im_info_dict
+    return region, crs, scale, gd_info
 
 
 def export_image(ee_image, filename, folder='', region=None, crs=None, scale=None, wait=True):
@@ -221,9 +174,7 @@ def export_image(ee_image, filename, folder='', region=None, crs=None, scale=Non
     -------
     task : EE task object
     """
-    # im_id = im_info_dict['id'] + ' ' if 'id' in im_info_dict else ''
-    # click.echo(f'Exporting to Google Drive:{folder}/{filename}.tif')
-    region, crs, scale, im_info_dict = _parse_export_args(ee_image, filename=filename, region=region, crs=crs, scale=scale)
+    region, crs, scale, _ = _parse_export_args(ee_image, filename=filename, region=region, crs=crs, scale=scale)
 
 
     # create export task and start
@@ -239,7 +190,6 @@ def export_image(ee_image, filename, folder='', region=None, crs=None, scale=Non
     task.start()
 
     if wait:  # wait for completion
-        # click.echo(f'Waiting for Google Drive:{folder}/{filename}.tif ...')
         monitor_export_task(task)
 
     return task
@@ -279,6 +229,7 @@ def monitor_export_task(task, label=None):
     if status['metadata']['state'] != 'SUCCEEDED':
         raise Exception(f'Export failed \n{status}')
 
+
 def download_image(ee_image, filename, region=None, crs=None, scale=None, band_df=None, overwrite=False):
     """
     Download an image as a GeoTiff
@@ -304,11 +255,8 @@ def download_image(ee_image, filename, region=None, crs=None, scale=None, band_d
     overwrite : bool, optional
                 Overwrite the destination file if it exists, otherwise prompt the user (default: True)
     """
-    # get ee image info which is used in setting crs, scale and tif metadata (no further calls to getInfo)
     filename = pathlib.Path(filename)
-    # im_id = im_info_dict['id'] + ' ' if 'id' in im_info_dict else ''
-    # click.echo(f'Downloading to {filename.name}')
-    region, crs, scale, im_info_dict = _parse_export_args(ee_image, filename=filename, region=region, crs=crs, scale=scale)
+    region, crs, scale, gd_info = _parse_export_args(ee_image, filename=filename, region=region, crs=crs, scale=scale)
 
 
     # get download link
@@ -326,7 +274,7 @@ def download_image(ee_image, filename, region=None, crs=None, scale=None, band_d
         else:
             raise ex
 
-
+    # download zip file
     tif_filename = filename.parent.joinpath(filename.stem + '.tif')  # force to tif file
     zip_filename = tif_filename.parent.joinpath('geedim_download.zip')
     with requests.get(link, stream=True) as r:
@@ -357,35 +305,7 @@ def download_image(ee_image, filename, region=None, crs=None, scale=None, band_d
                 tif_filename = pathlib.Path(tif_filename)
         os.rename(zip_tif_filename, tif_filename)
 
-
+    # write image metadata to pam xml file
+    write_pam_xml(gd_info, str(tif_filename) + '.aux.xml')
 
     return link
-
-'''
-    # remove footprint property from im_info_dict before copying to tif file
-
-    # copy ee image metadata to downloaded tif file
-    try:
-        # suppress rasterio warnings relating to GEE tag (?) issue
-        logging.getLogger("rasterio").setLevel(logging.ERROR)
-
-        with rio.open(tif_filename, 'r+') as im:
-            if 'properties' in im_info_dict:
-                im.update_tags(**im_info_dict['properties'])
-            if 'id' in im_info_dict:
-                im.update_tags(id=im_info_dict['id'])
-
-            im.colorinterp = [ColorInterp.undefined] * im.count
-
-            if 'bands' in im_info_dict:
-                for band_i, band_info in enumerate(im_info_dict['bands']):
-                    im.set_band_description(band_i + 1, band_info['id'])
-                    im.update_tags(band_i + 1, ID=band_info['id'])
-
-                    if (band_df is not None) and (band_info['id'] in band_df['id'].values):
-                        band_row = band_df.loc[band_df['id'] == band_info['id']].iloc[0].drop('id')
-                        for key, val in band_row.iteritems():
-                            im.update_tags(band_i + 1, **{str(key).upper(): val})
-    finally:
-        logging.getLogger("rasterio").setLevel(logging.WARNING)
-'''

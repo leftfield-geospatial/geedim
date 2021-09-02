@@ -38,11 +38,12 @@ class TestGeeDimApi(unittest.TestCase):
                   id's that match the ee.Image band id's
         """
         # check image info
-        im_info_dict, band_info_df = image.get_image_info(ee_image)
+        gd_info = image.get_info(ee_image)
 
-        for key in ['bands', 'properties']:
-            self.assertTrue(key in im_info_dict.keys(), msg='Image info has bands and properties')
-        self.assertGreater(band_info_df.shape[0], 1, msg='Image has more than one band')
+        for key in ['bands', 'properties', 'id', 'crs', 'scale']:
+            self.assertTrue(key in gd_info.keys(), msg='Image info ok')
+            self.assertTrue(gd_info[key] is not None, msg='Image info ok')
+        self.assertGreater(len(gd_info['bands']), 1, msg='Image has more than one band')
 
         # construct image filename based on id, crs and scale
         # delay setting crs etc if its None, so we can test download_image(...crs=None,scale=None)
@@ -76,7 +77,7 @@ class TestGeeDimApi(unittest.TestCase):
         self.assertTrue(image_filename.exists(), msg='Download file exists')
 
         with rio.open(image_filename) as im:
-            self.assertEqual(band_info_df.shape[0], im.count, msg='EE and download image band count match')
+            #self.assertEqual(len(gd_info['bands']), im.count, msg='EE and download image band count match')
             self.assertEqual(crs.to_proj4(), im.crs.to_proj4(), msg='EE and download image CRS match')
             self.assertAlmostEqual(scale, im.res[0], places=3, msg='EE and download image scale match')
             im_bounds_wgs84 = transform_bounds(im.crs, 'WGS84', *im.bounds)  # convert to WGS84 geojson
