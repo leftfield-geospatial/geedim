@@ -70,7 +70,7 @@ def get_info(ee_image, min=True):
         ee_coll_name = split_id(str(gd_info["id"]))[0]
         if ee_coll_name in info.ee_to_gd:
             # concatenate sr band metadata from collection_info with band ids from ee.Image
-            gd_info["bands"] = info.collection_info[info.ee_to_gd[ee_coll_name]]["bands"]
+            gd_info["bands"] = info.collection_info[info.ee_to_gd[ee_coll_name]]["bands"].copy()
             sr_band_df = pd.DataFrame.from_dict(gd_info["bands"])
             band_df.index = band_df.id
             band_df = band_df.drop(index=sr_band_df.id)
@@ -177,7 +177,7 @@ class ProcImage(Image):
         """
         # prevent instantiation of this (non-abstract) base class
         if not self.gd_coll_name in info.collection_info:
-            raise Exception("This base class cannot be instantiated, use a derived class")
+            raise NotImplementedError("This base class cannot be instantiated, use a derived class")
 
         # self._collection_info = info.collection_info[self.gd_coll_name]
         # self.band_df = pd.DataFrame.from_dict(self._collection_info['bands'])
@@ -429,19 +429,18 @@ class LandsatImage(ProcImage):
 
         # scale to new range
         # low/high values from https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C02_T1_L2?hl=en
+        # TODO: what about scaling the BT_* surface temp band?  It has a different range.
         low = 0.2 / 2.75e-05
         high = low + 1 / 2.75e-05
         calib_image = ee_image.select(sr_bands).unitScale(low=low, high=high).multiply(10000.0)
         calib_image = calib_image.addBands(ee_image.select(non_sr_bands))
-        calib_image = calib_image.updateMask(
-            ee_image.mask()
-        )  # apply any existing mask to refl image
+        calib_image = calib_image.updateMask(ee_image.mask())  # apply any existing mask to refl image
 
         # copy required system properties that are not copied in copyProperties below
         for key in ["system:index", "system:id", "id", "system:time_start", "system:time_end"]:
             calib_image = calib_image.set(key, ee.String(ee_image.get(key)))
 
-        return ee.Image(calib_image.copyProperties(ee_image))
+        return ee.Image(ee.Element(calib_image).copyProperties(ee.Element(ee_image)))
 
 
 class Landsat8Image(LandsatImage):

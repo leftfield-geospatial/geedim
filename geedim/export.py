@@ -67,7 +67,7 @@ def write_pam_xml(obj, filename):
 
 class _ExportImage(image.Image):
     """ Container for download and export parameters """
-    def __init__(self, image_obj, name='Image', dest_region=None, dest_crs=None, dest_scale=None):
+    def __init__(self, image_obj, name='Image', exp_region=None, exp_crs=None, exp_scale=None):
         if isinstance(image_obj, image.Image):
             self._ee_image = image_obj.ee_image
             self._info = image_obj.info
@@ -76,9 +76,9 @@ class _ExportImage(image.Image):
             self._info = image.get_info(image_obj)
 
         self.name = name
-        self.dest_region = dest_region
-        self.dest_crs = dest_crs
-        self.dest_scale = dest_scale
+        self.exp_region = exp_region
+        self.exp_crs = exp_crs
+        self.exp_scale = exp_scale
 
     def parse_attributes(self):
         # filename = pathlib.Path(filename)
@@ -87,32 +87,32 @@ class _ExportImage(image.Image):
             self._info['id'] = pathlib.Path(self.name).stem
 
         # if the image is in WGS84 and has no scale (probable composite), then exit
-        if (self.scale is None) and (self.dest_scale is None):
+        if (self.scale is None) and (self.exp_scale is None):
             raise Exception(f'{self.info["id"]} appears to be a composite in WGS84, specify a scale and CRS')
 
         # if it is a native MODIS CRS then warn about GEE bug
-        if (self.crs == 'SR-ORG:6974') and (self.dest_crs is None):
+        if (self.crs == 'SR-ORG:6974') and (self.exp_crs is None):
             raise Exception(f'There is an earth engine bug exporting in SR-ORG:6974, specify another CRS: '
                             f'https://issuetracker.google.com/issues/194561313')
 
-        if self.dest_crs is None:
-            self.dest_crs = self.crs  # CRS corresponding to minimum scale
-        if self.dest_region is None:
+        if self.exp_crs is None:
+            self.exp_crs = self.crs  # CRS corresponding to minimum scale
+        if self.exp_region is None:
             if 'system:footprint' in self.info['properties']:
-                self.dest_region = self.info['properties']['system:footprint']
+                self.exp_region = self.info['properties']['system:footprint']
                 click.secho(f'{self.info["id"]}: region not specified, setting to image footprint')
             else:
                 raise AttributeError(f'{self.info["id"]} does not have a footprint, specify a region to download')
 
-        if self.dest_scale is None:
-            self.dest_scale = self.scale  # minimum scale
+        if self.exp_scale is None:
+            self.exp_scale = self.scale  # minimum scale
 
         # warn if some band scales will be changed
         # if (band_info_df['crs'].unique().size > 1) or (band_info_df['scale'].unique().size > 1):
         #     click.echo(f'{im_id}: re-projecting all bands to {crs} at {scale:.1f}m')
 
-        if isinstance(self.dest_region, dict):
-            self.dest_region = ee.Geometry(self.dest_region)
+        if isinstance(self.exp_region, dict):
+            self.exp_region = ee.Geometry(self.exp_region)
 
 
 
@@ -144,17 +144,17 @@ def export_image(image_obj, filename, folder='', region=None, crs=None, scale=No
     -------
     task : EE task object
     """
-    exp_image = _ExportImage(image_obj, name=filename, dest_region=region, dest_crs=crs, dest_scale=scale)
+    exp_image = _ExportImage(image_obj, name=filename, exp_region=region, exp_crs=crs, exp_scale=scale)
     exp_image.parse_attributes()
 
     # create export task and start
     task = ee.batch.Export.image.toDrive(image=exp_image.ee_image,
-                                         region=exp_image.dest_region,
+                                         region=exp_image.exp_region,
                                          description=filename[:100],
                                          folder=folder,
                                          fileNamePrefix=filename,
-                                         scale=exp_image.dest_scale,
-                                         crs=exp_image.dest_crs,
+                                         scale=exp_image.exp_scale,
+                                         crs=exp_image.exp_crs,
                                          maxPixels=1e9)
 
     task.start()
@@ -223,19 +223,19 @@ def download_image(image_obj, filename, region=None, crs=None, scale=None, overw
                 Overwrite the destination file if it exists, otherwise prompt the user (default: True)
     """
     filename = pathlib.Path(filename)
-    exp_image = _ExportImage(image_obj, name=filename, dest_region=region, dest_crs=crs, dest_scale=scale)
+    exp_image = _ExportImage(image_obj, name=filename, exp_region=region, exp_crs=crs, exp_scale=scale)
     exp_image.parse_attributes()
 
 
     # get download link
     try:
         link = exp_image.ee_image.getDownloadURL({
-            'scale': exp_image.dest_scale,
-            'crs': exp_image.dest_crs,
+            'scale': exp_image.exp_scale,
+            'crs': exp_image.exp_crs,
             'fileFormat': 'GeoTIFF',
             # 'bands': bands_dict,
             'filePerBand': False,
-            'region': exp_image.dest_region})
+            'region': exp_image.exp_region})
     except ee.ee_exception.EEException as ex:
         if re.match(r'Total request size \(.*\) must be less than or equal to .*', str(ex)):
             raise Exception(f'The requested image is too large, reduce its size, or use `export`\n({str(ex)})')

@@ -7,91 +7,61 @@ import pandas as pd
 import rasterio as rio
 from rasterio.crs import CRS
 from rasterio.warp import transform_bounds
-
+import numpy as np
 from geedim import export, collection, root_path, info, image
 
 
-class TestGeeDimApi(unittest.TestCase):
+class TestApi(unittest.TestCase):
     """
     Test backend functionality in search and download modules
     """
 
-    # TODO: separate API search and download testing (?) and or make one _test_download fn that works from api and cli
-    def _test_download(self, gd_image, image_id, region, crs=None, scale=None):
-        """
-        Test image download
+    @classmethod
+    def setUpClass(cls):
+        ee.Initialize()
 
-        Parameters
-        ----------
-        gd_image: geedim.image.ProcImage
-                The image to download
-        image_id : str
-                   A string describing the image, will be used as filename
-        region : dict, geojson, ee.Geometry
-                 geojson region of interest to download
-        crs : str, optional
-              str compatible with rasterio.rs.CRS.from_string() specifying download CRS
-        scale : float, optional
-               Image target resolution
-        band_df : pandas.DataFrame, optional
-                  DataFrame specifying band metadata to be copied to downloaded file.  'id' column should contain band
-                  id's that match the ee.Image band id's
-        """
-        # check image info
-        gd_info = gd_image.info
 
+    def _test_image(self, image_obj, mask=False, scale_refl=False):
+        ee_coll_name = image.split_id(image_obj)[0]
+        gd_coll_name = info.ee_to_gd[ee_coll_name]
+        gd_image = image.get_class(gd_coll_name).from_id(image_obj, mask=mask, scale_refl=scale_refl)
+        self.assertTrue(gd_image.id == image_obj, 'IDs match')
+
+        sr_band_df = pd.DataFrame.from_dict(info.collection_info[gd_coll_name]['bands'])
         for key in ['bands', 'properties', 'id', 'crs', 'scale']:
-            self.assertTrue(key in gd_info.keys(), msg='Image info ok')
-            self.assertTrue(gd_info[key] is not None, msg='Image info ok')
-        self.assertGreater(len(gd_info['bands']), 1, msg='Image has more than one band')
+            self.assertTrue(key in gd_image.info.keys(), msg='Image gd_info complete')
+            self.assertTrue(gd_image.info[key] is not None, msg='Image gd_info complete')
 
-        # construct image filename based on id, crs and scale
-        # delay setting crs etc if its None, so we can test download_image(...crs=None,scale=None)
-        if crs is not None:
-            crs_str = f'EPSG{CRS.from_string(crs).to_epsg()}'
-        else:
-            crs_str = 'None'
+        self.assertTrue(gd_image.scale > 0 and gd_image.scale < 5000, 'Scale in range')
+        self.assertTrue(gd_image.crs != 'EPSG:4326', 'Non wgs84')
 
-        image_filename = root_path.joinpath(f'data/outputs/tests/{image_id}_{crs_str}_{scale}m.tif')
+        im_band_df = pd.DataFrame.from_dict(gd_image.info['bands'])
 
-        # run the download
-        export.download_image(gd_image, image_filename, region=region, crs=crs, scale=scale, overwrite=True)
+        self.assertTrue(im_band_df.shape[0] >= sr_band_df.shape[0], 'Enough bands')
+        for id in ['VALID_MASK', 'CLOUD_MASK', 'SHADOW_MASK', 'FILL_MASK', 'SCORE']:
+            self.assertTrue(id in im_band_df.id.values, msg='Image has auxiliary bands')
+        for id in sr_band_df.id.values:
+            self.assertTrue(id in im_band_df.id.values, msg='Image has SR bands')
 
-        # now set scale and crs to their image defaults as necessary
-        min_proj = image.get_projection(gd_image.ee_image)
-        if scale is None:
-            scale = min_proj.nominalScale().getInfo()    #band_info_df['scale'].min()
-        if crs is None:
-            crs = CRS.from_wkt(min_proj.wkt().getInfo())
-        elif isinstance(crs, str):
-            crs = CRS.from_string(crs)
-        else:
-            raise TypeError('CRS must be None or string')
+        region = {"type": "Polygon",
+                  "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
+        if scale_refl and ('landsat' in gd_coll_name):
+            sr_band_ids = sr_band_df[sr_band_df.id.str.startswith('SR_B')].id.tolist()
+            sr_image = gd_image.ee_image.select(sr_band_ids)
+            max_refl = sr_image.reduceRegion(reducer='max', geometry=region, scale=2*gd_image.scale).getInfo()
+            self.assertTrue(all(np.array(list(max_refl.values())) <= 10000), 'Scaled reflectance in range')
 
-        region_arr = pd.DataFrame(region['coordinates'][0], columns=['x', 'y'])  # avoid numpy dependency
-        region_bounds = rio.coords.BoundingBox(region_arr.x.min(), region_arr.y.min(), region_arr.x.max(),
-                                               region_arr.y.max())
+    def test_image(self):
+        im_param_list = [
+            {'image_id': 'COPERNICUS/S2_SR/20190115T080251_20190115T082230_T35HKC', 'mask': True, 'scale_refl': False},
+            {'image_id': 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190128', 'mask': False, 'scale_refl': True},
+            {'image_id': 'MODIS/006/MCD43A4/2019_01_01', 'mask': True, 'scale_refl': False},
+        ]
 
-        # check the validity of the downloaded file
-        self.assertTrue(image_filename.exists(), msg='Download file exists')
+        for im_param_dict in im_param_list:
+            with self.subTest('Image', **im_param_dict):
+                self._test_image(**im_param_dict)
 
-        with rio.open(image_filename) as im:
-            #self.assertEqual(len(gd_info['bands']), im.count, msg='EE and download image band count match')
-            self.assertEqual(crs.to_proj4(), im.crs.to_proj4(), msg='EE and download image CRS match')
-            self.assertAlmostEqual(scale, im.res[0], places=3, msg='EE and download image scale match')
-            im_bounds_wgs84 = transform_bounds(im.crs, 'WGS84', *im.bounds)  # convert to WGS84 geojson
-
-            self.assertFalse(rio.coords.disjoint_bounds(region_bounds, im_bounds_wgs84),
-                             msg='Search and image bounds match')
-
-            # if 'MODIS' not in image_id:
-            #     if 'VALID_MASK' in im.descriptions:
-            #         valid_mask = im.read(im.descriptions.index('VALID_MASK') + 1)
-            #     else:
-            #         valid_mask = im.read_masks(1)
-            #
-            #     self.assertAlmostEqual(100 * valid_mask.mean(), float(im.get_tag_item('VALID_PORTION')), delta=5,
-            #                            msg=f'VALID_PORTION matches mask mean for {image_id}')
 
     def _test_search(self, gd_coll_name):
         """
@@ -105,62 +75,145 @@ class TestGeeDimApi(unittest.TestCase):
         # GEF Baviaanskloof region
         region = {"type": "Polygon",
                   "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
-        date = datetime.strptime('2019-02-01', '%Y-%m-%d')
+        start_date = datetime.strptime('2019-02-01', '%Y-%m-%d')
+        end_date = start_date + timedelta(days=32)
+        valid_portion = 10
         gd_collection = collection.Collection(gd_coll_name)
-        image_df = gd_collection.search(date, date + timedelta(days=32), region)
+        image_df = gd_collection.search(start_date, end_date, region, valid_portion=valid_portion)
 
         # check search results
-        self.assertGreater(image_df.shape[0], 0, msg='Search returned one or more images')
-        for im_prop in gd_collection._summary_key_df.ABBREV.values:
-            self.assertTrue(im_prop in image_df.columns, msg='Search results contain specified properties')
+        self.assertGreater(image_df.shape[0], 0, msg='search returned one or more images')
+        for im_prop in gd_collection.summary_key_df.ABBREV.values:
+            self.assertTrue(im_prop in image_df.columns, msg='summary contains required columns')
+            if gd_coll_name != 'modis_nbar':
+                self.assertTrue(all((image_df.VALID >= valid_portion) & (image_df.VALID <= 100)), msg=f'VALID in range')
+                self.assertTrue(all(image_df.SCORE >= 0), msg=f'SCORE in range')
+            self.assertTrue(all((image_df.DATE >= start_date) & (image_df.DATE <= end_date)), msg=f'DATE in range')
 
-        # select an image to download/export
-        im_idx = math.ceil(image_df.shape[0] / 2)
-        image_id = str(image_df['ID'].iloc[im_idx])
-        gd_image = image.get_class(gd_coll_name).from_id(image_id, mask=False, scale_refl=False)
-        image_name = image_id.replace('/', '-')
 
-        # force CRS for MODIS as workaround for GEE CRS bug
-        if gd_coll_name == 'modis_nbar':
-            _crs = 'EPSG:3857'
-            _scale = 500
-        else:
-            _crs = None
-            _scale = None
+    def test_search(self):
+        for gd_coll_name in info.collection_info.keys():
+            with self.subTest('Search', gd_coll_name=gd_coll_name):
+                self._test_search(gd_coll_name)
 
-        export_tasks = []
-        if self.test_export:  # start export tasks
-            export_tasks.append(
-                export.export_image(gd_image, f'{image_name}_None_None', folder='GeedimTest', region=region,
-                                    crs=_crs, scale=None, wait=False))
-            export_tasks.append(export.export_image(gd_image, f'{image_name}_Epsg32635_240m', folder='GeedimTest',
-                                                    region=region, crs='EPSG:32635', scale=240, wait=False))
+    # TODO: separate API search and download testing (?) and or make one _test_download fn that works from api and cli
+    def _test_image_file(self, image_id, filename, region, crs=None, scale=None, mask=False, scale_refl=False):
+        """ Test downloaded file against image.ProcImage object """
 
-        # download in native crs and scale, and validate
-        self._test_download(gd_image, image_name, region, crs=_crs, scale=None)
-        # download in specified crs and scale, and validate
-        self._test_download(gd_image, image_name, region, crs='EPSG:32635', scale=240)  # UTM zone 35N
+        ee_coll_name = image.split_id(image_id)[0]
+        gd_coll_name = info.ee_to_gd[ee_coll_name]
+        gd_image = image.get_class(gd_coll_name).from_id(image_id, mask=mask, scale_refl=scale_refl)
+        gd_info = gd_image.info
+        sr_band_df = pd.DataFrame.from_dict(info.collection_info[gd_coll_name]['bands'])
 
-        return export_tasks
+        exp_image = export._ExportImage(gd_image, name=image_id, exp_region=region, exp_crs=crs, exp_scale=scale)
+        exp_image.parse_attributes()
 
-    def test_api(self):
-        """
-        Test search and download/export for each *ImSearch class
-        """
-        self.test_export = True
+        region_arr = pd.DataFrame(region['coordinates'][0], columns=['x', 'y'])  # avoid numpy dependency
+        region_bounds = rio.coords.BoundingBox(region_arr.x.min(), region_arr.y.min(), region_arr.x.max(),
+                                               region_arr.y.max())
 
-        ee.Initialize()
+        # check the validity of the downloaded file
+        self.assertTrue(filename.exists(), msg='Download file exists')
 
-        # *ImSearch objects to test
-        gd_coll_names = info.collection_info.keys()
+        with rio.open(filename) as im:
+            self.assertEqual(len(gd_info['bands']), im.count, msg='EE and download image band count match')
+            exp_epsg = CRS.from_string(exp_image.exp_crs).to_epsg()
+            self.assertEqual(exp_epsg, im.crs.to_epsg(), msg='EE and download image CRS match')
+            self.assertAlmostEqual(exp_image.exp_scale, im.res[0], places=3, msg='EE and download image scale match')
 
-        # run tests on each object, accumulating export tasks to check on later
-        export_tasks = []
-        for gd_coll_name in gd_coll_names:
-            export_tasks += self._test_search(gd_coll_name)
+            im_bounds_wgs84 = transform_bounds(im.crs, 'WGS84', *im.bounds)  # convert to WGS84 geojson
+            self.assertFalse(rio.coords.disjoint_bounds(region_bounds, im_bounds_wgs84),
+                             msg='Search and image bounds match')
 
-        if self.test_export:  # check on export tasks (we can't check on exported files, only the export completed)
-            for export_task in export_tasks:
-                export.monitor_export_task(export_task)
+            if scale_refl and ('landsat' in gd_coll_name):  # TODO this relies on it being landsat, which is not explicit
+                sr_band_ids = sr_band_df[sr_band_df.id.str.startswith('SR_B')].id.tolist()
+                sr_band_idx = [im.descriptions.index(sr_id) + 1 for sr_id in sr_band_ids]
+                sr_bands = im.read(sr_band_idx)
+                self.assertTrue(sr_bands.max() <= 10000, 'Scaled reflectance in range')
+
+            if mask:
+                im_mask = im.read_masks(1)
+                valid_mask = im.read(im.descriptions.index('VALID_MASK') + 1, out_dtype=im_mask.dtype, masked=False)
+                self.assertTrue(np.all(im_mask & valid_mask), 'mask == VALID_MASK')
+
+
+    def test_download(self):
+        # construct image filename based on id, crs and scale
+        # delay setting crs etc if its None, so we can test download_image(...crs=None,scale=None)
+
+        region = {"type": "Polygon",
+                  "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
+
+        # TODO: choose some cloudy/interesting images
+        im_param_list = [
+            {'image_id': 'COPERNICUS/S2_SR/20190115T080251_20190115T082230_T35HKC', 'mask': True, 'scale_refl': False, 'crs': None, 'scale':30},
+            {'image_id': 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190128', 'mask': False, 'scale_refl': True, 'crs': None, 'scale':None},
+            {'image_id': 'MODIS/006/MCD43A4/2019_01_01', 'mask': True, 'scale_refl': False, 'crs': 'EPSG:3857', 'scale':500},
+        ]
+
+        for impdict in im_param_list:
+            ee_coll_name = image.split_id(impdict['image_id'])[0]
+            gd_coll_name = info.ee_to_gd[ee_coll_name]
+            with self.subTest('Download', **impdict):
+                gd_image = image.get_class(gd_coll_name).from_id(impdict["image_id"], mask=impdict['mask'], scale_refl=impdict['scale_refl'])
+                name = impdict["image_id"].replace('/', '-')
+                crs_str = impdict["crs"].replace(':', '_') if impdict["crs"] else 'None'
+                filename = root_path.joinpath(f'data/outputs/tests/{name}_{crs_str}_{impdict["scale"]}m.tif')
+                export.download_image(gd_image, filename, region=region, crs=impdict["crs"], scale=impdict["scale"], overwrite=True)
+                self._test_image_file(filename=filename, region=region, **impdict)
+
+    def test_export(self):
+        region = {"type": "Polygon",
+                  "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
+        image_id = 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190128'
+        ee_image = ee.Image(image_id)
+        export.export_image(ee_image, image_id.replace('/', '-'), folder='geedim_test', region=region, wait=False)
+
+    def _test_composite(self, ee_image, mask=False, scale_refl=False):
+        gd_image = image.Image(ee_image)
+        ee_coll_name = image.split_id(gd_image.id)[0]
+        gd_coll_name = info.ee_to_gd[ee_coll_name]
+
+        sr_band_df = pd.DataFrame.from_dict(info.collection_info[gd_coll_name]['bands'])
+        for key in ['bands', 'properties', 'id']:
+            self.assertTrue(key in gd_image.info.keys(), msg='Image gd_info complete')
+            self.assertTrue(gd_image.info[key] is not None, msg='Image gd_info complete')
+
+        for key in ['crs', 'scale']:
+            self.assertTrue(gd_image.info[key] is None, msg='Composite in WGS84')
+
+        im_band_df = pd.DataFrame.from_dict(gd_image.info['bands'])
+
+        self.assertTrue(im_band_df.shape[0] >= sr_band_df.shape[0], 'Enough bands')
+        for id in ['VALID_MASK', 'CLOUD_MASK', 'SHADOW_MASK', 'FILL_MASK', 'SCORE']:
+            self.assertTrue(id in im_band_df.id.values, msg='Image has auxiliary bands')
+        for id in sr_band_df.id.values:
+            self.assertTrue(id in im_band_df.id.values, msg='Image has SR bands')
+
+        region = {"type": "Polygon",
+                  "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
+        if scale_refl and ('landsat' in gd_coll_name):
+            sr_band_ids = sr_band_df[sr_band_df.id.str.startswith('SR_B')].id.tolist()
+            sr_image = gd_image.ee_image.select(sr_band_ids)
+            max_refl = sr_image.reduceRegion(reducer='max', geometry=region, scale=60).getInfo()
+            self.assertTrue(all(np.array(list(max_refl.values())) <= 10000), 'Scaled reflectance in range')
+
+    def test_composite(self):
+        methods = collection.Collection._composite_methods
+        param_list = [
+            {'image_ids': ['LANDSAT/LE07/C02/T1_L2/LE07_171083_20190129', 'LANDSAT/LE07/C02/T1_L2/LE07_171083_20190214',
+         'LANDSAT/LE07/C02/T1_L2/LE07_171083_20190302'], 'scale_refl': True, 'mask': True},
+            {'image_ids': ['COPERNICUS/S2_SR/20190311T075729_20190311T082820_T35HKC', 'COPERNICUS/S2_SR/20190316T075651_20190316T082220_T35HKC',
+         'COPERNICUS/S2_SR/20190321T075619_20190321T081839_T35HKC'], 'scale_refl': True, 'mask': True},
+        ]
+
+        for param_dict in param_list:
+            for method in methods:
+                with self.subTest('Composite', method=method, **param_dict):
+                    gd_collection = collection.Collection.from_ids(**param_dict)
+                    comp_im, comp_id = gd_collection.composite(method=method)
+                    self._test_composite(comp_im, mask=param_dict['mask'], scale_refl=param_dict['scale_refl'])
+
 
 ##

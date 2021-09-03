@@ -122,7 +122,7 @@ class Collection(object):
         if (end_date is None):
             end_date = start_date + timedelta(days=1)
         if (end_date <= start_date):
-            raise Exception('`end_date` must be at least a day later than `start_date`')
+            raise ValueError('`end_date` must be at least a day later than `start_date`')
 
         try:
             def calc_stats(ee_image):
@@ -149,6 +149,8 @@ class Collection(object):
 
         return self._summary_df
 
+    _composite_methods = ['q_mosaic', 'mosaic', 'median', 'medoid']
+
     def composite(self, method='q_mosaic'):
         # qualityMosaic will prefer clear pixels based on SCORE and irrespective of mask, for other methods, the mask
         # is needed to avoid including cloudy pixels
@@ -174,11 +176,11 @@ class Collection(object):
         start_date = self.summary_df.DATE.iloc[0].strftime('%Y_%m_%d')
         end_date = self.summary_df.DATE.iloc[-1].strftime('%Y_%m_%d')
 
-        comp_name = f'{self._ee_coll_name}/{start_date}-{end_date}-{method.upper()}_COMP'
-        comp_image = comp_image.set('system:id', comp_name)
+        comp_id = f'{self._ee_coll_name}/{start_date}-{end_date}-{method.upper()}_COMP'
+        comp_image = comp_image.set('system:id', comp_id)
 
-        CompositeResult = collections.namedtuple('CompositeResult', ['image', 'name'])
-        return CompositeResult(comp_image, comp_name)
+        CompositeResult = collections.namedtuple('CompositeResult', ['image', 'id'])
+        return CompositeResult(comp_image, comp_id)
 
     def _get_summary_df(self, ee_collection):
         """

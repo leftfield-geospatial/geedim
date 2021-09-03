@@ -35,7 +35,7 @@ class _CmdChainResults(object):
         self.search_ids = None
         self.search_region = None
         self.comp_image = None
-        self.comp_name = None
+        self.comp_id = None
 
 def _extract_region(region=None, bbox=None, region_buf=5):
     """ create geojson dict from region or bbox """
@@ -108,7 +108,7 @@ def _export_download(res=_CmdChainResults(), download=True, **kwargs):
 
     im_list=[]
     if res.comp_image is not None:
-        im_list.append(dict(image=res.comp_image, name=res.comp_name.replace('/', '-')))
+        im_list.append(dict(image=res.comp_image, name=res.comp_id.replace('/', '-')))
     elif res.search_ids is not None:
         im_list = _create_im_list(res.search_ids, mask=params.mask, scale_refl=params.scale_refl)
     elif len(params.id) > 0:
@@ -356,7 +356,7 @@ cli.add_command(export)
 @click.option(
     "-cm",
     "--method",
-    type=click.Choice(['q_mosaic', 'mosaic', 'median', 'medoid'], case_sensitive=False),
+    type=click.Choice(coll_api.Collection._composite_methods, case_sensitive=False),
     help="Compositing method to use.",
     default="q_mosaic",
     show_default = True,
@@ -384,7 +384,7 @@ def composite(res, id=None, mask=True, scale_refl=False, method='q_mosaic'):
 
     gd_collection = coll_api.Collection.from_ids(id, mask=mask, scale_refl=scale_refl)
 
-    res.comp_image, res.comp_name = gd_collection.composite(method=method)
+    res.comp_image, res.comp_id = gd_collection.composite(method=method)
 
 cli.add_command(composite)
 
