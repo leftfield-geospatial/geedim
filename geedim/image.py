@@ -663,6 +663,7 @@ class ModisNbarImage(ProcImage):
 
 def get_class(coll_name):
     # TODO: populate this list by traversing the class heirarchy
+    # TODO: allow coll_name = full image id
     # import inspect
     # from geedim import image
     # def find_subclasses():
@@ -678,6 +679,10 @@ def get_class(coll_name):
         sentinel2_sr=Sentinel2SrClImage,
         modis_nbar=ModisNbarImage,
     )
+
+    if split_id(coll_name)[0] in info.ee_to_gd:
+        coll_name = split_id(coll_name)[0]
+
     if coll_name in gd_coll_name_map:
         return gd_coll_name_map[coll_name]
     elif coll_name in info.ee_to_gd:

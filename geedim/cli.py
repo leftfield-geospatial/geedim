@@ -29,7 +29,6 @@ from geedim import info, image
 # map collection names to classes
 # from geedim.collection import cls_from_coll
 
-
 class _CmdChainResults(object):
     def __init__(self):
         self.search_ids = None
@@ -121,7 +120,7 @@ def _export_download(res=_CmdChainResults(), download=True, **kwargs):
                         overwrite=params.overwrite, download=True)
     else:
         _export_im_list(im_list, region=region, path=params.drive_folder, crs=params.crs, scale=params.scale,
-                        download=False)
+                        download=False, wait=params.wait)
 
 
 # define options common to >1 command
