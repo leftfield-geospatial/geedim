@@ -13,13 +13,9 @@
     See the License for the specific language governing permissions and
     limitations under the License.
 """
-
-import pandas as pd
-
-""" Metadata for supported Earth Engine collections """
-#TODO: remove res, it is redundant
+# Metadata for geedim supported Earth Engine collections
 collection_info = {
-"landsat7_c2_l2":{
+"landsat7_c2_l2": {
     "start_date": "1999-01-01",
     "end_date": None,
     "ee_coll_name": "LANDSAT/LE07/C02/T1_L2",
@@ -41,7 +37,7 @@ collection_info = {
         {"PROPERTY": "SUN_AZIMUTH", "ABBREV": "SAA", "DESCRIPTION": "Solar azimuth angle (deg)"},
         {"PROPERTY": "SUN_ELEVATION", "ABBREV": "SEA", "DESCRIPTION": "Solar elevation angle (deg)"}
     ]},
-"landsat8_c2_l2":{
+"landsat8_c2_l2": {
     "start_date": "2013-04-11",
     "end_date": None,
     "ee_coll_name": "LANDSAT/LC08/C02/T1_L2",
@@ -64,7 +60,7 @@ collection_info = {
         {"PROPERTY": "SUN_AZIMUTH", "ABBREV": "SAA", "DESCRIPTION": "Solar azimuth angle (deg)"},
         {"PROPERTY": "SUN_ELEVATION", "ABBREV": "SEA", "DESCRIPTION": "Solar elevation angle (deg)"}
     ]},
-"sentinel2_toa":{
+"sentinel2_toa": {
     "start_date": "2015-06-23",
     "end_date": None,
     "ee_coll_name": "COPERNICUS/S2",
@@ -94,7 +90,7 @@ collection_info = {
         {"PROPERTY": "MEAN_INCIDENCE_AZIMUTH_ANGLE_B1", "ABBREV": "VAA", "DESCRIPTION": "View (B1) azimuth angle (deg)"},
         {"PROPERTY": "MEAN_INCIDENCE_ZENITH_ANGLE_B1", "ABBREV": "VZA", "DESCRIPTION": "View (B1) zenith angle (deg)"}
     ]},
-"sentinel2_sr":{
+"sentinel2_sr": {
     "start_date": "2017-03-28",
     "end_date": None,
     "ee_coll_name": "COPERNICUS/S2_SR",
@@ -124,7 +120,7 @@ collection_info = {
         {"PROPERTY": "MEAN_INCIDENCE_AZIMUTH_ANGLE_B1", "ABBREV": "VAA", "DESCRIPTION": "View (B1) azimuth angle (deg)"},
         {"PROPERTY": "MEAN_INCIDENCE_ZENITH_ANGLE_B1", "ABBREV": "VZA", "DESCRIPTION": "View (B1) zenith angle (deg)"}
     ]},
-"modis_nbar":{
+"modis_nbar": {
     "start_date": "2000-02-18",
     "end_date": None,
     "ee_coll_name": "MODIS/006/MCD43A4",
@@ -142,12 +138,12 @@ collection_info = {
         {"PROPERTY": "system:time_start", "ABBREV": "DATE", "DESCRIPTION": "Image capture date/time (UTC)"}
     ]}
 }
-""" Dict to convert from geedim to Earth Engine collection names """
+
+# Dict to convert from geedim to Earth Engine collection names
 gd_to_ee = dict([(k, v['ee_coll_name']) for k, v in collection_info.items()])
 
-""" Dict to convert from Earth Engine to geedim collection names """
+# Dict to convert from Earth Engine to geedim collection names
 ee_to_gd = dict([(v['ee_coll_name'], k) for k, v in collection_info.items()])
 
-""" Two way dict to convert Earth Engine to/from geedim collection names """
+# "Two way" dict to convert Earth Engine to/from geedim collection names
 coll_names = dict(**gd_to_ee, **ee_to_gd)
-
