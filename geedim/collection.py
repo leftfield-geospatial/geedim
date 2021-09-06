@@ -35,7 +35,7 @@ class Collection(object):
         Parameters
         ----------
         gd_coll_name : str
-                     Image collection name:(landsat7_c2_l2|landsat8_c2_l2|sentinel2_toa|sentinel2_sr|modis_nbar)
+                       geedim collection name:(landsat7_c2_l2|landsat8_c2_l2|sentinel2_toa|sentinel2_sr|modis_nbar)
         """
         if gd_coll_name not in info.gd_to_ee:
             raise ValueError(f"Unsupported collection: {gd_coll_name}")

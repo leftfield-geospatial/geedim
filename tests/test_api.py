@@ -103,7 +103,7 @@ class TestApi(unittest.TestCase):
     # TODO: separate API search and download testing (?) and or make one _test_download fn that works from api and cli
     @staticmethod
     def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=None, mask=False, scale_refl=False):
-        """ Test downloaded file against image.ProcImage object """
+        """ Test downloaded file against image.MaskedImage object """
         if isinstance(image_obj, str):
             ee_coll_name = image.split_id(image_obj)[0]
             gd_coll_name = info.ee_to_gd[ee_coll_name]
