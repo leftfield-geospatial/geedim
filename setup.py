@@ -30,5 +30,4 @@ setup(
     python_requires=">=3.8",
     install_requires=["pandas>=1.3", "earthengine-api >= 0.1.2", "click >= 7.1", "requests"],
     entry_points={"console_scripts": ["geedim=geedim.cli:cli"]},
-    # scripts=['scripts/ortho_im.py', 'scripts/batch_recompress.bat']
 )
