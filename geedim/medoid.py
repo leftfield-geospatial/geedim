@@ -22,11 +22,12 @@
     SOFTWARE.
 """
 ##
-'''
-    Medoid related functionality copied from 'Google Earth Engine tools' under MIT license
-    See https://github.com/gee-community/gee_tools
-'''
 import ee
+
+"""
+    This file contains Medoid related functionality copied from 'Google Earth Engine tools' under MIT license
+    See https://github.com/gee-community/gee_tools
+"""
 
 
 def enumerate(collection):
@@ -346,6 +347,5 @@ def medoid(collection, bands=None, discard_zeros=True):
     """
     medcol = medoidScore(collection, bands, discard_zeros)
     comp = medcol.qualityMosaic('sumdist')
-    # final = removeBands(comp, ['sumdist', 'mask'])
     final = removeBands(comp, ['sumdist'])
     return final

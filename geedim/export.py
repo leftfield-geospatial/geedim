@@ -15,23 +15,35 @@
 """
 
 ##
-# Functions to download and export GEE images
+# Functions to download and export Earth Engine images
 
 import os
 import pathlib
-import time
 import re
-import requests
+import time
 import zipfile
-import click
-from xml.etree import ElementTree as etree
 from xml.dom import minidom
+from xml.etree import ElementTree
 
+import click
 import ee
+import requests
 
 from geedim import image
 
+
 def write_pam_xml(obj, filename):
+    """
+    Write image metadata to PAM xml file (as supported by GDAL/QGIS)
+
+    Parameters
+    ----------
+    obj : ee.Image, geedim.image.Image, dict
+          Image object whose metadata to write
+    filename : str, pathlib.Path
+               Path of the output file (use *.aux.xml)
+    """
+    # extract image metadata dict
     if isinstance(obj, dict):
         gd_info = obj
     elif isinstance(obj, ee.Image):
@@ -39,41 +51,44 @@ def write_pam_xml(obj, filename):
     elif isinstance(obj, image.Image):
         gd_info = obj.info
     else:
-        raise TypeError(f'Unsupported type: {obj.__class__}')
+        raise TypeError(f"Unsupported type: {obj.__class__}")
 
-    if 'system:footprint' in gd_info['properties']:
-        gd_info['properties'].pop('system:footprint')
+    # remove footprint if it exists
+    if "system:footprint" in gd_info["properties"]:
+        gd_info["properties"].pop("system:footprint")
 
-    root = etree.Element('PAMDataset')
-    prop_meta = etree.SubElement(root, 'Metadata')
-    for key, val in gd_info['properties'].items():
-        item = etree.SubElement(prop_meta, 'MDI', attrib=dict(key=key))
+    # construct xml tree
+    root = ElementTree.Element("PAMDataset")
+    prop_meta = ElementTree.SubElement(root, "Metadata")
+    for key, val in gd_info["properties"].items():
+        item = ElementTree.SubElement(prop_meta, "MDI", attrib=dict(key=key))
         item.text = str(val)
 
-    for band_i, band_dict in enumerate(gd_info['bands']):
-        band_elem = etree.SubElement(root, 'PAMRasterBand', attrib=dict(band=str(band_i+1)))
-        if 'id' in band_dict:
-            desc = etree.SubElement(band_elem, 'Description')
-            desc.text = band_dict['id']
-        band_meta = etree.SubElement(band_elem, 'Metadata')
+    for band_i, band_dict in enumerate(gd_info["bands"]):
+        band_elem = ElementTree.SubElement(root, "PAMRasterBand", attrib=dict(band=str(band_i + 1)))
+        if "id" in band_dict:
+            desc = ElementTree.SubElement(band_elem, "Description")
+            desc.text = band_dict["id"]
+        band_meta = ElementTree.SubElement(band_elem, "Metadata")
         for key, val in band_dict.items():
-            item = etree.SubElement(band_meta, 'MDI', attrib=dict(key=key.upper()))
+            item = ElementTree.SubElement(band_meta, "MDI", attrib=dict(key=key.upper()))
             item.text = str(val)
 
-    xml_str = minidom.parseString(etree.tostring(root)).childNodes[0].toprettyxml(indent="   ")
-    with open(filename, 'w') as f:
+    # write indented xml string to file (excluding header)
+    xml_str = minidom.parseString(ElementTree.tostring(root)).childNodes[0].toprettyxml(indent="   ")
+    with open(filename, "w") as f:
         f.write(xml_str)
 
 
 class _ExportImage(image.Image):
-    """ Container for download and export parameters """
-    def __init__(self, image_obj, name='Image', exp_region=None, exp_crs=None, exp_scale=None):
+    """ Helper class for determining export/download crs, scale and region parameters"""
+    def __init__(self, image_obj, name="Image", exp_region=None, exp_crs=None, exp_scale=None):
         if isinstance(image_obj, image.Image):
+            image.Image.__init__(self, None)
             self._ee_image = image_obj.ee_image
             self._info = image_obj.info
         else:
-            self._ee_image = image_obj
-            self._info = image.get_info(image_obj)
+            image.Image.__init__(self, image_obj)
 
         self.name = name
         self.exp_region = exp_region
@@ -81,42 +96,39 @@ class _ExportImage(image.Image):
         self.exp_scale = exp_scale
 
     def parse_attributes(self):
-        # filename = pathlib.Path(filename)
+        """ Set the exp_region, exp_crs and exp_scale attributes """
 
         if self.id is None:
-            self._info['id'] = pathlib.Path(self.name).stem
+            self._info["id"] = pathlib.Path(self.name).stem
 
         # if the image is in WGS84 and has no scale (probable composite), then exit
         if (self.scale is None) and (self.exp_scale is None):
-            raise Exception(f'{self.info["id"]} appears to be a composite in WGS84, specify a scale and CRS')
+            raise ValueError(f'{self.info["id"]} appears to be a composite in WGS84, specify a scale and CRS')
 
-        # if it is a native MODIS CRS then warn about GEE bug
-        if (self.crs == 'SR-ORG:6974') and (self.exp_crs is None):
-            raise Exception(f'There is an earth engine bug exporting in SR-ORG:6974, specify another CRS: '
-                            f'https://issuetracker.google.com/issues/194561313')
+        # If CRS is the native MODIS CRS, then exit due to GEE bug
+        if (self.crs == "SR-ORG:6974") and (self.exp_crs is None):
+            raise ValueError(
+                f"There is an earth engine bug exporting in SR-ORG:6974, specify another CRS: "
+                f"https://issuetracker.google.com/issues/194561313"
+            )
 
         if self.exp_crs is None:
-            self.exp_crs = self.crs  # CRS corresponding to minimum scale
+            self.exp_crs = self.crs  # CRS corresponding to minimum scale band
+        if self.exp_scale is None:
+            self.exp_scale = self.scale  # minimum scale of the bands
         if self.exp_region is None:
-            if 'system:footprint' in self.info['properties']:
-                self.exp_region = self.info['properties']['system:footprint']
+            # use image granule footprint
+            if "system:footprint" in self.info["properties"]:
+                self.exp_region = self.info["properties"]["system:footprint"]
                 click.secho(f'{self.info["id"]}: region not specified, setting to image footprint')
             else:
                 raise AttributeError(f'{self.info["id"]} does not have a footprint, specify a region to download')
-
-        if self.exp_scale is None:
-            self.exp_scale = self.scale  # minimum scale
-
-        # warn if some band scales will be changed
-        # if (band_info_df['crs'].unique().size > 1) or (band_info_df['scale'].unique().size > 1):
-        #     click.echo(f'{im_id}: re-projecting all bands to {crs} at {scale:.1f}m')
 
         if isinstance(self.exp_region, dict):
             self.exp_region = ee.Geometry(self.exp_region)
 
 
-
-def export_image(image_obj, filename, folder='', region=None, crs=None, scale=None, wait=True):
+def export_image(image_obj, filename, folder="", region=None, crs=None, scale=None, wait=True):
     """
     Export an image to a GeoTiff in Google Drive
 
@@ -142,20 +154,23 @@ def export_image(image_obj, filename, folder='', region=None, crs=None, scale=No
 
     Returns
     -------
-    task : EE task object
+    task : ee.batch.Task
+           EE task object
     """
     exp_image = _ExportImage(image_obj, name=filename, exp_region=region, exp_crs=crs, exp_scale=scale)
     exp_image.parse_attributes()
 
     # create export task and start
-    task = ee.batch.Export.image.toDrive(image=exp_image.ee_image,
-                                         region=exp_image.exp_region,
-                                         description=filename[:100],
-                                         folder=folder,
-                                         fileNamePrefix=filename,
-                                         scale=exp_image.exp_scale,
-                                         crs=exp_image.exp_crs,
-                                         maxPixels=1e9)
+    task = ee.batch.Export.image.toDrive(
+        image=exp_image.ee_image,
+        region=exp_image.exp_region,
+        description=filename[:100],
+        folder=folder,
+        fileNamePrefix=filename,
+        scale=exp_image.exp_scale,
+        crs=exp_image.exp_crs,
+        maxPixels=1e9,
+    )
 
     task.start()
 
@@ -167,12 +182,16 @@ def export_image(image_obj, filename, folder='', region=None, crs=None, scale=No
 
 def monitor_export_task(task, label=None):
     """
+    Monitor and display the progress of an export task
 
     Parameters
     ----------
-    task : ee task to monitor
+    task : ee.batch.Task
+           WW task to monitor
+    label: str, optional
+           Optional label for progress display (default: use task description)
     """
-    toggles = r'-\|/'
+    toggles = r"-\|/"
     toggle_count = 0
     pause = 0.5
     bar_len = 100
@@ -181,23 +200,25 @@ def monitor_export_task(task, label=None):
     if label is None:
         label = f'{status["metadata"]["description"][:80]}:'
 
-    while (not 'progress' in status['metadata']):
+    # wait for export preparation to complete, displaying a spin toggle
+    while "progress" not in status["metadata"]:
         time.sleep(pause)
         status = ee.data.getOperation(task.name)  # get task status
-        click.echo(f'\rPreparing {label} {toggles[toggle_count % 4]}', nl='')
+        click.echo(f"\rPreparing {label} {toggles[toggle_count % 4]}", nl="")
         toggle_count += 1
-    click.echo(f'\rPreparing {label}  done')
+    click.echo(f"\rPreparing {label}  done")
 
-    with click.progressbar(length=bar_len, label=f'Exporting {label}:') as bar:
-        while ('done' not in status) or (not status['done']):
+    # wait for export to complete, displaying a progress bar
+    with click.progressbar(length=bar_len, label=f"Exporting {label}:") as bar:
+        while ("done" not in status) or (not status["done"]):
             time.sleep(pause)
             status = ee.data.getOperation(task.name)  # get task status
-            progress = status['metadata']['progress']*bar_len
-            bar.update(progress - bar.pos)
+            progress = status["metadata"]["progress"] * bar_len
+            bar.update(progress - bar.pos)  # update with progress increment
         bar.update(bar_len - bar.pos)
 
-    if status['metadata']['state'] != 'SUCCEEDED':
-        raise Exception(f'Export failed \n{status}')
+    if status["metadata"]["state"] != "SUCCEEDED":
+        raise Exception(f"Export failed \n{status}")
 
 
 def download_image(image_obj, filename, region=None, crs=None, scale=None, overwrite=False):
@@ -226,54 +247,57 @@ def download_image(image_obj, filename, region=None, crs=None, scale=None, overw
     exp_image = _ExportImage(image_obj, name=filename, exp_region=region, exp_crs=crs, exp_scale=scale)
     exp_image.parse_attributes()
 
-
     # get download link
     try:
         link = exp_image.ee_image.getDownloadURL({
-            'scale': exp_image.exp_scale,
-            'crs': exp_image.exp_crs,
-            'fileFormat': 'GeoTIFF',
-            # 'bands': bands_dict,
-            'filePerBand': False,
-            'region': exp_image.exp_region})
+            "scale": exp_image.exp_scale,
+            "crs": exp_image.exp_crs,
+            "fileFormat": "GeoTIFF",
+            "filePerBand": False,
+            "region": exp_image.exp_region,
+        })
     except ee.ee_exception.EEException as ex:
-        if re.match(r'Total request size \(.*\) must be less than or equal to .*', str(ex)):
-            raise Exception(f'The requested image is too large, reduce its size, or use `export`\n({str(ex)})')
+        # Add to exception message when the image is too large to download
+        if re.match(r"Total request size \(.*\) must be less than or equal to .*", str(ex)):
+            raise Exception(f"The requested image is too large to download, reduce its size, or export\n({str(ex)})")
         else:
             raise ex
 
     # download zip file
-    tif_filename = filename.parent.joinpath(filename.stem + '.tif')  # force to tif file
-    zip_filename = tif_filename.parent.joinpath('geedim_download.zip')
+    tif_filename = filename.parent.joinpath(filename.stem + ".tif")  # force to tif file
+    zip_filename = tif_filename.parent.joinpath("geedim_download.zip")
     with requests.get(link, stream=True) as r:
         r.raise_for_status()
-        with open(zip_filename, 'wb') as f:
-            csize = 8192
-            with click.progressbar(r.iter_content(chunk_size=csize),
-                                   label=f'{filename.stem[:80]}:',
-                                   length=int(r.headers['Content-length'])/csize,
-                                   show_pos=True) as bar:
-                bar.format_pos = lambda: f'{bar.pos * csize / (1024**2):.1f}/{bar.length * csize / (1024**2):.1f} MB'
+        csize = 8192
+        with open(zip_filename, "wb") as f:
+            with click.progressbar(
+                    r.iter_content(chunk_size=csize),
+                    label=f"{filename.stem[:80]}:",
+                    length=int(r.headers["Content-length"]) / csize,
+                    show_pos=True,
+            ) as bar:
+                # override the bar's formatting function to show progress in MB
+                bar.format_pos = (lambda: f"{bar.pos * csize / (2 ** 20):.1f}/{bar.length * csize / (2 ** 20):.1f} MB")
                 for chunk in bar:
                     f.write(chunk)
 
-    # extract tif from zip file
-    zip_tif_filename = zip_filename.parent.joinpath(zipfile.ZipFile(zip_filename, 'r').namelist()[0])
-    with zipfile.ZipFile(zip_filename, 'r') as zip_file:
+    # extract image tif from zip file
+    zip_tif_filename = zip_filename.parent.joinpath(zipfile.ZipFile(zip_filename, "r").namelist()[0])
+    with zipfile.ZipFile(zip_filename, "r") as zip_file:
         zip_file.extractall(zip_filename.parent)
-    os.remove(zip_filename)     # clean up zip file
+    os.remove(zip_filename)
 
-    # rename to extracted tif file to tif_filename
-    if (zip_tif_filename != tif_filename):
+    # rename to extracted tif file to specified filename
+    if zip_tif_filename != tif_filename:
         while tif_filename.exists():
-            if overwrite or click.confirm(f'{tif_filename.name} exists, do you want to overwrite?', default='n'):
+            if overwrite or click.confirm(f"{tif_filename.name} exists, do you want to overwrite?", default="n"):
                 os.remove(tif_filename)
             else:
-                tif_filename = click.prompt('Please enter another filename', type=str, default=None)
+                tif_filename = click.prompt("Please enter another filename", type=str, default=None)
                 tif_filename = pathlib.Path(tif_filename)
         os.rename(zip_tif_filename, tif_filename)
 
     # write image metadata to pam xml file
-    write_pam_xml(exp_image.info, str(tif_filename) + '.aux.xml')
+    write_pam_xml(exp_image.info, str(tif_filename) + ".aux.xml")
 
     return link
