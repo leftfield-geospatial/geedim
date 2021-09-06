@@ -98,6 +98,8 @@ class Collection(object):
             index=False,
             justify='center')
 
+    composite_methods = ['q_mosaic', 'mosaic', 'median', 'medoid']
+
     def search(self, start_date, end_date, region, valid_portion=0, mask=False, scale_refl=False):
         """
         Search for images based on date, region etc criteria
@@ -149,7 +151,6 @@ class Collection(object):
 
         return self._summary_df
 
-    _composite_methods = ['q_mosaic', 'mosaic', 'median', 'medoid']
 
     def composite(self, method='q_mosaic'):
         # qualityMosaic will prefer clear pixels based on SCORE and irrespective of mask, for other methods, the mask

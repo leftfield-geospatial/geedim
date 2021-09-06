@@ -695,7 +695,7 @@ if importlib.util.find_spec("rasterio"):
     import rasterio as rio
     from rasterio.warp import transform_geom
 
-    def get_image_bounds(filename, expand=5):
+    def get_bounds(filename, expand=5):
         """
         Get a WGS84 geojson polygon representing the optionally expanded bounds of an image
 

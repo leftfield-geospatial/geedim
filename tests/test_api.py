@@ -219,7 +219,7 @@ class TestApi(unittest.TestCase):
             self.assertTrue(all(np.array(list(max_refl.values())) <= 10000), 'Scaled reflectance in range')
 
     def test_composite(self):
-        methods = collection.Collection._composite_methods
+        methods = collection.Collection.composite_methods
         param_list = [
             {'image_ids': ['LANDSAT/LE07/C02/T1_L2/LE07_171083_20190129', 'LANDSAT/LE07/C02/T1_L2/LE07_171083_20190214',
                            'LANDSAT/LE07/C02/T1_L2/LE07_171083_20190302'], 'scale_refl': True, 'mask': True},

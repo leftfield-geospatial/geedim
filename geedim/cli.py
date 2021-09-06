@@ -13,61 +13,64 @@
     See the License for the specific language governing permissions and
     limitations under the License.
 """
-import collections
 import json
 import os
 import pathlib
+import importlib
+from collections import namedtuple
 
 import click
 import ee
-from collections import namedtuple
 
-from geedim import export as export_api
 from geedim import collection as coll_api
+from geedim import export as export_api
 from geedim import info, image
 
-# map collection names to classes
-# from geedim.collection import cls_from_coll
 
 class _CmdChainResults(object):
+    """ Class to hold results for command chaining """
+
     def __init__(self):
         self.search_ids = None
         self.search_region = None
         self.comp_image = None
         self.comp_id = None
 
-def _extract_region(region=None, bbox=None, region_buf=5):
-    """ create geojson dict from region or bbox """
 
-    if (bbox is None or len(bbox)==0) and (region is None):
+def _extract_region(region=None, bbox=None, region_buf=5):
+    """ extract geojson dict from region or bbox parameters """
+
+    if (bbox is None or len(bbox) == 0) and (region is None):
         raise click.BadOptionUsage('Either pass --region or --bbox', region)
 
     if isinstance(region, dict):
-        region_geojson = region
+        region_dict = region
     elif region is not None:  # read region file/string
         region = pathlib.Path(region)
-        if 'json' in region.suffix:  # read region from geojson file
+        if not region.exists():
+            raise click.BadParameter(f'{region} does not exist.')
+        if 'json' in region.suffix:
             with open(region) as f:
-                region_geojson = json.load(f)
-        else:  # read region from raster file
-            try:
-                region_geojson, _ = image.get_image_bounds(region, region_buf)
-            except Exception as ex:
-                raise click.BadParameter(f'{region} is not a valid geojson or raster file. \n{ex}')
+                region_dict = json.load(f)
+        elif importlib.util.find_spec("rasterio"):  # rasterio is installed, extract region from raster file
+            region_dict, _ = image.get_bounds(region, expand=region_buf)
+        else:
+            raise click.BadParameter(f'{region} is not a valid geojson or raster file.')
     else:  # convert bbox to geojson
         xmin, ymin, xmax, ymax = bbox
         coordinates = [[xmax, ymax], [xmax, ymin], [xmin, ymin], [xmin, ymax], [xmax, ymax]]
-        region_geojson = dict(type='Polygon', coordinates=[coordinates])
+        region_dict = dict(type='Polygon', coordinates=[coordinates])
 
-    return region_geojson
+    return region_dict
 
-def _export_im_list(im_list, path='', wait=True, overwrite=False, download=True, **kwargs):
 
-    click.echo('\nDownloading:\n') if download else click.echo('\nExporting:\n')
+def _export_im_list(im_list, path='', wait=True, overwrite=False, do_download=True, **kwargs):
+    """ Export/download image(s) """
+    click.echo('\nDownloading:\n') if do_download else click.echo('\nExporting:\n')
     export_tasks = []
 
     for im_dict in im_list:
-        if download:
+        if do_download:
             filename = pathlib.Path(path).joinpath(im_dict['name'] + '.tif')
             export_api.download_image(im_dict['image'], filename, overwrite=overwrite, **kwargs)
         else:
@@ -78,52 +81,59 @@ def _export_im_list(im_list, path='', wait=True, overwrite=False, download=True,
         for task in export_tasks:
             export_api.monitor_export_task(task)
 
+
 def _create_im_list(ids, **kwargs):
+    """ Create a list of Image objects and names from download/export CLI parameters """
     im_list = []
 
     for im_id in ids:
         ee_coll_name, im_idx = image.split_id(im_id)
-        if not ee_coll_name in info.ee_to_gd:
-            im_list.append(dict(image=ee.Image(im_id), name=im_id.replace('/','-')))
+        if ee_coll_name not in info.ee_to_gd:
+            im_list.append(dict(image=ee.Image(im_id), name=im_id.replace('/', '-')))
         else:
             gd_image = image.get_class(ee_coll_name).from_id(im_id, **kwargs)
-            im_list.append(dict(image=gd_image, name=im_id.replace('/','-')))
+            im_list.append(dict(image=gd_image, name=im_id.replace('/', '-')))
 
     return im_list
 
-def _export_download(res=_CmdChainResults(), download=True, **kwargs):
 
-    # unpack arguments into a named tuple
-    arg_tuple = namedtuple('arg_tuple', kwargs)
-    params = arg_tuple(**kwargs)
+def _export_download(res=_CmdChainResults(), do_download=True, **kwargs):
+    """ Helper function to execute export/download commands """
 
-    if (params.region is None) and (params.bbox is None or len(params.bbox)==0):
+    ArgTuple = namedtuple('ArgTuple', kwargs)
+    params = ArgTuple(**kwargs)
+
+    # get the download/export region
+    if (params.region is None) and (params.bbox is None or len(params.bbox) == 0):
         if res.search_region is None:
-            raise click.BadOptionUsage('Either pass --region / --box, or chain this command with `search`', params.region)
+            raise click.BadOptionUsage('Either pass --region / --box, or chain this command with `search`',
+                                       params.region)
         else:
             region = res.search_region
     else:
-        region = _extract_region(region=params.region, bbox=params.bbox)
+        region = _extract_region(region=params.region, bbox=params.bbox)  # get region geojson
 
-    im_list=[]
-    if res.comp_image is not None:
+    # create a list of Image objects and names
+    im_list = []
+    if res.comp_image is not None:  # download/export chained with composite command
         im_list.append(dict(image=res.comp_image, name=res.comp_id.replace('/', '-')))
-    elif res.search_ids is not None:
+    elif res.search_ids is not None:  # download/export chained with search command
         im_list = _create_im_list(res.search_ids, mask=params.mask, scale_refl=params.scale_refl)
-    elif len(params.id) > 0:
+    elif len(params.id) > 0:  # download/export image ids specified on command line
         im_list = _create_im_list(params.id, mask=params.mask, scale_refl=params.scale_refl)
     else:
-        raise click.BadOptionUsage('Either pass --id, or chain this command with `search` or `composite`', id)
+        raise click.BadOptionUsage('Either pass --id, or chain this command with `search` or `composite`', params.id)
 
-    if download:
+    # download/export the image list
+    if do_download:
         _export_im_list(im_list, region=region, path=params.download_dir, crs=params.crs, scale=params.scale,
-                        overwrite=params.overwrite, download=True)
+                        overwrite=params.overwrite, do_download=True)
     else:
         _export_im_list(im_list, region=region, path=params.drive_folder, crs=params.crs, scale=params.scale,
-                        download=False, wait=params.wait)
+                        do_download=False, wait=params.wait)
 
 
-# define options common to >1 command
+""" Define click options that are common to more than one command """
 bbox_option = click.option(
     "-b",
     "--bbox",
@@ -141,15 +151,6 @@ region_option = click.option(
                     allow_dash=False),
     help="Region defined by geojson or raster file.  [One of --bbox or --region is required.]",
     required=False
-)
-region_buf_option = click.option(
-    "-rb",
-    "--region_buf",
-    type=click.FLOAT,
-    default=5,
-    help="If --region is a raster file, extend the region bounds by region_buf %",
-    required=False,
-    show_default=True
 )
 image_id_option = click.option(
     "-i",
@@ -189,23 +190,17 @@ scale_refl_option = click.option(
     help="Scale reflectance bands from 0-10000.  [default: scale-refl]",
     required=False,
 )
-add_aux_option = click.option(
-    "-aa/-naa",
-    "--add-aux/--no-add-aux",
-    default=True,
-    help="Add auxiliary bands (masks and quality score) to the image .  [default: add-aux]",
-    required=False,
-)
 
 
-# define the click cli
+# Define the geedim CLI and chained command group
 @click.group(chain=True)
 @click.pass_context
 def cli(ctx):
     ee.Initialize()
-    ctx.obj = _CmdChainResults()
+    ctx.obj = _CmdChainResults()  # object to hold chained results
 
 
+# Define search command options
 @click.command()
 @click.option(
     "-c",
@@ -248,20 +243,21 @@ def cli(ctx):
     help="Write results to this filename, file type inferred from extension: [.csv|.json]",
     required=False
 )
-@region_buf_option
 @click.pass_obj
-def search(res, collection, start_date, end_date=None, bbox=None, region=None, valid_portion=0, output=None, region_buf=5):
+def search(res, collection, start_date, end_date=None, bbox=None, region=None, valid_portion=0, output=None):
     """ Search for images """
 
-    res.search_region = _extract_region(region=region, bbox=bbox, region_buf=region_buf)
+    res.search_region = _extract_region(region=region, bbox=bbox)  # store region for chaining
 
     click.echo(f'\nSearching for {info.gd_to_ee[collection]} images between '
                f'{start_date.strftime("%Y-%m-%d")} and {end_date.strftime("%Y-%m-%d")}...')
 
+    # create collection wrapper and search
     gd_collection = coll_api.Collection(collection)
     im_df = gd_collection.search(start_date, end_date, res.search_region, valid_portion=valid_portion)
-    res.search_ids = im_df.ID.values.tolist()
+    res.search_ids = im_df.ID.values.tolist()  # store ids for chaining
 
+    # print results
     if len(res.search_ids) == 0:
         click.echo('No images found\n')
     else:
@@ -269,6 +265,7 @@ def search(res, collection, start_date, end_date=None, bbox=None, region=None, v
         click.echo(f'Image property descriptions:\n\n{gd_collection.summary_key}\n')
         click.echo(f'Search Results:\n\n{gd_collection.summary}')
 
+    # write results to file
     if (output is not None):
         output = pathlib.Path(output)
         if output.suffix == '.csv':
@@ -283,6 +280,7 @@ def search(res, collection, start_date, end_date=None, bbox=None, region=None, v
 cli.add_command(search)
 
 
+# Define download command options
 @click.command()
 @image_id_option
 @bbox_option
@@ -311,14 +309,17 @@ cli.add_command(search)
     show_default=False
 )
 @click.pass_context
-def download(ctx, id=[], bbox=None, region=None, download_dir=os.getcwd(), crs=None, scale=None, mask=False, scale_refl=True,
+def download(ctx, id=(), bbox=None, region=None, download_dir=os.getcwd(), crs=None, scale=None, mask=False,
+             scale_refl=True,
              overwrite=False):
     """ Download image(s), with cloud and shadow masking """
-    _export_download(res=ctx.obj, download=True, **ctx.params)
+    _export_download(res=ctx.obj, do_download=True, **ctx.params)
+
 
 cli.add_command(download)
 
 
+# Define export command options
 @click.command()
 @image_id_option
 @bbox_option
@@ -343,22 +344,25 @@ cli.add_command(download)
     required=False,
 )
 @click.pass_context
-def export(ctx, id=[], bbox=None, region=None, drive_folder='', crs=None, scale=None, mask=False, scale_refl=True,
+def export(ctx, id=(), bbox=None, region=None, drive_folder='', crs=None, scale=None, mask=False, scale_refl=True,
            wait=True):
     """ Export image(s) to Google Drive, with cloud and shadow masking """
-    _export_download(res=ctx.obj, download=False, **ctx.params)
+    _export_download(res=ctx.obj, do_download=False, **ctx.params)
+
 
 cli.add_command(export)
 
+
+# Define composite command options
 @click.command()
 @image_id_option
 @click.option(
     "-cm",
     "--method",
-    type=click.Choice(coll_api.Collection._composite_methods, case_sensitive=False),
+    type=click.Choice(coll_api.Collection.composite_methods, case_sensitive=False),
     help="Compositing method to use.",
     default="q_mosaic",
-    show_default = True,
+    show_default=True,
     required=False
 )
 @click.option(
@@ -373,6 +377,7 @@ cli.add_command(export)
 def composite(res, id=None, mask=True, scale_refl=False, method='q_mosaic'):
     """ Create a cloud-free composite image """
 
+    # get image ids from command line or chained search command
     id = list(id)
     if (id is None or len(id) == 0):
         if res.search_ids is None:
@@ -382,8 +387,8 @@ def composite(res, id=None, mask=True, scale_refl=False, method='q_mosaic'):
             res.search_ids = None
 
     gd_collection = coll_api.Collection.from_ids(id, mask=mask, scale_refl=scale_refl)
-
     res.comp_image, res.comp_id = gd_collection.composite(method=method)
+
 
 cli.add_command(composite)
 
