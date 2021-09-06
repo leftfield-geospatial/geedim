@@ -15,53 +15,72 @@
 """
 
 ##
-# Classes for searching GEE image collections
+# Functionality for searching and compositing EE image collections
 import collections
 from datetime import datetime, timedelta
+
 import ee
 import pandas as pd
 
 import geedim.image
 from geedim import image, info, medoid
 
+
 ##
 class Collection(object):
     def __init__(self, gd_coll_name):
         """
-        Earth engine image collection related functions
+        Class for searching and compositing an EE image collection
 
         Parameters
         ----------
         gd_coll_name : str
-                     Earth engine image collection name:
-                     (possible values are: landsat7_c2_l2|landsat8_c2_l2|sentinel2_toa|sentinel2_sr|modis_nbar)
+                     Image collection name:(landsat7_c2_l2|landsat8_c2_l2|sentinel2_toa|sentinel2_sr|modis_nbar)
         """
-        if not gd_coll_name in info.gd_to_ee:
-            raise ValueError(f'Unsupported collection: {gd_coll_name}')
+        if gd_coll_name not in info.gd_to_ee:
+            raise ValueError(f"Unsupported collection: {gd_coll_name}")
+
         self._gd_coll_name = gd_coll_name
         self._ee_coll_name = info.gd_to_ee[self._gd_coll_name]
-        self._collection_info = info.collection_info[gd_coll_name]      # ee collection metadata
-        self._image_class =  image.get_class(gd_coll_name)       # geedim.image.*Image class
-        self._ee_collection = None                                      # the wrapped ee.ImageCollection
+        self._collection_info = info.collection_info[gd_coll_name]
+        self._image_class = image.get_class(gd_coll_name)  # geedim.image.*Image class for this collection
+        self._ee_collection = None  # the wrapped ee.ImageCollection
 
-        self._summary_key_df = pd.DataFrame(self._collection_info['properties'])
-        self._summary_df = None
-
+        self._summary_key_df = pd.DataFrame(self._collection_info["properties"])  # key to metadata summary
+        self._summary_df = None  # summary of the image metadata
 
     @classmethod
     def from_ids(cls, image_ids, mask=False, scale_refl=False):
+        """
+        Create collection from image IDs
+
+        Parameters
+        ----------
+        image_ids : list(str)
+                    A list of the EE image IDs (should all be from same collection)
+        mask : bool, optional
+               Apply a validity (cloud & shadow) mask to the image (default: False)
+        scale_refl : bool, optional
+                     Scale reflectance bands 0-10000 if they are not in that range already (default: False)
+
+        Returns
+        -------
+        : geedim.collection.Collection
+        """
+        # check image IDs are valid
         ee_coll_name = image.split_id(image_ids[0])[0]
-        if not ee_coll_name in info.ee_to_gd:
-            raise ValueError(f'Unsupported collection: {ee_coll_name}')
+        if ee_coll_name not in info.ee_to_gd:
+            raise ValueError(f"Unsupported collection: {ee_coll_name}")
 
         id_check = [image.split_id(im_id)[0] == ee_coll_name for im_id in image_ids[1:]]
         if not all(id_check):
-            raise ValueError(f'All images must belong to the same collection')
+            raise ValueError(f"All images must belong to the same collection")
 
+        # create the collection object
         gd_coll_name = info.ee_to_gd[ee_coll_name]
         gd_collection = cls(gd_coll_name)
 
-        # build an ee.ImageCollection of processed (masked and scored) images
+        # build and wrap an ee.ImageCollection of processed (masked and scored) images
         im_list = ee.List([])
         for im_id in image_ids:
             gd_image = gd_collection._image_class.from_id(im_id, mask=mask, scale_refl=scale_refl)
@@ -72,161 +91,227 @@ class Collection(object):
 
     @property
     def ee_collection(self):
+        """
+         The underlying ee.ImageCollection
+
+        Returns
+        -------
+        : ee.ImageCollection
+        """
         return self._ee_collection
 
     @property
     def summary_key_df(self):
+        """
+        A key to Collection.summary_df
+        (pandas.DataFrame with ABBREV and DESCRIPTION columns, and rows corresponding columns in summary_df)
+
+        Returns
+        -------
+        : pandas.DataFrame
+        """
         return self._summary_key_df
 
     @property
     def summary_df(self):
+        """
+        Summary of collection image metadata (pandas.DataFrame with a row for each image)
+
+        Returns
+        -------
+        : pandas.DataFrame
+        """
         if self._summary_df is None:
             self._summary_df = self._get_summary_df(self._ee_collection)
         return self._summary_df
 
     @property
     def summary_key(self):
-        return self._summary_key_df[['ABBREV', 'DESCRIPTION']].to_string(index=False, justify='right')
+        """
+        Formatted string of Collection.summary_key_df
+
+        Returns
+        -------
+        : str
+        """
+        return self._summary_key_df[["ABBREV", "DESCRIPTION"]].to_string(index=False, justify="right")
 
     @property
     def summary(self):
-        return self.summary_df.to_string(
-            float_format='%.2f',
-            formatters={'DATE': lambda x: datetime.strftime(x, '%Y-%m-%d %H:%M')},
-            columns=self._summary_key_df.ABBREV,
-            # header=property_df.ABBREV,
-            index=False,
-            justify='center')
+        """
+        Formatted string of Collection.summary_df
 
-    composite_methods = ['q_mosaic', 'mosaic', 'median', 'medoid']
+        Returns
+        -------
+        : str
+        """
+        return self.summary_df.to_string(
+            float_format="%.2f",
+            formatters={"DATE": lambda x: datetime.strftime(x, "%Y-%m-%d %H:%M")},
+            columns=self._summary_key_df.ABBREV,
+            index=False,
+            justify="center",
+        )
+
+    composite_methods = ["q_mosaic", "mosaic", "median", "medoid"]  # supported composite methods
 
     def search(self, start_date, end_date, region, valid_portion=0, mask=False, scale_refl=False):
         """
         Search for images based on date, region etc criteria
 
         Parameters
-        collection : geedim.collection.ImCollection
+        ----------
         start_date : datetime.datetime
-                     Python datetime specifying the start image capture date
+                     Start image capture date
         end_date : datetime.datetime
-                   Python datetime specifying the end image capture date (if None, then set to start_date)
+                   End image capture date (if None, then set to start_date + 1 day)
         region : dict, geojson, ee.Geometry
                  Polygon in WGS84 specifying a region that images should intersect
         valid_portion: int, optional
-                       Minimum portion (%) of image pixels that should be valid (not cloud)
+                       Minimum portion (%) of image pixels that should be valid (not cloud/shadow)
+        mask : bool, optional
+               Apply a validity (cloud & shadow) masks to images.  Relevant only if search results will be
+                composited (default: False)
+        scale_refl : bool, optional
+                     Scale reflectance bands 0-10000 if they are not in that range already.  Relevant only if search
+                     results will be composited  (default: False)
 
         Returns
         -------
         image_df : pandas.DataFrame
-        Dataframe specifying image properties that match the search criteria
+                   Dataframe specifying image properties that match the search criteria
         """
         # Initialise
-        if (end_date is None):
+        if end_date is None:
             end_date = start_date + timedelta(days=1)
-        if (end_date <= start_date):
-            raise ValueError('`end_date` must be at least a day later than `start_date`')
+        if end_date <= start_date:
+            raise ValueError("`end_date` must be at least a day later than `start_date`")
+
+        def calc_stats(ee_image):
+            """ Server side calculation of validity and score stats within region of interest """
+            max_scale = geedim.image.get_projection(ee_image, min=False).nominalScale()
+            gd_image = self._image_class(ee_image, mask=mask, scale_refl=scale_refl)
+
+            stats = (
+                ee.Image([gd_image.masks["valid_mask"], gd_image.score])
+                .unmask()
+                .reduceRegion(reducer="mean", geometry=region, scale=max_scale)
+                .rename(["VALID_MASK", "SCORE"], ["VALID_PORTION", "AVG_SCORE"])
+            )
+
+            stats = stats.set("VALID_PORTION", ee.Number(stats.get("VALID_PORTION")).multiply(100))
+            return gd_image.ee_image.set(stats)
 
         try:
-            def calc_stats(ee_image):
-                max_scale = geedim.image.get_projection(ee_image, min=False).nominalScale()
-                gd_image = self._image_class(ee_image, mask=mask, scale_refl=scale_refl)
-
-                stats = (ee.Image([gd_image.masks['valid_mask'], gd_image.score]).
-                         unmask().
-                         reduceRegion(reducer='mean', geometry=region, scale=max_scale).
-                         rename(['VALID_MASK', 'SCORE'], ['VALID_PORTION', 'AVG_SCORE']))
-
-                stats = stats.set('VALID_PORTION', ee.Number(stats.get('VALID_PORTION')).multiply(100))
-                return gd_image.ee_image.set(stats)
-
-            # filter the image collection
-            self._ee_collection = (self._image_class.ee_collection().
-                                   filterDate(start_date, end_date).
-                                   filterBounds(region).
-                                   map(calc_stats).
-                                   filter(ee.Filter.gt('VALID_PORTION', valid_portion)))
+            # filter the image collection, finding cloud/shadow masks, and region stats
+            self._ee_collection = (
+                self._image_class.ee_collection()
+                .filterDate(start_date, end_date)
+                .filterBounds(region)
+                .map(calc_stats)
+                .filter(ee.Filter.gt("VALID_PORTION", valid_portion))
+            )
         finally:
-            # fetch metadata and wrap it in a pandas dataframe
+            # update summary_df with image metadata from the filtered collection
             self._summary_df = self._get_summary_df(self._ee_collection)
 
         return self._summary_df
 
+    def composite(self, method="q_mosaic"):
+        """
+        Create a cloud/shadow free composite.
 
-    def composite(self, method='q_mosaic'):
-        # qualityMosaic will prefer clear pixels based on SCORE and irrespective of mask, for other methods, the mask
-        # is needed to avoid including cloudy pixels
+        Note: composite() can be called on a filtered collection created by search(..), or on a collection created with
+              fromIds(...)
+              The `mask` parameter in search(...) and fromId(...) affects the composite and should generally be
+              True so that cloud/shadow pixels are excluded.
+
+        Parameters
+        ----------
+        method : str, optional
+                 Compositing method to use (q_mosaic|mosaic|median|medoid).  (Default: q_mosaic).
+
+        Returns
+        -------
+        : (ee.Image, str)
+          The composite image, composite image ID
+        """
         method = str(method).lower()
 
-        if method == 'q_mosaic':
-            comp_image = self._ee_collection.qualityMosaic('SCORE')
-        elif method == 'mosaic':
+        if method == "q_mosaic":
+            comp_image = self._ee_collection.qualityMosaic("SCORE")
+        elif method == "mosaic":
             comp_image = self._ee_collection.mosaic()
-        elif method == 'median':
+        elif method == "median":
             comp_image = self._ee_collection.median()
+            # apply any type conversion for this collection (median creates float images)
             comp_image = self._image_class._im_transform(comp_image)
-        elif method == 'medoid':
-            sr_bands = [band_dict['id'] for band_dict in self._collection_info['bands']]
+        elif method == "medoid":
+            # limit to surface reflectance bands
+            sr_bands = [band_dict["id"] for band_dict in self._collection_info["bands"]]
             comp_image = medoid.medoid(self._ee_collection, bands=sr_bands)
         else:
-            raise ValueError(f'Unsupported composite method: {method}')
+            raise ValueError(f"Unsupported composite method: {method}")
 
         # populate image metadata with info on component images
-        comp_image = comp_image.set('COMPONENT_IMAGES', self.summary)
+        comp_image = comp_image.set("COMPONENT_IMAGES", self.summary)
 
-        # name the composite
-        start_date = self.summary_df.DATE.iloc[0].strftime('%Y_%m_%d')
-        end_date = self.summary_df.DATE.iloc[-1].strftime('%Y_%m_%d')
+        # construct an ID for the composite
+        start_date = self.summary_df.DATE.iloc[0].strftime("%Y_%m_%d")
+        end_date = self.summary_df.DATE.iloc[-1].strftime("%Y_%m_%d")
 
-        comp_id = f'{self._ee_coll_name}/{start_date}-{end_date}-{method.upper()}_COMP'
-        comp_image = comp_image.set('system:id', comp_id)
+        comp_id = f"{self._ee_coll_name}/{start_date}-{end_date}-{method.upper()}_COMP"
+        comp_image = comp_image.set("system:id", comp_id)
 
-        CompositeResult = collections.namedtuple('CompositeResult', ['image', 'id'])
+        CompositeResult = collections.namedtuple("CompositeResult", ["image", "id"])
         return CompositeResult(comp_image, comp_id)
 
     def _get_summary_df(self, ee_collection):
         """
-        Convert a filtered image collection to a pandas dataframe of image properties
+        Retrieve a summary of collection image metadata.
 
         Parameters
         ----------
         ee_collection : ee.ImageCollection
-                        Filtered image collection
+                        Filtered image collection whose image metadata to retrieve
 
         Returns
         -------
         : pandas.DataFrame
-        Dataframe of ee.Image objects and their properties
+        pandas.DataFrame with a row of metadata for each image)
         """
-        if ee_collection is None:
-            return pd.DataFrame([], columns=self._summary_key_df.ABBREV)
 
+        if ee_collection is None:
+            return pd.DataFrame([], columns=self._summary_key_df.ABBREV)  # return empty dataframe
+
+        # server side aggregation of relevant properties of ee_collection images
         init_list = ee.List([])
 
-        # aggregate relevant properties of ee_collection images
-        def aggregrate_props(image, prop_list):
+        def aggregrate_props(ee_image, prop_list):
             prop = ee.Dictionary()
             for prop_key in self._summary_key_df.PROPERTY.values:
-                prop = prop.set(prop_key, ee.Algorithms.If(image.get(prop_key), image.get(prop_key), ee.String('None')))
+                prop = prop.set(
+                    prop_key, ee.Algorithms.If(ee_image.get(prop_key), ee_image.get(prop_key), ee.String("None"))
+                )
             return ee.List(prop_list).add(prop)
 
-        # retrieve list of dicts of collection image properties (the only call to getInfo in *ImSearch)
+        # retrieve list of dicts of collection image properties (the only call to getInfo() in Collection)
         im_prop_list = ee.List(ee_collection.iterate(aggregrate_props, init_list)).getInfo()
 
         if len(im_prop_list) == 0:
-            return pd.DataFrame([], columns=self._summary_key_df.ABBREV)
+            return pd.DataFrame([], columns=self._summary_key_df.ABBREV)  # return empty dataframe
 
-        # im_list = ee_collection.toList(ee_collection.size())  # image objects
-
-        # add EE image objects and convert ee.Date to python datetime
+        # Convert ee.Date to python datetime
         for i, prop_dict in enumerate(im_prop_list):
-            if 'system:time_start' in prop_dict:
-                prop_dict['system:time_start'] = datetime.utcfromtimestamp(prop_dict['system:time_start'] / 1000)
-            # prop_dict['IMAGE'] = ee.Image(im_list.get(i))
+            if "system:time_start" in prop_dict:
+                prop_dict["system:time_start"] = datetime.utcfromtimestamp(prop_dict["system:time_start"] / 1000)
 
-        # convert to DataFrame
+        # convert property list to DataFrame
         im_prop_df = pd.DataFrame(im_prop_list, columns=im_prop_list[0].keys())
-        im_prop_df = im_prop_df.sort_values(by='system:time_start').reset_index(drop=True)
-        im_prop_df = im_prop_df.rename(columns=dict(zip(self._summary_key_df.PROPERTY, self._summary_key_df.ABBREV)))  # rename cols to abbrev
-        im_prop_df = im_prop_df[self._summary_key_df.ABBREV.to_list()] #+ ['IMAGE']]     # reorder columns
+        im_prop_df = im_prop_df.sort_values(by="system:time_start").reset_index(drop=True)  # sort by acquisition time
+        im_prop_df = im_prop_df.rename(
+            columns=dict(zip(self._summary_key_df.PROPERTY, self._summary_key_df.ABBREV))
+        )  # abbreviate column names
+        im_prop_df = im_prop_df[self._summary_key_df.ABBREV.to_list()]  # reorder columns
 
         return im_prop_df
