@@ -13,10 +13,10 @@
     See the License for the specific language governing permissions and
     limitations under the License.
 """
+import importlib
 import json
 import os
 import pathlib
-import importlib
 from collections import namedtuple
 
 import click
@@ -29,6 +29,7 @@ from geedim import info, image
 
 class _CmdChainResults(object):
     """ Class to hold results for command chaining """
+
     def __init__(self):
         self.search_ids = None
         self.search_region = None
@@ -40,7 +41,7 @@ def _extract_region(region=None, bbox=None, region_buf=5):
     """ Return geojson dict from region or bbox parameters """
 
     if (bbox is None or len(bbox) == 0) and (region is None):
-        raise click.BadOptionUsage('Either pass --region or --bbox', region)
+        raise click.BadOptionUsage('region', 'Either pass --region or --bbox')
 
     if isinstance(region, dict):
         region_dict = region
@@ -105,8 +106,8 @@ def _export_download(res=_CmdChainResults(), do_download=True, **kwargs):
     # get the download/export region
     if (params.region is None) and (params.bbox is None or len(params.bbox) == 0):
         if res.search_region is None:
-            raise click.BadOptionUsage('Either pass --region / --box, or chain this command with `search`',
-                                       params.region)
+            raise click.BadOptionUsage('region',
+                                       'Either pass --region / --box, or chain this command with a succesful `search`')
         else:
             region = res.search_region
     else:
@@ -121,7 +122,8 @@ def _export_download(res=_CmdChainResults(), do_download=True, **kwargs):
     elif len(params.id) > 0:  # download/export image ids specified on command line
         im_list = _create_im_list(params.id, mask=params.mask, scale_refl=params.scale_refl)
     else:
-        raise click.BadOptionUsage('Either pass --id, or chain this command with `search` or `composite`', params.id)
+        raise click.BadOptionUsage('id',
+                                   'Either pass --id, or chain this command with a successful `search` or `composite`')
 
     # download/export the image list
     if do_download:
@@ -246,10 +248,11 @@ def cli(ctx):
 @scale_refl_option
 @click.pass_obj
 def search(res, collection, start_date, end_date=None, bbox=None, region=None, valid_portion=0, output=None,
-           mask=False, scale_refl=False,):
+           mask=False, scale_refl=False, ):
     """ Search for images """
 
     res.search_region = _extract_region(region=region, bbox=bbox)  # store region for chaining
+    res.search_ids = None
 
     click.echo(f'\nSearching for {info.gd_to_ee[collection]} images between '
                f'{start_date.strftime("%Y-%m-%d")} and {end_date.strftime("%Y-%m-%d")}...')
@@ -258,12 +261,11 @@ def search(res, collection, start_date, end_date=None, bbox=None, region=None, v
     gd_collection = coll_api.Collection(collection)
     im_df = gd_collection.search(start_date, end_date, res.search_region, valid_portion=valid_portion,
                                  mask=mask, scale_refl=scale_refl)
-    res.search_ids = im_df.ID.values.tolist()  # store ids for chaining
 
-    # print results
-    if len(res.search_ids) == 0:
+    if im_df.shape[0] == 0:
         click.echo('No images found\n')
     else:
+        res.search_ids = im_df.ID.values.tolist()  # store ids for chaining
         click.echo(f'{len(res.search_ids)} images found\n')
         click.echo(f'Image property descriptions:\n\n{gd_collection.summary_key}\n')
         click.echo(f'Search Results:\n\n{gd_collection.summary}')
@@ -384,7 +386,7 @@ def composite(res, id=None, mask=True, scale_refl=False, method='q_mosaic'):
     id = list(id)
     if (id is None or len(id) == 0):
         if res.search_ids is None:
-            raise click.BadOptionUsage('Either pass --id, or chain this command with `search`', id)
+            raise click.BadOptionUsage('id', 'Either pass --id, or chain this command with a successful `search`')
         else:
             id = res.search_ids
             res.search_ids = None

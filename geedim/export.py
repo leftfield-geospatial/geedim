@@ -101,7 +101,7 @@ class _ExportImage(image.Image):
             self._info["id"] = pathlib.Path(self.name).stem
 
         # if the image is in WGS84 and has no scale (probable composite), then exit
-        if (self.scale is None) and (self.exp_scale is None):
+        if ((self.scale is None) and (self.exp_scale is None)) or ((self.crs is None) and (self.exp_crs is None)):
             raise ValueError(f'{self.info["id"]} appears to be a composite in WGS84, specify a scale and CRS')
 
         # If CRS is the native MODIS CRS, then exit due to GEE bug
