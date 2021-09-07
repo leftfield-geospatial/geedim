@@ -29,7 +29,6 @@ from geedim import info, image
 
 class _CmdChainResults(object):
     """ Class to hold results for command chaining """
-
     def __init__(self):
         self.search_ids = None
         self.search_region = None
@@ -38,7 +37,7 @@ class _CmdChainResults(object):
 
 
 def _extract_region(region=None, bbox=None, region_buf=5):
-    """ extract geojson dict from region or bbox parameters """
+    """ Return geojson dict from region or bbox parameters """
 
     if (bbox is None or len(bbox) == 0) and (region is None):
         raise click.BadOptionUsage('Either pass --region or --bbox', region)
@@ -83,7 +82,7 @@ def _export_im_list(im_list, path='', wait=True, overwrite=False, do_download=Tr
 
 
 def _create_im_list(ids, **kwargs):
-    """ Create a list of Image objects and names from download/export CLI parameters """
+    """ Return a list of Image objects and names, given download/export CLI parameters """
     im_list = []
 
     for im_id in ids:

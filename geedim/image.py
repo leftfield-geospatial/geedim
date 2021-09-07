@@ -29,16 +29,17 @@ from geedim import info
 ##
 def split_id(image_id):
     """
-    Split Earth Engine image ID into collection and index components
+    Split Earth Engine image ID into collection and index components.
 
     Parameters
     ----------
     image_id: str
-              Earth engine image ID
+              Earth engine image ID.
 
     Returns
     -------
-        A tuple of strings: (collection name, image index)
+    tuple
+        A tuple of strings: (collection name, image index).
     """
     index = image_id.split("/")[-1]
     ee_coll_name = "/".join(image_id.split("/")[:-1])
@@ -52,15 +53,15 @@ def get_info(ee_image, min=True):
     Parameters
     ----------
     ee_image : ee.Image
-               The image whose information to retrieve
+               The image whose information to retrieve.
     min : bool, optional
-          Retrieve the crs & scale corresponding to the band with the minimum (True) or maximum (False) scale
+          Retrieve the crs & scale corresponding to the band with the minimum (True) or maximum (False) scale.
           (default: True)
 
     Returns
     -------
-    gd_info : dict
-              dictionary of image information with id, properties, bands, crs and scale keys
+    dict
+        Dictionary of image information with 'id', 'properties', 'bands', 'crs' and 'scale' keys.
     """
     gd_info = dict(id=None, properties={}, bands=[], crs=None, scale=None)
     ee_info = ee_image.getInfo()    # retrieve image info from cloud
@@ -99,20 +100,20 @@ def get_info(ee_image, min=True):
 def get_projection(image, min=True):
     """
     Get the min/max scale projection of image bands.  Server side - no calls to getInfo().
-    Adapted from from https://github.com/gee-community/gee_tools, MIT license
+    Adapted from from https://github.com/gee-community/gee_tools, MIT license.
 
     Parameters
     ----------
     image : ee.Image, geedim.image.Image
-            The image whose min/max projection to retrieve
+            The image whose min/max projection to retrieve.
     min: bool, optional
-         Retrieve the projection corresponding to the band with the minimum (True) or maximum (False) scale
-         [default: True]
+         Retrieve the projection corresponding to the band with the minimum (True) or maximum (False) scale.
+         (default: True)
 
     Returns
     -------
     ee.Projection
-      The projection with the smallest scale
+        The requested projection.
     """
     if isinstance(image, Image):
         image = image.ee_image
@@ -150,21 +151,21 @@ if importlib.util.find_spec("rasterio"):    # if rasterio is installed
 
     def get_bounds(filename, expand=5):
         """
-        Get a geojson polygon representing the bounds of an image
+        Get a geojson polygon representing the bounds of an image.
 
         Parameters
         ----------
         filename :  str, pathlib.Path
-                    Path of the image file whose bounds to find
+                    Path of the image file whose bounds to find.
         expand :    int
-                    percentage (0-100) by which to expand the bounds (default: 5)
+                    Percentage (0-100) by which to expand the bounds (default: 5).
 
         Returns
         -------
         bounds : dict
-                 Geojson polygon
+                 Geojson polygon.
         crs : str
-              image CRS as EPSG string
+              Image CRS as EPSG string.
         """
         try:
             # GEE sets tif colorinterp tags incorrectly, suppress rasterio warning relating to this:
@@ -205,78 +206,49 @@ if importlib.util.find_spec("rasterio"):    # if rasterio is installed
 class Image(object):
     def __init__(self, ee_image):
         """
-        Basic class to wrap any ee.Image and provide access to metadara
+        Base class to wrap any ee.Image and provide access to metadata.
 
         Parameters
         ----------
         ee_image : ee.Image
-                   Image to wrap
+                   Image to wrap.
         """
         self._ee_image = ee_image
         self._info = None
 
     @property
     def ee_image(self):
-        """
-        The wrapped image
-
-        Returns
-        -------
-        : ee.Image
-        """
+        """ ee.Image: The wrapped image. """
         return self._ee_image
 
     @property
     def info(self):
-        """
-        Image information as from get_info()
-
-        Returns
-        -------
-        : dict
-        """
+        """ dict: Image information as from get_info(). """
         if self._info is None:
             self._info = get_info(self._ee_image)
         return self._info
 
     @property
     def id(self):
-        """
-        Earth Engine image ID
-
-        Returns
-        -------
-        : str
-        """
+        """ str: Earth Engine image ID. """
         return self.info["id"]
 
     @property
     def crs(self):
-        """
-        Image CRS corresponding to minimum scale band, as EPSG string
-
-        Returns
-        -------
-        : str
-        """
+        """ str, None: Image CRS corresponding to minimum scale band, as EPSG string. None if all bands are in
+        EPSG:4326. """
         return self.info["crs"]
 
     @property
     def scale(self):
-        """
-        Scale (m) corresponding to minimum scale band
-
-        Returns
-        -------
-        : float
-        """
+        """ float, None: Scale (m) corresponding to minimum scale band.  None if all bands are in EPSG:4326. """
         return self.info["scale"]
 
 
 class MaskedImage(Image):
     def __init__(self, ee_image, mask=False, scale_refl=False):
         """
-        Base class to cloud/shadow mask and quality score Earth engine images from supported collections
+        Class to cloud/shadow mask and quality score Earth engine images from supported collections.
 
         Parameters
         ----------
@@ -289,7 +261,7 @@ class MaskedImage(Image):
         """
         # prevent instantiation of base class(es)
         if not self.gd_coll_name in info.collection_info:
-            raise NotImplementedError("This base class cannot be instantiated, use a derived class")
+            raise NotImplementedError("This base class cannot be instantiated, use a sub-class")
 
         # construct the cloud/shadow masks and cloudless score
         self._masks = self._get_image_masks(ee_image)
@@ -303,16 +275,20 @@ class MaskedImage(Image):
     @classmethod
     def from_id(cls, image_id, mask=False, scale_refl=False):
         """
-        Earth engine image wrapper for cloud/shadow masking and quality scoring
+        Earth engine image wrapper for cloud/shadow masking and quality scoring.
 
         Parameters
         ----------
         image_id : str
-                   ID of earth engine image to wrap
+                   ID of earth engine image to wrap.
         mask : bool, optional
-               Apply a validity (cloud & shadow) mask to the image (default: False)
+               Apply a validity (cloud & shadow) mask to the image (default: False).
         scale_refl : bool, optional
-                     Scale reflectance bands 0-10000 if they are not in that range already (default: False)
+                     Scale reflectance bands 0-10000 if they are not in that range already (default: False).
+
+        Returns:
+        geedim.image.MaskedImage
+            The image object.
         """
         # check image is from a supported collection
         ee_coll_name = split_id(image_id)[0]
@@ -331,50 +307,32 @@ class MaskedImage(Image):
 
     @staticmethod
     def _im_transform(ee_image):
-        """ Optional type conversion to run after masking and scoring """
+        """ Optional data type conversion to run after masking and scoring. """
         return ee_image
 
     @property
     def gd_coll_name(self):
-        """
-        geedim collection name (landsat7_c2_l2|landsat8_c2_l2|sentinel2_toa|sentinel2_sr|modis_nbar)
-        Returns
-        -------
-        : str
-        """
+        """ str: geedim collection name (landsat7_c2_l2|landsat8_c2_l2|sentinel2_toa|sentinel2_sr|modis_nbar). """
         return self._gd_coll_name
 
     @property
     def masks(self):
-        """
-        Fill, cloud, shadow and validity masks
-
-        Returns
-        -------
-        : dict
-          A dictionary of ee.Image objects for each of the mask types
-        """
+        """ dict: A dictionary of ee.Image objects for each of the fill, cloud, shadow and validity masks. """
         return self._masks
 
     @property
     def score(self):
-        """
-        Pixel quality score (distance to nearest cloud/shadow (m))
-
-        Returns
-        -------
-        : ee.Image
-        """
+        """ ee.Image: Pixel quality score (distance to nearest cloud/shadow (m)). """
         return self._score
 
     @classmethod
     def ee_collection(cls):
         """
-        Get the ee.ImageCollection corresponding to this image
+        Returns the ee.ImageCollection corresponding to this image.
 
         Returns
         -------
-        : ee.ImageCollection
+        ee.ImageCollection
         """
         return ee.ImageCollection(info.gd_to_ee[cls._gd_coll_name])
 
@@ -384,17 +342,17 @@ class MaskedImage(Image):
 
     def _get_image_masks(self, ee_image):
         """
-        Derive cloud, shadow, fill and validity masks for an image
+        Derive cloud, shadow, fill and validity masks for an image.
 
         Parameters
         ----------
         ee_image : ee.Image
-                   Derive masks for this image
+                   Derive masks for this image.
 
         Returns
         -------
-        masks : dict
-                A dictionary of ee.Image objects for each of the mask types
+        dict
+            A dictionary of ee.Image objects for each of the fill, cloud, shadow and validity masks.
         """
         # create constant masks for this base class
         masks = dict(
@@ -409,20 +367,20 @@ class MaskedImage(Image):
     # TODO: provide CLI access to cloud_dist
     def _get_image_score(self, ee_image, cloud_dist=5000, masks=None):
         """
-        Get the cloud/shadow distance quality score for this image
+        Get the cloud/shadow distance quality score for this image.
 
         Parameters
         ----------
         ee_image : ee.Image
-                   Find the score for this image
+                   Find the score for this image.
         cloud_dist : int, optional
-                     The neighbourhood (m) in which to search for clouds (default: 5000)
+                     The neighbourhood (m) in which to search for clouds (default: 5000).
         masks : dict, optional
-                Existing masks as returned by _get_image_masks(...) (default: calculate the masks)
+                Existing masks as returned by _get_image_masks(...) (default: calculate the masks).
         Returns
         -------
-        : ee.Image
-          The cloud/shadow distance score as a single band image
+        ee.Image
+            The cloud/shadow distance score (m) as a single band image.
         """
         radius = 1.5    # morphological pixel radius
         min_proj = get_projection(ee_image)     # projection corresponding to minimum scale band
@@ -450,21 +408,21 @@ class MaskedImage(Image):
 
     def _process_image(self, ee_image, mask=False, scale_refl=False, masks=None, score=None):
         """
-        Add mask and score bands to a an Earth Engine image
+        Create, and add, mask and score bands to a an Earth Engine image.
 
         Parameters
         ----------
         ee_image : ee.Image
-                   Earth engine image to add bands to
+                   Earth engine image to add bands to.
         mask : bool, optional
-               Apply any validity mask to the image by setting nodata (default: False)
+               Apply any validity mask to the image by setting nodata (default: False).
         scale_refl : bool, optional
-                     Scale reflectance values from 0-10000 if they are not in that range already (default: False)
+                     Scale reflectance values from 0-10000 if they are not in that range already (default: False).
 
         Returns
         -------
-        : ee.Image
-          The processed image
+        ee.Image
+            The processed image with added mask and score bands.
         """
         if masks is None:
             masks = self._get_image_masks(ee_image)
@@ -553,7 +511,8 @@ class Landsat7Image(LandsatImage):
 class Sentinel2Image(MaskedImage):
     """
     Base class for cloud masking and quality scoring sentinel2_sr and sentinel2_toa images
-    (Does not use COPERNICUS/S2_CLOUD_PROBABILITY for cloud/shadow masking)
+
+    (Does not use cloud probability).
     """
     @staticmethod
     def _im_transform(ee_image):
@@ -575,7 +534,8 @@ class Sentinel2Image(MaskedImage):
 class Sentinel2SrImage(Sentinel2Image):
     """
     Class for cloud masking and quality scoring sentinel2_sr images
-    (Does not use COPERNICUS/S2_CLOUD_PROBABILITY for cloud/shadow masking)
+
+    (Does not use cloud probability).
     """
     _gd_coll_name = "sentinel2_sr"
 
@@ -583,15 +543,17 @@ class Sentinel2SrImage(Sentinel2Image):
 class Sentinel2ToaImage(Sentinel2Image):
     """
     Class for cloud masking and quality scoring sentinel2_toa images
-    (Does not use COPERNICUS/S2_CLOUD_PROBABILITY for cloud/shadow masking)
+
+    (Does not use cloud probability).
     """
     _gd_coll_name = "sentinel2_toa"
 
 
 class Sentinel2ClImage(MaskedImage):
     """
-    Base class for cloud/shadow masking and quality scoring sentinel2_sr and sentinel2_toa images
-    (Uses COPERNICUS/S2_CLOUD_PROBABILITY to improve cloud/shadow masking)
+    Base class for cloud/shadow masking and quality scoring sentinel2_sr and sentinel2_toa images.
+
+    (Uses cloud probability to improve cloud/shadow masking).
     """
     def __init__(self, ee_image, mask=False, scale_refl=False):
         # TODO: provide CLI access to these attributes
@@ -631,8 +593,9 @@ class Sentinel2ClImage(MaskedImage):
 
     def _get_image_masks(self, ee_image):
         """
-        Derive cloud, shadow, fill and validity masks for an image, using the additional cloud probability band.
-        Adapeted from https://developers.google.com/earth-engine/tutorials/community/sentinel-2-s2cloudless
+        Derive cloud, shadow and validity masks for an image, using the additional cloud probability band.
+
+        Adapted from https://developers.google.com/earth-engine/tutorials/community/sentinel-2-s2cloudless
 
         Parameters
         ----------
@@ -641,8 +604,8 @@ class Sentinel2ClImage(MaskedImage):
 
         Returns
         -------
-        masks : dict
-                A dictionary of ee.Image objects for each of the mask types
+        dict
+            A dictionary of ee.Image objects for each of the fill, cloud, shadow and validity masks.
         """
 
         masks = MaskedImage._get_image_masks(self, ee_image)    # get constant masks from base class
@@ -659,19 +622,17 @@ class Sentinel2ClImage(MaskedImage):
         shadow_azimuth = ee.Number(-90).add(ee.Number(ee_image.get("MEAN_SOLAR_AZIMUTH_ANGLE")))
         min_scale = get_projection(ee_image).nominalScale()
 
-        # project the the cloud mask in the direction of shadows
-        proj_dist_px = ee.Number(self._cloud_proj_dist * 1000).divide(min_scale)
+        # project the the cloud mask in the direction of sun's rays
+        proj_dist_pix = ee.Number(self._cloud_proj_dist * 1000).divide(min_scale)    # projection distance in pixels
         proj_cloud_mask = (
-            cloud_mask.directionalDistanceTransform(shadow_azimuth, proj_dist_px)
+            cloud_mask.directionalDistanceTransform(shadow_azimuth, proj_dist_pix)
             .select("distance")
             .mask()
             .rename("PROJ_CLOUD_MASK")
         )
-        # .reproject(**{'crs': ee_image.select(0).projection(), 'scale': 100})
 
-        if self.gd_coll_name == "sentinel2_sr":  # use SCL to reduce shadow_mask
-            # Note: SCL does not classify cloud shadows well, they are often labelled "dark".  Instead of using only
-            # cloud shadow areas from this band, we combine it with the projected dark and shadow areas from s2cloudless
+        if self.gd_coll_name == "sentinel2_sr":  # use SCL band to reduce shadow_mask
+            # Get the shadow mask from the SCL band and perform morphological opening to remove small isolated blobs
             scl = ee_image.select("SCL")
             dark_shadow_mask = (
                 scl.eq(3)
@@ -679,6 +640,7 @@ class Sentinel2ClImage(MaskedImage):
                 .focal_min(self._buffer, "circle", "meters")
                 .focal_max(self._buffer, "circle", "meters")
             )
+            # improve the shadow mask by combining it with the projected cloud mask
             shadow_mask = proj_cloud_mask.And(dark_shadow_mask).rename("SHADOW_MASK")
         else:
             shadow_mask = proj_cloud_mask.rename("SHADOW_MASK")  # mask all areas that could be cloud shadow
@@ -690,13 +652,23 @@ class Sentinel2ClImage(MaskedImage):
 
     @classmethod
     def ee_collection(cls):
+        """
+        Returns an augmented ee.ImageCollection with cloud probability bands added to multi-spectral images.
+
+        Returns
+        -------
+        ee.ImageCollection
+        """
         s2_sr_toa_col = ee.ImageCollection(info.gd_to_ee[cls._gd_coll_name])
         s2_cloudless_col = ee.ImageCollection("COPERNICUS/S2_CLOUD_PROBABILITY")
 
+        # create a collection of index-matched images from the SR/TOA and cloud probability collections
         filter = ee.Filter.equals(leftField="system:index", rightField="system:index")
         inner_join = ee.ImageCollection(ee.Join.inner().apply(s2_sr_toa_col, s2_cloudless_col, filter))
 
+        # re-configure the collection so that cloud probability is added as a band to the SR/TOA image
         def map(feature):
+            """ Server-side function to concatenate images """
             return ee.Image.cat(feature.get("primary"), feature.get("secondary"))
 
         return inner_join.map(map)
@@ -704,16 +676,18 @@ class Sentinel2ClImage(MaskedImage):
 
 class Sentinel2SrClImage(Sentinel2ClImage):
     """
-    Class for cloud/shadow masking and quality scoring sentinel2_sr images
-    (Uses COPERNICUS/S2_CLOUD_PROBABILITY to improve cloud/shadow masking)
+    Class for cloud/shadow masking and quality scoring sentinel2_sr images.
+
+    (Uses cloud probability to improve cloud/shadow masking).
     """
     _gd_coll_name = "sentinel2_sr"
 
 
 class Sentinel2ToaClImage(Sentinel2ClImage):
     """
-    Class for cloud/shadow masking and quality scoring sentinel2_toa images
-    (Uses COPERNICUS/S2_CLOUD_PROBABILITY to improve cloud/shadow masking)
+    Class for cloud/shadow masking and quality scoring sentinel2_toa images.
+
+    (Uses cloud probability to improve cloud/shadow masking).
     """
     _gd_coll_name = "sentinel2_toa"
 
@@ -721,8 +695,9 @@ class Sentinel2ToaClImage(Sentinel2ClImage):
 class ModisNbarImage(MaskedImage):
     """
     Class for wrapping modis_nbar images.
-    (These images are already cloud/shadow free composites, so the MaskedImage constant masks are used without further
-    processing)
+
+    (These images are already cloud/shadow free composites, so no further processing is done on them, and
+    constant cloud, shadow etc masks are used).
     """
     @staticmethod
     def _im_transform(ee_image):
@@ -736,18 +711,19 @@ class ModisNbarImage(MaskedImage):
 
 def get_class(coll_name):
     """
-    Get the ProcImage subclass for a specific collection
+    Get the ProcImage subclass for wrapping image from a specified collection.
 
     Parameters
     ----------
     coll_name : str
-                geedim or Earth Engine collection name to get class for
+                geedim or Earth Engine collection name to get class for.
                 (landsat7_c2_l2|landsat8_c2_l2|sentinel2_toa|sentinel2_sr|modis_nbar) or
-                (LANDSAT/LE07/C02/T1_L2|LANDSAT/LC08/C02/T1_L2|COPERNICUS/S2|COPERNICUS/S2_SR|MODIS/006/MCD43A4)
+                (LANDSAT/LE07/C02/T1_L2|LANDSAT/LC08/C02/T1_L2|COPERNICUS/S2|COPERNICUS/S2_SR|MODIS/006/MCD43A4).
 
     Returns
     -------
-    : geedim.image.ProcImage
+    geedim.image.ProcImage
+        The class corresponding to coll_name.
     """
     # TODO: populate this list by traversing the class heirarchy
     # TODO: allow coll_name = full image id
@@ -776,5 +752,4 @@ def get_class(coll_name):
         return gd_coll_name_map[info.ee_to_gd[coll_name]]
     else:
         raise ValueError(f"Unknown collection name: {coll_name}")
-
 

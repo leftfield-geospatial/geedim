@@ -65,7 +65,7 @@ class Collection(object):
 
         Returns
         -------
-        : geedim.collection.Collection
+        geedim.collection.Collection
         """
         # check image IDs are valid
         ee_coll_name = image.split_id(image_ids[0])[0]
@@ -91,60 +91,30 @@ class Collection(object):
 
     @property
     def ee_collection(self):
-        """
-         The underlying ee.ImageCollection
-
-        Returns
-        -------
-        : ee.ImageCollection
-        """
+        """ ee.ImageCollection : Returns the wrapped ee.ImageCollection """
         return self._ee_collection
 
     @property
     def summary_key_df(self):
-        """
-        A key to Collection.summary_df
-        (pandas.DataFrame with ABBREV and DESCRIPTION columns, and rows corresponding columns in summary_df)
-
-        Returns
-        -------
-        : pandas.DataFrame
-        """
+        """ pandas.DataFrame : A key to Collection.summary_df
+        (pandas.DataFrame with ABBREV and DESCRIPTION columns, and rows corresponding columns in summary_df) """
         return self._summary_key_df
 
     @property
     def summary_df(self):
-        """
-        Summary of collection image metadata (pandas.DataFrame with a row for each image)
-
-        Returns
-        -------
-        : pandas.DataFrame
-        """
+        """ pandas.DataFrame : Summary of collection image properties with a row for each image """
         if self._summary_df is None:
             self._summary_df = self._get_summary_df(self._ee_collection)
         return self._summary_df
 
     @property
     def summary_key(self):
-        """
-        Formatted string of Collection.summary_key_df
-
-        Returns
-        -------
-        : str
-        """
+        """ str :  Formatted string of Collection.summary_key_df """
         return self._summary_key_df[["ABBREV", "DESCRIPTION"]].to_string(index=False, justify="right")
 
     @property
     def summary(self):
-        """
-        Formatted string of Collection.summary_df
-
-        Returns
-        -------
-        : str
-        """
+        """ str : Formatted string of Collection.summary_df """
         return self.summary_df.to_string(
             float_format="%.2f",
             formatters={"DATE": lambda x: datetime.strftime(x, "%Y-%m-%d %H:%M")},
@@ -178,8 +148,8 @@ class Collection(object):
 
         Returns
         -------
-        image_df : pandas.DataFrame
-                   Dataframe specifying image properties that match the search criteria
+        pandas.DataFrame
+            Dataframe specifying image properties that match the search criteria
         """
         # Initialise
         if end_date is None:

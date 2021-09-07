@@ -153,8 +153,8 @@ def export_image(image_obj, filename, folder="", region=None, crs=None, scale=No
 
     Returns
     -------
-    task : ee.batch.Task
-           EE task object
+    ee.batch.Task
+        Earth Engine export task object
     """
     exp_image = _ExportImage(image_obj, name=filename, exp_region=region, exp_crs=crs, exp_scale=scale)
     exp_image.parse_attributes()

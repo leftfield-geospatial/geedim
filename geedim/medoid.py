@@ -21,14 +21,13 @@
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
 """
-##
-import ee
-
 """
     This file contains Medoid related functionality copied from 'Google Earth Engine tools' under MIT license
     See https://github.com/gee-community/gee_tools
 """
 
+##
+import ee
 
 def enumerate(collection):
     """ Create a list of lists in which each element of the list is:

@@ -1,10 +1,11 @@
+import importlib
 import unittest
 from datetime import datetime, timedelta
 
 import ee
-import pandas as pd
-import importlib
 import numpy as np
+import pandas as pd
+
 from geedim import export, collection, root_path, info, image
 
 if importlib.util.find_spec("rasterio"):
@@ -14,16 +15,18 @@ if importlib.util.find_spec("rasterio"):
 else:
     raise ModuleNotFoundError('Rasterio is needed to run the unit tests: `conda install -c conda-forge rasterio`')
 
+
 class TestApi(unittest.TestCase):
-    """
-    Test backend functionality in search and download modules
-    """
+    """ Class to test backend (API) search, composite and export functionality. """
 
     @classmethod
     def setUpClass(cls):
+        """ Initialise Earth Engine once for all the tests here. """
         ee.Initialize()
 
     def _test_image(self, image_id, mask=False, scale_refl=False):
+        """ Test the validity of a geedim.image.MaskedImage by checking metadata.  """
+
         ee_coll_name = image.split_id(image_id)[0]
         gd_coll_name = info.ee_to_gd[ee_coll_name]
         gd_image = image.get_class(gd_coll_name).from_id(image_id, mask=mask, scale_refl=scale_refl)
@@ -45,6 +48,7 @@ class TestApi(unittest.TestCase):
         for id in sr_band_df.id.values:
             self.assertTrue(id in im_band_df.id.values, msg='Image has SR bands')
 
+        # test landsat reflectance statistics for a specific region
         region = {"type": "Polygon",
                   "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
         if scale_refl and ('landsat' in gd_coll_name):
@@ -54,6 +58,7 @@ class TestApi(unittest.TestCase):
             self.assertTrue(all(np.array(list(max_refl.values())) <= 11000), 'Scaled reflectance in range')
 
     def test_image(self):
+        """ Test geedim.image.MaskedImage sub-classes. """
         im_param_list = [
             {'image_id': 'COPERNICUS/S2_SR/20190321T075619_20190321T081839_T35HKC', 'mask': False, 'scale_refl': False},
             {'image_id': 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190301', 'mask': True, 'scale_refl': True},
@@ -66,8 +71,8 @@ class TestApi(unittest.TestCase):
 
     @staticmethod
     def _test_search_results(test_case, res_df, start_date, end_date, valid_portion=0):
-        """ checking search results from geojson file are valid"""
-        # check results have correct columns, and sensible values
+        """ Test the validity of a search results dataframe against the search parameters. """
+
         test_case.assertGreater(res_df.shape[0], 0, 'Search returned one or more results')
         test_case.assertGreater(res_df.shape[1], 1, 'Search results contain two or more columns')
 
@@ -77,18 +82,18 @@ class TestApi(unittest.TestCase):
         summary_key_df = pd.DataFrame(info.collection_info[gd_coll_name]['properties'])
 
         test_case.assertTrue(set(res_df.columns) == set(summary_key_df.ABBREV),
-                        'Search results have correct columns')
+                             'Search results have correct columns')
         test_case.assertTrue(all(res_df.DATE >= start_date) and all(res_df.DATE <= end_date),
-                        'Search results are in correct date range')
+                             'Search results are in correct date range')
         test_case.assertTrue(all([ee_coll_name in im_id for im_id in res_df.ID.values]),
-                        'Search results have correct EE ID')
+                             'Search results have correct EE ID')
         if gd_coll_name != 'modis_nbar':
             test_case.assertTrue(all(res_df.VALID >= valid_portion) and all(res_df.VALID <= 100),
-                            'Search results have correct validity range')
+                                 'Search results have correct validity range')
             test_case.assertTrue(all(res_df.SCORE >= 0), 'Search results have correct q score range')
 
-
     def test_search(self):
+        """ Test search on all supported image collections.  """
         region = {"type": "Polygon",
                   "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
         start_date = datetime.strptime('2019-02-01', '%Y-%m-%d')
@@ -100,11 +105,12 @@ class TestApi(unittest.TestCase):
                 res_df = gd_collection.search(start_date, end_date, region, valid_portion=valid_portion)
                 self._test_search_results(self, res_df, start_date, end_date, valid_portion=valid_portion)
 
-    # TODO: separate API search and download testing (?) and or make one _test_download fn that works from api and cli
     @staticmethod
     def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=None, mask=False, scale_refl=False):
-        """ Test downloaded file against image.MaskedImage object """
-        if isinstance(image_obj, str):
+        """ Test downloaded image file against corresponding image object """
+
+        # create objects to test against
+        if isinstance(image_obj, str):  # create image.MaskedImage from ID
             ee_coll_name = image.split_id(image_obj)[0]
             gd_coll_name = info.ee_to_gd[ee_coll_name]
             gd_image = image.get_class(gd_coll_name).from_id(image_obj, mask=mask, scale_refl=scale_refl)
@@ -127,37 +133,35 @@ class TestApi(unittest.TestCase):
 
         # check the validity of the downloaded file
         test_case.assertTrue(filename.exists(), msg='Download file exists')
-
         with rio.open(filename) as im:
+            # check bands, crs and scale
             test_case.assertEqual(len(gd_info['bands']), im.count, msg='EE and download image band count match')
             exp_epsg = CRS.from_string(exp_image.exp_crs).to_epsg()
             test_case.assertEqual(exp_epsg, im.crs.to_epsg(), msg='EE and download image CRS match')
             test_case.assertAlmostEqual(exp_image.exp_scale, im.res[0], places=3,
                                         msg='EE and download image scale match')
 
+            # check image bounds coincide with region
             im_bounds_wgs84 = transform_bounds(im.crs, 'WGS84', *im.bounds)  # convert to WGS84 geojson
             test_case.assertFalse(rio.coords.disjoint_bounds(region_bounds, im_bounds_wgs84),
                                   msg='Search and image bounds match')
 
-            if scale_refl and ('landsat' in gd_coll_name):
+            if scale_refl and ('landsat' in gd_coll_name):  # check surface reflectance in range
                 sr_band_ids = sr_band_df[sr_band_df.id.str.startswith('SR_B')].id.tolist()
                 sr_band_idx = [im.descriptions.index(sr_id) + 1 for sr_id in sr_band_ids]
                 sr_bands = im.read(sr_band_idx)
                 test_case.assertTrue(sr_bands.max() <= 11000, 'Scaled reflectance in range')
 
-            if mask:
+            if mask:    # check mask is same as VALID_MASK band
                 im_mask = im.read_masks(im.descriptions.index('VALID_MASK') + 1).astype(bool)
                 valid_mask = im.read(im.descriptions.index('VALID_MASK') + 1, masked=False).astype(bool)
                 test_case.assertTrue(np.all(im_mask == valid_mask), 'mask == VALID_MASK')
 
     def test_download(self):
-        # construct image filename based on id, crs and scale
-        # delay setting crs etc if its None, so we can test download_image(...crs=None,scale=None)
+        """ Test download of images from different collections, and with different crs, scale and scale_refl params. """
 
         region = {"type": "Polygon",
                   "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
-        # region = {"type": "Polygon",
-        #           "coordinates": [[[24.1, -33.7], [24.1, -33.5], [23.9, -33.5], [23.9, -33.7], [24.1, -33.7]]]}
         im_param_list = [
             {'image_id': 'COPERNICUS/S2_SR/20190321T075619_20190321T081839_T35HKC', 'mask': True, 'scale_refl': False,
              'crs': None, 'scale': 30},
@@ -171,8 +175,10 @@ class TestApi(unittest.TestCase):
             ee_coll_name = image.split_id(impdict['image_id'])[0]
             gd_coll_name = info.ee_to_gd[ee_coll_name]
             with self.subTest('Download', **impdict):
+                # create image.MaskedImage
                 gd_image = image.get_class(gd_coll_name).from_id(impdict["image_id"], mask=impdict['mask'],
                                                                  scale_refl=impdict['scale_refl'])
+                # create a filename for these parameters
                 name = impdict["image_id"].replace('/', '-')
                 crs_str = impdict["crs"].replace(':', '_') if impdict["crs"] else 'None'
                 filename = root_path.joinpath(f'data/outputs/tests/{name}_{crs_str}_{impdict["scale"]}m.tif')
@@ -181,8 +187,9 @@ class TestApi(unittest.TestCase):
                 impdict.pop('image_id')
                 self._test_image_file(self, image_obj=gd_image, filename=filename, region=region, **impdict)
 
-
     def test_export(self):
+        """ Test export of an image, without waiting for completion. """
+
         region = {"type": "Polygon",
                   "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
         image_id = 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190128'
@@ -190,6 +197,8 @@ class TestApi(unittest.TestCase):
         export.export_image(ee_image, image_id.replace('/', '-'), folder='geedim_test', region=region, wait=False)
 
     def _test_composite(self, ee_image, mask=False, scale_refl=False):
+        """ Test the metadata of a composite ee.Image for validity. """
+
         gd_image = image.Image(ee_image)
         ee_coll_name = image.split_id(gd_image.id)[0]
         gd_coll_name = info.ee_to_gd[ee_coll_name]
@@ -210,6 +219,7 @@ class TestApi(unittest.TestCase):
         for id in sr_band_df.id.values:
             self.assertTrue(id in im_band_df.id.values, msg='Image has SR bands')
 
+        # test landsat reflectance statistics for a specific region
         region = {"type": "Polygon",
                   "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
         if scale_refl and ('landsat' in gd_coll_name):
@@ -219,6 +229,8 @@ class TestApi(unittest.TestCase):
             self.assertTrue(all(np.array(list(max_refl.values())) <= 10000), 'Scaled reflectance in range')
 
     def test_composite(self):
+        """ Test each composite method on different collections. """
+
         methods = collection.Collection.composite_methods
         param_list = [
             {'image_ids': ['LANDSAT/LE07/C02/T1_L2/LE07_171083_20190129', 'LANDSAT/LE07/C02/T1_L2/LE07_171083_20190214',

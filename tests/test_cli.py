@@ -25,12 +25,10 @@ from tests import test_api
 
 
 class TestCli(unittest.TestCase):
-    """
-    Test geedim download/export CLI
-    """
+    """ Test geedim  CLI """
 
     def test_search(self):
-        """ test `geedim search` with --bbox option"""
+        """ Test search command with different options. """
 
         results_filename = root_path.joinpath('data/outputs/tests/search_results.json')
         region_filename = root_path.joinpath('data/inputs/tests/region.geojson')
@@ -51,27 +49,25 @@ class TestCli(unittest.TestCase):
 
                 self.assertTrue(result.exit_code == 0, result.exception)  # search returned ok
                 self.assertTrue(results_filename.exists(), 'Search results written to file')
+
                 # read json search results into a pandas dataframe
                 with open(results_filename) as f:
                     res_dict = json.load(f)
                 res_df = pd.DataFrame.from_dict(res_dict, orient='index')
                 res_df.DATE = [datetime.utcfromtimestamp(ts / 1000) for ts in res_df.DATE.values]
-                test_api.TestApi._test_search_results(self, res_df, start_date, end_date)  # check results
+                test_api.TestApi._test_search_results(self, res_df, start_date, end_date)  # test search results
 
     def test_download(self):
-        """
-        Test `geedim download` with --region, --crs and --scale options
-        """
+        """ Test download command on one image """
+
         image_id = 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190112'
         region_filename = root_path.joinpath('data/inputs/tests/region.geojson')
-        bbox = (23.95, -33.6, 24, -33.55)
         download_dir = root_path.joinpath('data/outputs/tests')
         crs = 'EPSG:3857'
         scale = 60
         im_param_list = [
             ['download', '-i', 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190112', '-r', str(region_filename), '-dd',
              str(download_dir), '--crs', crs, '--scale', scale, '-o', '-m', '-sr'],
-            # ['download', '-i', 'COPERNICUS/S2/20190321T075619_20190321T081839_T35HKC', '-b', *bbox, '-dd', str(download_dir), '--crs', crs, '--scale', scale, '-o', '-nm'],
         ]
 
         for im_params in im_param_list:
@@ -87,21 +83,20 @@ class TestCli(unittest.TestCase):
                                                   scale=scale, mask=True)
 
     def test_export(self):
-        """
-        Test `geedim export` with --bbox option
-        """
+        """ Test export command on one image, without waiting for completion """
         image_id = 'MODIS/006/MCD43A4/2019_01_02'
         bbox = (23.9, -33.6, 24, -33.5)
         crs = 'EPSG:3857'
         scale = 1000
 
-        # invoke CLI
         result = CliRunner().invoke(cli.cli, ['export', '-i', image_id, '-b', *bbox, '-df', 'geedim_test', '-nw',
                                               '--crs', crs, '--scale', scale, '-m'],
                                     terminal_width=80)
         self.assertTrue(result.exit_code == 0, result.exception)
 
     def test_composite_download(self):
+        """ Test chaining of composite and download commands, to create and download one composite image.  """
+
         region_filename = root_path.joinpath('data/inputs/tests/region.geojson')
         download_dir = root_path.joinpath('data/outputs/tests')
         comp_ids = ['LANDSAT/LE07/C02/T1_L2/LE07_171083_20190129', 'LANDSAT/LE07/C02/T1_L2/LE07_171083_20190214',
@@ -117,7 +112,7 @@ class TestCli(unittest.TestCase):
 
         self.assertTrue(result.exit_code == 0, result.exception)
 
-        # recreate cloud composite image and check against file
+        # recreate composite image and check against downloaded file
         gd_collection = collection.Collection.from_ids(comp_ids, mask=pdict['mask'], scale_refl=pdict['scale_refl'])
         comp_im, comp_id = gd_collection.composite(method)
         comp_fn = download_dir.joinpath(comp_id.replace('/', '-') + '.tif')
@@ -126,8 +121,9 @@ class TestCli(unittest.TestCase):
         test_api.TestApi._test_image_file(self, image_obj=image.Image(comp_im), filename=comp_fn, region=region,
                                           **pdict)
 
-
     def test_search_composite_download(self):
+        """ Test chaining of search, composite and download commands, to create and download one composite image. """
+
         region_filename = root_path.joinpath('data/inputs/tests/region.geojson')
         results_filename = root_path.joinpath('data/outputs/tests/search_results.json')
         download_dir = root_path.joinpath('data/outputs/tests')
@@ -136,19 +132,25 @@ class TestCli(unittest.TestCase):
         method = 'q_mosaic'
         pdict = dict(mask=True, scale_refl=False, crs='EPSG:3857', scale=50)
 
-        cli_params = ['search', '-c', 'sentinel2_sr', '-b', 23.9, -33.6, 24, -33.5, '-s', start_date.strftime("%Y-%m-%d"), '-e', end_date.strftime("%Y-%m-%d"), '-o', f'{results_filename}', 'composite', '-cm', method, '-m' if pdict['mask'] else '-nm', '-sr' if pdict['scale_refl'] else '-nsr', 'download', '-r', str(region_filename), '-dd', str(download_dir), '--crs', pdict['crs'], '--scale', pdict['scale']]
+        cli_params = ['search', '-c', 'sentinel2_sr', '-b', 23.9, -33.6, 24, -33.5, '-s',
+                      start_date.strftime("%Y-%m-%d"), '-e', end_date.strftime("%Y-%m-%d"), '-o', f'{results_filename}',
+                      'composite', '-cm', method, '-m' if pdict['mask'] else '-nm',
+                      '-sr' if pdict['scale_refl'] else '-nsr', 'download', '-r', str(region_filename), '-dd',
+                      str(download_dir), '--crs', pdict['crs'], '--scale', pdict['scale']]
+
         result = CliRunner().invoke(cli.cli, cli_params, terminal_width=100)
 
         self.assertTrue(result.exit_code == 0, result.exception)
 
-        # recreate search -> loud composite image and check against file
+        # recreate search results and composite image, and check against file
         with open(results_filename) as f:
             res_dict = json.load(f)
         res_df = pd.DataFrame.from_dict(res_dict, orient='index')
         res_df.DATE = [datetime.utcfromtimestamp(ts / 1000) for ts in res_df.DATE.values]
         test_api.TestApi._test_search_results(self, res_df, start_date, end_date)  # check results
 
-        gd_collection = collection.Collection.from_ids(res_df.ID.values, mask=pdict['mask'], scale_refl=pdict['scale_refl'])
+        gd_collection = collection.Collection.from_ids(res_df.ID.values, mask=pdict['mask'],
+                                                       scale_refl=pdict['scale_refl'])
         comp_im, comp_id = gd_collection.composite(method)
         comp_fn = download_dir.joinpath(comp_id.replace('/', '-') + '.tif')
         with open(region_filename) as f:
