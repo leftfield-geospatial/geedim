@@ -1,19 +1,11 @@
 # geedim
-Google Earth Engine image masking, compositing and download/export.
+`geedim` provides a command line interface, and API, for searching, compositing and downloading/exporting surface reflectance imagery from [Google Earth Engine](https://signup.earthengine.google.com) (EE). 
 ## Description
-`geedim` provides a command line interface, and API, for downloading and exporting surface reflectance imagery from [Google Earth Engine](https://signup.earthengine.google.com) (GEE). 
+`geedim` allows searching by date, region, and region-specific validity statistics.  It performs basic cloud/shadow masking, and cloud-free compositing.  Masked images or composites (including metadata) can downloaded, or exported to Google Drive.
 
-Functionality:
+It supports operations on the following image collections:
 
-- Filtering by date & region
-- Filtering by region-limited validity and quality scores
-- Basic cloud and shadow masking, and cloud-free compositing 
-- Download, and export to Google Drive
-- Populating image metadata
-
-Supported imagery:
-
-`geedim` Name | GEE Collection| Description
+`geedim` Name | EE Name| Description
 ---------|-----------|------------
 landsat7_c2_l2 | [LANDSAT/LE07/C02/T1_L2](https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LE07_C02_T1_L2) | Landsat 7, collection 2, tier 1, level 2 surface reflectance 
 landsat8_c2_l2 | [LANDSAT/LC08/C02/T1_L2](https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C02_T1_L2) | Landsat 8, collection 2, tier 1, level 2 surface reflectance 
@@ -39,28 +31,24 @@ pip install -e geedim
 ``` shell
 earthengine authenticate
 ```
-### Requirements  
-The following dependencies are installed in the process above.
-  
-  - python >= 3.8
-  - pandas >= 1.2
-  - earthengine-api >= 0.1
  
 ## Usage
+`geedim` command line functionality is accessed through `search`, `composite`, `download` and `export` sub-commands.  The sub-commands can be "chained" e.g. for compositing and downloading the results of a search, in a single execution.
 ### Command line interface
 ```
 geedim --help
 ```
 ```
-Usage: geedim [OPTIONS] COMMAND [ARGS]...
+Usage: geedim [OPTIONS] COMMAND1 [ARGS]... [COMMAND2 [ARGS]...]...
 
 Options:
   --help  Show this message and exit.
 
 Commands:
-  download  Download image(s), with cloud and shadow masking
-  export    Export image(s) to Google Drive, with cloud and shadow masking
-  search    Search for images
+  composite  Create a cloud-free composite image
+  download   Download image(s), with cloud and shadow masking
+  export     Export image(s) to Google Drive, with cloud and shadow masking
+  search     Search for images
 ```
 ### Search
 ```
@@ -96,8 +84,12 @@ Options:
   -o, --output FILE               Write results to this filename, file type
                                   inferred from extension: [.csv|.json]
 
-  -rb, --region_buf FLOAT         If --region is a raster file, extend the
-                                  region bounds by region_buf %  [default: 5]
+  -m, --mask / -nm, --no-mask     Do/don't apply (cloud and shadow) nodata
+                                  mask(s).  [default: no-mask]
+
+  -sr, --scale-refl / -nsr, --no-scale-refl
+                                  Scale reflectance bands from 0-10000.
+                                  [default: scale-refl]
 
   --help                          Show this message and exit.
 ```
@@ -113,10 +105,10 @@ geedim download --help
 ```
 Usage: geedim download [OPTIONS]
 
-  Download image(s) (up to 10MB), with cloud and shadow masking
+  Download image(s), with cloud and shadow masking
 
 Options:
-  -i, --id TEXT                   Earth engine image ID(s).  [required]
+  -i, --id TEXT                   Earth engine image ID(s).
   -b, --bbox FLOAT...             Region defined by bounding box co-ordinates
                                   in WGS84 (xmin, ymin, xmax, ymax).  [One of
                                   --bbox or --region is required.]
@@ -126,7 +118,7 @@ Options:
 
   -dd, --download-dir DIRECTORY   Download image file(s) to this directory
                                   [default:
-                                  C:\Data\Development\Projects\geedim]
+                                  C:\Data\Development\Projects\geedim\geedim]
 
   -c, --crs TEXT                  Reproject image(s) to this CRS (WKT or EPSG
                                   string).  [default: source CRS]
@@ -145,8 +137,9 @@ Options:
   -o, --overwrite                 Overwrite the destination file if it exists.
                                   [default: prompt the user for confirmation]
 
-  --help                          Show this message and exit.
-  ```
+  --help                          Show this message and exit.  
+```
+
 #### Example
 ```
 geedim download -i LANDSAT/LC08/C02/T1_L2/LC08_172083_20190128 -b 23.9 -33.6 24 -33.5 --scale-refl --mask
@@ -162,7 +155,7 @@ Usage: geedim export [OPTIONS]
   Export image(s) to Google Drive, with cloud and shadow masking
 
 Options:
-  -i, --id TEXT                   Earth engine image ID(s).  [required]
+  -i, --id TEXT                   Earth engine image ID(s).
   -b, --bbox FLOAT...             Region defined by bounding box co-ordinates
                                   in WGS84 (xmin, ymin, xmax, ymax).  [One of
                                   --bbox or --region is required.]
@@ -196,19 +189,48 @@ Options:
 ```
 geedim export -i LANDSAT/LC08/C02/T1_L2/LC08_172083_20190128 -b 23.9 -33.6 24 -33.5 -df geedim_test --scale-refl --mask
 ```
+### Composite
+```
+geedim composite --help
+```
+```
+Usage: geedim composite [OPTIONS]
+
+  Create a cloud-free composite image
+
+Options:
+  -i, --id TEXT                   Earth engine image ID(s).
+  -cm, --method [q_mosaic|mosaic|median|medoid]
+                                  Compositing method to use.  [default:
+                                  q_mosaic]
+
+  -m, --mask / -nm, --no-mask     Do/don't apply (cloud and shadow) nodata
+                                  mask(s) before compositing.  [default: mask]
+
+  -sr, --scale-refl / -nsr, --no-scale-refl
+                                  Scale reflectance bands from 0-10000.
+                                  [default: scale-refl]
+
+  --help                          Show this message and exit.
+```
+#### Example
+Composite the results of a search and download the result.
+```
+geedim search -c landsat8_c2_l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 --mask composite -cm q_mosaic download --scale 30 --crs EPSG:3857
+```
+
 ## Known limitations
 - GEE limits image downloads to 10MB, images larger than this can exported to Google Drive.
-- There is a [GEE bug exporting MODIS in its native CRS](https://issuetracker.google.com/issues/194561313), `geedim` works around this by re-projecting MODIS to spherical-mercator if no other CRS is specified.
+- There is a [GEE bug exporting MODIS in its native CRS](https://issuetracker.google.com/issues/194561313), this can be worked around by re-projecting to another CRS with the `--crs` `download`/`export` option.
 
 ## License
 This project is licensed under the terms of the [Apache-2.0 License](LICENSE).
 
 ## Contributing
-Constributions are welcome.  Please post bugs and questions with the [github issue tracker](https://github.com/dugalh/geedim/issues).
+Constributions are very welcome.  Please post bugs and questions with the [github issue tracker](https://github.com/dugalh/geedim/issues).
 
 ## Author
 **Dugal Harris** - [dugalh@gmail.com](mailto:dugalh@gmail.com)
 
 ## Credits
 - Medoid compositing was adapted from [gee_tools](https://github.com/gee-community/gee_tools) under the terms of the [MIT license](https://github.com/gee-community/gee_tools/blob/master/LICENSE).
-- [landsatxplore](https://github.com/yannforget/landsatxplore) gave a starting point for the command line interface.  
