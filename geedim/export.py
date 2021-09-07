@@ -84,8 +84,7 @@ class _ExportImage(image.Image):
     """ Helper class for determining export/download crs, scale and region parameters"""
     def __init__(self, image_obj, name="Image", exp_region=None, exp_crs=None, exp_scale=None):
         if isinstance(image_obj, image.Image):
-            image.Image.__init__(self, None)
-            self._ee_image = image_obj.ee_image
+            image.Image.__init__(self, image_obj.ee_image)
             self._info = image_obj.info
         else:
             image.Image.__init__(self, image_obj)

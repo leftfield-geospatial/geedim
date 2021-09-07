@@ -15,7 +15,7 @@
 """
 
 # Functionality for wrapping, cloud/shadow masking and scoring Earth Engine images
-
+import collections
 import importlib.util
 import logging
 
@@ -38,8 +38,7 @@ def split_id(image_id):
 
     Returns
     -------
-    : tuple(str, str)
-      collection name, index
+        A tuple of strings: (collection name, image index)
     """
     index = image_id.split("/")[-1]
     ee_coll_name = "/".join(image_id.split("/")[:-1])
@@ -112,7 +111,7 @@ def get_projection(image, min=True):
 
     Returns
     -------
-    : ee.Projection
+    ee.Projection
       The projection with the smallest scale
     """
     if isinstance(image, Image):
@@ -144,6 +143,62 @@ def get_projection(image, min=True):
         return ee.Projection(comp_proj)
 
     return ee.Projection(bands.iterate(compare_scale, init_proj))
+
+if importlib.util.find_spec("rasterio"):    # if rasterio is installed
+    import rasterio as rio
+    from rasterio.warp import transform_geom
+
+    def get_bounds(filename, expand=5):
+        """
+        Get a geojson polygon representing the bounds of an image
+
+        Parameters
+        ----------
+        filename :  str, pathlib.Path
+                    Path of the image file whose bounds to find
+        expand :    int
+                    percentage (0-100) by which to expand the bounds (default: 5)
+
+        Returns
+        -------
+        bounds : dict
+                 Geojson polygon
+        crs : str
+              image CRS as EPSG string
+        """
+        try:
+            # GEE sets tif colorinterp tags incorrectly, suppress rasterio warning relating to this:
+            # 'Sum of Photometric type-related color channels and ExtraSamples doesn't match SamplesPerPixel'
+            logging.getLogger("rasterio").setLevel(logging.ERROR)
+            with rio.open(filename) as im:
+                bbox = im.bounds
+                if (im.crs.linear_units == "metre") and (expand > 0):  # expand the bounding box
+                    expand_x = (bbox.right - bbox.left) * expand / 100.0
+                    expand_y = (bbox.top - bbox.bottom) * expand / 100.0
+                    bbox_expand = rio.coords.BoundingBox(
+                        bbox.left - expand_x,
+                        bbox.bottom - expand_y,
+                        bbox.right + expand_x,
+                        bbox.top + expand_y,
+                    )
+                else:
+                    bbox_expand = bbox
+
+                coordinates = [
+                    [bbox_expand.right, bbox_expand.bottom],
+                    [bbox_expand.right, bbox_expand.top],
+                    [bbox_expand.left, bbox_expand.top],
+                    [bbox_expand.left, bbox_expand.bottom],
+                    [bbox_expand.right, bbox_expand.bottom],
+                ]
+
+                bbox_expand_dict = dict(type="Polygon", coordinates=[coordinates])
+                src_bbox_wgs84 = transform_geom(im.crs, "WGS84", bbox_expand_dict)  # convert to WGS84 geojson
+        finally:
+            logging.getLogger("rasterio").setLevel(logging.WARNING)
+
+        ImageBounds = collections.namedtuple('ImageBounds', ['bounds', 'crs'])
+        return ImageBounds(src_bbox_wgs84, im.crs.to_epsg())
 
 
 ## Image classes
@@ -215,7 +270,7 @@ class Image(object):
         -------
         : float
         """
-        return float(self.info["scale"])
+        return self.info["scale"]
 
 
 class MaskedImage(Image):
@@ -680,6 +735,20 @@ class ModisNbarImage(MaskedImage):
 
 
 def get_class(coll_name):
+    """
+    Get the ProcImage subclass for a specific collection
+
+    Parameters
+    ----------
+    coll_name : str
+                geedim or Earth Engine collection name to get class for
+                (landsat7_c2_l2|landsat8_c2_l2|sentinel2_toa|sentinel2_sr|modis_nbar) or
+                (LANDSAT/LE07/C02/T1_L2|LANDSAT/LC08/C02/T1_L2|COPERNICUS/S2|COPERNICUS/S2_SR|MODIS/006/MCD43A4)
+
+    Returns
+    -------
+    : geedim.image.ProcImage
+    """
     # TODO: populate this list by traversing the class heirarchy
     # TODO: allow coll_name = full image id
     # import inspect
@@ -709,57 +778,3 @@ def get_class(coll_name):
         raise ValueError(f"Unknown collection name: {coll_name}")
 
 
-if importlib.util.find_spec("rasterio"):
-    import rasterio as rio
-    from rasterio.warp import transform_geom
-
-    def get_bounds(filename, expand=5):
-        """
-        Get a WGS84 geojson polygon representing the optionally expanded bounds of an image
-
-        Parameters
-        ----------
-        filename :  str, pathlib.Path
-                    name of the image file whose bounds to find
-        expand :    int
-                    percentage (0-100) by which to expand the bounds (default: 5)
-
-        Returns
-        -------
-        bounds : geojson
-                 polygon of bounds in WGS84
-        crs: str
-             WKT CRS string of image file
-        """
-        try:
-            # GEE sets tif colorinterp tags incorrectly, suppress rasterio warning relating to this:
-            # 'Sum of Photometric type-related color channels and ExtraSamples doesn't match SamplesPerPixel'
-            logging.getLogger("rasterio").setLevel(logging.ERROR)
-            with rio.open(filename) as im:
-                bbox = im.bounds
-                if (im.crs.linear_units == "metre") and (expand > 0):  # expand the bounding box
-                    expand_x = (bbox.right - bbox.left) * expand / 100.0
-                    expand_y = (bbox.top - bbox.bottom) * expand / 100.0
-                    bbox_expand = rio.coords.BoundingBox(
-                        bbox.left - expand_x,
-                        bbox.bottom - expand_y,
-                        bbox.right + expand_x,
-                        bbox.top + expand_y,
-                    )
-                else:
-                    bbox_expand = bbox
-
-                coordinates = [
-                    [bbox_expand.right, bbox_expand.bottom],
-                    [bbox_expand.right, bbox_expand.top],
-                    [bbox_expand.left, bbox_expand.top],
-                    [bbox_expand.left, bbox_expand.bottom],
-                    [bbox_expand.right, bbox_expand.bottom],
-                ]
-
-                bbox_expand_dict = dict(type="Polygon", coordinates=[coordinates])
-                src_bbox_wgs84 = transform_geom(im.crs, "WGS84", bbox_expand_dict)  # convert to WGS84 geojson
-        finally:
-            logging.getLogger("rasterio").setLevel(logging.WARNING)
-
-        return src_bbox_wgs84, im.crs.to_wkt()

@@ -244,10 +244,10 @@ class Collection(object):
             comp_image = self._ee_collection.mosaic()
         elif method == "median":
             comp_image = self._ee_collection.median()
-            # apply any type conversion for this collection (median creates float images)
+            # median creates float images, so re-apply any type conversion
             comp_image = self._image_class._im_transform(comp_image)
         elif method == "medoid":
-            # limit to surface reflectance bands
+            # limit medoid to surface reflectance bands
             sr_bands = [band_dict["id"] for band_dict in self._collection_info["bands"]]
             comp_image = medoid.medoid(self._ee_collection, bands=sr_bands)
         else:
