@@ -149,7 +149,7 @@ if importlib.util.find_spec("rasterio"):    # if rasterio is installed
     import rasterio as rio
     from rasterio.warp import transform_geom
 
-    def get_bounds(filename, expand=5):
+    def get_bounds(filename, expand=5):     # pragma coverage
         """
         Get a geojson polygon representing the bounds of an image.
 
@@ -508,7 +508,7 @@ class Landsat7Image(LandsatImage):
     _gd_coll_name = "landsat7_c2_l2"
 
 
-class Sentinel2Image(MaskedImage):
+class Sentinel2Image(MaskedImage):   # pragma: no cover
     """
     Base class for cloud masking and quality scoring sentinel2_sr and sentinel2_toa images
 
@@ -531,7 +531,7 @@ class Sentinel2Image(MaskedImage):
         return masks
 
 
-class Sentinel2SrImage(Sentinel2Image):
+class Sentinel2SrImage(Sentinel2Image):  # pragma: no cover
     """
     Class for cloud masking and quality scoring sentinel2_sr images
 
@@ -540,7 +540,7 @@ class Sentinel2SrImage(Sentinel2Image):
     _gd_coll_name = "sentinel2_sr"
 
 
-class Sentinel2ToaImage(Sentinel2Image):
+class Sentinel2ToaImage(Sentinel2Image):  # pragma: no cover
     """
     Class for cloud masking and quality scoring sentinel2_toa images
 

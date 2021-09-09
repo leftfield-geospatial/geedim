@@ -13,6 +13,7 @@
     See the License for the specific language governing permissions and
     limitations under the License.
 """
+
 import json
 import unittest
 from datetime import datetime, timedelta
@@ -21,7 +22,7 @@ import pandas as pd
 from click.testing import CliRunner
 
 from geedim import root_path, cli, collection, image
-from tests import test_api
+from tests.util import _test_image_file, _test_search_results
 
 
 class TestCli(unittest.TestCase):
@@ -55,7 +56,7 @@ class TestCli(unittest.TestCase):
                     res_dict = json.load(f)
                 res_df = pd.DataFrame.from_dict(res_dict, orient='index')
                 res_df.DATE = [datetime.utcfromtimestamp(ts / 1000) for ts in res_df.DATE.values]
-                test_api.TestApi._test_search_results(self, res_df, start_date, end_date)  # test search results
+                _test_search_results(self, res_df, start_date, end_date)  # test search results
 
     def test_download(self):
         """ Test download command on one image """
@@ -79,8 +80,8 @@ class TestCli(unittest.TestCase):
                     region = json.load(f)
 
                 filename = download_dir.joinpath(image_id.replace('/', '-') + '.tif')
-                test_api.TestApi._test_image_file(self, image_obj=image_id, filename=filename, region=region, crs=crs,
-                                                  scale=scale, mask=True)
+                _test_image_file(self, image_obj=image_id, filename=filename, region=region, crs=crs,
+                                 scale=scale, mask=True)
 
     def test_export(self):
         """ Test export command on one image, without waiting for completion """
@@ -118,8 +119,8 @@ class TestCli(unittest.TestCase):
         comp_fn = download_dir.joinpath(comp_id.replace('/', '-') + '.tif')
         with open(region_filename) as f:
             region = json.load(f)
-        test_api.TestApi._test_image_file(self, image_obj=image.Image(comp_im), filename=comp_fn, region=region,
-                                          **pdict)
+        _test_image_file(self, image_obj=image.Image(comp_im), filename=comp_fn, region=region,
+                         **pdict)
 
     def test_search_composite_download(self):
         """ Test chaining of search, composite and download commands, to create and download one composite image. """
@@ -147,7 +148,7 @@ class TestCli(unittest.TestCase):
             res_dict = json.load(f)
         res_df = pd.DataFrame.from_dict(res_dict, orient='index')
         res_df.DATE = [datetime.utcfromtimestamp(ts / 1000) for ts in res_df.DATE.values]
-        test_api.TestApi._test_search_results(self, res_df, start_date, end_date)  # check results
+        _test_search_results(self, res_df, start_date, end_date)  # check results
 
         gd_collection = collection.Collection.from_ids(res_df.ID.values, mask=pdict['mask'],
                                                        scale_refl=pdict['scale_refl'])
@@ -155,5 +156,5 @@ class TestCli(unittest.TestCase):
         comp_fn = download_dir.joinpath(comp_id.replace('/', '-') + '.tif')
         with open(region_filename) as f:
             region = json.load(f)
-        test_api.TestApi._test_image_file(self, image_obj=image.Image(comp_im), filename=comp_fn, region=region,
-                                          **pdict)
+        _test_image_file(self, image_obj=image.Image(comp_im), filename=comp_fn, region=region,
+                         **pdict)
