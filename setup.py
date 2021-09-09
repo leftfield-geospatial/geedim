@@ -14,20 +14,39 @@
    limitations under the License.
 """
 from setuptools import setup, find_packages
+from pathlib import Path
 
-# To install local development version use:
-#    pip install -e .
+this_directory = Path(__file__).parent
+long_description = (this_directory / "README.md").read_text()
+"""
+ Build and upload to testpypi:
+     conda install -c conda-forge build twine
+     python -m build
+     python -m twine upload --repository testpypi dist/*
 
+ Install from testpypi:
+    python -m pip install --extra-index-url https://test.pypi.org/simple/ geedim
+    
+ Install local development version:
+    pip install -e .
+"""
 setup(
     name="geedim",
     version="0.1.0",
     description="Google Earth Engine image download",
+    long_description = long_description,
+    long_description_content_type='text/markdown',
     author="Dugal Harris",
     author_email="dugalh@gmail.com",
-    url="https://github.com/dugalh/geedim/blob/main/setup-py",
+    url="https://github.com/dugalh/geedim",
     license="Apache-2.0",
-    packages=find_packages(),
-    python_requires=">=3.8",
-    install_requires=["pandas>=1.3", "earthengine-api >= 0.1.2", "click >= 7.1", "requests"],
+    packages=find_packages(exclude=['tests', 'data'], include=['geedim']),
+    install_requires=["pandas>=1.3, <2", "earthengine-api>=0.1.2, <1", "click>=7.1, <8", "requests>=2.2, < 3"],
+    python_requires = ">=3.4",
+    classifiers=[
+        "Programming Language :: Python :: 3",
+        "License :: OSI Approved :: Apache Software License",
+        "Operating System :: OS Independent",
+    ],
     entry_points={"console_scripts": ["geedim=geedim.cli:cli"]},
 )
