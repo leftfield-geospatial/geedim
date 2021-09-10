@@ -13,7 +13,7 @@
     See the License for the specific language governing permissions and
     limitations under the License.
 """
-
+import os
 import unittest
 from datetime import datetime, timedelta
 
@@ -32,6 +32,9 @@ class TestApi(unittest.TestCase):
     def setUpClass(cls):
         """ Initialise Earth Engine once for all the tests here. """
         _ee_init()
+        test_out_dir = root_path.joinpath('data/outputs/tests/')
+        if not test_out_dir.exists():
+            os.makedirs(test_out_dir)
 
     def _test_image(self, image_id, mask=False, scale_refl=False):
         """ Test the validity of a geedim.image.MaskedImage by checking metadata.  """

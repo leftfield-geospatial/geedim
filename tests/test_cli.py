@@ -15,6 +15,7 @@
 """
 
 import json
+import os
 import unittest
 from datetime import datetime, timedelta
 
@@ -27,6 +28,13 @@ from tests.util import _test_image_file, _test_search_results
 
 class TestCli(unittest.TestCase):
     """ Test geedim  CLI """
+
+    @classmethod
+    def setUpClass(cls):
+        """ Initialise Earth Engine once for all the tests here. """
+        test_out_dir = root_path.joinpath('data/outputs/tests/')
+        if not test_out_dir.exists():
+            os.makedirs(test_out_dir)
 
     def test_search(self):
         """ Test search command with different options. """
