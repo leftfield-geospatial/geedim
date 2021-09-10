@@ -43,3 +43,5 @@ jobs:
         python -m unittest discover tests
       env:
         EE_SERVICE_ACC_PRIVATE_KEY: ${{ secrets.EE_SERVICE_ACC_PRIVATE_KEY }}
+    - name: Display structure of downloaded files
+      run: ls -R
