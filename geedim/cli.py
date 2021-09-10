@@ -24,7 +24,7 @@ import ee
 
 from geedim import collection as coll_api
 from geedim import export as export_api
-from geedim import info, image
+from geedim import info, image, _ee_init
 
 
 class _CmdChainResults(object):
@@ -197,7 +197,7 @@ scale_refl_option = click.option(
 @click.group(chain=True)
 @click.pass_context
 def cli(ctx):
-    ee.Initialize()
+    _ee_init()
     ctx.obj = _CmdChainResults()  # object to hold chained results
 
 

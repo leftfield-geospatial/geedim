@@ -1,7 +1,7 @@
-# geedim
-`geedim` provides a command line interface, and API, for searching, compositing and downloading satellite imagery from [Google Earth Engine](https://signup.earthengine.google.com) (EE). 
+# `geedim`
+Searching, compositing and downloading of satellite imagery from [Google Earth Engine](https://signup.earthengine.google.com) (EE). 
 ## Description
-`geedim` allows searching by date, region, and region-based validity statistics.  It performs basic cloud/shadow masking, and cloud-free compositing.  Masked images or composites (including metadata) can be downloaded, or exported to Google Drive.
+`geedim` provides searching by date, region, and region-based validity statistics.  It performs basic cloud/shadow masking, and cloud-free compositing.  Masked images or composites (including metadata) can be downloaded, or exported to Google Drive.
 
 It supports operations on the following surface reflectance image collections:
 

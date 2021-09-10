@@ -276,7 +276,7 @@ def download_image(image_obj, filename, region=None, crs=None, scale=None, overw
                     show_pos=True,
             ) as bar:
                 # override the bar's formatting function to show progress in MB
-                bar.format_pos = (lambda: f"{bar.pos * csize / (2 ** 20):.1f}/{bar.length * csize / (2 ** 20):.1f} MB")
+                bar.format_pos = (lambda: f"{bar.pos * csize / (2 ** 20):.1f}/{bar.length * csize / (2 ** 20):.1f} MB\r")
                 for chunk in bar:
                     f.write(chunk)
 

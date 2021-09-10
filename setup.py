@@ -32,7 +32,7 @@ long_description = (this_directory / "README.md").read_text()
 """
 setup(
     name="geedim",
-    version="0.1.0",
+    version="0.1.1",
     description="Google Earth Engine image download",
     long_description = long_description,
     long_description_content_type='text/markdown',
@@ -41,7 +41,7 @@ setup(
     url="https://github.com/dugalh/geedim",
     license="Apache-2.0",
     packages=find_packages(exclude=['tests', 'data'], include=['geedim']),
-    install_requires=["pandas>=1.3, <2", "earthengine-api>=0.1.2, <1", "click>=7.1, <8", "requests>=2.2, < 3"],
+    install_requires=["pandas>=1.1, <2", "earthengine-api>=0.1.2, <1", "click>=7.1, <8", "requests>=2.2, < 3"],
     python_requires = ">=3.4",
     classifiers=[
         "Programming Language :: Python :: 3",

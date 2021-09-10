@@ -21,7 +21,7 @@ import ee
 import numpy as np
 import pandas as pd
 
-from geedim import export, collection, root_path, info, image
+from geedim import export, collection, root_path, info, image, _ee_init
 from tests.util import _test_image_file, _test_search_results
 
 
@@ -31,7 +31,7 @@ class TestApi(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """ Initialise Earth Engine once for all the tests here. """
-        ee.Initialize()
+        _ee_init()
 
     def _test_image(self, image_id, mask=False, scale_refl=False):
         """ Test the validity of a geedim.image.MaskedImage by checking metadata.  """
