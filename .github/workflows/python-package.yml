@@ -41,3 +41,5 @@ jobs:
     - name: Test with unittest
       run: |
         python -m unittest discover tests
+      env:
+        EE_SERVICE_ACC_PRIVATE_KEY: ${{ secrets.EE_SERVICE_ACC_PRIVATE_KEY }}
