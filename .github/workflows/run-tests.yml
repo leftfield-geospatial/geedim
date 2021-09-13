@@ -40,7 +40,8 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: Test with unittest
       run: |
-        coverage run -m unittest discover tests
+        coverage run --include ./geedim/* -m unittest discover tests
+        coverage report
       env:
         EE_SERVICE_ACC_PRIVATE_KEY: ${{ secrets.EE_SERVICE_ACC_PRIVATE_KEY }}
     - name: Display structure of downloaded files
@@ -48,3 +49,7 @@ jobs:
       run: |
           pwd
           ls -R
+    - name: Upload coverage
+      uses: codecov/codecov-action@v2
+      with:
+        fail_ci_if_error: true
