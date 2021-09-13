@@ -1,7 +1,7 @@
 # This workflow will install Python dependencies, run tests and lint with a variety of Python versions
 # For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
 
-name: Python package
+name: Tests
 
 on:
   workflow_dispatch:
@@ -18,7 +18,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: [3.7, 3.8, 3.9]
+        python-version: [3.6, 3.7, 3.8, 3.9]
+#          python-version: [3.8]
 
     steps:
     - uses: actions/checkout@v2
@@ -30,7 +31,9 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         python -m pip install flake8 pytest
-        pip install pandas earthengine-api click rasterio
+        pip install pandas earthengine-api click 
+        pip install rasterio coverage
+        # pip install -e .
         # if [ -f requirements.txt ]; then pip install -r requirements.txt; fi        
     - name: Lint with flake8
       run: |
@@ -40,7 +43,15 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: Test with unittest
       run: |
-        python -m unittest discover tests
+        # python -m unittest discover
+        coverage run -m unittest discover
+      env:
+        EE_SERVICE_ACC_PRIVATE_KEY: ${{ secrets.EE_SERVICE_ACC_PRIVATE_KEY }}
+    - name: Generate coverage report
+      run: |
+        # coverage run -m unittest discover
+        coverage report
+        coverage xml
       env:
         EE_SERVICE_ACC_PRIVATE_KEY: ${{ secrets.EE_SERVICE_ACC_PRIVATE_KEY }}
     - name: Display structure of downloaded files
@@ -48,3 +59,9 @@ jobs:
       run: |
           pwd
           ls -R
+    - name: Upload coverage
+      uses: codecov/codecov-action@v2
+      with:
+        fail_ci_if_error: true
+        files: ./coverage.xml
+        token: ${{ secrets.CODECOV_TOKEN }}
