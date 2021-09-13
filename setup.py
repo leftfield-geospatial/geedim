@@ -42,7 +42,7 @@ setup(
     license="Apache-2.0",
     packages=find_packages(exclude=['tests', 'data'], include=['geedim']),
     install_requires=["pandas>=1.1, <2", "earthengine-api>=0.1.2, <1", "click>=7.1, <8", "requests>=2.2, < 3"],
-    python_requires = ">=3.4",
+    python_requires = ">=3.6",
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: Apache Software License",

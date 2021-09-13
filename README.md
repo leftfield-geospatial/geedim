@@ -1,3 +1,5 @@
+[![Tests](https://github.com/dugalh/geedim/actions/workflows/run-tests.yml/badge.svg)](https://github.com/dugalh/geedim/actions/workflows/run-tests.yml)
+[![codecov](https://codecov.io/gh/dugalh/geedim/branch/main/graph/badge.svg?token=69GZNQ3TI3)](https://codecov.io/gh/dugalh/geedim)
 # `geedim`
 Searching, compositing and downloading of satellite imagery from [Google Earth Engine](https://signup.earthengine.google.com) (EE). 
 ## Description
