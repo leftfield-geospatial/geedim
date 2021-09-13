@@ -32,7 +32,7 @@ jobs:
         python -m pip install --upgrade pip
         python -m pip install flake8 pytest
         # pip install pandas earthengine-api click 
-        pip rasterio coverage
+        pip intall rasterio coverage
         pip install -e .
         # if [ -f requirements.txt ]; then pip install -r requirements.txt; fi        
     - name: Lint with flake8
