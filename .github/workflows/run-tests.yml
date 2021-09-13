@@ -50,6 +50,9 @@ jobs:
       run: |
         coverage run -m unittest discover tests
         coverage report --include geedim/*
+        coverage xml --include geedim/*
+      env:
+        EE_SERVICE_ACC_PRIVATE_KEY: ${{ secrets.EE_SERVICE_ACC_PRIVATE_KEY }}
     - name: Display structure of downloaded files
       if: ${{ always() }}
       run: |
@@ -59,3 +62,4 @@ jobs:
       uses: codecov/codecov-action@v2
       with:
         fail_ci_if_error: true
+        files: ./coverage.xml
