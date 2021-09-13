@@ -18,7 +18,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: [3.7, 3.8, 3.9]
+#         python-version: [3.7, 3.8, 3.9]
+         python-version: [3.8]
 
     steps:
     - uses: actions/checkout@v2
@@ -40,7 +41,7 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: Test with unittest
       run: |
-        coverage run --include ./geedim/* -m unittest discover tests
+        coverage run --include geedim/*.py -m unittest discover tests
         coverage report
       env:
         EE_SERVICE_ACC_PRIVATE_KEY: ${{ secrets.EE_SERVICE_ACC_PRIVATE_KEY }}
