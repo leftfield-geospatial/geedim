@@ -43,12 +43,12 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: Test with unittest
       run: |
-        python -m unittest discover tests
+        python -m unittest discover
       env:
         EE_SERVICE_ACC_PRIVATE_KEY: ${{ secrets.EE_SERVICE_ACC_PRIVATE_KEY }}
     - name: Generate coverage report
       run: |
-        coverage run -m unittest discover tests
+        coverage run -m unittest discover
         coverage report --include geedim/*
         coverage xml --include geedim/*
       env:
