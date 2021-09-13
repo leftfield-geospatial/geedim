@@ -1,7 +1,8 @@
-[![Tests](https://github.com/dugalh/geedim/actions/workflows/run-tests.yml/badge.svg)](https://github.com/dugalh/geedim/actions/workflows/run-tests.yml)
+[![publish](https://github.com/dugalh/geedim/actions/workflows/publish.yml/badge.svg)](https://github.com/dugalh/geedim/actions/workflows/publish.yml)
+[![tests](https://github.com/dugalh/geedim/actions/workflows/test.yml/badge.svg)](https://github.com/dugalh/geedim/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/dugalh/geedim/branch/main/graph/badge.svg?token=69GZNQ3TI3)](https://codecov.io/gh/dugalh/geedim)
-[![Publish](https://github.com/dugalh/geedim/actions/workflows/publish.yml/badge.svg)](https://github.com/dugalh/geedim/actions/workflows/publish.yml)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![license](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
 # `geedim`
 Searching, compositing and downloading of satellite imagery from [Google Earth Engine](https://signup.earthengine.google.com) (EE). 
 ## Description
