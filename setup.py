@@ -30,9 +30,13 @@ long_description = (this_directory / "README.md").read_text()
  Install local development version:
     pip install -e .
 """
+version = {}
+with open("geedim/version.py") as fp:
+    exec(fp.read(), version)
+
 setup(
     name="geedim",
-    version="0.1.1",
+    version=version['__version__'],
     description="Google Earth Engine image download",
     long_description = long_description,
     long_description_content_type='text/markdown',
