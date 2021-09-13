@@ -3,14 +3,14 @@
 [![codecov](https://codecov.io/gh/dugalh/geedim/branch/main/graph/badge.svg?token=69GZNQ3TI3)](https://codecov.io/gh/dugalh/geedim)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-# `geedim`
+# geedim
 Searching, compositing and downloading of satellite imagery from [Google Earth Engine](https://signup.earthengine.google.com) (EE). 
 ## Description
-`geedim` provides searching by date, region, and region-based validity statistics.  It performs basic cloud/shadow masking, and cloud-free compositing.  Masked images or composites (including metadata) can be downloaded, or exported to Google Drive.
+geedim provides searching by date, region, and region-based validity statistics.  It performs basic cloud/shadow masking, and cloud-free compositing.  Masked images or composites (including metadata) can be downloaded, or exported to Google Drive.
 
 It supports operations on the following surface reflectance image collections:
 
-`geedim` Name | EE Name| Description
+geedim Name | EE Name| Description
 ---------|-----------|------------
 landsat7_c2_l2 | [LANDSAT/LE07/C02/T1_L2](https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LE07_C02_T1_L2) | Landsat 7, collection 2, tier 1, level 2 surface reflectance 
 landsat8_c2_l2 | [LANDSAT/LC08/C02/T1_L2](https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C02_T1_L2) | Landsat 8, collection 2, tier 1, level 2 surface reflectance 
@@ -18,28 +18,27 @@ sentinel2_toa | [COPERNICUS/S2](https://developers.google.com/earth-engine/datas
 sentinel2_sr | [COPERNICUS/S2_SR](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR) | Sentinel-2, level 2A, surface reflectance
 modis_nbar | [MODIS/006/MCD43A4](https://developers.google.com/earth-engine/datasets/catalog/MODIS_006_MCD43A4) | MODIS nadir BRDF adjusted reflectance
 
+## Requirements
+geedim is a python 3 library, and requires users to be registered with [Google Earth Engine](https://signup.earthengine.google.com).
 
 ## Installation
-### `conda`
-1) Create a conda environment and install dependencies:
+It can be installed from [PyPI](https://pypi.org) with:
 ```shell
-conda create -n <environment name> python=3.8 -c conda-forge 
-conda activate <environment name> 
-conda install -c conda-forge pandas click earthengine-api
+pip install geedim
 ````
-2) Clone the git repository and link into the conda environment:
+Alternatively, the repository can be cloned and linked into your python environment with:
 ``` shell
 git clone https://github.com/dugalh/geedim.git
 pip install -e geedim
 ```
-3) Authenticate Earth Engine
-``` shell
+Following installation, Earth Engine must be authenticated:
+```
 earthengine authenticate
 ```
  
 ## Usage
-`geedim` command line functionality is accessed through `search`, `composite`, `download` and `export` sub-commands.  The sub-commands can be "chained" e.g. for compositing and downloading the results of a search in one go.
 ### Command line interface
+geedim command line functionality is accessed through `search`, `composite`, `download` and `export` sub-commands.  Sub-commands can be chained e.g. the results of a search can be composited and subsequently downloaded in one go (see composite [example](#Example-4)).
 ```
 geedim --help
 ```
@@ -239,3 +238,4 @@ Constributions are very welcome.  Please post bugs and questions with the [githu
 
 ## Credits
 - Medoid compositing was adapted from [gee_tools](https://github.com/gee-community/gee_tools) under the terms of the [MIT license](https://github.com/gee-community/gee_tools/blob/master/LICENSE).
+- The CLI was informed by [landsatxplore](https://github.com/yannforget/landsatxplore).
