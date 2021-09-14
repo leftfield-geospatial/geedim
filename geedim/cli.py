@@ -143,7 +143,7 @@ bbox_option = click.option(
     help="Region defined by bounding box co-ordinates in WGS84 (xmin, ymin, xmax, ymax).  "
          "[One of --bbox or --region is required.]",
     required=False,
-    default=None
+    default=None,
 )
 region_option = click.option(
     "-r",
@@ -151,7 +151,7 @@ region_option = click.option(
     type=click.Path(exists=True, file_okay=True, dir_okay=False, writable=False, readable=True, resolve_path=True,
                     allow_dash=False),
     help="Region defined by geojson or raster file.  [One of --bbox or --region is required.]",
-    required=False
+    required=False,
 )
 image_id_option = click.option(
     "-i",
@@ -159,7 +159,7 @@ image_id_option = click.option(
     type=click.STRING,
     help="Earth engine image ID(s).",
     required=False,
-    multiple=True
+    multiple=True,
 )
 crs_option = click.option(
     "-c",
@@ -167,7 +167,7 @@ crs_option = click.option(
     type=click.STRING,
     default=None,
     help="Reproject image(s) to this CRS (WKT or EPSG string). \n[default: source CRS]",
-    required=False
+    required=False,
 )
 scale_option = click.option(
     "-s",
@@ -175,20 +175,20 @@ scale_option = click.option(
     type=click.FLOAT,
     default=None,
     help="Resample image bands to this pixel resolution (m). \n[default: minimum of the source band resolutions]",
-    required=False
+    required=False,
 )
 mask_option = click.option(
     "-m/-nm",
     "--mask/--no-mask",
     default=False,
-    help="Do/don't apply (cloud and shadow) nodata mask(s).  [default: no-mask]",
+    help="Do/don't apply (cloud and shadow) nodata mask(s).  [default: --no-mask]",
     required=False,
 )
 scale_refl_option = click.option(
     "-sr/-nsr",
     "--scale-refl/--no-scale-refl",
-    default=True,
-    help="Scale reflectance bands from 0-10000.  [default: scale-refl]",
+    default=False,
+    help="Scale reflectance bands from 0-10000.  [default: --no-scale-refl]",
     required=False,
 )
 
@@ -209,14 +209,14 @@ def cli(ctx):
     type=click.Choice(list(info.gd_to_ee.keys()), case_sensitive=False),
     help="Earth Engine image collection to search.",
     default="landsat8_c2_l2",
-    required=True
+    show_default=True,
 )
 @click.option(
     "-s",
     "--start-date",
     type=click.DateTime(),
     help="Start date (UTC).",
-    required=True
+    required=True,
 )
 @click.option(
     "-e",
@@ -233,7 +233,8 @@ def cli(ctx):
     type=click.FloatRange(min=0, max=100),
     default=0,
     help="Lower limit of the portion of valid (cloud and shadow free) pixels (%).",
-    required=False
+    required=False,
+    show_default=True,
 )
 @click.option(
     "-o",
@@ -242,13 +243,13 @@ def cli(ctx):
                     allow_dash=False),
     default=None,
     help="Write results to this filename, file type inferred from extension: [.csv|.json]",
-    required=False
+    required=False,
 )
 @mask_option
 @scale_refl_option
 @click.pass_obj
 def search(res, collection, start_date, end_date=None, bbox=None, region=None, valid_portion=0, output=None,
-           mask=False, scale_refl=False, ):
+           mask=False, scale_refl=False):
     """ Search for images """
 
     res.search_region = _extract_region(region=region, bbox=bbox)  # store region for chaining
@@ -296,9 +297,8 @@ cli.add_command(search)
     type=click.Path(exists=True, file_okay=False, dir_okay=True, writable=True, readable=False, resolve_path=True,
                     allow_dash=False),
     default=os.getcwd(),
-    help="Download image file(s) to this directory",
+    help="Download image file(s) to this directory.  [default: cwd]",
     required=False,
-    show_default=True
 )
 @crs_option
 @scale_option
@@ -311,12 +311,11 @@ cli.add_command(search)
     default=False,
     help="Overwrite the destination file if it exists.  [default: prompt the user for confirmation]",
     required=False,
-    show_default=False
+    show_default=False,
 )
 @click.pass_context
 def download(ctx, id=(), bbox=None, region=None, download_dir=os.getcwd(), crs=None, scale=None, mask=False,
-             scale_refl=True,
-             overwrite=False):
+             scale_refl=False, overwrite=False):
     """ Download image(s), with cloud and shadow masking """
     _export_download(res=ctx.obj, do_download=True, **ctx.params)
 
@@ -345,11 +344,11 @@ cli.add_command(download)
     "-w/-nw",
     "--wait/--no-wait",
     default=True,
-    help="Wait / don't wait for export to complete.  [default: wait]",
+    help="Wait / don't wait for export to complete.  [default: --wait]",
     required=False,
 )
 @click.pass_context
-def export(ctx, id=(), bbox=None, region=None, drive_folder='', crs=None, scale=None, mask=False, scale_refl=True,
+def export(ctx, id=(), bbox=None, region=None, drive_folder='', crs=None, scale=None, mask=False, scale_refl=False,
            wait=True):
     """ Export image(s) to Google Drive, with cloud and shadow masking """
     _export_download(res=ctx.obj, do_download=False, **ctx.params)
@@ -368,13 +367,13 @@ cli.add_command(export)
     help="Compositing method to use.",
     default="q_mosaic",
     show_default=True,
-    required=False
+    required=False,
 )
 @click.option(
     "-m/-nm",
     "--mask/--no-mask",
     default=True,
-    help="Do/don't apply (cloud and shadow) nodata mask(s) before compositing.  [default: mask]",
+    help="Do/don't apply (cloud and shadow) nodata mask(s) before compositing.  [default: --mask]",
     required=False,
 )
 @scale_refl_option
