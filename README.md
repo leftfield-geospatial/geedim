@@ -23,11 +23,11 @@ geedim is a python 3 library, and requires users to be registered with [Google E
 
 ## Installation
 It can be installed from [PyPI](https://pypi.org) with:
-```shell
+```
 pip install geedim
 ````
 Alternatively, the repository can be cloned and linked into your python environment with:
-```shell
+```
 git clone https://github.com/dugalh/geedim.git
 pip install -e geedim
 ```
@@ -37,22 +37,22 @@ earthengine authenticate
 ```
 ## Quick Start
 Search for Landsat 8 images
-```shell
+```
 geedim search -c landsat8_c2_l2 -s 2021-06-01 -e 2021-07-01 --bbox 24 -33 24.1 -33.1
 ```
 Download Landsat 8 image 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20210610' with cloud/shadow mask
-```shell
+```
 geedim download -i LANDSAT/LC08/C02/T1_L2/LC08_172083_20210610 --bbox 24 -33 24.1 -33.1 --mask
 ```
 Composite the results of the above search and download, specifying destination CRS and pixel size
-```shell
+```
 geedim search -c landsat8_c2_l2 -s 2021-06-01 -e 2021-07-01 --bbox 24 -33 24.1 -33.1 composite download --crs EPSG:32634 --scale 30
 ```
 
 ## Usage
 ### Command line interface
-geedim command line functionality is accessed through sub-commands: `search`, `composite`, `download` and `export`.  Sub-commands can be chained e.g. the results of a search can be composited and subsequently downloaded in one go (see composite [example](#Example-3)).
-```shell
+geedim command line functionality is accessed through sub-commands: `search`, `composite`, `download` and `export`.  
+```
 geedim --help
 ```
 ```
@@ -69,7 +69,7 @@ Commands:
 ```
 ### Search
 Searching is filtered by date, region and optionally, the portion of cloud/shadow free pixels in the specified region.  Other image metadata of interest is included in the results. 
-```shell
+```
 geedim search --help
 ```
 ```
@@ -112,7 +112,7 @@ Options:
   --help                          Show this message and exit.
 ```
 #### Example
-```shell
+```
 geedim search -c landsat8_c2_l2 -b 23.9 -33.6 24 -33.5 -s 2019-01-01 -e 2019-02-01
 ```
 
@@ -126,7 +126,7 @@ Images can be downloaded / exported by specifying their ID(s), or search result 
 - SCORE: Distance to nearest cloud or shadow (m) 
 
 #### Download
-```shell
+```
 geedim download --help
 ```
 ```
@@ -167,7 +167,7 @@ Options:
   ```
 
 #### Export
-```shell
+```
 geedim export --help
 ```
 ```
@@ -207,23 +207,25 @@ Options:
   --help                          Show this message and exit.
 ```
 #### Examples
-```shell
+```
 geedim download -i LANDSAT/LC08/C02/T1_L2/LC08_172083_20190128 -b 23.9 -33.6 24 -33.5 --scale-refl --mask
 ```
-```shell
+```
 geedim export -i LANDSAT/LC08/C02/T1_L2/LC08_172083_20190128 -b 23.9 -33.6 24 -33.5 -df geedim_test --scale-refl --mask
 ```
 
 ### Composite
-Form a single composite image from a specified set, using one of the following methods:
+Form a single composite image from a specified stack, using one of the following methods:
 - `q_mosaic`: Use the pixel with the highest score (i.e. distance to cloud / shadow).
 - `mosaic`: Use the first unmasked pixel.
 - `median`: Use the median of the unmasked pixels.
 - `medoid`: Use the [medoid](https://www.mdpi.com/2072-4292/5/12/6481) of the unmasked pixels.
 
-The `composite` sub-command must be chained with one of `download` / `export` to get the resulting composite image.  It can also be chained with `search` to form a composite of the search results.
 
-```shell
+The `composite` sub-command must be chained with one of `download` / `export` to get the resulting composite image.  It can also be chained with `search` to form a composite of the search results.  
+
+
+```
 geedim composite --help
 ```
 ```
