@@ -13,11 +13,6 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
-from setuptools import setup, find_packages
-from pathlib import Path
-
-this_directory = Path(__file__).parent
-long_description = (this_directory / "README.md").read_text()
 """
  Build and upload to testpypi:
      conda install -c conda-forge build twine
@@ -26,10 +21,16 @@ long_description = (this_directory / "README.md").read_text()
 
  Install from testpypi:
     python -m pip install --extra-index-url https://test.pypi.org/simple/ geedim
-    
+
  Install local development version:
     pip install -e .
 """
+
+from setuptools import setup, find_packages
+from pathlib import Path
+
+this_directory = Path(__file__).parent
+long_description = (this_directory / "README.md").read_text()
 version = {}
 with open("geedim/version.py") as fp:
     exec(fp.read(), version)
@@ -38,7 +39,7 @@ setup(
     name="geedim",
     version=version['__version__'],
     description="Google Earth Engine image download",
-    long_description = long_description,
+    long_description=long_description,
     long_description_content_type='text/markdown',
     author="Dugal Harris",
     author_email="dugalh@gmail.com",
@@ -46,7 +47,7 @@ setup(
     license="Apache-2.0",
     packages=find_packages(exclude=['tests', 'data'], include=['geedim']),
     install_requires=["pandas>=1.1, <2", "earthengine-api>=0.1.2, <1", "click>=7.1, <8", "requests>=2.2, < 3"],
-    python_requires = ">=3.6",
+    python_requires=">=3.6",
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: Apache Software License",

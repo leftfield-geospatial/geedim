@@ -267,19 +267,19 @@ region = {"type": "Polygon",
           "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
 
 # make collection and search
-gd_collection = collection.Collection('sentinel2_sr')
+gd_coll_name = 'sentinel2_sr'
+gd_collection = collection.Collection(gd_coll_name)
 res_df = gd_collection.search('2019-01-10', '2019-01-21', region)
 print(gd_collection.summary_key)
 print(gd_collection.summary)
 
 # create and download an image
-im = image.Sentinel2SrClImage.from_id('COPERNICUS/S2_SR/20190115T080251_20190115T082230_T35HKC')
+im = image.get_class(gd_coll_name).from_id('COPERNICUS/S2_SR/20190115T080251_20190115T082230_T35HKC')
 export.download_image(im, 's2_image.tif', region=region)
 
 # composite search results and download
 comp_res = gd_collection.composite()
 export.download_image(comp_res.image, 's2_comp_image.tif', region=region, crs='EPSG:32735', scale=30)
-
 ```
 
 ## Known limitations

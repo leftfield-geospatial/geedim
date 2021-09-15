@@ -64,7 +64,7 @@ def get_info(ee_image, min=True):
         Dictionary of image information with 'id', 'properties', 'bands', 'crs' and 'scale' keys.
     """
     gd_info = dict(id=None, properties={}, bands=[], crs=None, scale=None)
-    ee_info = ee_image.getInfo()    # retrieve image info from cloud
+    ee_info = ee_image.getInfo()  # retrieve image info from cloud
 
     if "id" in ee_info:
         gd_info["id"] = ee_info["id"]
@@ -123,10 +123,10 @@ def get_projection(image, min=True):
     transform = np.array([1, 0, 0, 0, 1, 0])
     if min:
         compare = ee.Number.lte
-        init_proj = ee.Projection('EPSG:4326', list((1e100)*transform))
+        init_proj = ee.Projection('EPSG:4326', list((1e100) * transform))
     else:
         compare = ee.Number.gte
-        init_proj = ee.Projection('EPSG:4326', list((1e-100)*transform))
+        init_proj = ee.Projection('EPSG:4326', list((1e-100) * transform))
 
     def compare_scale(name, prev_proj):
         """ Server side comparison of band scales"""
@@ -145,11 +145,13 @@ def get_projection(image, min=True):
 
     return ee.Projection(bands.iterate(compare_scale, init_proj))
 
-if importlib.util.find_spec("rasterio"):    # if rasterio is installed
+
+if importlib.util.find_spec("rasterio"):  # if rasterio is installed
     import rasterio as rio
     from rasterio.warp import transform_geom
 
-    def get_bounds(filename, expand=5):     # pragma coverage
+
+    def get_bounds(filename, expand=5):  # pragma coverage
         """
         Get a geojson polygon representing the bounds of an image.
 
@@ -202,7 +204,8 @@ if importlib.util.find_spec("rasterio"):    # if rasterio is installed
         return ImageBounds(src_bbox_wgs84, im.crs.to_epsg())
 
 
-## Image classes
+##
+# Image classes
 class Image(object):
     def __init__(self, ee_image):
         """
@@ -382,9 +385,9 @@ class MaskedImage(Image):
         ee.Image
             The cloud/shadow distance score (m) as a single band image.
         """
-        radius = 1.5    # morphological pixel radius
-        min_proj = get_projection(ee_image)     # projection corresponding to minimum scale band
-        cloud_pix = ee.Number(cloud_dist).divide(min_proj.nominalScale()).toInt()   # cloud_dist in pixels
+        radius = 1.5  # morphological pixel radius
+        min_proj = get_projection(ee_image)  # projection corresponding to minimum scale band
+        cloud_pix = ee.Number(cloud_dist).divide(min_proj.nominalScale()).toInt()  # cloud_dist in pixels
         if masks is None:
             masks = self._get_image_masks(ee_image)
 
@@ -395,9 +398,9 @@ class MaskedImage(Image):
         # distance to nearest cloud/shadow (m)
         score = (
             cloud_shadow_mask.fastDistanceTransform(neighborhood=cloud_pix, units="pixels", metric="squared_euclidean")
-            .sqrt()
-            .multiply(min_proj.nominalScale())
-            .rename("SCORE")
+                .sqrt()
+                .multiply(min_proj.nominalScale())
+                .rename("SCORE")
         )
 
         # clip score to cloud_dist and set to 0 in unfilled areas
@@ -443,6 +446,7 @@ class MaskedImage(Image):
 
 class LandsatImage(MaskedImage):
     """ Base class for cloud/shadow masking and quality scoring landsat8_c2_l2 and landsat7_c2_l2 images """
+
     @staticmethod
     def _im_transform(ee_image):
         return ee.Image.toUint16(ee_image)
@@ -471,6 +475,7 @@ class LandsatImage(MaskedImage):
         # make lists of SR and non-SR band names
         all_bands = ee_image.bandNames()
         init_bands = ee.List([])
+
         def add_refl_bands(band, refl_bands):
             """ Server side function to add SR band names to a list """
             refl_bands = ee.Algorithms.If(
@@ -508,21 +513,22 @@ class Landsat7Image(LandsatImage):
     _gd_coll_name = "landsat7_c2_l2"
 
 
-class Sentinel2Image(MaskedImage):   # pragma: no cover
+class Sentinel2Image(MaskedImage):  # pragma: no cover
     """
     Base class for cloud masking and quality scoring sentinel2_sr and sentinel2_toa images
 
     (Does not use cloud probability).
     """
+
     @staticmethod
     def _im_transform(ee_image):
         return ee.Image.toUint16(ee_image)
 
     def _get_image_masks(self, ee_image):
-        masks = MaskedImage._get_image_masks(self, ee_image)    # get constant masks
+        masks = MaskedImage._get_image_masks(self, ee_image)  # get constant masks
 
         # derive cloud mask (only)
-        qa = ee_image.select("QA60")    # bits 10 and 11 are opaque and cirrus clouds respectively
+        qa = ee_image.select("QA60")  # bits 10 and 11 are opaque and cirrus clouds respectively
         cloud_mask = qa.bitwiseAnd((1 << 11) | (1 << 10)).neq(0).rename("CLOUD_MASK")
 
         # update validity and cloud masks
@@ -555,6 +561,7 @@ class Sentinel2ClImage(MaskedImage):
 
     (Uses cloud probability to improve cloud/shadow masking).
     """
+
     def __init__(self, ee_image, mask=False, scale_refl=False):
         # TODO: provide CLI access to these attributes
 
@@ -608,7 +615,7 @@ class Sentinel2ClImage(MaskedImage):
             A dictionary of ee.Image objects for each of the fill, cloud, shadow and validity masks.
         """
 
-        masks = MaskedImage._get_image_masks(self, ee_image)    # get constant masks from base class
+        masks = MaskedImage._get_image_masks(self, ee_image)  # get constant masks from base class
 
         # threshold the added cloud probability to get the initial cloud mask
         cloud_prob = ee_image.select("probability")
@@ -623,12 +630,12 @@ class Sentinel2ClImage(MaskedImage):
         min_scale = get_projection(ee_image).nominalScale()
 
         # project the the cloud mask in the direction of sun's rays
-        proj_dist_pix = ee.Number(self._cloud_proj_dist * 1000).divide(min_scale)    # projection distance in pixels
+        proj_dist_pix = ee.Number(self._cloud_proj_dist * 1000).divide(min_scale)  # projection distance in pixels
         proj_cloud_mask = (
             cloud_mask.directionalDistanceTransform(shadow_azimuth, proj_dist_pix)
-            .select("distance")
-            .mask()
-            .rename("PROJ_CLOUD_MASK")
+                .select("distance")
+                .mask()
+                .rename("PROJ_CLOUD_MASK")
         )
 
         if self.gd_coll_name == "sentinel2_sr":  # use SCL band to reduce shadow_mask
@@ -636,9 +643,9 @@ class Sentinel2ClImage(MaskedImage):
             scl = ee_image.select("SCL")
             dark_shadow_mask = (
                 scl.eq(3)
-                .Or(scl.eq(2))
-                .focal_min(self._buffer, "circle", "meters")
-                .focal_max(self._buffer, "circle", "meters")
+                    .Or(scl.eq(2))
+                    .focal_min(self._buffer, "circle", "meters")
+                    .focal_max(self._buffer, "circle", "meters")
             )
             # improve the shadow mask by combining it with the projected cloud mask
             shadow_mask = proj_cloud_mask.And(dark_shadow_mask).rename("SHADOW_MASK")
@@ -699,6 +706,7 @@ class ModisNbarImage(MaskedImage):
     (These images are already cloud/shadow free composites, so no further processing is done on them, and
     constant cloud, shadow etc masks are used).
     """
+
     @staticmethod
     def _im_transform(ee_image):
         return ee.Image.toUint16(ee_image)
@@ -725,7 +733,7 @@ def get_class(coll_name):
     geedim.image.ProcImage
         The class corresponding to coll_name.
     """
-    # TODO: populate this list by traversing the class heirarchy
+    # TODO: populate this list by traversing the class hierarchy
     # TODO: allow coll_name = full image id
     # import inspect
     # from geedim import image
@@ -752,4 +760,3 @@ def get_class(coll_name):
         return gd_coll_name_map[info.ee_to_gd[coll_name]]
     else:
         raise ValueError(f"Unknown collection name: {coll_name}")
-

@@ -107,8 +107,8 @@ class _ExportImage(image.Image):
         # If CRS is the native MODIS CRS, then exit due to GEE bug
         if (self.crs == "SR-ORG:6974") and (self.exp_crs is None):
             raise ValueError(
-                f"There is an earth engine bug exporting in SR-ORG:6974, specify another CRS: "
-                f"https://issuetracker.google.com/issues/194561313"
+                "There is an earth engine bug exporting in SR-ORG:6974, specify another CRS: "
+                "https://issuetracker.google.com/issues/194561313"
             )
 
         if self.exp_crs is None:

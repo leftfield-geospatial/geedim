@@ -21,13 +21,13 @@
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
 """
+import ee
+
 """
     This file contains Medoid related functionality copied from 'Google Earth Engine tools' under MIT license
     See https://github.com/gee-community/gee_tools
 """
 
-##
-import ee
 
 def enumerate(collection):
     """ Create a list of lists in which each element of the list is:
@@ -67,10 +67,10 @@ def enumerateProperty(collection, name='enumeration'):
     """
     enumerated = enumerate(collection)
 
-    def over_list(l):
-        l = ee.List(l)
-        index = ee.Number(l.get(0))
-        element = l.get(1)
+    def over_list(ll):
+        ll = ee.List(ll)
+        index = ee.Number(ll.get(0))
+        element = ll.get(1)
         return ee.Image(element).set(name, index)
 
     imlist = enumerated.map(over_list)

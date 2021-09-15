@@ -1,25 +1,22 @@
 """
-    Geedim: Download surface reflectance imagery with Google Earth Engine
-    Copyright (C) 2021 Dugal Harris
-    Email: dugalh@gmail.com
+    Copyright 2021 Dugal Harris - dugalh@gmail.com
 
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as
-    published by the Free Software Foundation, either version 3 of the
-    License, or any later version.
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
+       http://www.apache.org/licenses/LICENSE-2.0
 
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
 """
-
+import json
 import os
 import pathlib
-import json
+
 import ee
 
 if '__file__' in globals():
@@ -36,12 +33,6 @@ def _ee_init():
 
     """
 
-    # with open('service.json') as f:
-    #     key_dict = json.load(f)
-    #
-    # service_str = json.dumps(key_dict)
-    # os.environ.update(EE_SERVICE_ACC_PRIVATE_KEY=service_str)
-
     if not ee.data._credentials:
         env_key = 'EE_SERVICE_ACC_PRIVATE_KEY'
 
@@ -54,7 +45,7 @@ def _ee_init():
 
             # authenticate with service account and delete json file
             try:
-                service_account = key_dict['client_email']    #'geedim-service-account@geedim.iam.gserviceaccount.com'
+                service_account = key_dict['client_email']
                 credentials = ee.ServiceAccountCredentials(service_account, filename)
                 ee.Initialize(credentials)
             finally:
