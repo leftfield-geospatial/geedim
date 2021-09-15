@@ -28,6 +28,8 @@ jobs:
           user: __token__
           password: ${{ secrets.TEST_PYPI_TOKEN }}
           repository_url: https://test.pypi.org/legacy/
+      - name: Clean up
+        run: rm -Rf *
 
   # Install geedim from Test PyPI and test CLI
   test:
