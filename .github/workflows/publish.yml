@@ -29,8 +29,14 @@ jobs:
         pip install build twine
     - name: Build package
       run: python -m build
+#     - name: Publish package to TestPyPI
+#       run: python -m twine upload -u __token__ -p ${{ secrets.TEST_PYPI_TOKEN }} --repository testpypi dist/*
     - name: Publish package to TestPyPI
-      run: python -m twine upload --repository testpypi -u __token__ -p ${{ secrets.TEST_PYPI_TOKEN }} --repository testpypi dist/*
+      uses: pypa/gh-action-pypi-publish@main
+      with:
+          user: __token__
+          password: ${{ secrets.TEST_PYPI_TOKEN }}
+          repository_url: https://test.pypi.org/
 #     - name: Publish package to PyPI
 #       uses: pypa/gh-action-pypi-publish@27b31702a0e7fc50959f5ad993c78deac1bdfc29
 #       with:
