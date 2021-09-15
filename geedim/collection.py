@@ -74,7 +74,7 @@ class Collection(object):
 
         id_check = [image.split_id(im_id)[0] == ee_coll_name for im_id in image_ids[1:]]
         if not all(id_check):
-            raise ValueError(f"All images must belong to the same collection")
+            raise ValueError("All images must belong to the same collection")
 
         # create the collection object
         gd_coll_name = info.ee_to_gd[ee_coll_name]

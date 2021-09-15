@@ -123,10 +123,10 @@ def get_projection(image, min=True):
     transform = np.array([1, 0, 0, 0, 1, 0])
     if min:
         compare = ee.Number.lte
-        init_proj = ee.Projection('EPSG:4326', list((1e100) * transform))
+        init_proj = ee.Projection('EPSG:4326', list(1e100 * transform))
     else:
         compare = ee.Number.gte
-        init_proj = ee.Projection('EPSG:4326', list((1e-100) * transform))
+        init_proj = ee.Projection('EPSG:4326', list(1e-100 * transform))
 
     def compare_scale(name, prev_proj):
         """ Server side comparison of band scales"""
@@ -263,7 +263,7 @@ class MaskedImage(Image):
                      Scale reflectance bands 0-10000 if they are not in that range already (default: False)
         """
         # prevent instantiation of base class(es)
-        if not self.gd_coll_name in info.collection_info:
+        if self.gd_coll_name not in info.collection_info:
             raise NotImplementedError("This base class cannot be instantiated, use a sub-class")
 
         # construct the cloud/shadow masks and cloudless score
@@ -289,7 +289,8 @@ class MaskedImage(Image):
         scale_refl : bool, optional
                      Scale reflectance bands 0-10000 if they are not in that range already (default: False).
 
-        Returns:
+        Returns
+        -------
         geedim.image.MaskedImage
             The image object.
         """
@@ -398,9 +399,9 @@ class MaskedImage(Image):
         # distance to nearest cloud/shadow (m)
         score = (
             cloud_shadow_mask.fastDistanceTransform(neighborhood=cloud_pix, units="pixels", metric="squared_euclidean")
-                .sqrt()
-                .multiply(min_proj.nominalScale())
-                .rename("SCORE")
+            .sqrt()
+            .multiply(min_proj.nominalScale())
+            .rename("SCORE")
         )
 
         # clip score to cloud_dist and set to 0 in unfilled areas
@@ -633,9 +634,9 @@ class Sentinel2ClImage(MaskedImage):
         proj_dist_pix = ee.Number(self._cloud_proj_dist * 1000).divide(min_scale)  # projection distance in pixels
         proj_cloud_mask = (
             cloud_mask.directionalDistanceTransform(shadow_azimuth, proj_dist_pix)
-                .select("distance")
-                .mask()
-                .rename("PROJ_CLOUD_MASK")
+            .select("distance")
+            .mask()
+            .rename("PROJ_CLOUD_MASK")
         )
 
         if self.gd_coll_name == "sentinel2_sr":  # use SCL band to reduce shadow_mask
@@ -643,9 +644,9 @@ class Sentinel2ClImage(MaskedImage):
             scl = ee_image.select("SCL")
             dark_shadow_mask = (
                 scl.eq(3)
-                    .Or(scl.eq(2))
-                    .focal_min(self._buffer, "circle", "meters")
-                    .focal_max(self._buffer, "circle", "meters")
+                .Or(scl.eq(2))
+                .focal_min(self._buffer, "circle", "meters")
+                .focal_max(self._buffer, "circle", "meters")
             )
             # improve the shadow mask by combining it with the projected cloud mask
             shadow_mask = proj_cloud_mask.And(dark_shadow_mask).rename("SHADOW_MASK")

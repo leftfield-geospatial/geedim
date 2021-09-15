@@ -13,6 +13,11 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
+
+from pathlib import Path
+
+from setuptools import setup, find_packages
+
 """
  Build and upload to testpypi:
      conda install -c conda-forge build twine
@@ -25,9 +30,6 @@
  Install local development version:
     pip install -e .
 """
-
-from setuptools import setup, find_packages
-from pathlib import Path
 
 this_directory = Path(__file__).parent
 long_description = (this_directory / "README.md").read_text()
