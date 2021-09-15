@@ -27,12 +27,14 @@ jobs:
         with:
           user: __token__
           password: ${{ secrets.TEST_PYPI_TOKEN }}
-          repository_url: https://test.pypi.org/
+          repository_url: https://test.pypi.org/legacy/
 
   # Install geedim from Test PyPI and test CLI
   test:
+    needs: deploy
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ macos-latest, windows-latest, ubuntu-latest ]
         python-version: [ 3.6, 3.7, 3.8, 3.9 ]
