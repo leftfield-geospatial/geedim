@@ -125,7 +125,7 @@ class Collection(object):
 
     composite_methods = ["q_mosaic", "mosaic", "median", "medoid"]  # supported composite methods
 
-    def search(self, start_date, end_date, region, valid_portion=0, mask=False, scale_refl=False):
+    def search(self, start_date, end_date, region, valid_portion=0):
         """
         Search for images based on date, region etc criteria
 
@@ -139,12 +139,6 @@ class Collection(object):
                  Polygon in WGS84 specifying a region that images should intersect
         valid_portion: int, optional
                        Minimum portion (%) of image pixels that should be valid (not cloud/shadow)
-        mask : bool, optional
-               Apply a validity (cloud & shadow) masks to images.  Relevant only if search results will be
-                composited (default: False)
-        scale_refl : bool, optional
-                     Scale reflectance bands 0-10000 if they are not in that range already.  Relevant only if search
-                     results will be composited  (default: False)
 
         Returns
         -------
@@ -160,7 +154,7 @@ class Collection(object):
         def calc_stats(ee_image):
             """ Server side calculation of validity and score stats within region of interest """
             max_scale = geedim.image.get_projection(ee_image, min=False).nominalScale()
-            gd_image = self._image_class(ee_image, mask=mask, scale_refl=scale_refl)
+            gd_image = self._image_class(ee_image)
 
             stats = (
                 ee.Image([gd_image.masks["valid_mask"], gd_image.score])

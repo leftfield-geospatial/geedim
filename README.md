@@ -102,13 +102,6 @@ Options:
   -o, --output FILE               Write results to this filename, file type
                                   inferred from extension: [.csv|.json]
 
-  -m, --mask / -nm, --no-mask     Do/don't apply (cloud and shadow) nodata
-                                  mask(s).  [default: --no-mask]
-
-  -sr, --scale-refl / -nsr, --no-scale-refl
-                                  Scale reflectance bands from 0-10000.
-                                  [default: --no-scale-refl]
-
   --help                          Show this message and exit.
 ```
 #### Example
@@ -252,7 +245,7 @@ Options:
 #### Example
 Composite the results of a search and download the result.
 ```
-geedim search -c landsat8_c2_l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 --mask composite -cm q_mosaic download --scale 30 --crs EPSG:3857
+geedim search -c landsat8_c2_l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 composite -cm q_mosaic --mask download --scale 30 --crs EPSG:3857
 ```
 ## API
 ### Example 

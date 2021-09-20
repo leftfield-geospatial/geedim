@@ -245,11 +245,8 @@ def cli(ctx):
     help="Write results to this filename, file type inferred from extension: [.csv|.json]",
     required=False,
 )
-@mask_option
-@scale_refl_option
 @click.pass_obj
-def search(res, collection, start_date, end_date=None, bbox=None, region=None, valid_portion=0, output=None,
-           mask=False, scale_refl=False):
+def search(res, collection, start_date, end_date=None, bbox=None, region=None, valid_portion=0, output=None):
     """ Search for images """
 
     res.search_region = _extract_region(region=region, bbox=bbox)  # store region for chaining
@@ -260,8 +257,7 @@ def search(res, collection, start_date, end_date=None, bbox=None, region=None, v
 
     # create collection wrapper and search
     gd_collection = coll_api.Collection(collection)
-    im_df = gd_collection.search(start_date, end_date, res.search_region, valid_portion=valid_portion,
-                                 mask=mask, scale_refl=scale_refl)
+    im_df = gd_collection.search(start_date, end_date, res.search_region, valid_portion=valid_portion)
 
     if im_df.shape[0] == 0:
         click.echo('No images found\n')
