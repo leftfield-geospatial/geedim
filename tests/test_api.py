@@ -13,17 +13,15 @@
     See the License for the specific language governing permissions and
     limitations under the License.
 """
-import os
 import unittest
-import warnings
 from datetime import datetime, timedelta
 
 import ee
 import numpy as np
 import pandas as pd
 
-from geedim import export, collection, root_path, info, image, _ee_init
-from tests.util import _test_image_file, _test_search_results
+from geedim import export, collection, root_path, info, image
+from tests.util import _test_image_file, _test_search_results, _setup_test
 
 
 class TestApi(unittest.TestCase):
@@ -32,11 +30,7 @@ class TestApi(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """ Initialise Earth Engine once for all the tests here. """
-        warnings.filterwarnings("ignore", category=DeprecationWarning)
-        _ee_init()
-        test_out_dir = root_path.joinpath('data/outputs/tests/')
-        if not test_out_dir.exists():
-            os.makedirs(test_out_dir)
+        _setup_test()
 
     def _test_image(self, image_id, mask=False, scale_refl=False):
         """ Test the validity of a geedim.image.MaskedImage by checking metadata.  """

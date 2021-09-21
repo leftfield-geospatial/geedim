@@ -14,11 +14,15 @@
     limitations under the License.
 """
 
+import glob
 import importlib
+import os
+import warnings
+
 import numpy as np
 import pandas as pd
 
-from geedim import export, info, image
+from geedim import export, info, image, root_path, _ee_init
 
 if importlib.util.find_spec("rasterio"):
     import rasterio as rio
@@ -26,6 +30,18 @@ if importlib.util.find_spec("rasterio"):
     from rasterio.warp import transform_bounds
 else:
     raise ModuleNotFoundError('Rasterio is needed to run the unit tests: `conda install -c conda-forge rasterio`')
+
+
+def _setup_test():
+    """ Test initialisation """
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    _ee_init()
+    test_out_dir = root_path.joinpath('data/outputs/tests/')
+    if not test_out_dir.exists():
+        os.makedirs(test_out_dir)
+    file_list = glob.glob(str(test_out_dir.joinpath('*')))
+    for f in file_list:
+        os.remove(f)
 
 
 def _test_search_results(test_case, res_df, start_date, end_date, valid_portion=0):
@@ -97,7 +113,7 @@ def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=Non
             sr_bands = im.read(sr_band_idx)
             test_case.assertTrue(sr_bands.max() <= 11000, 'Scaled reflectance in range')
 
-        if mask:    # check mask is same as VALID_MASK band
+        if mask:  # check mask is same as VALID_MASK band
             im_mask = im.read_masks(im.descriptions.index('VALID_MASK') + 1).astype(bool)
             valid_mask = im.read(im.descriptions.index('VALID_MASK') + 1, masked=False).astype(bool)
             test_case.assertTrue(np.all(im_mask == valid_mask), 'mask == VALID_MASK')

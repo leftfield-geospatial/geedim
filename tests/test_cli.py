@@ -15,16 +15,14 @@
 """
 
 import json
-import os
 import unittest
-import warnings
 from datetime import datetime, timedelta
 
 import pandas as pd
 from click.testing import CliRunner
 
 from geedim import root_path, cli, collection, image
-from tests.util import _test_image_file, _test_search_results
+from tests.util import _test_image_file, _test_search_results, _setup_test
 
 
 class TestCli(unittest.TestCase):
@@ -33,10 +31,7 @@ class TestCli(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """ Initialise Earth Engine once for all the tests here. """
-        warnings.filterwarnings("ignore", category=DeprecationWarning)
-        test_out_dir = root_path.joinpath('data/outputs/tests/')
-        if not test_out_dir.exists():
-            os.makedirs(test_out_dir)
+        _setup_test()
 
     def test_search(self):
         """ Test search command with different options. """
@@ -118,7 +113,7 @@ class TestCli(unittest.TestCase):
 
         cli_params = ['composite', *pref_ids, '-cm', method, '-m' if pdict['mask'] else '-nm',
                       '-sr' if pdict['scale_refl'] else '-nsr', 'download', '-r', str(region_filename), '-dd',
-                      str(download_dir), '--crs', pdict['crs'], '--scale', pdict['scale']]
+                      str(download_dir), '--crs', pdict['crs'], '--scale', pdict['scale'], '-o']
         result = CliRunner().invoke(cli.cli, cli_params, terminal_width=100)
 
         self.assertTrue(result.exit_code == 0, result.exception)
@@ -139,15 +134,15 @@ class TestCli(unittest.TestCase):
         results_filename = root_path.joinpath('data/outputs/tests/search_results.json')
         download_dir = root_path.joinpath('data/outputs/tests')
         start_date = datetime.strptime('2019-03-11', '%Y-%m-%d')
-        end_date = start_date + timedelta(days=15)
+        end_date = start_date + timedelta(days=6)
         method = 'q_mosaic'
         pdict = dict(mask=True, scale_refl=False, crs='EPSG:3857', scale=50)
 
-        cli_params = ['search', '-c', 'sentinel2_sr', '-b', 23.9, -33.6, 24, -33.5, '-s',
+        cli_params = ['search', '-c', 'sentinel2_sr', '-r', str(region_filename), '-s',
                       start_date.strftime("%Y-%m-%d"), '-e', end_date.strftime("%Y-%m-%d"), '-o', f'{results_filename}',
                       'composite', '-cm', method, '-m' if pdict['mask'] else '-nm',
-                      '-sr' if pdict['scale_refl'] else '-nsr', 'download', '-r', str(region_filename), '-dd',
-                      str(download_dir), '--crs', pdict['crs'], '--scale', pdict['scale']]
+                      '-sr' if pdict['scale_refl'] else '-nsr', 'download', '-dd', str(download_dir),
+                      '--crs', pdict['crs'], '--scale', pdict['scale'], '-o']
 
         result = CliRunner().invoke(cli.cli, cli_params, terminal_width=100)
 
