@@ -52,7 +52,7 @@ jobs:
           python -m pip install --extra-index-url https://test.pypi.org/simple/ geedim
       - name: Test geedim CLI
         run: |
-          geedim search -c landsat8_c2_l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 --mask composite -cm q_mosaic download --scale 30 --crs EPSG:3857
+          geedim search -c landsat8_c2_l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 composite -cm q_mosaic --mask download --scale 30 --crs EPSG:3857
           pwd
           ls -R
         env:
