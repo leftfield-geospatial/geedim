@@ -24,6 +24,7 @@ jobs:
       #       run: python -m twine upload -u __token__ -p ${{ secrets.TEST_PYPI_TOKEN }} --repository testpypi dist/*
       - name: Publish package to TestPyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        continue-on-error: true
         with:
           user: __token__
           password: ${{ secrets.TEST_PYPI_TOKEN }}
@@ -39,7 +40,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ macos-latest, windows-latest, ubuntu-latest ]
-        python-version: [ 3.6, 3.7, 3.8, 3.9 ]
+        python-version: 3.x #[ 3.6, 3.7, 3.8, 3.9 ]
     steps:
       - uses: actions/checkout@v2
       - name: Set up Python
@@ -51,9 +52,10 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install --extra-index-url https://test.pypi.org/simple/ geedim
       - name: Test geedim CLI
+        timeout-minutes: 5
+        env:
+          EE_SERVICE_ACC_PRIVATE_KEY: ${{ secrets.EE_SERVICE_ACC_PRIVATE_KEY }}
         run: |
           geedim search -c landsat8_c2_l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 composite -cm q_mosaic --mask download --scale 30 --crs EPSG:3857
           pwd
           ls -R
-        env:
-          EE_SERVICE_ACC_PRIVATE_KEY: ${{ secrets.EE_SERVICE_ACC_PRIVATE_KEY }}
