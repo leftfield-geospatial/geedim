@@ -37,7 +37,7 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: Test with unittest
       run: |
-        coverage run -m unittest discover
+        coverage run -m unittest discover -v
     - name: Generate coverage report
       run: |
         coverage report

@@ -15,6 +15,7 @@
 """
 import os
 import unittest
+import warnings
 from datetime import datetime, timedelta
 
 import ee
@@ -31,6 +32,7 @@ class TestApi(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """ Initialise Earth Engine once for all the tests here. """
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
         _ee_init()
         test_out_dir = root_path.joinpath('data/outputs/tests/')
         if not test_out_dir.exists():
