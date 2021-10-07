@@ -113,6 +113,18 @@ def _export_download(res=_CmdChainResults(), do_download=True, **kwargs):
     else:
         region = _extract_region(region=params.region, bbox=params.bbox)  # get region geojson
 
+    # interpret the CRS
+    crs = params.crs
+    if crs is not None:
+        wkt_fn = pathlib.Path(params.crs)
+        if wkt_fn.exists():     # read WKT from file, if it exists
+            with open(wkt_fn, 'r') as f:
+                crs = f.read()
+
+        if importlib.util.find_spec("rasterio"):  # clean WKT with rasterio if it is installed
+            from rasterio import crs as rio_crs
+            crs = rio_crs.CRS.from_string(crs).to_wkt()
+
     # create a list of Image objects and names
     im_list = []
     if res.comp_image is not None:  # download/export chained with composite command
@@ -127,10 +139,10 @@ def _export_download(res=_CmdChainResults(), do_download=True, **kwargs):
 
     # download/export the image list
     if do_download:
-        _export_im_list(im_list, region=region, path=params.download_dir, crs=params.crs, scale=params.scale,
+        _export_im_list(im_list, region=region, path=params.download_dir, crs=crs, scale=params.scale,
                         overwrite=params.overwrite, do_download=True)
     else:
-        _export_im_list(im_list, region=region, path=params.drive_folder, crs=params.crs, scale=params.scale,
+        _export_im_list(im_list, region=region, path=params.drive_folder, crs=crs, scale=params.scale,
                         do_download=False, wait=params.wait)
 
 
@@ -166,7 +178,7 @@ crs_option = click.option(
     "--crs",
     type=click.STRING,
     default=None,
-    help="Reproject image(s) to this CRS (WKT or EPSG string). \n[default: source CRS]",
+    help="Reproject image(s) to this CRS (EPSG string or path to text file containing WKT). \n[default: source CRS]",
     required=False,
 )
 scale_option = click.option(

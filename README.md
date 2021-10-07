@@ -139,8 +139,9 @@ Options:
   -dd, --download-dir DIRECTORY   Download image file(s) to this directory.
                                   [default: cwd]
 
-  -c, --crs TEXT                  Reproject image(s) to this CRS (WKT or EPSG
-                                  string).  [default: source CRS]
+  -c, --crs TEXT                  Reproject image(s) to this CRS (EPSG string
+                                  or path to text file containing WKT).
+                                  [default: source CRS]
 
   -s, --scale FLOAT               Resample image bands to this pixel
                                   resolution (m).  [default: minimum of the
@@ -157,7 +158,7 @@ Options:
                                   [default: prompt the user for confirmation]
 
   --help                          Show this message and exit.
-  ```
+```
 
 #### Export
 ```
@@ -180,8 +181,9 @@ Options:
   -df, --drive-folder TEXT        Export image(s) to this Google Drive folder.
                                   [default: root]
 
-  -c, --crs TEXT                  Reproject image(s) to this CRS (WKT or EPSG
-                                  string).  [default: source CRS]
+  -c, --crs TEXT                  Reproject image(s) to this CRS (EPSG string
+                                  or path to text file containing WKT).
+                                  [default: source CRS]
 
   -s, --scale FLOAT               Resample image bands to this pixel
                                   resolution (m).  [default: minimum of the

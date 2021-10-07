@@ -226,6 +226,7 @@ class Collection(object):
 
         comp_id = f"{self._ee_coll_name}/{start_date}-{end_date}-{method.upper()}_COMP"
         comp_image = comp_image.set("system:id", comp_id)
+        # TODO: persist source CRS and scale by reprojecting?
 
         CompositeResult = collections.namedtuple("CompositeResult", ["image", "id"])
         return CompositeResult(comp_image, comp_id)
