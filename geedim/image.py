@@ -450,7 +450,7 @@ class LandsatImage(MaskedImage):
 
     @staticmethod
     def _im_transform(ee_image):
-        return ee.Image.toUint16(ee_image)
+        return ee.Image.toInt16(ee_image)   # allow -ve values from _scale_refl
 
     def _get_image_masks(self, ee_image):
         # get cloud, shadow and fill masks from QA_PIXEL
@@ -494,7 +494,11 @@ class LandsatImage(MaskedImage):
         high = low + 1 / 2.75e-05
         calib_image = ee_image.select(sr_bands).unitScale(low=low, high=high).multiply(10000.0)
         calib_image = calib_image.addBands(ee_image.select(non_sr_bands))
-        calib_image = calib_image.updateMask(ee_image.mask())  # apply any existing mask to calib_image
+
+        # apply any existing mask to calib_image, but change 0 to -32768
+        mask = ee_image.mask()
+        mask = mask.unmask().where(mask.eq(0), -32768)
+        calib_image = calib_image.unmask(mask)
 
         # copy system properties to calib_image
         for key in ["system:index", "system:id", "id", "system:time_start", "system:time_end"]:
