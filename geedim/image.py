@@ -458,14 +458,7 @@ class LandsatImage(MaskedImage):
         cloud_mask = qa_pixel.bitwiseAnd((1 << 1) | (1 << 2) | (1 << 3)).neq(0).rename("CLOUD_MASK")
         shadow_mask = qa_pixel.bitwiseAnd(1 << 4).neq(0).rename("SHADOW_MASK")
         fill_mask = qa_pixel.bitwiseAnd(1).eq(0).rename("FILL_MASK")
-
-        if self.gd_coll_name == "landsat8_c2_l2":
-            # add landsat8 aerosol probability > medium to cloud mask
-            # TODO: is SR_QA_AEROSOL helpful?
-            sr_qa_aerosol = ee_image.select("SR_QA_AEROSOL")
-            aerosol_prob = sr_qa_aerosol.rightShift(6).bitwiseAnd(3)
-            aerosol_mask = aerosol_prob.gt(2).rename("AEROSOL_MASK")
-            cloud_mask = cloud_mask.Or(aerosol_mask)
+        # TODO: include Landsat 8 SR_QA_AEROSOL in cloud mask?
 
         # combine cloud, shadow and fill masks into validity mask
         valid_mask = ((cloud_mask.Or(shadow_mask)).Not()).And(fill_mask).rename("VALID_MASK")
@@ -489,7 +482,6 @@ class LandsatImage(MaskedImage):
 
         # scale to new range
         # low/high values from https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C02_T1_L2?hl=en
-        # TODO: what about scaling the BT_* surface temp band?  It has a different range.
         low = 0.2 / 2.75e-05
         high = low + 1 / 2.75e-05
         calib_image = ee_image.select(sr_bands).unitScale(low=low, high=high).multiply(10000.0)
