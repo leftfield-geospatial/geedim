@@ -208,7 +208,7 @@ def monitor_export_task(task, label=None):
     click.echo(f"\rPreparing {label}  done")
 
     # wait for export to complete, displaying a progress bar
-    with click.progressbar(length=bar_len, label=f"Exporting {label}:") as bar:
+    with click.progressbar(length=bar_len, label=f"Exporting {label}") as bar:
         while ("done" not in status) or (not status["done"]):
             time.sleep(pause)
             status = ee.data.getOperation(task.name)  # get task status

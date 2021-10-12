@@ -450,6 +450,7 @@ class LandsatImage(MaskedImage):
 
     @staticmethod
     def _im_transform(ee_image):
+        # TODO: QA_PIXEL needs 16bits - can it still be interpreted as an int16?
         return ee.Image.toInt16(ee_image)   # allow -ve values from _scale_refl
 
     def _get_image_masks(self, ee_image):
@@ -458,7 +459,7 @@ class LandsatImage(MaskedImage):
         cloud_mask = qa_pixel.bitwiseAnd((1 << 1) | (1 << 2) | (1 << 3)).neq(0).rename("CLOUD_MASK")
         shadow_mask = qa_pixel.bitwiseAnd(1 << 4).neq(0).rename("SHADOW_MASK")
         fill_mask = qa_pixel.bitwiseAnd(1).eq(0).rename("FILL_MASK")
-        # TODO: include Landsat 8 SR_QA_AEROSOL in cloud mask?
+        # TODO: include Landsat 8 SR_QA_AEROSOL in cloud mask? it has lots of false positives which skews valid portion
 
         # combine cloud, shadow and fill masks into validity mask
         valid_mask = ((cloud_mask.Or(shadow_mask)).Not()).And(fill_mask).rename("VALID_MASK")
