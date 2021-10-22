@@ -20,9 +20,8 @@ import collections
 from datetime import datetime, timedelta
 
 import ee
-import pandas as pd
-
 import geedim.image
+import pandas as pd
 from geedim import image, info, medoid
 
 
@@ -91,30 +90,30 @@ class Collection(object):
 
     @property
     def ee_collection(self):
-        """ ee.ImageCollection : Returns the wrapped ee.ImageCollection """
+        """ee.ImageCollection : Returns the wrapped ee.ImageCollection"""
         return self._ee_collection
 
     @property
     def summary_key_df(self):
-        """ pandas.DataFrame : A key to Collection.summary_df
-        (pandas.DataFrame with ABBREV and DESCRIPTION columns, and rows corresponding columns in summary_df) """
+        """pandas.DataFrame : A key to Collection.summary_df
+        (pandas.DataFrame with ABBREV and DESCRIPTION columns, and rows corresponding columns in summary_df)"""
         return self._summary_key_df
 
     @property
     def summary_df(self):
-        """ pandas.DataFrame : Summary of collection image properties with a row for each image """
+        """pandas.DataFrame : Summary of collection image properties with a row for each image"""
         if self._summary_df is None:
             self._summary_df = self._get_summary_df(self._ee_collection)
         return self._summary_df
 
     @property
     def summary_key(self):
-        """ str :  Formatted string of Collection.summary_key_df """
+        """str :  Formatted string of Collection.summary_key_df"""
         return self._summary_key_df[["ABBREV", "DESCRIPTION"]].to_string(index=False, justify="right")
 
     @property
     def summary(self):
-        """ str : Formatted string of Collection.summary_df """
+        """str : Formatted string of Collection.summary_df"""
         return self.summary_df.to_string(
             float_format="%.2f",
             formatters={"DATE": lambda x: datetime.strftime(x, "%Y-%m-%d %H:%M")},
@@ -152,16 +151,19 @@ class Collection(object):
             raise ValueError("`end_date` must be at least a day later than `start_date`")
 
         def calc_stats(ee_image):
-            """ Server side calculation of validity and score stats within region of interest """
-            max_scale = geedim.image.get_projection(ee_image, min=False).nominalScale()
+            """Server side calculation of validity and score stats within region of interest"""
+            max_proj = geedim.image.get_projection(ee_image, min=False)
             gd_image = self._image_class(ee_image)
-            region_sum = ee.Image(1).clip(region).unmask().reduceRegion(reducer="sum", geometry=region, scale=max_scale)
+            region_sum = (
+                ee.Image(1)
+                .reduceRegion(reducer="sum", geometry=region, scale=max_proj.nominalScale(), crs=max_proj.crs())
+            )
 
             # sum VALID_MASK and SCORE over image
             stats = (
                 ee.Image([gd_image.masks["valid_mask"], gd_image.score])
                 .unmask()
-                .reduceRegion(reducer="sum", geometry=region, scale=max_scale)
+                .reduceRegion(reducer="sum", geometry=region, scale=max_proj.nominalScale(), crs=max_proj.crs())
                 .rename(["VALID_MASK", "SCORE"], ["VALID_PORTION", "AVG_SCORE"])
             )
 
