@@ -114,6 +114,6 @@ def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=Non
             test_case.assertTrue(sr_bands.max() <= 11000, 'Scaled reflectance in range')
 
         if mask:  # check mask is same as VALID_MASK band
-            im_mask = im.read_masks(im.descriptions.index('VALID_MASK') + 1).astype(bool)
-            valid_mask = im.read(im.descriptions.index('VALID_MASK') + 1, masked=False).astype(bool)
+            im_mask = im.read_masks(1).astype(bool)
+            valid_mask = im.read(im.descriptions.index('VALID_MASK') + 1, masked=False) != im.nodata
             test_case.assertTrue(np.all(im_mask == valid_mask), 'mask == VALID_MASK')
