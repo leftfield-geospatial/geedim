@@ -93,6 +93,8 @@ class _ExportImage(image.Image):
         self.exp_region = exp_region
         self.exp_crs = exp_crs
         self.exp_scale = exp_scale
+        # TODO - what resampling to use and whether to expose CLI/API
+        self._ee_image = self._ee_image.resample('bilinear')    # force export re-projection to bi-linear resampling
 
     def parse_attributes(self):
         """ Set the exp_region, exp_crs and exp_scale attributes """
@@ -125,6 +127,7 @@ class _ExportImage(image.Image):
 
         if isinstance(self.exp_region, dict):
             self.exp_region = ee.Geometry(self.exp_region)
+
 
 
 def export_image(image_obj, filename, folder="", region=None, crs=None, scale=None, wait=True):
@@ -248,13 +251,13 @@ def download_image(image_obj, filename, region=None, crs=None, scale=None, overw
 
     # get download link
     try:
-        link = exp_image.ee_image.getDownloadURL({
-            "scale": exp_image.exp_scale,
-            "crs": exp_image.exp_crs,
-            "fileFormat": "GeoTIFF",
-            "filePerBand": False,
-            "region": exp_image.exp_region,
-        })
+        link = exp_image.ee_image.getDownloadURL(dict(
+            scale=exp_image.exp_scale,
+            crs=exp_image.exp_crs,
+            fileFormat="GeoTIFF",
+            filePerBand=False,
+            region=exp_image.exp_region,
+        ))
     except ee.ee_exception.EEException as ex:
         # Add to exception message when the image is too large to download
         if re.match(r"Total request size \(.*\) must be less than or equal to .*", str(ex)):
