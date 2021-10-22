@@ -113,7 +113,14 @@ def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=Non
             sr_bands = im.read(sr_band_idx)
             test_case.assertTrue(sr_bands.max() <= 11000, 'Scaled reflectance in range')
 
-        if mask:  # check mask is same as VALID_MASK band
-            im_mask = im.read_masks(1).astype(bool)
+        if mask: # and not ('sentinel2' in gd_coll_name):  # check mask is same as VALID_MASK band
+            im_mask = im.read_masks(im.descriptions.index('VALID_MASK') + 1).astype(bool)
             valid_mask = im.read(im.descriptions.index('VALID_MASK') + 1, masked=False) != im.nodata
             test_case.assertTrue(np.all(im_mask == valid_mask), 'mask == VALID_MASK')
+        else:
+            valid_mask = im.read(im.descriptions.index('VALID_MASK') + 1)
+            cloud_mask = im.read(im.descriptions.index('CLOUD_MASK') + 1)
+            shadow_mask = im.read(im.descriptions.index('SHADOW_MASK') + 1)
+            fill_mask = im.read(im.descriptions.index('FILL_MASK') + 1)
+            test_case.assertTrue(np.all((cloud_mask & shadow_mask & fill_mask) == valid_mask), 'mask == VALID_MASK')
+            # pyplot.figure();pyplot.subplot(2,2,1);pyplot.imshow(im_mask);pyplot.subplot(2,2,2);pyplot.imshow(valid_mask);pyplot.subplot(2,2,3);pyplot.imshow(cloud_mask);pyplot.subplot(2,2,4);pyplot.imshow(shadow_mask)
