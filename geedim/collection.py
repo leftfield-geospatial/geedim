@@ -155,14 +155,21 @@ class Collection(object):
             """ Server side calculation of validity and score stats within region of interest """
             max_scale = geedim.image.get_projection(ee_image, min=False).nominalScale()
             gd_image = self._image_class(ee_image)
+            region_sum = ee.Image(1).clip(region).unmask().reduceRegion(reducer="sum", geometry=region, scale=max_scale)
 
+            # sum VALID_MASK and SCORE over image
             stats = (
                 ee.Image([gd_image.masks["valid_mask"], gd_image.score])
                 .unmask()
-                .reduceRegion(reducer="mean", geometry=region, scale=max_scale)
+                .reduceRegion(reducer="sum", geometry=region, scale=max_scale)
                 .rename(["VALID_MASK", "SCORE"], ["VALID_PORTION", "AVG_SCORE"])
             )
 
+            # find average VALID_MASK and SCORE over region (not the same as image if image does not cover region)
+            def region_mean(key, value):
+                return ee.Number(value).divide(ee.Number(region_sum.get("constant")))
+
+            stats = stats.map(region_mean)
             stats = stats.set("VALID_PORTION", ee.Number(stats.get("VALID_PORTION")).multiply(100))
             return gd_image.ee_image.set(stats)
 
