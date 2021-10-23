@@ -315,6 +315,10 @@ class MaskedImage(Image):
         return ee_image
 
     @property
+    def nodata(self):
+        return 0
+
+    @property
     def gd_coll_name(self):
         """ str: geedim collection name (landsat7_c2_l2|landsat8_c2_l2|sentinel2_toa|sentinel2_sr|modis_nbar). """
         return self._gd_coll_name
@@ -437,7 +441,13 @@ class MaskedImage(Image):
         ee_image = ee_image.addBands(score, overwrite=True)
 
         if mask:  # apply the validity mask to all bands (i.e. set those areas to nodata)
-            ee_image = ee_image.updateMask(self._masks["valid_mask"])
+            mask = self._masks["valid_mask"]
+            if self.nodata != 0:    # replace nodata when != 0
+                mask = mask.where(mask.eq(0), self.nodata)
+            ee_image = ee_image.updateMask(mask)
+        else:
+            # contrary to spec, landsat can have 'valid' SR pixels==0 which are masked by default, so force unmask
+            ee_image = ee_image.unmask()
 
         if scale_refl:  # scale reflectance range 0-10000
             ee_image = self._scale_refl(ee_image)
@@ -453,21 +463,13 @@ class LandsatImage(MaskedImage):
         # TODO: QA_PIXEL needs 16bits - can it still be interpreted as an int16?
         return ee.Image.toInt16(ee_image)   # allow -ve values from _scale_refl
 
-    def _get_image_masks(self, ee_image):
-        # get cloud, shadow and fill masks from QA_PIXEL
-        qa_pixel = ee_image.select("QA_PIXEL")
-        cloud_mask = qa_pixel.bitwiseAnd((1 << 1) | (1 << 2) | (1 << 3)).neq(0).rename("CLOUD_MASK")
-        shadow_mask = qa_pixel.bitwiseAnd(1 << 4).neq(0).rename("SHADOW_MASK")
-        fill_mask = qa_pixel.bitwiseAnd(1).eq(0).rename("FILL_MASK")
-        # TODO: include Landsat 8 SR_QA_AEROSOL in cloud mask? it has lots of false positives which skews valid portion
+    @property
+    def nodata(self):
+        return -32768
 
-        # combine cloud, shadow and fill masks into validity mask
-        valid_mask = ((cloud_mask.Or(shadow_mask)).Not()).And(fill_mask).rename("VALID_MASK")
-
-        return dict(cloud_mask=cloud_mask, shadow_mask=shadow_mask, fill_mask=fill_mask, valid_mask=valid_mask)
-
-    def _scale_refl(self, ee_image):
-        # make lists of SR and non-SR band names
+    @staticmethod
+    def _split_band_names(ee_image):
+        """Get SR and non-SR band names"""
         all_bands = ee_image.bandNames()
         init_bands = ee.List([])
 
@@ -480,6 +482,27 @@ class LandsatImage(MaskedImage):
 
         sr_bands = ee.List(all_bands.iterate(add_refl_bands, init_bands))
         non_sr_bands = all_bands.removeAll(sr_bands)
+        SplitBandNames = collections.namedtuple("SplitBandNames", ["sr", "non_sr"])
+        return SplitBandNames(sr_bands, non_sr_bands)
+
+    def _get_image_masks(self, ee_image):
+        # get cloud, shadow and fill masks from QA_PIXEL
+        qa_pixel = ee_image.select("QA_PIXEL").unmask()
+        fill_mask = qa_pixel.bitwiseAnd(1).eq(0).rename("FILL_MASK")
+        # TODO: include Landsat 8 SR_QA_AEROSOL in cloud mask? it has lots of false positives which skews valid portion
+        cloud_mask = qa_pixel.bitwiseAnd((1 << 1) | (1 << 2) | (1 << 3)).neq(0).rename("CLOUD_MASK")
+        shadow_mask = qa_pixel.bitwiseAnd(1 << 4).neq(0)
+        # incorporate the existing mask (for zero SR pixels) into the shadow mask
+        zero_sr_mask = ee_image.mask().reduce(ee.Reducer.allNonZero()).Not()
+        shadow_mask = shadow_mask.Or(zero_sr_mask).rename("SHADOW_MASK")
+
+        # combine cloud, shadow and fill masks into validity mask
+        valid_mask = ((cloud_mask.Or(shadow_mask)).Not()).And(fill_mask).rename("VALID_MASK")
+
+        return dict(cloud_mask=cloud_mask, shadow_mask=shadow_mask, fill_mask=fill_mask, valid_mask=valid_mask)
+
+    def _scale_refl(self, ee_image):
+        sr_bands, non_sr_bands = LandsatImage._split_band_names(ee_image)
 
         # scale to new range
         # low/high values from https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C02_T1_L2?hl=en
@@ -490,8 +513,8 @@ class LandsatImage(MaskedImage):
 
         # apply any existing mask to calib_image, but change 0 to -32768
         mask = ee_image.mask()
-        mask = mask.unmask().where(mask.eq(0), -32768)
-        calib_image = calib_image.unmask(mask)
+        # mask = mask.where(mask.eq(0), -32768)
+        calib_image = calib_image.updateMask(mask)
 
         # copy system properties to calib_image
         for key in ["system:index", "system:id", "id", "system:time_start", "system:time_end"]:

@@ -6,7 +6,7 @@
 # geedim
 Searching, compositing and downloading of satellite imagery from [Google Earth Engine](https://earthengine.google.com/) (EE). 
 ## Description
-geedim provides a command line interface (CLI) and API that allow searching by date, region, and cloud/shadow statistics.  It optionally performs cloud/shadow masking, and cloud-free compositing.  Images and composites (including metadata) can be downloaded, or exported to Google Drive.
+geedim provides a command line interface (CLI) and API for searching by date, region, and cloud/shadow statistics.  It optionally performs cloud/shadow masking, and cloud-free compositing.  Images and composites (including metadata) can be downloaded, or exported to Google Drive.
 
 It supports access to the following surface reflectance image collections:
 
@@ -44,14 +44,14 @@ Download Landsat 8 image 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20210610' with clou
 ```
 geedim download -i LANDSAT/LC08/C02/T1_L2/LC08_172083_20210610 --bbox 24 -33 24.1 -33.1 --mask
 ```
-Composite the results of the above search and download, specifying destination CRS and pixel size
+Composite the results of a search, then download with specified CRS and pixel size (scale)
 ```
 geedim search -c landsat8_c2_l2 -s 2021-06-01 -e 2021-07-01 --bbox 24 -33 24.1 -33.1 composite download --crs EPSG:32634 --scale 30
 ```
 
 ## Usage
 ### Command line interface
-geedim command line functionality is accessed through sub-commands: `search`, `composite`, `download` and `export`.  
+geedim command line functionality is accessed through sub-commands: `search`, `composite`, `download` and `export`.  Sub-commands can be chained.   
 ```
 geedim --help
 ```
@@ -68,7 +68,7 @@ Commands:
   search     Search for images
 ```
 ### Search
-Searching is filtered by date, region and optionally, the portion of cloud/shadow free pixels in the specified region.  Other image metadata of interest is included in the results. 
+Search for images with filtering by image collection, date, region and portion of cloud/shadow free pixels (in the specified region).  Image metadata of interest is included in the results. 
 ```
 geedim search --help
 ```
@@ -110,7 +110,7 @@ geedim search -c landsat8_c2_l2 -b 23.9 -33.6 24 -33.5 -s 2019-01-01 -e 2019-02-
 ```
 
 ### Download / Export
-Images can be downloaded / exported by specifying their ID(s), or search result image(s) can be downloaded / exported by chaining the `search` and `download` / `export` sub-commands.  The following auxiliary bands are included in downloaded / exported images:
+Download or export image(s) by specifying their ID(s).  Search result image(s) can be downloaded / exported by chaining the `search` and `download` / `export` sub-commands.  The following auxiliary bands are included in downloaded / exported images:
 
 - FILL_MASK: Filled / captured pixels 
 - CLOUD_MASK: Cloudy pixels 
