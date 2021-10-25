@@ -129,7 +129,6 @@ class _ExportImage(image.Image):
             self.exp_region = ee.Geometry(self.exp_region)
 
 
-
 def export_image(image_obj, filename, folder="", region=None, crs=None, scale=None, wait=True):
     """
     Export an image to a GeoTiff in Google Drive

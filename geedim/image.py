@@ -446,7 +446,7 @@ class MaskedImage(Image):
                 mask = mask.where(mask.eq(0), self.nodata)
             ee_image = ee_image.updateMask(mask)
         else:
-            # contrary to spec, landsat can have 'valid' SR pixels==0 which are masked by default, so force unmask
+            # sentinel and landsat come with default mask on SR==0, so force unmask
             ee_image = ee_image.unmask()
 
         if scale_refl:  # scale reflectance range 0-10000
@@ -639,7 +639,7 @@ class Sentinel2ClImage(MaskedImage):
         masks = MaskedImage._get_image_masks(self, ee_image)  # get constant masks from base class
 
         # threshold the added cloud probability to get the initial cloud mask
-        cloud_prob = ee_image.select("probability")
+        cloud_prob = ee_image.select("probability").unmask()
         cloud_mask = cloud_prob.gt(self._cloud_prob_thresh).rename("CLOUD_MASK")
 
         # TODO: dilate valid_mask by _buffer ?
@@ -661,7 +661,7 @@ class Sentinel2ClImage(MaskedImage):
 
         if self.gd_coll_name == "sentinel2_sr":  # use SCL band to reduce shadow_mask
             # Get the shadow mask from the SCL band and perform morphological opening to remove small isolated blobs
-            scl = ee_image.select("SCL")
+            scl = ee_image.select("SCL").unmask()
             dark_shadow_mask = (
                 scl.eq(3)
                 .Or(scl.eq(2))
