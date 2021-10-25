@@ -161,6 +161,14 @@ class TestApi(unittest.TestCase):
             max_refl = sr_image.reduceRegion(reducer='max', geometry=region, scale=60).getInfo()
             self.assertTrue(all(np.array(list(max_refl.values())) <= 10000), 'Scaled reflectance in range')
 
+        # test image content for a specific region
+        sr_band_ids = sr_band_df[~sr_band_df.abbrev.str.startswith('BT')].id.tolist()
+        sr_image = gd_image.ee_image.select(sr_band_ids)
+        mean_refl = sr_image.reduceRegion(reducer='mean', geometry=region, scale=100).getInfo()
+        self.assertTrue(all(np.array(list(mean_refl.values())) > 100), 'Mean reflectance > 100')
+        count_distinct_refl = sr_image.reduceRegion(ee.Reducer.countDistinct(), geometry=region, scale=100).getInfo()
+        self.assertTrue(all(np.array(list(count_distinct_refl.values())) > 100), 'Distinct reflectance values > 100')
+
     def test_composite(self):
         """ Test each composite method on different collections. """
 

@@ -124,3 +124,12 @@ def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=Non
             fill_mask = im.read(im.descriptions.index('FILL_MASK') + 1)
             test_case.assertTrue(np.all((cloud_mask & shadow_mask & fill_mask) == valid_mask), 'mask == VALID_MASK')
             # pyplot.figure();pyplot.subplot(2,2,1);pyplot.imshow(im_mask);pyplot.subplot(2,2,2);pyplot.imshow(valid_mask);pyplot.subplot(2,2,3);pyplot.imshow(cloud_mask);pyplot.subplot(2,2,4);pyplot.imshow(shadow_mask)
+
+        # do basic checks on image content
+        sr_band_df = pd.DataFrame.from_dict(info.collection_info[gd_coll_name]['bands'])
+        for band_i, band_row in sr_band_df.iterrows():
+            if 'BT' not in band_row.abbrev and band_row.bw_start < 5:   # exclude mid-far IR
+                sr_band = im.read(im.descriptions.index(band_row.id) + 1, masked=True)
+                test_case.assertTrue(sr_band.mean() > 100, f'Mean {band_row.id} reflectance > 100')
+                test_case.assertTrue(len(np.unique(sr_band)) > 100, f'Distinct {band_row.id} reflectance values > 100')
+
