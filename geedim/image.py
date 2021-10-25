@@ -673,6 +673,10 @@ class Sentinel2ClImage(MaskedImage):
         else:
             shadow_mask = proj_cloud_mask.rename("SHADOW_MASK")  # mask all areas that could be cloud shadow
 
+        # incorporate the existing mask (for zero SR pixels) into the shadow mask
+        zero_sr_mask = ee_image.mask().reduce(ee.Reducer.allNonZero()).Not()
+        shadow_mask = shadow_mask.Or(zero_sr_mask).rename("SHADOW_MASK")
+
         # combine cloud and shadow masks
         valid_mask = (cloud_mask.Or(shadow_mask)).Not().rename("VALID_MASK")
         masks.update(cloud_mask=cloud_mask, shadow_mask=shadow_mask, valid_mask=valid_mask)
