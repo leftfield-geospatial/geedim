@@ -269,6 +269,7 @@ class MaskedImage(Image):
         # construct the cloud/shadow masks and cloudless score
         self._masks = self._get_image_masks(ee_image)
         self._score = self._get_image_score(ee_image)
+        # ee_image = ee_image.resample('bilinear')
         self._ee_image = self._process_image(
             ee_image, mask=mask, scale_refl=scale_refl, masks=self._masks, score=self._score
         )
@@ -314,9 +315,7 @@ class MaskedImage(Image):
         """ Optional data type conversion to run after masking and scoring. """
         return ee_image
 
-    @property
-    def nodata(self):
-        return 0
+    nodata = 0
 
     @property
     def gd_coll_name(self):
@@ -444,7 +443,7 @@ class MaskedImage(Image):
             mask = self._masks["valid_mask"]
             if self.nodata != 0:    # replace nodata when != 0
                 mask = mask.where(mask.eq(0), self.nodata)
-            ee_image = ee_image.updateMask(mask)
+            ee_image = ee_image.mask(mask)
         else:
             # sentinel and landsat come with default mask on SR==0, so force unmask
             ee_image = ee_image.unmask()
@@ -463,9 +462,7 @@ class LandsatImage(MaskedImage):
         # TODO: QA_PIXEL needs 16bits - can it still be interpreted as an int16?
         return ee.Image.toInt16(ee_image)   # allow -ve values from _scale_refl
 
-    @property
-    def nodata(self):
-        return -32768
+    nodata = -32768
 
     @staticmethod
     def _split_band_names(ee_image):
