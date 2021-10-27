@@ -94,7 +94,7 @@ class _ExportImage(image.Image):
         self.exp_crs = exp_crs
         self.exp_scale = exp_scale
         # TODO - what resampling to use and whether to expose CLI/API
-        self._ee_image = self._ee_image.resample('bilinear')    # force export re-projection to bi-linear resampling
+
 
     def parse_attributes(self):
         """ Set the exp_region, exp_crs and exp_scale attributes """
@@ -102,7 +102,7 @@ class _ExportImage(image.Image):
         if self.id is None:
             self._info["id"] = pathlib.Path(self.name).stem
 
-        # if the image is in WGS84 and has no scale (probable composite), then exit
+        # if the image is in WGS84 and or has no scale (probable composite), then exit
         if ((self.scale is None) and (self.exp_scale is None)) or ((self.crs is None) and (self.exp_crs is None)):
             raise ValueError(f'{self.info["id"]} appears to be a composite in WGS84, specify a scale and CRS')
 
