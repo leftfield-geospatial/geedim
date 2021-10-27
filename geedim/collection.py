@@ -188,7 +188,7 @@ class Collection(object):
 
         return self._summary_df
 
-    def composite(self, method="q_mosaic"):
+    def composite(self, method="q_mosaic", resampling='near'):
         """
         Create a cloud/shadow free composite.
 
@@ -201,12 +201,17 @@ class Collection(object):
         ----------
         method : str, optional
                  Compositing method to use (q_mosaic|mosaic|median|medoid).  (Default: q_mosaic).
+        resampling : str, optional
+               Resampling method for compositing and reprojecting: ("near"|"bilinear"|"bicubic") (default: "near")
 
         Returns
         -------
         : (ee.Image, str)
           The composite image, composite image ID
         """
+        if resampling != 'near':
+            self._ee_collection = self._ee_collection.map(lambda image: image.resample(resampling))
+
         method = str(method).lower()
 
         if method == "q_mosaic":

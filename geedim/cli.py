@@ -140,10 +140,10 @@ def _export_download(res=_CmdChainResults(), do_download=True, **kwargs):
     # download/export the image list
     if do_download:
         _export_im_list(im_list, region=region, path=params.download_dir, crs=crs, scale=params.scale,
-                        overwrite=params.overwrite, do_download=True)
+                        resampling=params.resampling, overwrite=params.overwrite, do_download=True)
     else:
         _export_im_list(im_list, region=region, path=params.drive_folder, crs=crs, scale=params.scale,
-                        do_download=False, wait=params.wait)
+                        resampling=params.resampling, do_download=False, wait=params.wait)
 
 
 """ Define click options that are common to more than one command """
@@ -195,6 +195,14 @@ mask_option = click.option(
     default=False,
     help="Do/don't apply (cloud and shadow) nodata mask(s).  [default: --no-mask]",
     required=False,
+)
+resampling_option = click.option(
+    "-rs",
+    "--resampling",
+    type=click.Choice(["near", "bilinear", "bicubic"], case_sensitive=True),
+    help="Resampling method.",
+    default="near",
+    show_default=True,
 )
 
 
@@ -304,6 +312,7 @@ cli.add_command(search)
 @crs_option
 @scale_option
 @mask_option
+@resampling_option
 @click.option(
     "-o",
     "--overwrite",
@@ -315,7 +324,7 @@ cli.add_command(search)
 )
 @click.pass_context
 def download(ctx, id=(), bbox=None, region=None, download_dir=os.getcwd(), crs=None, scale=None, mask=False,
-             overwrite=False):
+             resampling='near', overwrite=False):
     """ Download image(s), with cloud and shadow masking """
     _export_download(res=ctx.obj, do_download=True, **ctx.params)
 
@@ -339,6 +348,7 @@ cli.add_command(download)
 @crs_option
 @scale_option
 @mask_option
+@resampling_option
 @click.option(
     "-w/-nw",
     "--wait/--no-wait",
@@ -347,7 +357,8 @@ cli.add_command(download)
     required=False,
 )
 @click.pass_context
-def export(ctx, id=(), bbox=None, region=None, drive_folder='', crs=None, scale=None, mask=False, wait=True):
+def export(ctx, id=(), bbox=None, region=None, drive_folder='', crs=None, scale=None, mask=False, resampling='near',
+           wait=True):
     """ Export image(s) to Google Drive, with cloud and shadow masking """
     _export_download(res=ctx.obj, do_download=False, **ctx.params)
 
@@ -374,8 +385,9 @@ cli.add_command(export)
     help="Do/don't apply (cloud and shadow) nodata mask(s) before compositing.  [default: --mask]",
     required=False,
 )
+@resampling_option
 @click.pass_obj
-def composite(res, id=None, mask=True, method='q_mosaic'):
+def composite(res, id=None, mask=True, method='q_mosaic', resampling='near'):
     """ Create a cloud-free composite image """
 
     # get image ids from command line or chained search command
@@ -388,7 +400,7 @@ def composite(res, id=None, mask=True, method='q_mosaic'):
             res.search_ids = None
 
     gd_collection = coll_api.Collection.from_ids(id, mask=mask)
-    res.comp_image, res.comp_id = gd_collection.composite(method=method)
+    res.comp_image, res.comp_id = gd_collection.composite(method=method, resampling=resampling)
 
 
 cli.add_command(composite)

@@ -82,7 +82,7 @@ def write_pam_xml(obj, filename):
 
 class _ExportImage(image.Image):
     """ Helper class for determining export/download crs, scale and region parameters"""
-    def __init__(self, image_obj, name="Image", exp_region=None, exp_crs=None, exp_scale=None):
+    def __init__(self, image_obj, name="Image", exp_region=None, exp_crs=None, exp_scale=None, resampling='near'):
         if isinstance(image_obj, image.Image):
             image.Image.__init__(self, image_obj.ee_image)
             self._info = image_obj.info
@@ -93,6 +93,7 @@ class _ExportImage(image.Image):
         self.exp_region = exp_region
         self.exp_crs = exp_crs
         self.exp_scale = exp_scale
+        self.resampling = resampling
         # TODO - what resampling to use and whether to expose CLI/API
 
 
@@ -105,6 +106,10 @@ class _ExportImage(image.Image):
         # if the image is in WGS84 and or has no scale (probable composite), then exit
         if ((self.scale is None) and (self.exp_scale is None)) or ((self.crs is None) and (self.exp_crs is None)):
             raise ValueError(f'{self.info["id"]} appears to be a composite in WGS84, specify a scale and CRS')
+
+        # set resampling if image is not a composite
+        if (self.scale is not None) and (self.crs is not None) and (self.resampling != 'near'):
+            self._ee_image = self._ee_image.resample(self.resampling)
 
         # If CRS is the native MODIS CRS, then exit due to GEE bug
         if (self.crs == "SR-ORG:6974") and (self.exp_crs is None):
@@ -129,7 +134,7 @@ class _ExportImage(image.Image):
             self.exp_region = ee.Geometry(self.exp_region)
 
 
-def export_image(image_obj, filename, folder="", region=None, crs=None, scale=None, wait=True):
+def export_image(image_obj, filename, folder="", region=None, crs=None, scale=None, resampling='near', wait=True):
     """
     Export an image to a GeoTiff in Google Drive
 
@@ -150,6 +155,8 @@ def export_image(image_obj, filename, folder="", region=None, crs=None, scale=No
     scale : float, optional
             Pixel scale (m) to export to.  Where image bands have different scales, all are re-projected to this scale.
             (default: use the minimum scale of image bands if available).
+    resampling : str, optional
+           Resampling method: ("near"|"bilinear"|"bicubic") (default: "near")
     wait : bool
            Wait for the export to complete before returning (default: True)
 
@@ -158,7 +165,8 @@ def export_image(image_obj, filename, folder="", region=None, crs=None, scale=No
     ee.batch.Task
         Earth Engine export task object
     """
-    exp_image = _ExportImage(image_obj, name=filename, exp_region=region, exp_crs=crs, exp_scale=scale)
+    exp_image = _ExportImage(image_obj, name=filename, exp_region=region, exp_crs=crs, exp_scale=scale,
+                             resampling=resampling)
     exp_image.parse_attributes()
 
     # create export task and start
@@ -222,7 +230,7 @@ def monitor_export_task(task, label=None):
         raise Exception(f"Export failed \n{status}")
 
 
-def download_image(image_obj, filename, region=None, crs=None, scale=None, overwrite=False):
+def download_image(image_obj, filename, region=None, crs=None, scale=None, resampling='near', overwrite=False):
     """
     Download an image as a GeoTiff
 
@@ -241,11 +249,14 @@ def download_image(image_obj, filename, region=None, crs=None, scale=None, overw
     scale : float, optional
             Pixel scale (m) to export to.  Where image bands have different scales, all are re-projected to this scale.
             (default: use the minimum scale of image bands if available).
+    resampling : str, optional
+           Resampling method: ("near"|"bilinear"|"bicubic") (default: "near")
     overwrite : bool, optional
                 Overwrite the destination file if it exists, otherwise prompt the user (default: True)
     """
     filename = pathlib.Path(filename)
-    exp_image = _ExportImage(image_obj, name=filename, exp_region=region, exp_crs=crs, exp_scale=scale)
+    exp_image = _ExportImage(image_obj, name=filename, exp_region=region, exp_crs=crs, exp_scale=scale,
+                             resampling=resampling)
     exp_image.parse_attributes()
 
     # get download link

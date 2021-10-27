@@ -96,9 +96,11 @@ class TestApi(unittest.TestCase):
                   "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
         im_param_list = [
             {'image_id': 'COPERNICUS/S2_SR/20190321T075619_20190321T081839_T35HKC', 'mask': True, 'crs': None,
-             'scale': 30},
-            {'image_id': 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190301', 'mask': True, 'crs': None, 'scale': None},
-            {'image_id': 'MODIS/006/MCD43A4/2019_01_01', 'mask': True, 'crs': 'EPSG:3857', 'scale': 500},
+             'scale': 30, 'resampling': 'bilinear'},
+            {'image_id': 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190301', 'mask': True, 'crs': None, 'scale': None,
+             'resampling': 'bicubic'},
+            {'image_id': 'MODIS/006/MCD43A4/2019_01_01', 'mask': True, 'crs': 'EPSG:3857', 'scale': 500,
+             'resampling': 'near'},
         ]
 
         for impdict in im_param_list:
@@ -112,7 +114,7 @@ class TestApi(unittest.TestCase):
                 crs_str = impdict["crs"].replace(':', '_') if impdict["crs"] else 'None'
                 filename = root_path.joinpath(f'data/outputs/tests/{name}_{crs_str}_{impdict["scale"]}m.tif')
                 export.download_image(gd_image, filename, region=region, crs=impdict["crs"], scale=impdict["scale"],
-                                      overwrite=True)
+                                      resampling=impdict["resampling"], overwrite=True)
                 impdict.pop('image_id')
                 _test_image_file(self, image_obj=gd_image, filename=filename, region=region, **impdict)
 
@@ -125,7 +127,7 @@ class TestApi(unittest.TestCase):
         ee_image = ee.Image(image_id)
         export.export_image(ee_image, image_id.replace('/', '-'), folder='geedim_test', region=region, wait=False)
 
-    def _test_composite(self, ee_image, mask=False):
+    def _test_composite(self, ee_image):
         """ Test the metadata of a composite ee.Image for validity. """
 
         gd_image = image.Image(ee_image)
@@ -174,7 +176,7 @@ class TestApi(unittest.TestCase):
             for method in methods:
                 with self.subTest('Composite', method=method, **param_dict):
                     gd_collection = collection.Collection.from_ids(**param_dict)
-                    comp_im, comp_id = gd_collection.composite(method=method)
-                    self._test_composite(comp_im, mask=param_dict['mask'])
+                    comp_im, comp_id = gd_collection.composite(method=method, resampling='bilinear')
+                    self._test_composite(comp_im)
 
 ##

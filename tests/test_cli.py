@@ -96,7 +96,7 @@ class TestCli(unittest.TestCase):
         scale = 1000
 
         result = CliRunner().invoke(cli.cli, ['export', '-i', image_id, '-b', *bbox, '-df', 'geedim_test', '-nw',
-                                              '--crs', crs, '--scale', scale, '-m'],
+                                              '--crs', crs, '--scale', scale, '-m', '-rs', 'bilinear'],
                                     terminal_width=80)
         self.assertTrue(result.exit_code == 0, result.exception)
 
@@ -111,9 +111,9 @@ class TestCli(unittest.TestCase):
         method = 'q_mosaic'
         pdict = dict(mask=True, crs='EPSG:3857', scale=60)
 
-        cli_params = ['composite', *pref_ids, '-cm', method, '-m' if pdict['mask'] else '-nm', 'download', '-r',
-                      str(region_filename), '-dd', str(download_dir), '--crs', pdict['crs'], '--scale', pdict['scale'],
-                      '-o']
+        cli_params = ['composite', *pref_ids, '-cm', method, '-m' if pdict['mask'] else '-nm',
+                      '--resampling', 'bilinear', 'download', '-r', str(region_filename), '-dd', str(download_dir),
+                      '--crs', pdict['crs'], '--scale', pdict['scale'], '-o']
         result = CliRunner().invoke(cli.cli, cli_params, terminal_width=100)
 
         self.assertTrue(result.exit_code == 0, result.exception)
@@ -124,8 +124,7 @@ class TestCli(unittest.TestCase):
         comp_fn = download_dir.joinpath(comp_id.replace('/', '-') + '.tif')
         with open(region_filename) as f:
             region = json.load(f)
-        _test_image_file(self, image_obj=image.Image(comp_im), filename=comp_fn, region=region,
-                         **pdict)
+        _test_image_file(self, image_obj=image.Image(comp_im), filename=comp_fn, region=region, **pdict)
 
     def test_search_composite_download(self):
         """ Test chaining of search, composite and download commands, to create and download one composite image. """
