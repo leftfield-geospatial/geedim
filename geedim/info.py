@@ -25,8 +25,8 @@ collection_info = {
         {"id": "SR_B3", "name": "red", "abbrev": "R", "bw_start": 0.63, "bw_end": 0.69, "res": 30},
         {"id": "SR_B4", "name": "near infrared", "abbrev": "NIR", "bw_start": 0.77, "bw_end": 0.90, "res": 30},
         {"id": "SR_B5", "name": "shortwave infrared 1", "abbrev": "SWIR1", "bw_start": 1.55, "bw_end": 1.75, "res": 30},
+        {"id": "SR_B7", "name": "shortwave infrared 2", "abbrev": "SWIR2", "bw_start": 2.08, "bw_end": 2.35, "res": 30},
         {"id": "ST_B6", "name": "brightness temperature", "abbrev": "BT", "bw_start": 10.40, "bw_end": 12.50, "res": 30},
-        {"id": "SR_B7", "name": "shortwave infrared 2", "abbrev": "SWIR2", "bw_start": 2.08, "bw_end": 2.35, "res": 30}
     ],
     "properties": [
         {"PROPERTY": "system:id", "ABBREV": "ID", "DESCRIPTION": "Earth Engine image id"},
