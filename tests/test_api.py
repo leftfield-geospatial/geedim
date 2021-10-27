@@ -32,12 +32,12 @@ class TestApi(unittest.TestCase):
         """ Initialise Earth Engine once for all the tests here. """
         _setup_test()
 
-    def _test_image(self, image_id, mask=False, scale_refl=False):
+    def _test_image(self, image_id, mask=False):
         """ Test the validity of a geedim.image.MaskedImage by checking metadata.  """
 
         ee_coll_name = image.split_id(image_id)[0]
         gd_coll_name = info.ee_to_gd[ee_coll_name]
-        gd_image = image.get_class(gd_coll_name).from_id(image_id, mask=mask, scale_refl=scale_refl)
+        gd_image = image.get_class(gd_coll_name).from_id(image_id, mask=mask)
         self.assertTrue(gd_image.id == image_id, 'IDs match')
 
         sr_band_df = pd.DataFrame.from_dict(info.collection_info[gd_coll_name]['bands'])
@@ -56,21 +56,20 @@ class TestApi(unittest.TestCase):
         for id in sr_band_df.id.values:
             self.assertTrue(id in im_band_df.id.values, msg='Image has SR bands')
 
-        # test landsat reflectance statistics for a specific region
+        # test reflectance statistics for a specific region
         region = {"type": "Polygon",
                   "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
-        if scale_refl and ('landsat' in gd_coll_name):
-            sr_band_ids = sr_band_df[sr_band_df.id.str.startswith('SR_B')].id.tolist()
-            sr_image = gd_image.ee_image.select(sr_band_ids)
-            max_refl = sr_image.reduceRegion(reducer='max', geometry=region, scale=2 * gd_image.scale).getInfo()
-            self.assertTrue(all(np.array(list(max_refl.values())) <= 11000), 'Scaled reflectance in range')
+        sr_band_ids = sr_band_df.id.tolist()
+        sr_image = gd_image.ee_image.select(sr_band_ids)
+        std_refl = sr_image.reduceRegion(reducer='stdDev', geometry=region, scale=2 * gd_image.scale).getInfo()
+        self.assertTrue(all(np.array(list(std_refl.values())) > 100), 'Std(SR) > 100')
 
     def test_image(self):
         """ Test geedim.image.MaskedImage sub-classes. """
         im_param_list = [
-            {'image_id': 'COPERNICUS/S2_SR/20190321T075619_20190321T081839_T35HKC', 'mask': False, 'scale_refl': False},
-            {'image_id': 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190301', 'mask': True, 'scale_refl': True},
-            {'image_id': 'MODIS/006/MCD43A4/2019_01_01', 'mask': True, 'scale_refl': False},
+            {'image_id': 'COPERNICUS/S2_SR/20190321T075619_20190321T081839_T35HKC', 'mask': False},
+            {'image_id': 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190301', 'mask': True},
+            {'image_id': 'MODIS/006/MCD43A4/2019_01_01', 'mask': True},
         ]
 
         for im_param_dict in im_param_list:
@@ -91,17 +90,15 @@ class TestApi(unittest.TestCase):
                 _test_search_results(self, res_df, start_date, end_date, valid_portion=valid_portion)
 
     def test_download(self):
-        """ Test download of images from different collections, and with different crs, scale and scale_refl params. """
+        """ Test download of images from different collections, and with different crs, and scale params. """
 
         region = {"type": "Polygon",
                   "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
         im_param_list = [
-            {'image_id': 'COPERNICUS/S2_SR/20190321T075619_20190321T081839_T35HKC', 'mask': True, 'scale_refl': False,
-             'crs': None, 'scale': 30},
-            {'image_id': 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190301', 'mask': True, 'scale_refl': True, 'crs': None,
-             'scale': None},
-            {'image_id': 'MODIS/006/MCD43A4/2019_01_01', 'mask': True, 'scale_refl': False, 'crs': 'EPSG:3857',
-             'scale': 500},
+            {'image_id': 'COPERNICUS/S2_SR/20190321T075619_20190321T081839_T35HKC', 'mask': True, 'crs': None,
+             'scale': 30},
+            {'image_id': 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190301', 'mask': True, 'crs': None, 'scale': None},
+            {'image_id': 'MODIS/006/MCD43A4/2019_01_01', 'mask': True, 'crs': 'EPSG:3857', 'scale': 500},
         ]
 
         for impdict in im_param_list:
@@ -109,8 +106,7 @@ class TestApi(unittest.TestCase):
             gd_coll_name = info.ee_to_gd[ee_coll_name]
             with self.subTest('Download', **impdict):
                 # create image.MaskedImage
-                gd_image = image.get_class(gd_coll_name).from_id(impdict["image_id"], mask=impdict['mask'],
-                                                                 scale_refl=impdict['scale_refl'])
+                gd_image = image.get_class(gd_coll_name).from_id(impdict["image_id"], mask=impdict['mask'])
                 # create a filename for these parameters
                 name = impdict["image_id"].replace('/', '-')
                 crs_str = impdict["crs"].replace(':', '_') if impdict["crs"] else 'None'
@@ -129,7 +125,7 @@ class TestApi(unittest.TestCase):
         ee_image = ee.Image(image_id)
         export.export_image(ee_image, image_id.replace('/', '-'), folder='geedim_test', region=region, wait=False)
 
-    def _test_composite(self, ee_image, mask=False, scale_refl=False):
+    def _test_composite(self, ee_image, mask=False):
         """ Test the metadata of a composite ee.Image for validity. """
 
         gd_image = image.Image(ee_image)
@@ -152,16 +148,9 @@ class TestApi(unittest.TestCase):
         for id in sr_band_df.id.values:
             self.assertTrue(id in im_band_df.id.values, msg='Image has SR bands')
 
-        # test landsat reflectance statistics for a specific region
+        # test image content for a specific region
         region = {"type": "Polygon",
                   "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
-        if scale_refl and ('landsat' in gd_coll_name):
-            sr_band_ids = sr_band_df[sr_band_df.id.str.startswith('SR_B')].id.tolist()
-            sr_image = gd_image.ee_image.select(sr_band_ids)
-            max_refl = sr_image.reduceRegion(reducer='max', geometry=region, scale=60).getInfo()
-            self.assertTrue(all(np.array(list(max_refl.values())) <= 10000), 'Scaled reflectance in range')
-
-        # test image content for a specific region
         sr_band_ids = sr_band_df[~sr_band_df.abbrev.str.startswith('BT')].id.tolist()
         sr_image = gd_image.ee_image.select(sr_band_ids)
         mean_refl = sr_image.reduceRegion(reducer='mean', geometry=region, scale=100).getInfo()
@@ -175,11 +164,10 @@ class TestApi(unittest.TestCase):
         methods = collection.Collection.composite_methods
         param_list = [
             {'image_ids': ['LANDSAT/LE07/C02/T1_L2/LE07_171083_20190129', 'LANDSAT/LE07/C02/T1_L2/LE07_171083_20190214',
-                           'LANDSAT/LE07/C02/T1_L2/LE07_171083_20190302'], 'scale_refl': True, 'mask': True},
+                           'LANDSAT/LE07/C02/T1_L2/LE07_171083_20190302'], 'mask': True},
             {'image_ids': ['COPERNICUS/S2_SR/20190311T075729_20190311T082820_T35HKC',
                            'COPERNICUS/S2_SR/20190316T075651_20190316T082220_T35HKC',
-                           'COPERNICUS/S2_SR/20190321T075619_20190321T081839_T35HKC'], 'scale_refl': True,
-             'mask': True},
+                           'COPERNICUS/S2_SR/20190321T075619_20190321T081839_T35HKC'], 'mask': True},
         ]
 
         for param_dict in param_list:
@@ -187,6 +175,6 @@ class TestApi(unittest.TestCase):
                 with self.subTest('Composite', method=method, **param_dict):
                     gd_collection = collection.Collection.from_ids(**param_dict)
                     comp_im, comp_id = gd_collection.composite(method=method)
-                    self._test_composite(comp_im, mask=param_dict['mask'], scale_refl=param_dict['scale_refl'])
+                    self._test_composite(comp_im, mask=param_dict['mask'])
 
 ##

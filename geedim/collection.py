@@ -49,7 +49,7 @@ class Collection(object):
         self._summary_df = None  # summary of the image metadata
 
     @classmethod
-    def from_ids(cls, image_ids, mask=False, scale_refl=False):
+    def from_ids(cls, image_ids, mask=False):
         """
         Create collection from image IDs
 
@@ -59,8 +59,6 @@ class Collection(object):
                     A list of the EE image IDs (should all be from same collection)
         mask : bool, optional
                Apply a validity (cloud & shadow) mask to the image (default: False)
-        scale_refl : bool, optional
-                     Scale reflectance bands 0-10000 if they are not in that range already (default: False)
 
         Returns
         -------
@@ -82,7 +80,7 @@ class Collection(object):
         # build and wrap an ee.ImageCollection of processed (masked and scored) images
         im_list = ee.List([])
         for im_id in image_ids:
-            gd_image = gd_collection._image_class.from_id(im_id, mask=mask, scale_refl=scale_refl)
+            gd_image = gd_collection._image_class.from_id(im_id, mask=mask)
             im_list = im_list.add(gd_image.ee_image)
 
         gd_collection._ee_collection = ee.ImageCollection(im_list)

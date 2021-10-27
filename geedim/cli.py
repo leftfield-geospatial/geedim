@@ -130,9 +130,9 @@ def _export_download(res=_CmdChainResults(), do_download=True, **kwargs):
     if res.comp_image is not None:  # download/export chained with composite command
         im_list.append(dict(image=res.comp_image, name=res.comp_id.replace('/', '-')))
     elif res.search_ids is not None:  # download/export chained with search command
-        im_list = _create_im_list(res.search_ids, mask=params.mask, scale_refl=params.scale_refl)
+        im_list = _create_im_list(res.search_ids, mask=params.mask)
     elif len(params.id) > 0:  # download/export image ids specified on command line
-        im_list = _create_im_list(params.id, mask=params.mask, scale_refl=params.scale_refl)
+        im_list = _create_im_list(params.id, mask=params.mask)
     else:
         raise click.BadOptionUsage('id',
                                    'Either pass --id, or chain this command with a successful `search` or `composite`')
@@ -194,13 +194,6 @@ mask_option = click.option(
     "--mask/--no-mask",
     default=False,
     help="Do/don't apply (cloud and shadow) nodata mask(s).  [default: --no-mask]",
-    required=False,
-)
-scale_refl_option = click.option(
-    "-sr/-nsr",
-    "--scale-refl/--no-scale-refl",
-    default=False,
-    help="Scale reflectance bands from 0-10000.  [default: --no-scale-refl]",
     required=False,
 )
 
@@ -311,7 +304,6 @@ cli.add_command(search)
 @crs_option
 @scale_option
 @mask_option
-@scale_refl_option
 @click.option(
     "-o",
     "--overwrite",
@@ -323,7 +315,7 @@ cli.add_command(search)
 )
 @click.pass_context
 def download(ctx, id=(), bbox=None, region=None, download_dir=os.getcwd(), crs=None, scale=None, mask=False,
-             scale_refl=False, overwrite=False):
+             overwrite=False):
     """ Download image(s), with cloud and shadow masking """
     _export_download(res=ctx.obj, do_download=True, **ctx.params)
 
@@ -347,7 +339,6 @@ cli.add_command(download)
 @crs_option
 @scale_option
 @mask_option
-@scale_refl_option
 @click.option(
     "-w/-nw",
     "--wait/--no-wait",
@@ -356,8 +347,7 @@ cli.add_command(download)
     required=False,
 )
 @click.pass_context
-def export(ctx, id=(), bbox=None, region=None, drive_folder='', crs=None, scale=None, mask=False, scale_refl=False,
-           wait=True):
+def export(ctx, id=(), bbox=None, region=None, drive_folder='', crs=None, scale=None, mask=False, wait=True):
     """ Export image(s) to Google Drive, with cloud and shadow masking """
     _export_download(res=ctx.obj, do_download=False, **ctx.params)
 
@@ -384,9 +374,8 @@ cli.add_command(export)
     help="Do/don't apply (cloud and shadow) nodata mask(s) before compositing.  [default: --mask]",
     required=False,
 )
-@scale_refl_option
 @click.pass_obj
-def composite(res, id=None, mask=True, scale_refl=False, method='q_mosaic'):
+def composite(res, id=None, mask=True, method='q_mosaic'):
     """ Create a cloud-free composite image """
 
     # get image ids from command line or chained search command
@@ -398,7 +387,7 @@ def composite(res, id=None, mask=True, scale_refl=False, method='q_mosaic'):
             id = res.search_ids
             res.search_ids = None
 
-    gd_collection = coll_api.Collection.from_ids(id, mask=mask, scale_refl=scale_refl)
+    gd_collection = coll_api.Collection.from_ids(id, mask=mask)
     res.comp_image, res.comp_id = gd_collection.composite(method=method)
 
 

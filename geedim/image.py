@@ -249,7 +249,7 @@ class Image(object):
 
 
 class MaskedImage(Image):
-    def __init__(self, ee_image, mask=False, scale_refl=False):
+    def __init__(self, ee_image, mask=False):
         """
         Class to cloud/shadow mask and quality score Earth engine images from supported collections.
 
@@ -259,8 +259,6 @@ class MaskedImage(Image):
                    Earth engine image to wrap
         mask : bool, optional
                Apply a validity (cloud & shadow) mask to the image (default: False)
-        scale_refl : bool, optional
-                     Scale reflectance bands 0-10000 if they are not in that range already (default: False)
         """
         # prevent instantiation of base class(es)
         if self.gd_coll_name not in info.collection_info:
@@ -270,14 +268,12 @@ class MaskedImage(Image):
         self._masks = self._get_image_masks(ee_image)
         self._score = self._get_image_score(ee_image)
         # ee_image = ee_image.resample('bilinear')
-        self._ee_image = self._process_image(
-            ee_image, mask=mask, scale_refl=scale_refl, masks=self._masks, score=self._score
-        )
+        self._ee_image = self._process_image(ee_image, mask=mask, masks=self._masks, score=self._score)
         self._info = None
         self._projection = None
 
     @classmethod
-    def from_id(cls, image_id, mask=False, scale_refl=False):
+    def from_id(cls, image_id, mask=False):
         """
         Earth engine image wrapper for cloud/shadow masking and quality scoring.
 
@@ -287,8 +283,6 @@ class MaskedImage(Image):
                    ID of earth engine image to wrap.
         mask : bool, optional
                Apply a validity (cloud & shadow) mask to the image (default: False).
-        scale_refl : bool, optional
-                     Scale reflectance bands 0-10000 if they are not in that range already (default: False).
 
         Returns
         -------
@@ -306,7 +300,7 @@ class MaskedImage(Image):
             raise ValueError(f"{cls.__name__} only supports images from {info.gd_to_ee[cls._gd_coll_name]}")
 
         ee_image = ee.Image(image_id)
-        return cls(ee_image, mask=mask, scale_refl=scale_refl)
+        return cls(ee_image, mask=mask)
 
     _gd_coll_name = ""  # geedim image collection name
 
@@ -315,7 +309,9 @@ class MaskedImage(Image):
         """ Optional data type conversion to run after masking and scoring. """
         return ee_image
 
-    nodata = 0
+    @property
+    def nodata(self):
+        return 0
 
     @property
     def gd_coll_name(self):
@@ -342,10 +338,6 @@ class MaskedImage(Image):
         ee.ImageCollection
         """
         return ee.ImageCollection(info.gd_to_ee[cls._gd_coll_name])
-
-    def _scale_refl(self, ee_image):
-        """ Scale reflectance bands 0-10000 """
-        return ee_image
 
     def _get_image_masks(self, ee_image):
         """
@@ -413,7 +405,7 @@ class MaskedImage(Image):
                  where(masks["fill_mask"].unmask().Not(), 0))
         return score
 
-    def _process_image(self, ee_image, mask=False, scale_refl=False, masks=None, score=None):
+    def _process_image(self, ee_image, mask=False, masks=None, score=None):
         """
         Create, and add, mask and score bands to a an Earth Engine image.
 
@@ -423,8 +415,6 @@ class MaskedImage(Image):
                    Earth engine image to add bands to.
         mask : bool, optional
                Apply any validity mask to the image by setting nodata (default: False).
-        scale_refl : bool, optional
-                     Scale reflectance values from 0-10000 if they are not in that range already (default: False).
 
         Returns
         -------
@@ -440,16 +430,9 @@ class MaskedImage(Image):
         ee_image = ee_image.addBands(score, overwrite=True)
 
         if mask:  # apply the validity mask to all bands (i.e. set those areas to nodata)
-            mask = self._masks["valid_mask"]
-            if self.nodata != 0:    # replace nodata when != 0
-                mask = mask.where(mask.eq(0), self.nodata)
-            ee_image = ee_image.mask(mask)
-        else:
-            # sentinel and landsat come with default mask on SR==0, so force unmask
+            ee_image = ee_image.mask(self._masks["valid_mask"])
+        else:  # sentinel and landsat come with default mask on SR==0, so force unmask
             ee_image = ee_image.unmask()
-
-        if scale_refl:  # scale reflectance range 0-10000
-            ee_image = self._scale_refl(ee_image)
 
         return self._im_transform(ee_image)
 
@@ -459,10 +442,7 @@ class LandsatImage(MaskedImage):
 
     @staticmethod
     def _im_transform(ee_image):
-        # TODO: QA_PIXEL needs 16bits - can it still be interpreted as an int16?
-        return ee.Image.toInt16(ee_image)   # allow -ve values from _scale_refl
-
-    nodata = -32768
+        return ee.Image.toUint16(ee_image)
 
     @staticmethod
     def _split_band_names(ee_image):
@@ -497,28 +477,6 @@ class LandsatImage(MaskedImage):
         valid_mask = ((cloud_mask.Or(shadow_mask)).Not()).And(fill_mask).rename("VALID_MASK")
 
         return dict(cloud_mask=cloud_mask, shadow_mask=shadow_mask, fill_mask=fill_mask, valid_mask=valid_mask)
-
-    def _scale_refl(self, ee_image):
-        sr_bands, non_sr_bands = LandsatImage._split_band_names(ee_image)
-
-        # scale to new range
-        # low/high values from https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C02_T1_L2?hl=en
-        low = 0.2 / 2.75e-05
-        high = low + 1 / 2.75e-05
-        calib_image = ee_image.select(sr_bands).unitScale(low=low, high=high).multiply(10000.0)
-        calib_image = calib_image.addBands(ee_image.select(non_sr_bands))
-
-        # apply any existing mask to calib_image, but change 0 to -32768
-        mask = ee_image.mask()
-        # mask = mask.where(mask.eq(0), -32768)
-        calib_image = calib_image.updateMask(mask)
-
-        # copy system properties to calib_image
-        for key in ["system:index", "system:id", "id", "system:time_start", "system:time_end"]:
-            calib_image = calib_image.set(key, ee.String(ee_image.get(key)))
-
-        # copy the rest of ee_image properties to calib_image and return
-        return ee.Image(ee.Element(calib_image).copyProperties(ee.Element(ee_image)))
 
 
 class Landsat8Image(LandsatImage):
@@ -580,7 +538,7 @@ class Sentinel2ClImage(MaskedImage):
     (Uses cloud probability to improve cloud/shadow masking).
     """
 
-    def __init__(self, ee_image, mask=False, scale_refl=False):
+    def __init__(self, ee_image, mask=False):
         # TODO: provide CLI access to these attributes
 
         # set attributes before their use in __init__ below
@@ -589,14 +547,14 @@ class Sentinel2ClImage(MaskedImage):
         self._cloud_proj_dist = 1  # Maximum distance (km) to search for cloud shadows from cloud edges
         self._buffer = 100  # Distance (m) to dilate the edge of cloud-identified objects
 
-        MaskedImage.__init__(self, ee_image, mask=mask, scale_refl=scale_refl)
+        MaskedImage.__init__(self, ee_image, mask=mask)
 
     @staticmethod
     def _im_transform(ee_image):
         return ee.Image.toUint16(ee_image)
 
     @classmethod
-    def from_id(cls, image_id, mask=False, scale_refl=False):
+    def from_id(cls, image_id, mask=False):
         # check image_id
         ee_coll_name = split_id(image_id)[0]
         if ee_coll_name not in info.ee_to_gd:
@@ -614,7 +572,7 @@ class Sentinel2ClImage(MaskedImage):
         cloud_prob = ee.Image(f"COPERNICUS/S2_CLOUD_PROBABILITY/{split_id(image_id)[1]}")
         ee_image = ee_image.addBands(cloud_prob, overwrite=True)
 
-        return cls(ee_image, mask=mask, scale_refl=scale_refl)
+        return cls(ee_image, mask=mask)
 
     def _get_image_masks(self, ee_image):
         """

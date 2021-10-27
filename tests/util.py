@@ -67,14 +67,14 @@ def _test_search_results(test_case, res_df, start_date, end_date, valid_portion=
         test_case.assertTrue(all(res_df.SCORE >= 0), 'Search results have correct q score range')
 
 
-def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=None, mask=False, scale_refl=False):
+def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=None, mask=False):
     """ Test downloaded image file against corresponding image object """
 
     # create objects to test against
     if isinstance(image_obj, str):  # create image.MaskedImage from ID
         ee_coll_name = image.split_id(image_obj)[0]
         gd_coll_name = info.ee_to_gd[ee_coll_name]
-        gd_image = image.get_class(gd_coll_name).from_id(image_obj, mask=mask, scale_refl=scale_refl)
+        gd_image = image.get_class(gd_coll_name).from_id(image_obj, mask=mask)
     elif isinstance(image_obj, image.Image):
         gd_image = image_obj
         ee_coll_name = image.split_id(gd_image.id)[0]
@@ -106,12 +106,6 @@ def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=Non
         im_bounds_wgs84 = transform_bounds(im.crs, 'WGS84', *im.bounds)  # convert to WGS84 geojson
         test_case.assertFalse(rio.coords.disjoint_bounds(region_bounds, im_bounds_wgs84),
                               msg='Search and image bounds match')
-
-        if scale_refl and ('landsat' in gd_coll_name):  # check surface reflectance in range
-            sr_band_ids = sr_band_df[sr_band_df.id.str.startswith('SR_B')].id.tolist()
-            sr_band_idx = [im.descriptions.index(sr_id) + 1 for sr_id in sr_band_ids]
-            sr_bands = im.read(sr_band_idx)
-            test_case.assertTrue(sr_bands.max() <= 11000, 'Scaled reflectance in range')
 
         if mask: # and not ('sentinel2' in gd_coll_name):  # check mask is same as VALID_MASK band
             im_mask = im.read_masks(im.descriptions.index('VALID_MASK') + 1).astype(bool)

@@ -73,7 +73,7 @@ class TestCli(unittest.TestCase):
         scale = 60
         im_param_list = [
             ['download', '-i', 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190112', '-r', str(region_filename), '-dd',
-             str(download_dir), '--crs', crs, '--scale', scale, '-o', '-m', '-sr'],
+             str(download_dir), '--crs', crs, '--scale', scale, '-o', '-m'],
         ]
 
         for im_params in im_param_list:
@@ -109,17 +109,17 @@ class TestCli(unittest.TestCase):
                     'LANDSAT/LE07/C02/T1_L2/LE07_171083_20190302']
         pref_ids = [item for tup in zip(['-i'] * len(comp_ids), comp_ids) for item in tup]
         method = 'q_mosaic'
-        pdict = dict(mask=True, scale_refl=True, crs='EPSG:3857', scale=60)
+        pdict = dict(mask=True, crs='EPSG:3857', scale=60)
 
-        cli_params = ['composite', *pref_ids, '-cm', method, '-m' if pdict['mask'] else '-nm',
-                      '-sr' if pdict['scale_refl'] else '-nsr', 'download', '-r', str(region_filename), '-dd',
-                      str(download_dir), '--crs', pdict['crs'], '--scale', pdict['scale'], '-o']
+        cli_params = ['composite', *pref_ids, '-cm', method, '-m' if pdict['mask'] else '-nm', 'download', '-r',
+                      str(region_filename), '-dd', str(download_dir), '--crs', pdict['crs'], '--scale', pdict['scale'],
+                      '-o']
         result = CliRunner().invoke(cli.cli, cli_params, terminal_width=100)
 
         self.assertTrue(result.exit_code == 0, result.exception)
 
         # recreate composite image and check against downloaded file
-        gd_collection = collection.Collection.from_ids(comp_ids, mask=pdict['mask'], scale_refl=pdict['scale_refl'])
+        gd_collection = collection.Collection.from_ids(comp_ids, mask=pdict['mask'])
         comp_im, comp_id = gd_collection.composite(method)
         comp_fn = download_dir.joinpath(comp_id.replace('/', '-') + '.tif')
         with open(region_filename) as f:
@@ -136,12 +136,11 @@ class TestCli(unittest.TestCase):
         start_date = datetime.strptime('2019-03-11', '%Y-%m-%d')
         end_date = start_date + timedelta(days=6)
         method = 'q_mosaic'
-        pdict = dict(mask=True, scale_refl=False, crs='EPSG:3857', scale=50)
+        pdict = dict(mask=True, crs='EPSG:3857', scale=50)
 
         cli_params = ['search', '-c', 'sentinel2_sr', '-r', str(region_filename), '-s',
                       start_date.strftime("%Y-%m-%d"), '-e', end_date.strftime("%Y-%m-%d"), '-o', f'{results_filename}',
-                      'composite', '-cm', method, '-m' if pdict['mask'] else '-nm',
-                      '-sr' if pdict['scale_refl'] else '-nsr', 'download', '-dd', str(download_dir),
+                      'composite', '-cm', method, '-m' if pdict['mask'] else '-nm', 'download', '-dd', str(download_dir),
                       '--crs', pdict['crs'], '--scale', pdict['scale'], '-o']
 
         result = CliRunner().invoke(cli.cli, cli_params, terminal_width=100)
@@ -155,8 +154,7 @@ class TestCli(unittest.TestCase):
         res_df.DATE = [datetime.utcfromtimestamp(ts / 1000) for ts in res_df.DATE.values]
         _test_search_results(self, res_df, start_date, end_date)  # check results
 
-        gd_collection = collection.Collection.from_ids(res_df.ID.values, mask=pdict['mask'],
-                                                       scale_refl=pdict['scale_refl'])
+        gd_collection = collection.Collection.from_ids(res_df.ID.values, mask=pdict['mask'])
         comp_im, comp_id = gd_collection.composite(method)
         comp_fn = download_dir.joinpath(comp_id.replace('/', '-') + '.tif')
         with open(region_filename) as f:
