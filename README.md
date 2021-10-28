@@ -150,10 +150,8 @@ Options:
   -m, --mask / -nm, --no-mask     Do/don't apply (cloud and shadow) nodata
                                   mask(s).  [default: --no-mask]
 
-  -sr, --scale-refl / -nsr, --no-scale-refl
-                                  Scale reflectance bands from 0-10000.
-                                  [default: --no-scale-refl]
-
+  -rs, --resampling [near|bilinear|bicubic]
+                                  Resampling method.  [default: near]
   -o, --overwrite                 Overwrite the destination file if it exists.
                                   [default: prompt the user for confirmation]
 
@@ -192,10 +190,8 @@ Options:
   -m, --mask / -nm, --no-mask     Do/don't apply (cloud and shadow) nodata
                                   mask(s).  [default: --no-mask]
 
-  -sr, --scale-refl / -nsr, --no-scale-refl
-                                  Scale reflectance bands from 0-10000.
-                                  [default: --no-scale-refl]
-
+  -rs, --resampling [near|bilinear|bicubic]
+                                  Resampling method.  [default: near]
   -w, --wait / -nw, --no-wait     Wait / don't wait for export to complete.
                                   [default: --wait]
 
@@ -203,10 +199,10 @@ Options:
 ```
 #### Examples
 ```
-geedim download -i LANDSAT/LC08/C02/T1_L2/LC08_172083_20190128 -b 23.9 -33.6 24 -33.5 --scale-refl --mask
+geedim download -i LANDSAT/LC08/C02/T1_L2/LC08_172083_20190128 -b 23.9 -33.6 24 -33.5 --resampling bilinear --mask
 ```
 ```
-geedim export -i LANDSAT/LC08/C02/T1_L2/LC08_172083_20190128 -b 23.9 -33.6 24 -33.5 -df geedim_test --scale-refl --mask
+geedim export -i LANDSAT/LC08/C02/T1_L2/LC08_172083_20190128 -b 23.9 -33.6 24 -33.5 -df geedim_test --mask
 ```
 
 ### Composite
@@ -238,10 +234,8 @@ Options:
                                   mask(s) before compositing.  [default:
                                   --mask]
 
-  -sr, --scale-refl / -nsr, --no-scale-refl
-                                  Scale reflectance bands from 0-10000.
-                                  [default: --no-scale-refl]
-
+  -rs, --resampling [near|bilinear|bicubic]
+                                  Resampling method.  [default: near]
   --help                          Show this message and exit.
 ```
 #### Example
