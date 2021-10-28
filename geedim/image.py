@@ -465,13 +465,16 @@ class LandsatImage(MaskedImage):
     def _get_image_masks(self, ee_image):
         # get cloud, shadow and fill masks from QA_PIXEL
         qa_pixel = ee_image.select("QA_PIXEL").unmask()
-        fill_mask = qa_pixel.bitwiseAnd(1).eq(0).rename("FILL_MASK")
+
+        # incorporate the existing mask (for zero SR pixels) into the shadow mask
+        sr_bands, non_sr_bands = LandsatImage._split_band_names(ee_image)
+        ee_mask = ee_image.mask().select(sr_bands).reduce(ee.Reducer.allNonZero())
+        fill_mask = qa_pixel.bitwiseAnd(1).eq(0).And(ee_mask).rename("FILL_MASK")
+
         # TODO: include Landsat 8 SR_QA_AEROSOL in cloud mask? it has lots of false positives which skews valid portion
         cloud_mask = qa_pixel.bitwiseAnd((1 << 1) | (1 << 2) | (1 << 3)).neq(0).rename("CLOUD_MASK")
         shadow_mask = qa_pixel.bitwiseAnd(1 << 4).neq(0)
-        # incorporate the existing mask (for zero SR pixels) into the shadow mask
-        zero_sr_mask = ee_image.mask().reduce(ee.Reducer.allNonZero()).Not()
-        shadow_mask = shadow_mask.Or(zero_sr_mask).rename("SHADOW_MASK")
+        shadow_mask = shadow_mask.rename("SHADOW_MASK")
 
         # combine cloud, shadow and fill masks into validity mask
         valid_mask = ((cloud_mask.Or(shadow_mask)).Not()).And(fill_mask).rename("VALID_MASK")
