@@ -608,10 +608,15 @@ class Sentinel2ClImage(MaskedImage):
         shadow_azimuth = ee.Number(-90).add(ee.Number(ee_image.get("MEAN_SOLAR_AZIMUTH_ANGLE")))
         min_scale = get_projection(ee_image).nominalScale()
 
-        # project the the cloud mask in the direction of sun's rays
+        # remove small clouds
+        cloud_mask_open = (
+            cloud_mask.focal_min(self._buffer, "circle", "meters").focal_max(self._buffer, "circle", "meters")
+        )
+
+        # project the opened cloud mask in the direction of sun's rays (i.e. shadows)
         proj_dist_pix = ee.Number(self._cloud_proj_dist * 1000).divide(min_scale)  # projection distance in pixels
         proj_cloud_mask = (
-            cloud_mask.directionalDistanceTransform(shadow_azimuth, proj_dist_pix)
+            cloud_mask_open.directionalDistanceTransform(shadow_azimuth, proj_dist_pix)
             .select("distance")
             .mask()
             .rename("PROJ_CLOUD_MASK")
