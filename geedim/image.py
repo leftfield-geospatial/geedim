@@ -382,21 +382,22 @@ class MaskedImage(Image):
             The cloud/shadow distance score (m) as a single band image.
         """
         radius = 1.5  # morphological pixel radius
-        min_proj = get_projection(ee_image)  # projection corresponding to minimum scale band
-        cloud_pix = ee.Number(cloud_dist).divide(min_proj.nominalScale()).toInt()  # cloud_dist in pixels
+        proj = get_projection(ee_image, min=False)  # use maximum scale projection to save processing time
         if masks is None:
             masks = self._get_image_masks(ee_image)
 
         # combine cloud and shadow masks and morphologically open to remove small isolated patches
         cloud_shadow_mask = masks["cloud_mask"].Or(masks["shadow_mask"])
         cloud_shadow_mask = cloud_shadow_mask.focal_min(radius=radius).focal_max(radius=radius)
+        cloud_pix = ee.Number(cloud_dist).divide(proj.nominalScale()).round()  # cloud_dist in pixels
 
         # distance to nearest cloud/shadow (m)
         score = (
             cloud_shadow_mask.fastDistanceTransform(neighborhood=cloud_pix, units="pixels", metric="squared_euclidean")
             .sqrt()
-            .multiply(min_proj.nominalScale())
+            .multiply(proj.nominalScale())
             .rename("SCORE")
+            .reproject(crs=proj.crs(), scale=proj.nominalScale())   # reproject to force calculation at correct scale
         )
 
         # clip score to cloud_dist and set to 0 in unfilled areas
@@ -595,18 +596,16 @@ class Sentinel2ClImage(MaskedImage):
         """
 
         masks = MaskedImage._get_image_masks(self, ee_image)  # get constant masks from base class
+        proj = get_projection(ee_image, min=False)  # use maximum scale projection to save processing time
 
         # threshold the added cloud probability to get the initial cloud mask
         cloud_prob = ee_image.select("probability").unmask()
         cloud_mask = cloud_prob.gt(self._cloud_prob_thresh).rename("CLOUD_MASK")
 
         # TODO: dilate valid_mask by _buffer ?
-        # TODO: does below work in N hemisphere?
         # See https://en.wikipedia.org/wiki/Solar_azimuth_angle
-
         # get solar azimuth
         shadow_azimuth = ee.Number(-90).add(ee.Number(ee_image.get("MEAN_SOLAR_AZIMUTH_ANGLE")))
-        min_scale = get_projection(ee_image).nominalScale()
 
         # remove small clouds
         cloud_mask_open = (
@@ -614,12 +613,13 @@ class Sentinel2ClImage(MaskedImage):
         )
 
         # project the opened cloud mask in the direction of sun's rays (i.e. shadows)
-        proj_dist_pix = ee.Number(self._cloud_proj_dist * 1000).divide(min_scale)  # projection distance in pixels
+        proj_dist_pix = ee.Number(self._cloud_proj_dist * 1000).divide(proj.nominalScale()).round()  # projection distance in pixels
         proj_cloud_mask = (
             cloud_mask_open.directionalDistanceTransform(shadow_azimuth, proj_dist_pix)
             .select("distance")
             .mask()
             .rename("PROJ_CLOUD_MASK")
+            .reproject(crs=proj.crs(), scale=proj.nominalScale())   # force calculation at correct scale
         )
 
         if self.gd_coll_name == "sentinel2_sr":  # use SCL band to reduce shadow_mask

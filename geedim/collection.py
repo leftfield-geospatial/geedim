@@ -113,7 +113,7 @@ class Collection(object):
     def summary(self):
         """str : Formatted string of Collection.summary_df"""
         return self.summary_df.to_string(
-            float_format="%.2f",
+            float_format="{:.2f}".format,
             formatters={"DATE": lambda x: datetime.strftime(x, "%Y-%m-%d %H:%M")},
             columns=self._summary_key_df.ABBREV,
             index=False,
@@ -150,18 +150,20 @@ class Collection(object):
 
         def calc_stats(ee_image):
             """Server side calculation of validity and score stats within region of interest"""
-            max_proj = geedim.image.get_projection(ee_image, min=False)
             gd_image = self._image_class(ee_image)
+            stats_image = ee.Image([gd_image.masks["valid_mask"], gd_image.score])
+            proj = image.get_projection(stats_image)
+
+            # sum number of image pixels over the region
             region_sum = (
                 ee.Image(1)
-                .reduceRegion(reducer="sum", geometry=region, scale=max_proj.nominalScale(), crs=max_proj.crs())
+                .reduceRegion(reducer="sum", geometry=region, crs=proj.crs(), scale=proj.nominalScale(), bestEffort=True)
             )
 
             # sum VALID_MASK and SCORE over image
             stats = (
-                ee.Image([gd_image.masks["valid_mask"], gd_image.score])
-                .unmask()
-                .reduceRegion(reducer="sum", geometry=region, scale=max_proj.nominalScale(), crs=max_proj.crs())
+                stats_image.unmask()
+                .reduceRegion(reducer="sum", geometry=region, scale=proj.nominalScale(), bestEffort=True)
                 .rename(["VALID_MASK", "SCORE"], ["VALID_PORTION", "AVG_SCORE"])
             )
 
