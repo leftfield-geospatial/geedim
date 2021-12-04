@@ -163,7 +163,7 @@ class Collection(object):
             # sum VALID_MASK and SCORE over image
             stats = (
                 stats_image.unmask()
-                .reduceRegion(reducer="sum", geometry=region, scale=proj.nominalScale(), bestEffort=True)
+                .reduceRegion(reducer="sum", geometry=region, crs=proj.crs(), scale=proj.nominalScale(), bestEffort=True)
                 .rename(["VALID_MASK", "SCORE"], ["VALID_PORTION", "AVG_SCORE"])
             )
 
@@ -182,7 +182,7 @@ class Collection(object):
                 .filterDate(start_date, end_date)
                 .filterBounds(region)
                 .map(calc_stats)
-                .filter(ee.Filter.gt("VALID_PORTION", valid_portion))
+                .filter(ee.Filter.gte("VALID_PORTION", valid_portion))
             )
         finally:
             # update summary_df with image metadata from the filtered collection
@@ -267,12 +267,14 @@ class Collection(object):
         init_list = ee.List([])
 
         def aggregrate_props(ee_image, prop_list):
-            prop = ee.Dictionary()
+            all_props = ee_image.propertyNames()
+            prop_dict = ee.Dictionary()
             for prop_key in self._summary_key_df.PROPERTY.values:
-                prop = prop.set(
-                    prop_key, ee.Algorithms.If(ee_image.get(prop_key), ee_image.get(prop_key), ee.String("None"))
+                prop_dict = prop_dict.set(
+                    prop_key, ee.Algorithms.If(
+                        all_props.contains(prop_key), ee_image.get(prop_key), ee.String("None"))
                 )
-            return ee.List(prop_list).add(prop)
+            return ee.List(prop_list).add(prop_dict)
 
         # retrieve list of dicts of collection image properties (the only call to getInfo() in Collection)
         im_prop_list = ee.List(ee_collection.iterate(aggregrate_props, init_list)).getInfo()

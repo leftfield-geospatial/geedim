@@ -546,7 +546,6 @@ class Sentinel2ClImage(MaskedImage):
         # TODO: provide CLI access to these attributes
 
         # set attributes before their use in __init__ below
-        self._cloud_filter = 60  # Maximum image cloud cover percent allowed in image collection
         self._cloud_prob_thresh = 35  # Cloud probability (%); values greater than are considered cloud
         self._cloud_proj_dist = 1  # Maximum distance (km) to search for cloud shadows from cloud edges
         self._buffer = 100  # Distance (m) to dilate the edge of cloud-identified objects
