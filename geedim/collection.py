@@ -147,41 +147,13 @@ class Collection(object):
             end_date = start_date + timedelta(days=1)
         if end_date <= start_date:
             raise ValueError("`end_date` must be at least a day later than `start_date`")
-
-        def calc_stats(ee_image):
-            """Server side calculation of validity and score stats within region of interest"""
-            gd_image = self._image_class(ee_image)
-            stats_image = ee.Image([gd_image.masks["valid_mask"], gd_image.score])
-            proj = image.get_projection(stats_image)
-
-            # sum number of image pixels over the region
-            region_sum = (
-                ee.Image(1)
-                .reduceRegion(reducer="sum", geometry=region, crs=proj.crs(), scale=proj.nominalScale(), bestEffort=True)
-            )
-
-            # sum VALID_MASK and SCORE over image
-            stats = (
-                stats_image.unmask()
-                .reduceRegion(reducer="sum", geometry=region, crs=proj.crs(), scale=proj.nominalScale(), bestEffort=True)
-                .rename(["VALID_MASK", "SCORE"], ["VALID_PORTION", "AVG_SCORE"])
-            )
-
-            # find average VALID_MASK and SCORE over region (not the same as image if image does not cover region)
-            def region_mean(key, value):
-                return ee.Number(value).divide(ee.Number(region_sum.get("constant")))
-
-            stats = stats.map(region_mean)
-            stats = stats.set("VALID_PORTION", ee.Number(stats.get("VALID_PORTION")).multiply(100))
-            return gd_image.ee_image.set(stats)
-
         try:
             # filter the image collection, finding cloud/shadow masks, and region stats
             self._ee_collection = (
                 self._image_class.ee_collection()
                 .filterDate(start_date, end_date)
                 .filterBounds(region)
-                .map(calc_stats)
+                .map(lambda ee_image: self._image_class.set_region_stats(ee_image, region))
                 .filter(ee.Filter.gte("VALID_PORTION", valid_portion))
             )
         finally:

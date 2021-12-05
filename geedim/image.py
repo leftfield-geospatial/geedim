@@ -22,7 +22,6 @@ import logging
 import ee
 import numpy as np
 import pandas as pd
-
 from geedim import info
 
 
@@ -302,6 +301,14 @@ class MaskedImage(Image):
         ee_image = ee.Image(image_id)
         return cls(ee_image, mask=mask)
 
+    @classmethod
+    def _from_id(cls, image_id, mask=False, region=None):
+        """ Internal method for creating an image with region statistics. """
+        gd_image = cls.from_id(image_id, mask=mask)
+        if region is not None:
+            gd_image._ee_image = cls.set_region_stats(gd_image, region)
+        return gd_image
+
     _gd_coll_name = ""  # geedim image collection name
 
     @staticmethod
@@ -338,6 +345,54 @@ class MaskedImage(Image):
         ee.ImageCollection
         """
         return ee.ImageCollection(info.gd_to_ee[cls._gd_coll_name])
+
+    @classmethod
+    def set_region_stats(cls, image_obj, region):
+        """
+        Set VALID_PORTION and AVG_SCORE statistics for a specified region in an image object.
+
+        Args:
+            image_obj: ee.Image, geedim.image.Image
+                        Image object whose region statistics to find and set
+            region : dict, geojson, ee.Geometry
+                     Region inside of which to find statistics
+
+        Returns:
+        ee.Image
+            EE image with VALID_PORTION and AVG_SCORE properties set.
+        """
+        if isinstance(image_obj, ee.Image):
+            gd_image = cls(image_obj)
+        elif isinstance(image_obj, cls):
+            gd_image = image_obj
+        else:
+            raise TypeError(f'Unexpected image_obj type: {type(image_obj)}')
+
+        stats_image = ee.Image([gd_image.masks["valid_mask"], gd_image.score])
+        proj = get_projection(stats_image, min=False)
+
+        # sum number of image pixels over the region
+        region_sum = (
+            ee.Image(1)
+            .reduceRegion(reducer="sum", geometry=region, crs=proj.crs(), scale=proj.nominalScale(),
+                          bestEffort=True)
+        )
+
+        # sum VALID_MASK and SCORE over image
+        stats = (
+            stats_image.unmask()
+            .reduceRegion(reducer="sum", geometry=region, crs=proj.crs(), scale=proj.nominalScale(),
+                          bestEffort=True)
+            .rename(["VALID_MASK", "SCORE"], ["VALID_PORTION", "AVG_SCORE"])
+        )
+
+        # find average VALID_MASK and SCORE over region (not the same as image if image does not cover region)
+        def region_mean(key, value):
+            return ee.Number(value).divide(ee.Number(region_sum.get("constant")))
+
+        stats = stats.map(region_mean)
+        stats = stats.set("VALID_PORTION", ee.Number(stats.get("VALID_PORTION")).multiply(100))
+        return gd_image.ee_image.set(stats)
 
     def _get_image_masks(self, ee_image):
         """
@@ -397,7 +452,7 @@ class MaskedImage(Image):
             .sqrt()
             .multiply(proj.nominalScale())
             .rename("SCORE")
-            .reproject(crs=proj.crs(), scale=proj.nominalScale())   # reproject to force calculation at correct scale
+            .reproject(crs=proj.crs(), scale=proj.nominalScale())  # reproject to force calculation at correct scale
         )
 
         # clip score to cloud_dist and set to 0 in unfilled areas
@@ -574,7 +629,6 @@ class Sentinel2ClImage(MaskedImage):
         # get cloud probability for ee_image and add as a band
         cloud_prob = ee.Image(f"COPERNICUS/S2_CLOUD_PROBABILITY/{split_id(image_id)[1]}")
         ee_image = ee_image.addBands(cloud_prob, overwrite=True)
-
         return cls(ee_image, mask=mask)
 
     def _get_image_masks(self, ee_image):
@@ -612,13 +666,13 @@ class Sentinel2ClImage(MaskedImage):
         )
 
         # project the opened cloud mask in the direction of sun's rays (i.e. shadows)
-        proj_dist_pix = ee.Number(self._cloud_proj_dist * 1000).divide(proj.nominalScale()).round()  # projection distance in pixels
+        proj_dist_pix = ee.Number(self._cloud_proj_dist * 1000).divide(proj.nominalScale()).round()
         proj_cloud_mask = (
             cloud_mask_open.directionalDistanceTransform(shadow_azimuth, proj_dist_pix)
             .select("distance")
             .mask()
             .rename("PROJ_CLOUD_MASK")
-            .reproject(crs=proj.crs(), scale=proj.nominalScale())   # force calculation at correct scale
+            .reproject(crs=proj.crs(), scale=proj.nominalScale())  # force calculation at correct scale
         )
 
         if self.gd_coll_name == "sentinel2_sr":  # use SCL band to reduce shadow_mask
