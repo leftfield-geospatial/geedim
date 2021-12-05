@@ -72,7 +72,7 @@ class TestCli(unittest.TestCase):
         crs = 'EPSG:3857'
         scale = 60
         im_param_list = [
-            ['download', '-i', 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190112', '-r', str(region_filename), '-dd',
+            ['download', '-i', image_id, '-r', str(region_filename), '-dd',
              str(download_dir), '--crs', crs, '--scale', scale, '-o', '-m'],
         ]
 
@@ -85,8 +85,10 @@ class TestCli(unittest.TestCase):
                     region = json.load(f)
 
                 filename = download_dir.joinpath(image_id.replace('/', '-') + '.tif')
-                _test_image_file(self, image_obj=image_id, filename=filename, region=region, crs=crs,
-                                 scale=scale, mask=True)
+                ee_coll_name = image.split_id(image_id)[0]
+                gd_image = image.get_class(ee_coll_name)._from_id(image_id, mask=True, region=region)
+                _test_image_file(self, image_obj=gd_image, filename=filename, region=region, crs=crs, scale=scale,
+                                 mask=True)
 
     def test_export(self):
         """ Test export command on one image, without waiting for completion """
@@ -158,5 +160,4 @@ class TestCli(unittest.TestCase):
         comp_fn = download_dir.joinpath(comp_id.replace('/', '-') + '.tif')
         with open(region_filename) as f:
             region = json.load(f)
-        _test_image_file(self, image_obj=image.Image(comp_im), filename=comp_fn, region=region,
-                         **pdict)
+        _test_image_file(self, image_obj=image.Image(comp_im), filename=comp_fn, region=region, **pdict)

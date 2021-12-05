@@ -127,3 +127,16 @@ def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=Non
                 test_case.assertTrue(sr_band.mean() > 100, f'Mean {band_row.id} reflectance > 100')
                 test_case.assertTrue(len(np.unique(sr_band)) > 100, f'Distinct {band_row.id} reflectance values > 100')
 
+        # where search stats exist, check they match image content
+        if 'AVG_SCORE' and 'VALID_PORTION' in gd_info['properties']:
+            avg_score = gd_info['properties']['AVG_SCORE']
+            valid_portion = gd_info['properties']['VALID_PORTION']
+            valid_mask = im.read(im.descriptions.index('VALID_MASK') + 1, masked=False)
+            score = im.read(im.descriptions.index('SCORE') + 1, masked=False)
+            if mask:
+                valid_mask = (valid_mask != im.nodata)
+                score[~valid_mask] = 0
+            test_case.assertAlmostEqual(avg_score, score.mean(), delta=20, msg='EE and file avg scores match')
+            test_case.assertAlmostEqual(valid_portion, 100*valid_mask.mean(), delta=5,
+                                        msg='EE and file valid portions match')
+

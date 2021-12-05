@@ -108,7 +108,7 @@ class TestApi(unittest.TestCase):
             gd_coll_name = info.ee_to_gd[ee_coll_name]
             with self.subTest('Download', **impdict):
                 # create image.MaskedImage
-                gd_image = image.get_class(gd_coll_name).from_id(impdict["image_id"], mask=impdict['mask'])
+                gd_image = image.get_class(gd_coll_name)._from_id(impdict["image_id"], mask=impdict['mask'], region=region)
                 # create a filename for these parameters
                 name = impdict["image_id"].replace('/', '-')
                 crs_str = impdict["crs"].replace(':', '_') if impdict["crs"] else 'None'
