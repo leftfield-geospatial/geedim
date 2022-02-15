@@ -216,8 +216,8 @@ class Collection(object):
         comp_image = comp_image.set("system:id", comp_id)
         # TODO: persist source CRS and scale by reprojecting?
 
-        CompositeResult = collections.namedtuple("CompositeResult", ["image", "id"])
-        return CompositeResult(comp_image, comp_id)
+        composite_result = collections.namedtuple("CompositeResult", ["image", "id"])
+        return composite_result(comp_image, comp_id)
 
     def _get_summary_df(self, ee_collection):
         """
@@ -257,13 +257,14 @@ class Collection(object):
             return pd.DataFrame([], columns=self._summary_key_df.ABBREV)  # return empty dataframe
 
         # Convert ee.Date to python datetime
+        start_time_key = "system:time_start"
         for i, prop_dict in enumerate(im_prop_list):
-            if "system:time_start" in prop_dict:
-                prop_dict["system:time_start"] = datetime.utcfromtimestamp(prop_dict["system:time_start"] / 1000)
+            if start_time_key in prop_dict:
+                prop_dict[start_time_key] = datetime.utcfromtimestamp(prop_dict[start_time_key] / 1000)
 
         # convert property list to DataFrame
         im_prop_df = pd.DataFrame(im_prop_list, columns=im_prop_list[0].keys())
-        im_prop_df = im_prop_df.sort_values(by="system:time_start").reset_index(drop=True)  # sort by acquisition time
+        im_prop_df = im_prop_df.sort_values(by=start_time_key).reset_index(drop=True)  # sort by acquisition time
         im_prop_df = im_prop_df.rename(
             columns=dict(zip(self._summary_key_df.PROPERTY, self._summary_key_df.ABBREV))
         )  # abbreviate column names

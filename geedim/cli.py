@@ -110,6 +110,7 @@ def _interpret_crs(crs):
             crs = rio_crs.CRS.from_string(crs).to_wkt()
     return crs
 
+
 def _export_download(res=_CmdChainResults(), do_download=True, **kwargs):
     """ Helper function to execute export/download commands """
 
@@ -286,7 +287,7 @@ def search(res, collection, start_date, end_date=None, bbox=None, region=None, v
         click.echo(f'Search Results:\n\n{gd_collection.summary}')
 
     # write results to file
-    if (output is not None):
+    if output is not None:
         output = pathlib.Path(output)
         if output.suffix == '.csv':
             im_df.to_csv(output, index=False)
@@ -361,8 +362,8 @@ cli.add_command(download)
     required=False,
 )
 @click.pass_context
-def export(ctx, image_id=(), bbox=None, region=None, drive_folder='', crs=None, scale=None, mask=False, resampling='near',
-           wait=True):
+def export(ctx, image_id=(), bbox=None, region=None, drive_folder='', crs=None, scale=None, mask=False,
+           resampling='near', wait=True):
     """ Export image(s) to Google Drive, with cloud and shadow masking """
     _export_download(res=ctx.obj, do_download=False, **ctx.params)
 
@@ -396,7 +397,7 @@ def composite(res, image_id=None, mask=True, method='q_mosaic', resampling='near
 
     # get image ids from command line or chained search command
     image_id = list(image_id)
-    if (image_id is None or len(image_id) == 0):
+    if image_id is None or len(image_id) == 0:
         if res.search_ids is None:
             raise click.BadOptionUsage('image_id', 'Either pass --id, or chain this command with a successful `search`')
         else:

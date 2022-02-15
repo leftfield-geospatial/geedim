@@ -27,9 +27,12 @@ from xml.etree import ElementTree
 
 import click
 import ee
+import numpy as np
 import requests
 
 from geedim import image
+
+_footprint_key = "system:footprint"
 
 
 def write_pam_xml(obj, filename):
@@ -54,8 +57,8 @@ def write_pam_xml(obj, filename):
         raise TypeError(f"Unsupported type: {obj.__class__}")
 
     # remove footprint if it exists
-    if "system:footprint" in gd_info["properties"]:
-        gd_info["properties"].pop("system:footprint")
+    if _footprint_key in gd_info["properties"]:
+        gd_info["properties"].pop(_footprint_key)
 
     # construct xml tree
     root = ElementTree.Element("PAMDataset")
@@ -82,6 +85,7 @@ def write_pam_xml(obj, filename):
 
 class _ExportImage(image.Image):
     """ Helper class for determining export/download crs, scale and region parameters"""
+
     def __init__(self, image_obj, name="Image", exp_region=None, exp_crs=None, exp_scale=None, resampling='near'):
         if isinstance(image_obj, image.Image):
             image.Image.__init__(self, image_obj.ee_image)
@@ -96,7 +100,6 @@ class _ExportImage(image.Image):
         self.resampling = resampling
         # TODO - what resampling to use and whether to expose CLI/API
 
-
     def parse_attributes(self):
         """ Set the exp_region, exp_crs and exp_scale attributes """
 
@@ -104,28 +107,28 @@ class _ExportImage(image.Image):
             self._info["id"] = pathlib.Path(self.name).stem
 
         # if the image is in WGS84 and or has no scale (probable composite), then exit
-        if ((self.scale is None) and (self.exp_scale is None)) or ((self.crs is None) and (self.exp_crs is None)):
+        if (not self.scale and not self.exp_scale) or (not self.crs and not self.exp_crs):
             raise ValueError(f'{self.info["id"]} appears to be a composite in WGS84, specify a scale and CRS')
 
         # set resampling if image is not a composite
-        if (self.scale is not None) and (self.crs is not None) and (self.resampling != 'near'):
+        if self.scale and self.crs and self.resampling != 'near':
             self._ee_image = self._ee_image.resample(self.resampling)
 
         # If CRS is the native MODIS CRS, then exit due to GEE bug
-        if (self.crs == "SR-ORG:6974") and (self.exp_crs is None):
+        if (self.crs == "SR-ORG:6974") and not self.exp_crs:
             raise ValueError(
                 "There is an earth engine bug exporting in SR-ORG:6974, specify another CRS: "
                 "https://issuetracker.google.com/issues/194561313"
             )
 
         if self.exp_crs is None:
-            self.exp_crs = self.crs  # CRS corresponding to minimum scale band
+            self.exp_crs = self.crs     # CRS corresponding to minimum scale band
         if self.exp_scale is None:
             self.exp_scale = self.scale  # minimum scale of the bands
         if self.exp_region is None:
             # use image granule footprint
-            if "system:footprint" in self.info["properties"]:
-                self.exp_region = self.info["properties"]["system:footprint"]
+            if _footprint_key in self.info["properties"]:
+                self.exp_region = self.info["properties"][_footprint_key]
                 click.secho(f'{self.info["id"]}: region not specified, setting to image footprint')
             else:
                 raise AttributeError(f'{self.info["id"]} does not have a footprint, specify a region to download')
@@ -213,7 +216,7 @@ def monitor_export_task(task, label=None):
     while "progress" not in status["metadata"]:
         time.sleep(pause)
         status = ee.data.getOperation(task.name)  # get task status
-        click.echo(f"\rPreparing {label} {toggles[toggle_count % 4]}", nl="")
+        click.echo(f"\rPreparing {label} {toggles[toggle_count % 4]}", nl=False)
         toggle_count += 1
     click.echo(f"\rPreparing {label}  done")
 
@@ -227,7 +230,7 @@ def monitor_export_task(task, label=None):
         bar.update(bar_len - bar.pos)
 
     if status["metadata"]["state"] != "SUCCEEDED":
-        raise Exception(f"Export failed \n{status}")
+        raise IOError(f"Export failed \n{status}")
 
 
 def download_image(image_obj, filename, region=None, crs=None, scale=None, resampling='near', overwrite=False):
@@ -254,9 +257,9 @@ def download_image(image_obj, filename, region=None, crs=None, scale=None, resam
     overwrite : bool, optional
                 Overwrite the destination file if it exists, otherwise prompt the user (default: True)
     """
-    filename = pathlib.Path(filename)
-    exp_image = _ExportImage(image_obj, name=filename, exp_region=region, exp_crs=crs, exp_scale=scale,
+    exp_image = _ExportImage(image_obj, name=str(filename), exp_region=region, exp_crs=crs, exp_scale=scale,
                              resampling=resampling)
+    filename = pathlib.Path(filename)
     exp_image.parse_attributes()
 
     # get download link
@@ -271,7 +274,7 @@ def download_image(image_obj, filename, region=None, crs=None, scale=None, resam
     except ee.ee_exception.EEException as ex:
         # Add to exception message when the image is too large to download
         if re.match(r"Total request size \(.*\) must be less than or equal to .*", str(ex)):
-            raise Exception(f"The requested image is too large to download, reduce its size, or export\n({str(ex)})")
+            raise IOError(f"The requested image is too large to download, reduce its size, or export\n({str(ex)})")
         else:
             raise ex
 
@@ -285,11 +288,12 @@ def download_image(image_obj, filename, region=None, crs=None, scale=None, resam
             with click.progressbar(
                     r.iter_content(chunk_size=csize),
                     label=f"{filename.stem[:80]}:",
-                    length=int(r.headers["Content-length"]) / csize,
+                    length=np.ceil(int(r.headers["Content-length"]) / csize).astype('int'),
                     show_pos=True,
             ) as bar:
                 # override the bar's formatting function to show progress in MB
-                bar.format_pos = (lambda: f"{bar.pos * csize / (2 ** 20):.1f}/{bar.length * csize / (2 ** 20):.1f} MB\r")
+                bar.format_pos = (
+                    lambda: f"{bar.pos * csize / (2 ** 20):.1f}/{bar.length * csize / (2 ** 20):.1f} MB\r")
                 for chunk in bar:
                     f.write(chunk)
 

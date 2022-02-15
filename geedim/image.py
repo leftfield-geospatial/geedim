@@ -199,8 +199,8 @@ if importlib.util.find_spec("rasterio"):  # if rasterio is installed
         finally:
             logging.getLogger("rasterio").setLevel(logging.WARNING)
 
-        ImageBounds = collections.namedtuple('ImageBounds', ['bounds', 'crs'])
-        return ImageBounds(src_bbox_wgs84, im.crs.to_epsg())
+        image_bounds = collections.namedtuple('ImageBounds', ['bounds', 'crs'])
+        return image_bounds(src_bbox_wgs84, im.crs.to_epsg())
 
 
 ##
@@ -266,7 +266,6 @@ class MaskedImage(Image):
         # construct the cloud/shadow masks and cloudless score
         self._masks = self._get_image_masks(ee_image)
         self._score = self._get_image_score(ee_image)
-        # ee_image = ee_image.resample('bilinear')
         self._ee_image = self._process_image(ee_image, mask=mask, masks=self._masks, score=self._score)
         self._info = None
         self._projection = None
@@ -360,9 +359,9 @@ class MaskedImage(Image):
         mask : bool, optional
                Apply the validity (cloud & shadow) mask to the image (default: False)
 
-        Returns:
-        --------
-        result: ee.Image
+        Returns
+        -------
+         : ee.Image
             EE image with VALID_PORTION and AVG_SCORE properties set.
         """
         if isinstance(image_obj, ee.Image):
@@ -519,8 +518,8 @@ class LandsatImage(MaskedImage):
 
         sr_bands = ee.List(all_bands.iterate(add_refl_bands, init_bands))
         non_sr_bands = all_bands.removeAll(sr_bands)
-        SplitBandNames = collections.namedtuple("SplitBandNames", ["sr", "non_sr"])
-        return SplitBandNames(sr_bands, non_sr_bands)
+        split_band_names = collections.namedtuple("SplitBandNames", ["sr", "non_sr"])
+        return split_band_names(sr_bands, non_sr_bands)
 
     def _get_image_masks(self, ee_image):
         # get cloud, shadow and fill masks from QA_PIXEL
@@ -725,8 +724,8 @@ class Sentinel2ClImage(MaskedImage):
         s2_cloudless_col = ee.ImageCollection("COPERNICUS/S2_CLOUD_PROBABILITY")
 
         # create a collection of index-matched images from the SR/TOA and cloud probability collections
-        filter = ee.Filter.equals(leftField="system:index", rightField="system:index")
-        inner_join = ee.ImageCollection(ee.Join.inner().apply(s2_sr_toa_col, s2_cloudless_col, filter))
+        filt = ee.Filter.equals(leftField="system:index", rightField="system:index")
+        inner_join = ee.ImageCollection(ee.Join.inner().apply(s2_sr_toa_col, s2_cloudless_col, filt))
 
         # re-configure the collection so that cloud probability is added as a band to the SR/TOA image
         def map(feature):
