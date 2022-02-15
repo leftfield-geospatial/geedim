@@ -24,18 +24,25 @@ modis_nbar | [MODIS/006/MCD43A4](https://developers.google.com/earth-engine/data
 geedim is a python 3 library, and requires users to be registered with [Google Earth Engine](https://signup.earthengine.google.com).
 
 ## Installation
-It can be installed from [PyPI](https://pypi.org) with:
+`geedim` is available via `pip` and `conda`.  
+### conda
+The [Miniconda](https://docs.conda.io/en/latest/miniconda.html) installation provides a minimal `conda`.
+```shell
+$ conda install -c conda-forge geedim
 ```
-pip install geedim
-````
+### pip
+```shell
+$ pip install geedim
+```
+
 Alternatively, the repository can be cloned and linked into your python environment with:
-```
-git clone https://github.com/dugalh/geedim.git
-pip install -e geedim
+```shell
+$ git clone https://github.com/dugalh/geedim.git
+$ pip install -e geedim
 ```
 Following installation, Earth Engine must be authenticated:
-```
-earthengine authenticate
+```shell
+$ earthengine authenticate
 ```
 ## Quick Start
 Search for Landsat 8 images
@@ -281,11 +288,12 @@ export.download_image(comp_res.image, 's2_comp_image.tif', region=region, crs='E
 This project is licensed under the terms of the [Apache-2.0 License](LICENSE).
 
 ## Contributing
-Contributions are welcome!  Please report any bugs or contact me with questions [here](https://github.com/dugalh/geedim/issues).
-
-## Author
-**Dugal Harris** - [dugalh@gmail.com](mailto:dugalh@gmail.com)
+Contributions are welcome!  Please report bugs or contact me with questions [here](https://github.com/dugalh/geedim/issues).
 
 ## Credits
 - Medoid compositing was adapted from [gee_tools](https://github.com/gee-community/gee_tools) under the terms of the [MIT license](https://github.com/gee-community/gee_tools/blob/master/LICENSE).
 - The CLI was informed by [landsatxplore](https://github.com/yannforget/landsatxplore).
+
+## Author
+**Dugal Harris** - [dugalh@gmail.com](mailto:dugalh@gmail.com)
+
