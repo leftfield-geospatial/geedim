@@ -37,7 +37,7 @@ class _CmdChainResults(object):
         self.comp_id = None
 
 
-def _extract_region(region=None, bbox=None, region_buf=5):
+def _extract_region(region=None, bbox=None, region_buf=10):
     """ Return geojson dict from region or bbox parameters """
 
     if (bbox is None or len(bbox) == 0) and (region is None):
@@ -97,11 +97,24 @@ def _create_im_list(ids, **kwargs):
     return im_list
 
 
+def _interpret_crs(crs):
+    """ return a CRS string from WKT file / EPSG string. """
+    if crs is not None:
+        wkt_fn = pathlib.Path(crs)
+        if wkt_fn.exists():  # read WKT from file, if it exists
+            with open(wkt_fn, 'r') as f:
+                crs = f.read()
+
+        if importlib.util.find_spec("rasterio"):  # clean WKT with rasterio if it is installed
+            from rasterio import crs as rio_crs
+            crs = rio_crs.CRS.from_string(crs).to_wkt()
+    return crs
+
 def _export_download(res=_CmdChainResults(), do_download=True, **kwargs):
     """ Helper function to execute export/download commands """
 
-    ArgTuple = namedtuple('ArgTuple', kwargs)
-    params = ArgTuple(**kwargs)
+    arg_tuple = namedtuple('ArgTuple', kwargs)
+    params = arg_tuple(**kwargs)
 
     # get the download/export region
     if (params.region is None) and (params.bbox is None or len(params.bbox) == 0):
@@ -114,16 +127,7 @@ def _export_download(res=_CmdChainResults(), do_download=True, **kwargs):
         region = _extract_region(region=params.region, bbox=params.bbox)  # get region geojson
 
     # interpret the CRS
-    crs = params.crs
-    if crs is not None:
-        wkt_fn = pathlib.Path(params.crs)
-        if wkt_fn.exists():     # read WKT from file, if it exists
-            with open(wkt_fn, 'r') as f:
-                crs = f.read()
-
-        if importlib.util.find_spec("rasterio"):  # clean WKT with rasterio if it is installed
-            from rasterio import crs as rio_crs
-            crs = rio_crs.CRS.from_string(crs).to_wkt()
+    crs = _interpret_crs(params.crs)
 
     # create a list of Image objects and names
     im_list = []
@@ -131,10 +135,10 @@ def _export_download(res=_CmdChainResults(), do_download=True, **kwargs):
         im_list.append(dict(image=res.comp_image, name=res.comp_id.replace('/', '-')))
     elif res.search_ids is not None:  # download/export chained with search command
         im_list = _create_im_list(res.search_ids, mask=params.mask)
-    elif len(params.id) > 0:  # download/export image ids specified on command line
-        im_list = _create_im_list(params.id, mask=params.mask)
+    elif len(params.image_id) > 0:  # download/export image ids specified on command line
+        im_list = _create_im_list(params.image_id, mask=params.mask)
     else:
-        raise click.BadOptionUsage('id',
+        raise click.BadOptionUsage('image_id',
                                    'Either pass --id, or chain this command with a successful `search` or `composite`')
 
     # download/export the image list
@@ -168,6 +172,7 @@ region_option = click.option(
 image_id_option = click.option(
     "-i",
     "--id",
+    "image_id",
     type=click.STRING,
     help="Earth engine image ID(s).",
     required=False,
@@ -289,7 +294,6 @@ def search(res, collection, start_date, end_date=None, bbox=None, region=None, v
             im_df.to_json(output, orient='index')
         else:
             raise ValueError(f'Unknown output file extension: {output.suffix}')
-    return
 
 
 cli.add_command(search)
@@ -323,7 +327,7 @@ cli.add_command(search)
     show_default=False,
 )
 @click.pass_context
-def download(ctx, id=(), bbox=None, region=None, download_dir=os.getcwd(), crs=None, scale=None, mask=False,
+def download(ctx, image_id=(), bbox=None, region=None, download_dir=os.getcwd(), crs=None, scale=None, mask=False,
              resampling='near', overwrite=False):
     """ Download image(s), with cloud and shadow masking """
     _export_download(res=ctx.obj, do_download=True, **ctx.params)
@@ -357,7 +361,7 @@ cli.add_command(download)
     required=False,
 )
 @click.pass_context
-def export(ctx, id=(), bbox=None, region=None, drive_folder='', crs=None, scale=None, mask=False, resampling='near',
+def export(ctx, image_id=(), bbox=None, region=None, drive_folder='', crs=None, scale=None, mask=False, resampling='near',
            wait=True):
     """ Export image(s) to Google Drive, with cloud and shadow masking """
     _export_download(res=ctx.obj, do_download=False, **ctx.params)
@@ -387,19 +391,19 @@ cli.add_command(export)
 )
 @resampling_option
 @click.pass_obj
-def composite(res, id=None, mask=True, method='q_mosaic', resampling='near'):
+def composite(res, image_id=None, mask=True, method='q_mosaic', resampling='near'):
     """ Create a cloud-free composite image """
 
     # get image ids from command line or chained search command
-    id = list(id)
-    if (id is None or len(id) == 0):
+    image_id = list(image_id)
+    if (image_id is None or len(image_id) == 0):
         if res.search_ids is None:
-            raise click.BadOptionUsage('id', 'Either pass --id, or chain this command with a successful `search`')
+            raise click.BadOptionUsage('image_id', 'Either pass --id, or chain this command with a successful `search`')
         else:
-            id = res.search_ids
+            image_id = res.search_ids
             res.search_ids = None
 
-    gd_collection = coll_api.Collection.from_ids(id, mask=mask)
+    gd_collection = coll_api.Collection.from_ids(image_id, mask=mask)
     res.comp_image, res.comp_id = gd_collection.composite(method=method, resampling=resampling)
 
 
