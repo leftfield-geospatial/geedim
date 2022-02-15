@@ -15,6 +15,48 @@
 """
 # Metadata for geedim supported Earth Engine collections
 collection_info = {
+"landsat4_c2_l2": {
+    "start_date": "1982-08-22",
+    "end_date": "1993-06-24",
+    "ee_coll_name": "LANDSAT/LT04/C02/T1_L2",
+    "bands": [
+        {"id": "SR_B1", "name": "blue", "abbrev": "B", "bw_start": 0.45, "bw_end": 0.52, "res": 30},
+        {"id": "SR_B2", "name": "green", "abbrev": "G", "bw_start": 0.52, "bw_end": 0.60, "res": 30},
+        {"id": "SR_B3", "name": "red", "abbrev": "R", "bw_start": 0.63, "bw_end": 0.69, "res": 30},
+        {"id": "SR_B4", "name": "near infrared", "abbrev": "NIR", "bw_start": 0.77, "bw_end": 0.90, "res": 30},
+        {"id": "SR_B5", "name": "shortwave infrared 1", "abbrev": "SWIR1", "bw_start": 1.55, "bw_end": 1.75, "res": 30},
+        {"id": "SR_B7", "name": "shortwave infrared 2", "abbrev": "SWIR2", "bw_start": 2.08, "bw_end": 2.35, "res": 30},
+    ],
+    "properties": [
+        {"PROPERTY": "system:id", "ABBREV": "ID", "DESCRIPTION": "Earth Engine image id"},
+        {"PROPERTY": "system:time_start", "ABBREV": "DATE", "DESCRIPTION": "Image capture date/time (UTC)"},
+        {"PROPERTY": "VALID_PORTION", "ABBREV": "VALID", "DESCRIPTION": "Portion of cloud and shadow free pixels (%)"},
+        {"PROPERTY": "AVG_SCORE", "ABBREV": "SCORE", "DESCRIPTION": "Average distance to cloud/shadow (m)"},
+        {"PROPERTY": "GEOMETRIC_RMSE_MODEL", "ABBREV": "GRMSE", "DESCRIPTION": "Orthorectification RMSE (m)"},
+        {"PROPERTY": "SUN_AZIMUTH", "ABBREV": "SAA", "DESCRIPTION": "Solar azimuth angle (deg)"},
+        {"PROPERTY": "SUN_ELEVATION", "ABBREV": "SEA", "DESCRIPTION": "Solar elevation angle (deg)"}
+    ]},
+"landsat5_c2_l2": {
+    "start_date": "1984-03-16",
+    "end_date": "2012-05-05",
+    "ee_coll_name": "LANDSAT/LT05/C02/T1_L2",
+    "bands": [
+        {"id": "SR_B1", "name": "blue", "abbrev": "B", "bw_start": 0.45, "bw_end": 0.52, "res": 30},
+        {"id": "SR_B2", "name": "green", "abbrev": "G", "bw_start": 0.52, "bw_end": 0.60, "res": 30},
+        {"id": "SR_B3", "name": "red", "abbrev": "R", "bw_start": 0.63, "bw_end": 0.69, "res": 30},
+        {"id": "SR_B4", "name": "near infrared", "abbrev": "NIR", "bw_start": 0.77, "bw_end": 0.90, "res": 30},
+        {"id": "SR_B5", "name": "shortwave infrared 1", "abbrev": "SWIR1", "bw_start": 1.55, "bw_end": 1.75, "res": 30},
+        {"id": "SR_B7", "name": "shortwave infrared 2", "abbrev": "SWIR2", "bw_start": 2.08, "bw_end": 2.35, "res": 30},
+    ],
+    "properties": [
+        {"PROPERTY": "system:id", "ABBREV": "ID", "DESCRIPTION": "Earth Engine image id"},
+        {"PROPERTY": "system:time_start", "ABBREV": "DATE", "DESCRIPTION": "Image capture date/time (UTC)"},
+        {"PROPERTY": "VALID_PORTION", "ABBREV": "VALID", "DESCRIPTION": "Portion of cloud and shadow free pixels (%)"},
+        {"PROPERTY": "AVG_SCORE", "ABBREV": "SCORE", "DESCRIPTION": "Average distance to cloud/shadow (m)"},
+        {"PROPERTY": "GEOMETRIC_RMSE_MODEL", "ABBREV": "GRMSE", "DESCRIPTION": "Orthorectification RMSE (m)"},
+        {"PROPERTY": "SUN_AZIMUTH", "ABBREV": "SAA", "DESCRIPTION": "Solar azimuth angle (deg)"},
+        {"PROPERTY": "SUN_ELEVATION", "ABBREV": "SEA", "DESCRIPTION": "Solar elevation angle (deg)"}
+    ]},
 "landsat7_c2_l2": {
     "start_date": "1999-01-01",
     "end_date": None,

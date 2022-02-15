@@ -77,17 +77,22 @@ class TestApi(unittest.TestCase):
                 self._test_image(**im_param_dict)
 
     def test_search(self):
-        """ Test search on all supported image collections.  """
+        """ Test search on supported image collections.  """
         region = {"type": "Polygon",
                   "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
-        start_date = datetime.strptime('2019-02-01', '%Y-%m-%d')
-        end_date = start_date + timedelta(days=32)
+        search_date_dict = {'landsat5_c2_l2': ['2005-01-01', '2005-06-01'],
+                            'landsat7_c2_l2': ['2019-01-01', '2019-02-01'],
+                            'landsat8_c2_l2': ['2019-01-01', '2019-02-01'],
+                            'sentinel2_toa': ['2019-01-01', '2019-02-01'],
+                            'sentinel2_sr': ['2019-01-01', '2019-02-01'],
+                            'modis_nbar': ['2019-01-01', '2019-02-01']}
         valid_portion = 10
-        for gd_coll_name in info.gd_to_ee.keys():
+        for gd_coll_name, search_dates in search_date_dict.items():
+            # find search start / end dates based on collection start / end
             with self.subTest('Search', gd_coll_name=gd_coll_name):
                 gd_collection = collection.Collection(gd_coll_name)
-                res_df = gd_collection.search(start_date, end_date, region, valid_portion=valid_portion)
-                _test_search_results(self, res_df, start_date, end_date, valid_portion=valid_portion)
+                res_df = gd_collection.search(search_dates[0], search_dates[1], region, valid_portion=valid_portion)
+                _test_search_results(self, res_df, search_dates[0], search_dates[1], valid_portion=valid_portion)
 
     def test_download(self):
         """ Test download of images from different collections, and with different crs, and scale params. """

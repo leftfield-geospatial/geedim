@@ -122,20 +122,22 @@ class Collection(object):
 
     composite_methods = ["q_mosaic", "mosaic", "median", "medoid"]  # supported composite methods
 
-    def search(self, start_date, end_date, region, valid_portion=0):
+    def search(self, start_date, end_date, region, valid_portion=0, mask=False):
         """
         Search for images based on date, region etc criteria
 
         Parameters
         ----------
         start_date : datetime.datetime
-                     Start image capture date
+                     Start image capture date.
         end_date : datetime.datetime
-                   End image capture date (if None, then set to start_date + 1 day)
+                   End image capture date (if None, then set to start_date + 1 day).
         region : dict, geojson, ee.Geometry
-                 Polygon in WGS84 specifying a region that images should intersect
+                 Polygon in WGS84 specifying a region that images should intersect.
         valid_portion: int, optional
-                       Minimum portion (%) of image pixels that should be valid (not cloud/shadow)
+                       Minimum portion (%) of image pixels that should be valid (not cloud/shadow).
+        mask : bool, optional
+               Apply a validity (cloud & shadow) mask to the returned images (default: False).
 
         Returns
         -------
@@ -153,7 +155,7 @@ class Collection(object):
                 self._image_class.ee_collection()
                 .filterDate(start_date, end_date)
                 .filterBounds(region)
-                .map(lambda ee_image: self._image_class.set_region_stats(ee_image, region))
+                .map(lambda ee_image: self._image_class.set_region_stats(ee_image, region, mask=mask))
                 .filter(ee.Filter.gte("VALID_PORTION", valid_portion))
             )
         finally:
@@ -168,7 +170,7 @@ class Collection(object):
 
         Note: composite() can be called on a filtered collection created by search(..), or on a collection created with
               fromIds(...)
-              The `mask` parameter in search(...) and fromId(...) affects the composite and should generally be
+              The `mask` parameter Collection.fromIds(...) affects the composite and should generally be
               True so that cloud/shadow pixels are excluded.
 
         Parameters

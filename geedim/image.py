@@ -347,22 +347,26 @@ class MaskedImage(Image):
         return ee.ImageCollection(info.gd_to_ee[cls._gd_coll_name])
 
     @classmethod
-    def set_region_stats(cls, image_obj, region):
+    def set_region_stats(cls, image_obj, region, mask=False):
         """
         Set VALID_PORTION and AVG_SCORE statistics for a specified region in an image object.
 
-        Args:
-            image_obj: ee.Image, geedim.image.Image
-                        Image object whose region statistics to find and set
-            region : dict, geojson, ee.Geometry
-                     Region inside of which to find statistics
+        Parameters
+        ----------
+        image_obj: ee.Image, geedim.image.Image
+                    Image object whose region statistics to find and set
+        region : dict, geojson, ee.Geometry
+                 Region inside of which to find statistics
+        mask : bool, optional
+               Apply the validity (cloud & shadow) mask to the image (default: False)
 
         Returns:
-        ee.Image
+        --------
+        result: ee.Image
             EE image with VALID_PORTION and AVG_SCORE properties set.
         """
         if isinstance(image_obj, ee.Image):
-            gd_image = cls(image_obj)
+            gd_image = cls(image_obj, mask=mask)
         elif isinstance(image_obj, cls):
             gd_image = image_obj
         else:
@@ -546,6 +550,16 @@ class Landsat8Image(LandsatImage):
 class Landsat7Image(LandsatImage):
     """ Class for cloud/shadow masking and quality scoring landsat7_c2_l2 images """
     _gd_coll_name = "landsat7_c2_l2"
+
+
+class Landsat5Image(LandsatImage):
+    """ Class for cloud/shadow masking and quality scoring landsat5_c2_l2 images """
+    _gd_coll_name = "landsat5_c2_l2"
+
+
+class Landsat4Image(LandsatImage):
+    """ Class for cloud/shadow masking and quality scoring landsat4_c2_l2 images """
+    _gd_coll_name = "landsat4_c2_l2"
 
 
 class Sentinel2Image(MaskedImage):  # pragma: no cover
@@ -785,6 +799,8 @@ def get_class(coll_name):
     #     return image_classes
 
     gd_coll_name_map = dict(
+        landsat4_c2_l2=Landsat4Image,
+        landsat5_c2_l2=Landsat5Image,
         landsat7_c2_l2=Landsat7Image,
         landsat8_c2_l2=Landsat8Image,
         sentinel2_toa=Sentinel2ToaClImage,
