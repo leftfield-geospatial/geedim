@@ -264,6 +264,7 @@ class MaskedImage(Image):
             raise NotImplementedError("This base class cannot be instantiated, use a sub-class")
 
         # construct the cloud/shadow masks and cloudless score
+        ee_image = ee_image.unmask()
         self._masks = self._get_image_masks(ee_image)
         self._score = self._get_image_score(ee_image)
         self._ee_image = self._process_image(ee_image, mask=mask, masks=self._masks, score=self._score)
@@ -383,7 +384,7 @@ class MaskedImage(Image):
 
         # sum VALID_MASK and SCORE over image
         stats = (
-            stats_image.unmask()
+            stats_image
             .reduceRegion(reducer="sum", geometry=region, crs=proj.crs(), scale=proj.nominalScale(),
                           bestEffort=True)
             .rename(["VALID_MASK", "SCORE"], ["VALID_PORTION", "AVG_SCORE"])
@@ -459,9 +460,9 @@ class MaskedImage(Image):
         )
 
         # clip score to cloud_dist and set to 0 in unfilled areas
-        score = (score.unmask().
+        score = (score.
                  where(score.gt(ee.Image(cloud_dist)), cloud_dist).
-                 where(masks["fill_mask"].unmask().Not(), 0))
+                 where(masks["fill_mask"].Not(), 0))
         return score
 
     def _process_image(self, ee_image, mask=False, masks=None, score=None):
@@ -490,8 +491,8 @@ class MaskedImage(Image):
 
         if mask:  # apply the validity mask to all bands (i.e. set those areas to nodata)
             ee_image = ee_image.mask(self._masks["valid_mask"])
-        else:  # sentinel and landsat come with default mask on SR==0, so force unmask
-            ee_image = ee_image.unmask()
+        # else:  # sentinel and landsat come with default mask on SR==0, so force unmask
+        #     ee_image = ee_image.unmask()
 
         return self._im_transform(ee_image)
 
@@ -523,11 +524,11 @@ class LandsatImage(MaskedImage):
 
     def _get_image_masks(self, ee_image):
         # get cloud, shadow and fill masks from QA_PIXEL
-        qa_pixel = ee_image.select("QA_PIXEL").unmask()
+        qa_pixel = ee_image.select("QA_PIXEL")
 
         # incorporate the existing mask (for zero SR pixels) into the shadow mask
         sr_bands, non_sr_bands = LandsatImage._split_band_names(ee_image)
-        ee_mask = ee_image.mask().select(sr_bands).reduce(ee.Reducer.allNonZero())
+        ee_mask = ee_image.select(sr_bands).reduce(ee.Reducer.allNonZero())
         fill_mask = qa_pixel.bitwiseAnd(1).eq(0).And(ee_mask).rename("FILL_MASK")
 
         # TODO: include Landsat 8 SR_QA_AEROSOL in cloud mask? it has lots of false positives which skews valid portion
@@ -665,7 +666,7 @@ class Sentinel2ClImage(MaskedImage):
         proj = get_projection(ee_image, min=False)  # use maximum scale projection to save processing time
 
         # threshold the added cloud probability to get the initial cloud mask
-        cloud_prob = ee_image.select("probability").unmask()
+        cloud_prob = ee_image.select("probability")
         cloud_mask = cloud_prob.gt(self._cloud_prob_thresh).rename("CLOUD_MASK")
 
         # TODO: dilate valid_mask by _buffer ?
@@ -690,12 +691,12 @@ class Sentinel2ClImage(MaskedImage):
 
         if self.gd_coll_name == "sentinel2_sr":  # use SCL band to reduce shadow_mask
             # Get the shadow mask from the SCL band and perform morphological opening to remove small isolated blobs
-            scl = ee_image.select("SCL").unmask()
+            scl = ee_image.select("SCL")
             dark_shadow_mask = (
                 scl.eq(3)
                 .Or(scl.eq(2))
                 .focal_min(self._buffer, "circle", "meters")
-                .focal_max(self._buffer, "circle", "meters")
+                .focal_max(2 * self._buffer, "circle", "meters")
             )
             # improve the shadow mask by combining it with the projected cloud mask
             shadow_mask = proj_cloud_mask.And(dark_shadow_mask).rename("SHADOW_MASK")

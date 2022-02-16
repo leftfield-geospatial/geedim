@@ -28,34 +28,34 @@ modis_nbar | [MODIS/006/MCD43A4](https://developers.google.com/earth-engine/data
 ### conda
 The [Miniconda](https://docs.conda.io/en/latest/miniconda.html) installation provides a minimal `conda`.
 ```shell
-$ conda install -c conda-forge geedim
+conda install -c conda-forge geedim
 ```
 ### pip
 ```shell
-$ pip install geedim
+pip install geedim
 ```
 
 Alternatively, the repository can be cloned and linked into your python environment with:
 ```shell
-$ git clone https://github.com/dugalh/geedim.git
-$ pip install -e geedim
+git clone https://github.com/dugalh/geedim.git
+pip install -e geedim
 ```
 Following installation, Earth Engine must be authenticated:
 ```shell
-$ earthengine authenticate
+earthengine authenticate
 ```
 ## Quick Start
 Search for Landsat 8 images
 ```shell
-$ geedim search -c landsat8_c2_l2 -s 2021-06-01 -e 2021-07-01 --bbox 24 -33 24.1 -33.1
+geedim search -c landsat8_c2_l2 -s 2021-06-01 -e 2021-07-01 --bbox 24 -33 24.1 -33.1
 ```
 Download Landsat 8 image 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20210610' with cloud/shadow mask
 ```shell
-$ geedim download -i LANDSAT/LC08/C02/T1_L2/LC08_172083_20210610 --bbox 24 -33 24.1 -33.1 --mask
+geedim download -i LANDSAT/LC08/C02/T1_L2/LC08_172083_20210610 --bbox 24 -33 24.1 -33.1 --mask
 ```
 Composite the results of a search, then download with specified CRS and pixel size (scale)
 ```shell
-$ geedim search -c landsat8_c2_l2 -s 2021-06-01 -e 2021-07-01 --bbox 24 -33 24.1 -33.1 composite download --crs EPSG:32634 --scale 30
+geedim search -c landsat8_c2_l2 -s 2021-06-01 -e 2021-07-01 --bbox 24 -33 24.1 -33.1 composite download --crs EPSG:32634 --scale 30
 ```
 
 ## Usage
@@ -79,7 +79,7 @@ Commands:
 ### Search
 Search for images with filtering by image collection, date, region and portion of cloud/shadow free pixels (in the specified region).  Image metadata of interest is included in the results. 
 ```shell
-$ geedim search --help
+geedim search --help
 ```
 ```
 Usage: geedim search [OPTIONS]
@@ -115,7 +115,7 @@ Options:
 ```
 #### Example
 ```shell
-$ geedim search -c landsat8_c2_l2 -b 23.9 -33.6 24 -33.5 -s 2019-01-01 -e 2019-02-01
+geedim search -c landsat8_c2_l2 -b 23.9 -33.6 24 -33.5 -s 2019-01-01 -e 2019-02-01
 ```
 
 ### Download / Export
@@ -129,7 +129,7 @@ Download or export image(s) by specifying their ID(s).  Search result image(s) c
 
 #### Download
 ```shell
-$ geedim download --help
+geedim download --help
 ```
 ```
 Usage: geedim download [OPTIONS]
@@ -169,7 +169,7 @@ Options:
 
 #### Export
 ```shell
-$ geedim export --help
+geedim export --help
 ```
 ```
 Usage: geedim export [OPTIONS]
@@ -208,10 +208,10 @@ Options:
 ```
 #### Examples
 ```shell
-$ geedim download -i LANDSAT/LC08/C02/T1_L2/LC08_172083_20190128 -b 23.9 -33.6 24 -33.5 --resampling bilinear --mask
+geedim download -i LANDSAT/LC08/C02/T1_L2/LC08_172083_20190128 -b 23.9 -33.6 24 -33.5 --resampling bilinear --mask
 ```
 ```shell
-$ geedim export -i LANDSAT/LC08/C02/T1_L2/LC08_172083_20190128 -b 23.9 -33.6 24 -33.5 -df geedim_test --mask
+geedim export -i LANDSAT/LC08/C02/T1_L2/LC08_172083_20190128 -b 23.9 -33.6 24 -33.5 -df geedim_test --mask
 ```
 
 ### Composite
@@ -226,7 +226,7 @@ The `composite` sub-command must be chained with one of `download` / `export` to
 
 
 ```shell
-$ geedim composite --help
+geedim composite --help
 ```
 ```
 Usage: geedim composite [OPTIONS]
@@ -250,7 +250,7 @@ Options:
 #### Example
 Composite the results of a search and download the result.
 ```shell
-$ geedim search -c landsat8_c2_l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 composite -cm q_mosaic --mask download --scale 30 --crs EPSG:3857
+geedim search -c landsat8_c2_l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 composite -cm q_mosaic --mask download --scale 30 --crs EPSG:3857
 ```
 ## API
 ### Example 
