@@ -1,0 +1,32 @@
+name: Install & test conda-forge package
+on: 
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ macos-latest, ubuntu-latest, windows-latest ]
+        python-version: [ 3.6, 3.7, 3.8, 3.9 ]
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Add conda to system path
+      run: |
+        # $CONDA is an environment variable pointing to the root of the miniconda directory
+        echo $CONDA/bin >> $GITHUB_PATH
+    - name: Install geedim from conda-forge
+      run: |
+        conda install -c conda-forge geedim
+    - name: Test geedim CLI
+      timeout-minutes: 5
+      run: |
+          geedim search -c landsat8_c2_l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 composite -cm q_mosaic --mask download --scale 30 --crs EPSG:3857 -o
+          test -f ./data/test_example/homogenised/3324c_2015_1004_05_0182_RGB_HOMO_cREF_mGAIN-BLK-OFFSET_k5_5.tif && echo "Test OK"
+          pwd
+          ls -R
