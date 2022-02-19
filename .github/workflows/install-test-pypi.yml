@@ -28,7 +28,7 @@ jobs:
         env:
           EE_SERVICE_ACC_PRIVATE_KEY: ${{ secrets.EE_SERVICE_ACC_PRIVATE_KEY }}
         run: |
+          geedim --help
           geedim search -c landsat8_c2_l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 composite -cm q_mosaic --mask download --scale 30 --crs EPSG:3857 -o
-          test -f ./data/test_example/homogenised/3324c_2015_1004_05_0182_RGB_HOMO_cREF_mGAIN-BLK-OFFSET_k5_5.tif && echo "Test OK"
           pwd
           ls -R
