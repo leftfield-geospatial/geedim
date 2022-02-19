@@ -1,4 +1,4 @@
-[![Publish](https://github.com/dugalh/geedim/actions/workflows/publish.yml/badge.svg)](https://github.com/dugalh/geedim/actions/workflows/publish.yml)
+[![Publish](https://github.com/dugalh/geedim/actions/workflows/publish-pypi.yml/badge.svg)](https://github.com/dugalh/geedim/actions/workflows/publish-pypi.yml)
 [![Tests](https://github.com/dugalh/geedim/actions/workflows/test.yml/badge.svg)](https://github.com/dugalh/geedim/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/dugalh/geedim/branch/main/graph/badge.svg?token=69GZNQ3TI3)](https://codecov.io/gh/dugalh/geedim)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
