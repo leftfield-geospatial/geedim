@@ -1,6 +1,6 @@
 # Build geedim package and publish to PyPI
 
-name: Publish
+name: Build and publish to PyPI
 on:
   release:
     types: [published]

@@ -1,6 +1,6 @@
 # Test publishing to, and installing and running with Test PyPI
 
-name: Install-Test-PyPI
+name: Install & test PyPI package
 on:
   workflow_dispatch:
 
