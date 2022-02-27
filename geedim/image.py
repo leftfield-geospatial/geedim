@@ -248,22 +248,28 @@ class Image(object):
 
 
 class MaskedImage(Image):
-    def __init__(self, ee_image, mask=False):
+
+    _default_params = dict(mask=False, cloud_dist=5000)
+
+    def __init__(self, ee_image, mask=_default_params['mask'], cloud_dist=_default_params['cloud_dist']):
         """
         Class to cloud/shadow mask and quality score Earth engine images from supported collections.
 
         Parameters
         ----------
         ee_image : ee.Image
-                   Earth engine image to wrap
+            Earth engine image to wrap.
         mask : bool, optional
-               Apply a validity (cloud & shadow) mask to the image (default: False)
+            Apply a validity (cloud & shadow) mask to the image (default: False).
+        cloud_dist : int, optional
+            The radius (m) to search for cloud/shadow for quality scoring (default: 5000).
         """
         # prevent instantiation of base class(es)
         if self.gd_coll_name not in info.collection_info:
             raise NotImplementedError("This base class cannot be instantiated, use a sub-class")
 
         # construct the cloud/shadow masks and cloudless score
+        self._cloud_dist = cloud_dist
         ee_image = ee_image.unmask()
         self._masks = self._get_image_masks(ee_image)
         self._score = self._get_image_score(ee_image)
@@ -272,7 +278,7 @@ class MaskedImage(Image):
         self._projection = None
 
     @classmethod
-    def from_id(cls, image_id, mask=False):
+    def from_id(cls, image_id, mask=_default_params['mask'], cloud_dist=_default_params['cloud_dist']):
         """
         Earth engine image wrapper for cloud/shadow masking and quality scoring.
 
@@ -281,7 +287,9 @@ class MaskedImage(Image):
         image_id : str
                    ID of earth engine image to wrap.
         mask : bool, optional
-               Apply a validity (cloud & shadow) mask to the image (default: False).
+            Apply a validity (cloud & shadow) mask to the image (default: False).
+        cloud_dist : int, optional
+            The radius (m) to search for cloud/shadow for quality scoring (default: 5000).
 
         Returns
         -------
@@ -299,12 +307,12 @@ class MaskedImage(Image):
             raise ValueError(f"{cls.__name__} only supports images from {info.gd_to_ee[cls._gd_coll_name]}")
 
         ee_image = ee.Image(image_id)
-        return cls(ee_image, mask=mask)
+        return cls(ee_image, mask=mask, cloud_dist=cloud_dist)
 
     @classmethod
-    def _from_id(cls, image_id, mask=False, region=None):
+    def _from_id(cls, image_id, mask=_default_params['mask'], cloud_dist=_default_params['cloud_dist'], region=None):
         """ Internal method for creating an image with region statistics. """
-        gd_image = cls.from_id(image_id, mask=mask)
+        gd_image = cls.from_id(image_id, mask=mask, cloud_dist=cloud_dist)
         if region is not None:
             gd_image._ee_image = cls.set_region_stats(gd_image, region)
         return gd_image
@@ -423,7 +431,7 @@ class MaskedImage(Image):
         return masks
 
     # TODO: provide CLI access to cloud_dist
-    def _get_image_score(self, ee_image, cloud_dist=5000, masks=None):
+    def _get_image_score(self, ee_image, masks=None):
         """
         Get the cloud/shadow distance quality score for this image.
 
@@ -431,8 +439,6 @@ class MaskedImage(Image):
         ----------
         ee_image : ee.Image
                    Find the score for this image.
-        cloud_dist : int, optional
-                     The neighbourhood (m) in which to search for clouds (default: 5000).
         masks : dict, optional
                 Existing masks as returned by _get_image_masks(...) (default: calculate the masks).
         Returns
@@ -448,7 +454,7 @@ class MaskedImage(Image):
         # combine cloud and shadow masks and morphologically open to remove small isolated patches
         cloud_shadow_mask = masks["cloud_mask"].Or(masks["shadow_mask"])
         cloud_shadow_mask = cloud_shadow_mask.focal_min(radius=radius).focal_max(radius=radius)
-        cloud_pix = ee.Number(cloud_dist).divide(proj.nominalScale()).round()  # cloud_dist in pixels
+        cloud_pix = ee.Number(self._cloud_dist).divide(proj.nominalScale()).round()  # cloud_dist in pixels
 
         # distance to nearest cloud/shadow (m)
         score = (
@@ -461,7 +467,7 @@ class MaskedImage(Image):
 
         # clip score to cloud_dist and set to 0 in unfilled areas
         score = (score.
-                 where(score.gt(ee.Image(cloud_dist)), cloud_dist).
+                 where(score.gt(ee.Image(self._cloud_dist)), self._cloud_dist).
                  where(masks["fill_mask"].Not(), 0))
         return score
 
@@ -611,7 +617,8 @@ class Sentinel2ClImage(MaskedImage):
     (Uses cloud probability to improve cloud/shadow masking).
     """
 
-    def __init__(self, ee_image, mask=False):
+    def __init__(self, ee_image, mask=MaskedImage._default_params['mask'],
+                 cloud_dist=MaskedImage._default_params['cloud_dist']):
         # TODO: provide CLI access to these attributes
 
         # set attributes before their use in __init__ below
@@ -619,14 +626,15 @@ class Sentinel2ClImage(MaskedImage):
         self._cloud_proj_dist = 1  # Maximum distance (km) to search for cloud shadows from cloud edges
         self._buffer = 100  # Distance (m) to dilate the edge of cloud-identified objects
 
-        MaskedImage.__init__(self, ee_image, mask=mask)
+        MaskedImage.__init__(self, ee_image, mask=mask, cloud_dist=cloud_dist)
 
     @staticmethod
     def _im_transform(ee_image):
         return ee.Image.toUint16(ee_image)
 
     @classmethod
-    def from_id(cls, image_id, mask=False):
+    def from_id(cls, image_id, mask=MaskedImage._default_params['mask'],
+                cloud_dist=MaskedImage._default_params['cloud_dist']):
         # check image_id
         ee_coll_name = split_id(image_id)[0]
         if ee_coll_name not in info.ee_to_gd:
@@ -643,7 +651,7 @@ class Sentinel2ClImage(MaskedImage):
         # get cloud probability for ee_image and add as a band
         cloud_prob = ee.Image(f"COPERNICUS/S2_CLOUD_PROBABILITY/{split_id(image_id)[1]}")
         ee_image = ee_image.addBands(cloud_prob, overwrite=True)
-        return cls(ee_image, mask=mask)
+        return cls(ee_image, mask=mask, cloud_dist=cloud_dist)
 
     def _get_image_masks(self, ee_image):
         """

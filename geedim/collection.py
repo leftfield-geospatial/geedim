@@ -23,6 +23,7 @@ import ee
 import geedim.image
 import pandas as pd
 from geedim import image, info, medoid
+from geedim.export import _default_resampling
 
 
 ##
@@ -49,7 +50,8 @@ class Collection(object):
         self._summary_df = None  # summary of the image metadata
 
     @classmethod
-    def from_ids(cls, image_ids, mask=False):
+    def from_ids(cls, image_ids, mask=image.MaskedImage._default_params['mask'],
+                 cloud_dist=image.MaskedImage._default_params['cloud_dist']):
         """
         Create collection from image IDs
 
@@ -59,6 +61,8 @@ class Collection(object):
                     A list of the EE image IDs (should all be from same collection)
         mask : bool, optional
                Apply a validity (cloud & shadow) mask to the image (default: False)
+        cloud_dist : int, optional
+            The radius (m) to search for cloud/shadow for quality scoring (default: 5000).
 
         Returns
         -------
@@ -80,7 +84,7 @@ class Collection(object):
         # build and wrap an ee.ImageCollection of processed (masked and scored) images
         im_list = ee.List([])
         for im_id in image_ids:
-            gd_image = gd_collection._image_class.from_id(im_id, mask=mask)
+            gd_image = gd_collection._image_class.from_id(im_id, mask=mask, cloud_dist=cloud_dist)
             im_list = im_list.add(gd_image.ee_image)
 
         gd_collection._ee_collection = ee.ImageCollection(im_list)
@@ -164,7 +168,7 @@ class Collection(object):
 
         return self._summary_df
 
-    def composite(self, method="q_mosaic", resampling='near'):
+    def composite(self, method="q_mosaic", resampling=_default_resampling):
         """
         Create a cloud/shadow free composite.
 
@@ -185,7 +189,7 @@ class Collection(object):
         : (ee.Image, str)
           The composite image, composite image ID
         """
-        if resampling != 'near':
+        if resampling != _default_resampling:
             self._ee_collection = self._ee_collection.map(lambda image: image.resample(resampling))
 
         method = str(method).lower()

@@ -135,9 +135,9 @@ def _export_download(res=_CmdChainResults(), do_download=True, **kwargs):
     if res.comp_image is not None:  # download/export chained with composite command
         im_list.append(dict(image=res.comp_image, name=res.comp_id.replace('/', '-')))
     elif res.search_ids is not None:  # download/export chained with search command
-        im_list = _create_im_list(res.search_ids, mask=params.mask)
+        im_list = _create_im_list(res.search_ids, mask=params.mask, cloud_dist=params.cloud_dist)
     elif len(params.image_id) > 0:  # download/export image ids specified on command line
-        im_list = _create_im_list(params.image_id, mask=params.mask)
+        im_list = _create_im_list(params.image_id, mask=params.mask, cloud_dist=params.cloud_dist)
     else:
         raise click.BadOptionUsage('image_id',
                                    'Either pass --id, or chain this command with a successful `search` or `composite`')
@@ -198,7 +198,7 @@ scale_option = click.option(
 mask_option = click.option(
     "-m/-nm",
     "--mask/--no-mask",
-    default=False,
+    default=image.MaskedImage._default_params['mask'],
     help="Do/don't apply (cloud and shadow) nodata mask(s).  [default: --no-mask]",
     required=False,
 )
@@ -210,7 +210,15 @@ resampling_option = click.option(
     default="near",
     show_default=True,
 )
-
+cloud_dist_option = click.option(
+    "-cd",
+    "--cloud-dist",
+    type=click.FLOAT,
+    default=image.MaskedImage._default_params['cloud_dist'],
+    help="Search for cloud/shadow inside this radius (m) to determine compositing quality score.",
+    show_default=True,
+    required=False,
+)
 
 # Define the geedim CLI and chained command group
 @click.group(chain=True)
@@ -265,7 +273,7 @@ def cli(ctx):
     required=False,
 )
 @click.pass_obj
-def search(res, collection, start_date, end_date=None, bbox=None, region=None, valid_portion=0, output=None):
+def search(res, collection, start_date, end_date, bbox, region, valid_portion, output):
     """ Search for images """
 
     res.search_region = _extract_region(region=region, bbox=bbox)  # store region for chaining
@@ -308,8 +316,7 @@ cli.add_command(search)
 @click.option(
     "-dd",
     "--download-dir",
-    type=click.Path(exists=True, file_okay=False, dir_okay=True, writable=True, readable=False, resolve_path=True,
-                    allow_dash=False),
+    type=click.Path(exists=True, file_okay=False, dir_okay=True, writable=True, readable=False, resolve_path=True),
     default=os.getcwd(),
     help="Download image file(s) to this directory.  [default: cwd]",
     required=False,
@@ -318,6 +325,7 @@ cli.add_command(search)
 @scale_option
 @mask_option
 @resampling_option
+@cloud_dist_option
 @click.option(
     "-o",
     "--overwrite",
@@ -328,8 +336,7 @@ cli.add_command(search)
     show_default=False,
 )
 @click.pass_context
-def download(ctx, image_id=(), bbox=None, region=None, download_dir=os.getcwd(), crs=None, scale=None, mask=False,
-             resampling='near', overwrite=False):
+def download(ctx, image_id, bbox, region, download_dir, crs, scale, mask, resampling, cloud_dist, overwrite=False):
     """ Download image(s), with cloud and shadow masking """
     _export_download(res=ctx.obj, do_download=True, **ctx.params)
 
@@ -354,6 +361,7 @@ cli.add_command(download)
 @scale_option
 @mask_option
 @resampling_option
+@cloud_dist_option
 @click.option(
     "-w/-nw",
     "--wait/--no-wait",
@@ -362,8 +370,7 @@ cli.add_command(download)
     required=False,
 )
 @click.pass_context
-def export(ctx, image_id=(), bbox=None, region=None, drive_folder='', crs=None, scale=None, mask=False,
-           resampling='near', wait=True):
+def export(ctx, image_id, bbox, region, drive_folder, crs, scale, mask, resampling, cloud_dist, wait):
     """ Export image(s) to Google Drive, with cloud and shadow masking """
     _export_download(res=ctx.obj, do_download=False, **ctx.params)
 
@@ -391,8 +398,9 @@ cli.add_command(export)
     required=False,
 )
 @resampling_option
+@cloud_dist_option
 @click.pass_obj
-def composite(res, image_id=None, mask=True, method='q_mosaic', resampling='near'):
+def composite(res, image_id, mask, method, resampling, cloud_dist):
     """ Create a cloud-free composite image """
 
     # get image ids from command line or chained search command
@@ -404,7 +412,7 @@ def composite(res, image_id=None, mask=True, method='q_mosaic', resampling='near
             image_id = res.search_ids
             res.search_ids = None
 
-    gd_collection = coll_api.Collection.from_ids(image_id, mask=mask)
+    gd_collection = coll_api.Collection.from_ids(image_id, mask=mask, cloud_dist=cloud_dist)
     res.comp_image, res.comp_id = gd_collection.composite(method=method, resampling=resampling)
 
 

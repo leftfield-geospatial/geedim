@@ -32,8 +32,10 @@ import requests
 
 from geedim import image
 
+"""EE image property key for image region"""
 _footprint_key = "system:footprint"
-
+"""Default EE image resampling method"""
+_default_resampling = 'near'
 
 def write_pam_xml(obj, filename):
     """
@@ -86,7 +88,8 @@ def write_pam_xml(obj, filename):
 class _ExportImage(image.Image):
     """ Helper class for determining export/download crs, scale and region parameters"""
 
-    def __init__(self, image_obj, name="Image", exp_region=None, exp_crs=None, exp_scale=None, resampling='near'):
+    def __init__(self, image_obj, name="Image", exp_region=None, exp_crs=None, exp_scale=None,
+                 resampling=_default_resampling):
         if isinstance(image_obj, image.Image):
             image.Image.__init__(self, image_obj.ee_image)
             self._info = image_obj.info
@@ -137,7 +140,8 @@ class _ExportImage(image.Image):
             self.exp_region = ee.Geometry(self.exp_region)
 
 
-def export_image(image_obj, filename, folder="", region=None, crs=None, scale=None, resampling='near', wait=True):
+def export_image(image_obj, filename, folder="", region=None, crs=None, scale=None, resampling=_default_resampling,
+                 wait=True):
     """
     Export an image to a GeoTiff in Google Drive
 
@@ -233,7 +237,8 @@ def monitor_export_task(task, label=None):
         raise IOError(f"Export failed \n{status}")
 
 
-def download_image(image_obj, filename, region=None, crs=None, scale=None, resampling='near', overwrite=False):
+def download_image(image_obj, filename, region=None, crs=None, scale=None, resampling=_default_resampling,
+                   overwrite=False):
     """
     Download an image as a GeoTiff
 
