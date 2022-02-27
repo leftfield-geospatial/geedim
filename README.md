@@ -161,6 +161,9 @@ Options:
 
   -rs, --resampling [near|bilinear|bicubic]
                                   Resampling method.  [default: near]
+  -cd, --cloud-dist FLOAT         Search for cloud/shadow inside this radius
+                                  (m) to determine compositing quality score.
+                                  [default: 5000]                                  
   -o, --overwrite                 Overwrite the destination file if it exists.
                                   [default: prompt the user for confirmation]
 
@@ -201,6 +204,9 @@ Options:
 
   -rs, --resampling [near|bilinear|bicubic]
                                   Resampling method.  [default: near]
+  -cd, --cloud-dist FLOAT         Search for cloud/shadow inside this radius
+                                  (m) to determine compositing quality score.
+                                  [default: 5000]                                  
   -w, --wait / -nw, --no-wait     Wait / don't wait for export to complete.
                                   [default: --wait]
 
@@ -245,6 +251,9 @@ Options:
 
   -rs, --resampling [near|bilinear|bicubic]
                                   Resampling method.  [default: near]
+  -cd, --cloud-dist FLOAT         Search for cloud/shadow inside this radius
+                                  (m) to determine compositing quality score.
+                                  [default: 5000]                                  
   --help                          Show this message and exit.
 ```
 #### Example
