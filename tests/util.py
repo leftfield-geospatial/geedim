@@ -67,14 +67,16 @@ def _test_search_results(test_case, res_df, start_date, end_date, valid_portion=
         test_case.assertTrue(all(res_df.SCORE >= 0), 'Search results have correct q score range')
 
 
-def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=None, mask=False, resampling='near'):
+def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=None,
+                     mask=image.MaskedImage._default_params['mask'], resampling=export._default_resampling,
+                     cloud_dist=image.MaskedImage._default_params['cloud_dist']):
     """ Test downloaded image file against corresponding image object """
 
     # create objects to test against
     if isinstance(image_obj, str):  # create image.MaskedImage from ID
         ee_coll_name = image.split_id(image_obj)[0]
         gd_coll_name = info.ee_to_gd[ee_coll_name]
-        gd_image = image.get_class(gd_coll_name).from_id(image_obj, mask=mask)
+        gd_image = image.get_class(gd_coll_name).from_id(image_obj, mask=mask, cloud_dist=cloud_dist)
     elif isinstance(image_obj, image.Image):
         gd_image = image_obj
         ee_coll_name = image.split_id(gd_image.id)[0]

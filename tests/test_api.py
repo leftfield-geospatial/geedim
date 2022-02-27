@@ -32,12 +32,13 @@ class TestApi(unittest.TestCase):
         """ Initialise Earth Engine once for all the tests here. """
         _setup_test()
 
-    def _test_image(self, image_id, mask=False):
+    def _test_image(self, image_id, mask=image.MaskedImage._default_params['mask'],
+                    cloud_dist=image.MaskedImage._default_params['cloud_dist']):
         """ Test the validity of a geedim.image.MaskedImage by checking metadata.  """
 
         ee_coll_name = image.split_id(image_id)[0]
         gd_coll_name = info.ee_to_gd[ee_coll_name]
-        gd_image = image.get_class(gd_coll_name).from_id(image_id, mask=mask)
+        gd_image = image.get_class(gd_coll_name).from_id(image_id, mask=mask, cloud_dist=cloud_dist)
         self.assertTrue(gd_image.id == image_id, 'IDs match')
 
         sr_band_df = pd.DataFrame.from_dict(info.collection_info[gd_coll_name]['bands'])
@@ -64,12 +65,18 @@ class TestApi(unittest.TestCase):
         std_refl = sr_image.reduceRegion(reducer='stdDev', geometry=region, scale=2 * gd_image.scale).getInfo()
         self.assertTrue(all(np.array(list(std_refl.values())) > 100), 'Std(SR) > 100')
 
+        # test quality score for a specific region
+        sr_image = gd_image.ee_image.select('SCORE')
+        max_score = sr_image.reduceRegion(reducer='max', geometry=region, scale=2 * gd_image.scale).getInfo()
+        self.assertTrue(max_score['SCORE'] < cloud_dist * 1.1, 'Max(SCORE) < 1.1*CLOUD_DIST')
+
+
     def test_image(self):
         """ Test geedim.image.MaskedImage sub-classes. """
         im_param_list = [
-            {'image_id': 'COPERNICUS/S2_SR/20190321T075619_20190321T081839_T35HKC', 'mask': False},
-            {'image_id': 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190301', 'mask': True},
-            {'image_id': 'MODIS/006/MCD43A4/2019_01_01', 'mask': True},
+            {'image_id': 'COPERNICUS/S2_SR/20190321T075619_20190321T081839_T35HKC', 'mask': False, 'cloud_dist': 200},
+            {'image_id': 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190301', 'mask': True, 'cloud_dist': 2000},
+            {'image_id': 'MODIS/006/MCD43A4/2019_01_01', 'mask': True, 'cloud_dist': 5000},
         ]
 
         for im_param_dict in im_param_list:
@@ -101,7 +108,7 @@ class TestApi(unittest.TestCase):
                   "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
         im_param_list = [
             {'image_id': 'COPERNICUS/S2_SR/20190321T075619_20190321T081839_T35HKC', 'mask': True, 'crs': None,
-             'scale': 30, 'resampling': 'bilinear'},
+             'scale': 30, 'resampling': 'bilinear', 'cloud_dist': 5500},
             {'image_id': 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190301', 'mask': True, 'crs': None, 'scale': None,
              'resampling': 'bicubic'},
             {'image_id': 'MODIS/006/MCD43A4/2019_01_01', 'mask': True, 'crs': 'EPSG:3857', 'scale': 500,
@@ -171,10 +178,10 @@ class TestApi(unittest.TestCase):
         methods = collection.Collection.composite_methods
         param_list = [
             {'image_ids': ['LANDSAT/LE07/C02/T1_L2/LE07_171083_20190129', 'LANDSAT/LE07/C02/T1_L2/LE07_171083_20190214',
-                           'LANDSAT/LE07/C02/T1_L2/LE07_171083_20190302'], 'mask': True},
+                           'LANDSAT/LE07/C02/T1_L2/LE07_171083_20190302'], 'mask': True, 'cloud_dist': 5000},
             {'image_ids': ['COPERNICUS/S2_SR/20190311T075729_20190311T082820_T35HKC',
                            'COPERNICUS/S2_SR/20190316T075651_20190316T082220_T35HKC',
-                           'COPERNICUS/S2_SR/20190321T075619_20190321T081839_T35HKC'], 'mask': True},
+                           'COPERNICUS/S2_SR/20190321T075619_20190321T081839_T35HKC'], 'mask': True, 'cloud_dist': 500},
         ]
 
         for param_dict in param_list:
