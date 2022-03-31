@@ -29,93 +29,13 @@ import ee
 import numpy as np
 import rasterio as rio
 import requests
-from geojson import Point, Polygon
 from rasterio import Affine
 from rasterio import MemoryFile
 from rasterio.crs import CRS
 from rasterio.windows import Window
-from rasterio.warp import transform_bounds, transform_geom
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 from tqdm import tqdm
-
-
-def open_url(url: str, session, pbar):
-    # get the session
-    session = session if session is not None else requests
-
-    mem_file = BytesIO()
-
-    r = session.get(url, stream=True)
-    for chunk in r.iter_content(chunk_size=1024):
-        if chunk:
-            mem_file.write(chunk)
-            mem_file.flush()
-            if pbar is not None:
-                pbar.update(1024)
-
-    if pbar is not None and (pbar.n < pbar.total):
-        pbar.update(pbar.total - pbar.n)
-
-    return mem_file
-
-
-def open_zip_url(url: str, session=None, pbar=None):
-    # get the contents from the url
-    content = open_url(url, session, pbar)
-
-    # create a zipfile with the url content
-    z = zipfile.ZipFile(content)
-
-    # extract the content of the zipfile
-    extracted = BytesIO(z.read(z.filelist[0]))
-
-    return extracted
-
-
-def open_url_dataset(url: str, session, pbar: tqdm):
-    # get the extracted file at url
-    extracted = open_zip_url(url, session, pbar)
-    # open the file in memory with rasterio
-    with MemoryFile(extracted) as mem_file:
-        with mem_file.open() as ds:
-            array = ds.read()
-    return array
-
-
-def plot_url(url: str):
-    plt.figure(figsize=(10, 10))
-    ds = open_url_dataset(url)
-    img = ds.read().squeeze()
-
-    plt.imshow(img)
-
-
-def create_geometry(pts, logger=None):
-    if isinstance(pts, tuple):
-        geometry = Point(coordinates=pts)
-
-    elif isinstance(pts, (Point, Polygon)):
-        geometry = pts
-
-    else:
-        # check if the polygon is correctly closed. If it is not, close it.
-        if pts[0] != pts[-1]:
-            pts.append(pts[0])
-
-        geometry = Polygon(coordinates=[pts])
-
-    # if the geometry is not valid, return None
-    if geometry.is_valid:
-        return geometry
-    else:
-        # get the context logger
-        msg = 'Informed points do not correspond to a valid polygon.'
-
-        if logger is not None:
-            logger.error(msg)
-        else:
-            print(msg)
 
 
 def requests_retry_session(
@@ -139,25 +59,11 @@ def requests_retry_session(
 
 
 class DownloadTile:
-    def __init__(self, image: ee.Image, shape: Tuple[int, int], transform: Affine, slices: Tuple[slice, slice]):
-        # find the
+    def __init__(self, image: ee.Image, transform: Affine, window: Window):
         self._image = image
-        self._transform = transform * Affine.translation(slices[1].start, slices[0].start)
-        self._shape = (int(slices[0].stop - slices[0].start - 1), int(slices[1].stop - slices[1].start - 1))
-        self._window = Window.from_slices(*slices)
-        self._lock = threading.Lock()
-        # xmin, ymin = self._transform * (slices[1].start, slices[0].start)
-        # xmax, ymax = self._transform * (slices[1].stop - 1, slices[0].stop - 1)
-        # coordinates = [[xmax, ymax], [xmax, ymin], [xmin, ymin], [xmin, ymax], [xmax, ymax]]
-        # region_dict = dict(type='Polygon', coordinates=[coordinates])
-        # self._region = transform_geom(src_crs=CRS.from_string(self._image.projection().crs().getInfo()),
-        #                               dst_crs=CRS({'init': 'EPSG:4326'}), geom=region_dict)
-        # self._region = ee.Geometry(region_dict, opt_proj=self._image.projection(), opt_geodesic=False)
-
-
-    @classmethod
-    def from_download_image(cls, image, slices: Tuple[slice, slice]):
-        return cls(image.image, image.shape, image.transform, slices)
+        self._window = window
+        self._transform = transform * Affine.translation(window.col_off, window.row_off)
+        self._shape = (window.height, window.width)
 
     @property
     def transform(self) -> Affine:
@@ -172,18 +78,37 @@ class DownloadTile:
         return self._window
 
     def download(self, session):
+        # TODO: progress bars for each tile - something like mamba does?
         session = session if session else requests
 
-        with self._lock:
-            url = self._image.getDownloadURL(dict(crs=self._image.projection().crs(), crs_transform=tuple(self._transform)[:6],
-                                                  dimensions=self._shape[::-1], filePerBand=False, fileFormat='GeoTIFF'))
-            # url = self._image.getDownloadURL(dict(region=self._region, filePerBand=False, fileFormat='GeoTIFF'))
-        return open_url_dataset(url, session, None)
+        # get image download url
+        url = self._image.getDownloadURL(
+            dict(crs=self._image.projection().crs(), crs_transform=tuple(self._transform)[:6],
+                 dimensions=self._shape[::-1], filePerBand=False, fileFormat='GeoTIFF'))
+
+        # download into buffer
+        buffer = BytesIO()
+        resp = session.get(url, stream=True)
+        for chunk in resp.iter_content(chunk_size=1024):
+            if chunk:
+                buffer.write(chunk)
+                buffer.flush()
+
+        # extract geotiff from zipped buffer
+        zip_file = zipfile.ZipFile(buffer)
+        ext_buffer = BytesIO(zip_file.read(zip_file.filelist[0]))
+
+        # read the geotiff with rasterio memory file
+        with MemoryFile(ext_buffer) as mem_file:
+            with mem_file.open() as ds:
+                array = ds.read()
+
+        return array
 
 
 class DownloadImage:
     def __init__(self, image: ee.Image, **kwargs):
-        # TODO: masking
+        # TODO: masking & nodata in profile below
         kwargs.update(fileFormat='GeoTIFF', filePerBand=False)
         self._image, _ = image.prepare_for_export(kwargs)
         self._info = self._image.getInfo()
@@ -247,12 +172,17 @@ class DownloadImage:
         else:
             raise ValueError(f'Unknown image data type: {ee_data_type}')
 
-    def _get_tile_shape(self, max_download_size=33554432, max_grid_dimension=10000):
+    def _get_tile_shape(self, max_download_size=33554432, max_grid_dimension=10000) -> Tuple[int, int]:
+        """Internal function to find a tile shape that satisfies download limits and is roughly square"""
         # TODO incorporate max_grid_dimension
+        # find the ttl number of tiles needed to satisfy max_download_size
         dtype_size = np.dtype(self._dtype).itemsize
         image_size = np.prod(np.int64((self.count, dtype_size, *self._shape)))
         num_tiles = np.ceil(image_size / max_download_size)
 
+        # increment num_tiles if it is prime
+        # (this is so that we can factorize num_tiles into x,y dimension components, and don't have all tiles along
+        # one dimension)
         def is_prime(x):
             for d in range(2, int(x ** 0.5) + 1):
                 if x % d == 0:
@@ -262,27 +192,45 @@ class DownloadImage:
         if is_prime(num_tiles):
             num_tiles += 1
 
+        # factorise num_tiles into num of tiles down x,y axes
         def factors(x):
             facts = np.arange(1, x + 1)
             facts = facts[np.mod(x, facts) == 0]
             return np.vstack((facts, x / facts)).transpose()
 
         fact_num_tiles = factors(num_tiles)
+
+        # choose the factors that produce a roughly square (as close as possible) tile shape
         fact_aspect_ratios = fact_num_tiles[:, 0] / fact_num_tiles[:, 1]
         aspect_ratio = self._shape[0] / self._shape[1]
         fact_idx = np.argmin(np.abs(fact_aspect_ratios - aspect_ratio))
         shape_num_tiles = fact_num_tiles[fact_idx, :]
-        return tuple(np.ceil(self._shape / shape_num_tiles).astype('int').tolist())
+
+        # find the tile shape and clip to max_grid_dimension if necessary
+        tile_shape = np.ceil(self._shape / shape_num_tiles).astype('int')
+        tile_shape[tile_shape > max_grid_dimension] = max_grid_dimension
+
+        return tuple(tile_shape.tolist())
 
     def tiles(self):
+        """
+        Iterator over the image tiles.
+
+        Yields:
+        -------
+        tile: DownloadTile
+            An image tile that can be downloaded.
+        """
         tile_shape = self._get_tile_shape()
-        ul_row_range = range(0, self._shape[0], tile_shape[0])
-        ul_col_range = range(0, self._shape[1], tile_shape[1])
-        for ul_row, ul_col in product(ul_row_range, ul_col_range):
-            br_row = min((ul_row + tile_shape[0], self._shape[0]))
-            br_col = min((ul_col + tile_shape[1], self._shape[1]))
-            tile_slices = (slice(ul_row, br_row), slice(ul_col, br_col))
-            yield DownloadTile.from_download_image(self, tile_slices)
+
+        # split the image up into tiles of at most tile_shape
+        start_range = product(range(0, self._shape[0], tile_shape[0]), range(0, self._shape[1], tile_shape[1]))
+        for tile_start in start_range:
+            tile_stop = np.add(tile_start, tile_shape)
+            tile_stop = np.clip(tile_stop, a_min=None, a_max=self._shape)
+            clip_tile_shape = (tile_stop - tile_start).tolist()  # tolist is just to convert to native int
+            tile_window = Window(tile_start[1], tile_start[0], clip_tile_shape[1], clip_tile_shape[0])
+            yield DownloadTile(self._image, self._transform, tile_window)
 
     def download(self, filename, resampling='near', overwrite=False):
         # TODO: resampling.  in __init__ where we know if it is composite or not?
@@ -293,6 +241,7 @@ class DownloadImage:
                 tile_array = tile.download(session)
                 with self._out_lock:
                     out_ds.write(tile_array, window=tile.window)
+
             with ThreadPoolExecutor(max_workers=self._threads) as executor:
                 futures = [executor.submit(download_tile, tile) for tile in self.tiles()]
                 for future in tqdm(as_completed(futures), total=len(futures)):
