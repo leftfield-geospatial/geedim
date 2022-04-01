@@ -18,6 +18,8 @@
 # Functions to download and export Earth Engine images
 
 import multiprocessing
+import os
+import pathlib
 import threading
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -32,6 +34,7 @@ import requests
 from rasterio import Affine
 from rasterio import MemoryFile
 from rasterio.crs import CRS
+from rasterio.enums import Resampling
 from rasterio.windows import Window
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
@@ -226,17 +229,50 @@ class DownloadImage:
         # split the image up into tiles of at most tile_shape
         start_range = product(range(0, self._shape[0], tile_shape[0]), range(0, self._shape[1], tile_shape[1]))
         for tile_start in start_range:
-            tile_stop = np.add(tile_start, tile_shape)
-            tile_stop = np.clip(tile_stop, a_min=None, a_max=self._shape)
+            tile_stop = np.clip(np.add(tile_start, tile_shape), a_min=None, a_max=self._shape)
             clip_tile_shape = (tile_stop - tile_start).tolist()  # tolist is just to convert to native int
             tile_window = Window(tile_start[1], tile_start[0], clip_tile_shape[1], clip_tile_shape[0])
             yield DownloadTile(self._image, self._transform, tile_window)
 
-    def download(self, filename, resampling='near', overwrite=False):
+    def _build_overviews(self, im, max_num_levels=8, min_level_pixels=256):
+        """
+        Build internal overviews, downsampled by successive powers of 2, for a rasterio dataset.
+
+        Parameters
+        ----------
+        im: rasterio.io.DatasetWriter
+            An open rasterio dataset to write the metadata to.
+        max_num_levels: int, optional
+            Maximum number of overview levels to build.
+        min_level_pixels: int, pixel
+            Minimum width/height (in pixels) of any overview level.
+        """
+
+        # limit overviews so that the highest level has at least 2**8=256 pixels along the shortest dimension,
+        # and so there are no more than 8 levels.
+        if im.closed:
+            raise ValueError('Image dataset is closed')
+
+        max_ovw_levels = int(np.min(np.log2(im.shape)))
+        min_level_shape_pow2 = int(np.log2(min_level_pixels))
+        num_ovw_levels = np.min([max_num_levels, max_ovw_levels - min_level_shape_pow2])
+        ovw_levels = [2 ** m for m in range(1, num_ovw_levels + 1)]
+        im.build_overviews(ovw_levels, Resampling.average)
+
+    def download(self, filename: pathlib.Path, resampling='near', overwrite=False):
         # TODO: resampling.  in __init__ where we know if it is composite or not?
+        # TODO: write metadata and build overviews
+
+        filename = pathlib.Path(filename)
+        if filename.exists():
+            if overwrite:
+                os.remove(filename)
+            else:
+                raise FileExistsError(f'{filename} exists')
 
         session = requests_retry_session(5, status_forcelist=[500, 502, 503, 504])
         with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), rio.open(filename, 'w', **self._profile) as out_ds:
+            # threaded downloading of tiles into output dataset
             def download_tile(tile):
                 tile_array = tile.download(session)
                 with self._out_lock:
@@ -246,3 +282,11 @@ class DownloadImage:
                 futures = [executor.submit(download_tile, tile) for tile in self.tiles()]
                 for future in tqdm(as_completed(futures), total=len(futures)):
                     future.result()
+
+            # populate metadata
+            out_ds.update_tags(**self._info['properties'])
+            for band_i, band_info in enumerate(self._info['bands']):
+                if 'id' in band_info:
+                    out_ds.set_band_description(band_i + 1, band_info['id'])
+                # out_ds.update_tags(band_i+1, **band_info)
+            self._build_overviews(out_ds)
