@@ -38,7 +38,7 @@ from rasterio.enums import Resampling
 from rasterio.windows import Window
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 
 def requests_retry_session(
@@ -80,8 +80,8 @@ class DownloadTile:
     def window(self) -> Window:
         return self._window
 
-    def download(self, session):
-        # TODO: progress bars for each tile - something like mamba does?
+    def download(self, session, pbar: tqdm=None):
+        # TODO: get image crs from DownloadImage where it is found for the output dataset, rather than reget it here
         session = session if session else requests
 
         # get image download url
@@ -90,15 +90,17 @@ class DownloadTile:
                  dimensions=self._shape[::-1], filePerBand=False, fileFormat='GeoTIFF'))
 
         # download into buffer
-        buffer = BytesIO()
+        zip_buffer = BytesIO()
         resp = session.get(url, stream=True)
-        for chunk in resp.iter_content(chunk_size=1024):
-            if chunk:
-                buffer.write(chunk)
-                buffer.flush()
+        download_size = int(resp.headers.get('content-length', 0))
+        for data in resp.iter_content(chunk_size=1024):
+            zip_buffer.write(data)
+            if pbar:
+                pbar.update(len(data)/download_size)
+        zip_buffer.flush()
 
-        # extract geotiff from zipped buffer
-        zip_file = zipfile.ZipFile(buffer)
+        # extract geotiff from zipped buffer into another buffer
+        zip_file = zipfile.ZipFile(zip_buffer)
         ext_buffer = BytesIO(zip_file.read(zip_file.filelist[0]))
 
         # read the geotiff with rasterio memory file
@@ -122,7 +124,7 @@ class DownloadImage:
         self._shape = self._band_info['dimensions'][::-1]
         self._count = len(self._info['bands'])
         self._dtype = self._get_dtype()
-        self._threads = multiprocessing.cpu_count() - 1
+        self._threads = multiprocessing.cpu_count()
         rio_crs = CRS.from_string(kwargs['crs'] if 'crs' in kwargs else self._band_info['crs'])
         self._profile = dict(driver='GTiff', dtype=self._dtype, nodata=0, width=self._shape[1], height=self._shape[0],
                              count=self.count, crs=rio_crs, transform=self._transform, compress='deflate',
@@ -271,16 +273,19 @@ class DownloadImage:
                 raise FileExistsError(f'{filename} exists')
 
         session = requests_retry_session(5, status_forcelist=[500, 502, 503, 504])
-        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), rio.open(filename, 'w', **self._profile) as out_ds:
+        tiles = list(self.tiles())
+        bar_format = '{l_bar}{bar}|{n:3.2f}/{total_fmt} tiles [{elapsed}<{remaining}]'  # tqdm progress bar format
+        pbar = tqdm(desc=filename.name, total=len(tiles), unit='tile', bar_format=bar_format)
+        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), rio.open(filename, 'w', **self._profile) as out_ds, pbar:
             # threaded downloading of tiles into output dataset
-            def download_tile(tile):
-                tile_array = tile.download(session)
+            def download_tile(tile, pbar=None):
+                tile_array = tile.download(session, pbar)
                 with self._out_lock:
                     out_ds.write(tile_array, window=tile.window)
 
             with ThreadPoolExecutor(max_workers=self._threads) as executor:
-                futures = [executor.submit(download_tile, tile) for tile in self.tiles()]
-                for future in tqdm(as_completed(futures), total=len(futures)):
+                futures = [executor.submit(download_tile, tile, pbar) for tile in tiles]
+                for future in as_completed(futures):
                     future.result()
 
             # populate metadata
