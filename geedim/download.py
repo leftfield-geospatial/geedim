@@ -38,7 +38,9 @@ from rasterio.enums import Resampling
 from rasterio.windows import Window
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
-from tqdm.auto import tqdm
+from tqdm import tqdm
+from pip._vendor.progress.bar import IncrementalBar
+from pip._vendor.progress import monotonic
 
 
 def requests_retry_session(
@@ -61,7 +63,41 @@ def requests_retry_session(
     return session
 
 
-class DownloadTile:
+class TiledDownloadBar(IncrementalBar):
+    suffix = '%(index).1f/%(max)d tiles [%(percent).1f%%] in %(elapsed_str)s (eta: %(eta_str)s)'
+    lock = threading.Lock()
+
+    @property
+    def eta_str(self):
+        minutes, seconds = divmod(self.eta, 60)
+        return f'{minutes:02d}:{seconds:02d}'
+
+    @property
+    def elapsed_str(self):
+        minutes, seconds = divmod(self.elapsed, 60)
+        return f'{minutes:02d}:{seconds:02d}'
+
+    def finish(self):
+        self.suffix = '%(index).1f/%(max)d tiles [%(percent).1f%%] in %(elapsed_str)s'
+        self.update()
+        IncrementalBar.finish(self)
+
+    def update_avg(self, n, dt):
+        if n > 0:
+            xput_len = len(self._xput)
+            self._xput.append(dt / n)
+            now = monotonic()
+            # update when we're still filling _xput, then after every second
+            if (xput_len < self.sma_window or
+                    now - self._avg_update_ts > 1):
+                self.avg = sum(self._xput) / len(self._xput)
+                self._avg_update_ts = now
+
+    def next(self, n=1):
+        with self.lock:
+            IncrementalBar.next(self, n=n)
+
+class TileDownload:
     def __init__(self, image: ee.Image, transform: Affine, window: Window):
         self._image = image
         self._window = window
@@ -80,7 +116,7 @@ class DownloadTile:
     def window(self) -> Window:
         return self._window
 
-    def download(self, session, pbar: tqdm=None):
+    def download(self, session, bar: tqdm):
         # TODO: get image crs from DownloadImage where it is found for the output dataset, rather than reget it here
         session = session if session else requests
 
@@ -95,8 +131,8 @@ class DownloadTile:
         download_size = int(resp.headers.get('content-length', 0))
         for data in resp.iter_content(chunk_size=1024):
             zip_buffer.write(data)
-            if pbar:
-                pbar.update(len(data)/download_size)
+            bar.update(len(data) / download_size)
+
         zip_buffer.flush()
 
         # extract geotiff from zipped buffer into another buffer
@@ -111,7 +147,7 @@ class DownloadTile:
         return array
 
 
-class DownloadImage:
+class ImageDownload:
     def __init__(self, image: ee.Image, **kwargs):
         # TODO: masking & nodata in profile below
         kwargs.update(fileFormat='GeoTIFF', filePerBand=False)
@@ -234,7 +270,7 @@ class DownloadImage:
             tile_stop = np.clip(np.add(tile_start, tile_shape), a_min=None, a_max=self._shape)
             clip_tile_shape = (tile_stop - tile_start).tolist()  # tolist is just to convert to native int
             tile_window = Window(tile_start[1], tile_start[0], clip_tile_shape[1], clip_tile_shape[0])
-            yield DownloadTile(self._image, self._transform, tile_window)
+            yield TileDownload(self._image, self._transform, tile_window)
 
     def _build_overviews(self, im, max_num_levels=8, min_level_pixels=256):
         """
@@ -274,17 +310,18 @@ class DownloadImage:
 
         session = requests_retry_session(5, status_forcelist=[500, 502, 503, 504])
         tiles = list(self.tiles())
-        bar_format = '{l_bar}{bar}|{n:3.2f}/{total_fmt} tiles [{elapsed}<{remaining}]'  # tqdm progress bar format
-        pbar = tqdm(desc=filename.name, total=len(tiles), unit='tile', bar_format=bar_format)
-        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), rio.open(filename, 'w', **self._profile) as out_ds, pbar:
+        bar_format = '{desc}: |{bar:32}| {n:.1f}/{total_fmt} tiles [{percentage:.1f}%] in {elapsed} (eta: {remaining})'
+        bar = tqdm(desc=filename.name, total=len(tiles), bar_format=bar_format)
+        # bar = TiledDownloadBar(filename.name, max=len(tiles))
+        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), rio.open(filename, 'w', **self._profile) as out_ds, bar:
             # threaded downloading of tiles into output dataset
-            def download_tile(tile, pbar=None):
-                tile_array = tile.download(session, pbar)
+            def download_tile(tile):
+                tile_array = tile.download(session, bar)
                 with self._out_lock:
                     out_ds.write(tile_array, window=tile.window)
 
             with ThreadPoolExecutor(max_workers=self._threads) as executor:
-                futures = [executor.submit(download_tile, tile, pbar) for tile in tiles]
+                futures = [executor.submit(download_tile, tile) for tile in tiles]
                 for future in as_completed(futures):
                     future.result()
 
