@@ -21,18 +21,17 @@ import multiprocessing
 import os
 import pathlib
 import threading
+import warnings
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import BytesIO
 from itertools import product
-from typing import Tuple, Dict
+from typing import Tuple
 
 import ee
 import numpy as np
 import rasterio as rio
 import requests
-from pip._vendor.progress import monotonic
-from pip._vendor.progress.bar import IncrementalBar
 from rasterio import Affine
 from rasterio import MemoryFile
 from rasterio.crs import CRS
@@ -40,10 +39,9 @@ from rasterio.enums import Resampling
 from rasterio.windows import Window
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
-from tqdm import tqdm
-import pandas as pd
-from geedim import info
-from geedim.image import split_id
+from tqdm import tqdm, TqdmWarning
+
+from geedim.image import Image
 
 
 def requests_retry_session(
@@ -64,41 +62,6 @@ def requests_retry_session(
     session.mount('http://', adapter)
     session.mount('https://', adapter)
     return session
-
-
-class TiledDownloadBar(IncrementalBar):
-    suffix = '%(index).1f/%(max)d tiles [%(percent).1f%%] in %(elapsed_str)s (eta: %(eta_str)s)'
-    lock = threading.Lock()
-
-    @property
-    def eta_str(self):
-        minutes, seconds = divmod(self.eta, 60)
-        return f'{minutes:02d}:{seconds:02d}'
-
-    @property
-    def elapsed_str(self):
-        minutes, seconds = divmod(self.elapsed, 60)
-        return f'{minutes:02d}:{seconds:02d}'
-
-    def finish(self):
-        self.suffix = '%(index).1f/%(max)d tiles [%(percent).1f%%] in %(elapsed_str)s'
-        self.update()
-        IncrementalBar.finish(self)
-
-    def update_avg(self, n, dt):
-        if n > 0:
-            xput_len = len(self._xput)
-            self._xput.append(dt / n)
-            now = monotonic()
-            # update when we're still filling _xput, then after every second
-            if (xput_len < self.sma_window or
-                    now - self._avg_update_ts > 1):
-                self.avg = sum(self._xput) / len(self._xput)
-                self._avg_update_ts = now
-
-    def next(self, n=1):
-        with self.lock:
-            IncrementalBar.next(self, n=n)
 
 
 class TileDownload:
@@ -150,57 +113,41 @@ class TileDownload:
         return array
 
 
-class ImageDownload:
-    def __init__(self, image: ee.Image, **kwargs):
-        # TODO: masking & nodata in profile below
-        kwargs.update(fileFormat='GeoTIFF', filePerBand=False)
-        self._image, _ = image.prepare_for_export(kwargs)
-        self._info = self._image.getInfo()
-        self._band_info = self._info['bands'][0]
-        self._transform = Affine(*self._band_info['crs_transform'])
-        if 'origin' in self._band_info:
-            self._transform *= Affine.translation(*self._band_info['origin'])
-        self._shape = self._band_info['dimensions'][::-1]
-        self._count = len(self._info['bands'])
-        self._dtype = self._get_dtype()
-        self._threads = multiprocessing.cpu_count()
-        rio_crs = CRS.from_string(kwargs['crs'] if 'crs' in kwargs else self._band_info['crs'])
-        self._profile = dict(driver='GTiff', dtype=self._dtype, nodata=0, width=self._shape[1], height=self._shape[0],
-                             count=self.count, crs=rio_crs, transform=self._transform, compress='deflate',
-                             interleave='band', tiled=True)
+class ImageDownload(Image):
+    def __init__(self, image: ee.Image):
+        Image.__init__(self, ee_image=image)
         self._out_lock = threading.Lock()
+        self._threads = multiprocessing.cpu_count()
 
-    @property
-    def image(self) -> ee.Image:
-        return self._image
+    def _prepare_for_export(self, region=None, crs=None, scale=None, resampling='near'):
+        if not region or not crs or not scale:
+            # check if this image is a composite (also retrieve this image's min crs, min scale, and footprint)
+            if not self.scale:
+                raise ValueError(f'Image appears to be a composite, specify a region, scale and crs')
+        region = region or self.footprint  # TODO: what happens if this is not in the download crs
+        crs = crs or self.crs
+        scale = scale or self.scale
+        ee_image = self._ee_image.resample(resampling) if resampling != 'near' else self._ee_image
+        export_args = dict(region=region, crs=crs, scale=scale, fileFormat='GeoTIFF', filePerBand=False)
+        ee_image, _ = ee_image.prepare_for_export(export_args)
+        # we now need transform, shape and band count to set up the profile
+        info = ee_image.getInfo()
+        band_info = info['bands'][0]  # all bands are same crs & scale now
+        transform = Affine(*band_info['crs_transform'])
+        if 'origin' in band_info:
+            transform *= Affine.translation(*band_info['origin'])
 
-    @property
-    def info(self) -> Dict:
-        return self._im_info
+        shape = band_info['dimensions'][::-1]
+        count = len(info['bands'])
+        dtype = self._get_dtype(band_info)
+        profile = dict(driver='GTiff', dtype=dtype, nodata=0, width=shape[1], height=shape[0],
+                       count=count, crs=CRS.from_string(crs), transform=transform, compress='deflate',
+                       interleave='band', tiled=True)
+        return ee_image, profile
 
-    @property
-    def band_info(self) -> Dict:
-        return self._band_info
-
-    @property
-    def transform(self) -> Affine:
-        return self._transform
-
-    @property
-    def shape(self) -> Tuple[int, int]:
-        return self._shape
-
-    @property
-    def count(self) -> int:
-        return self._count
-
-    @property
-    def profile(self) -> Dict:
-        return self._profile
-
-    def _get_dtype(self):
+    def _get_dtype(self, band_info):
         # TODO: each band has different min/max vals
-        ee_data_type = self._band_info['data_type']
+        ee_data_type = band_info['data_type']
 
         if ee_data_type['precision'] == 'int':
             # TODO: dtype_bits will not be correct for cases where part of the range is <0, but the range is not symm about 0
@@ -216,12 +163,13 @@ class ImageDownload:
         else:
             raise ValueError(f'Unknown image data type: {ee_data_type}')
 
-    def _get_tile_shape(self, max_download_size=33554432, max_grid_dimension=10000) -> Tuple[int, int]:
+    def _get_tile_shape(self, profile, max_download_size=33554432, max_grid_dimension=10000) -> Tuple[int, int]:
         """Internal function to find a tile shape that satisfies download limits and is roughly square"""
         # TODO incorporate max_grid_dimension
         # find the ttl number of tiles needed to satisfy max_download_size
-        dtype_size = np.dtype(self._dtype).itemsize
-        image_size = np.prod(np.int64((self.count, dtype_size, *self._shape)))
+        image_shape = (profile['height'], profile['width'])
+        dtype_size = np.dtype(profile['dtype']).itemsize
+        image_size = np.prod(np.int64((profile['count'], dtype_size, *image_shape)))
         num_tiles = np.ceil(image_size / max_download_size)
 
         # increment num_tiles if it is prime
@@ -246,17 +194,17 @@ class ImageDownload:
 
         # choose the factors that produce a roughly square (as close as possible) tile shape
         fact_aspect_ratios = fact_num_tiles[:, 0] / fact_num_tiles[:, 1]
-        aspect_ratio = self._shape[0] / self._shape[1]
+        aspect_ratio = image_shape[0] / image_shape[1]
         fact_idx = np.argmin(np.abs(fact_aspect_ratios - aspect_ratio))
         shape_num_tiles = fact_num_tiles[fact_idx, :]
 
         # find the tile shape and clip to max_grid_dimension if necessary
-        tile_shape = np.ceil(self._shape / shape_num_tiles).astype('int')
+        tile_shape = np.ceil(image_shape / shape_num_tiles).astype('int')
         tile_shape[tile_shape > max_grid_dimension] = max_grid_dimension
 
         return tuple(tile_shape.tolist())
 
-    def tiles(self):
+    def tiles(self, image, profile):
         """
         Iterator over the image tiles.
 
@@ -265,15 +213,16 @@ class ImageDownload:
         tile: DownloadTile
             An image tile that can be downloaded.
         """
-        tile_shape = self._get_tile_shape()
+        tile_shape = self._get_tile_shape(profile)
 
         # split the image up into tiles of at most tile_shape
-        start_range = product(range(0, self._shape[0], tile_shape[0]), range(0, self._shape[1], tile_shape[1]))
+        image_shape = (profile['height'], profile['width'])
+        start_range = product(range(0, image_shape[0], tile_shape[0]), range(0, image_shape[1], tile_shape[1]))
         for tile_start in start_range:
-            tile_stop = np.clip(np.add(tile_start, tile_shape), a_min=None, a_max=self._shape)
+            tile_stop = np.clip(np.add(tile_start, tile_shape), a_min=None, a_max=image_shape)
             clip_tile_shape = (tile_stop - tile_start).tolist()  # tolist is just to convert to native int
             tile_window = Window(tile_start[1], tile_start[0], clip_tile_shape[1], clip_tile_shape[0])
-            yield TileDownload(self._image, self._transform, tile_window)
+            yield TileDownload(image, profile['transform'], tile_window)
 
     def _build_overviews(self, im, max_num_levels=8, min_level_pixels=256):
         """
@@ -300,10 +249,11 @@ class ImageDownload:
         ovw_levels = [2 ** m for m in range(1, num_ovw_levels + 1)]
         im.build_overviews(ovw_levels, Resampling.average)
 
-    def download(self, filename: pathlib.Path, resampling='near', overwrite=False):
+    def download(self, filename: pathlib.Path, region=None, crs=None, scale=None, resampling='near', mask=True,
+                 overwrite=False):
         # TODO: resampling.  in __init__ where we know if it is composite or not?
         # TODO: write metadata and build overviews
-
+        image, profile = self._prepare_for_export(region=region, crs=crs, scale=scale)
         filename = pathlib.Path(filename)
         if filename.exists():
             if overwrite:
@@ -312,10 +262,12 @@ class ImageDownload:
                 raise FileExistsError(f'{filename} exists')
 
         session = requests_retry_session(5, status_forcelist=[500, 502, 503, 504])
-        tiles = list(self.tiles())
+        tiles = list(self.tiles(image, profile))
         bar_format = '{desc}: |{bar:32}| {n:.1f}/{total_fmt} tile(s) [{percentage:.1f}%] in {elapsed} (eta: {remaining})'
         bar = tqdm(desc=filename.name, total=len(tiles), bar_format=bar_format)
-        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), rio.open(filename, 'w', **self._profile) as out_ds, bar:
+        out_ds = rio.open(filename, 'w', **profile)
+        warnings.filterwarnings('ignore', category=TqdmWarning)
+        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), out_ds, bar:
             # threaded downloading of tiles into output dataset
             def download_tile(tile):
                 tile_array = tile.download(session, bar)
@@ -328,9 +280,9 @@ class ImageDownload:
                     future.result()
 
             # populate metadata
-            out_ds.update_tags(**self._info['properties'])
-            for band_i, band_info in enumerate(self._info['bands']):
+            out_ds.update_tags(**self.info['properties'])
+            for band_i, band_info in enumerate(self.info['bands']):
                 if 'id' in band_info:
                     out_ds.set_band_description(band_i + 1, band_info['id'])
-                # out_ds.update_tags(band_i+1, **band_info)
+                out_ds.update_tags(band_i + 1, **band_info)
             self._build_overviews(out_ds)
