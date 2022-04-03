@@ -31,6 +31,8 @@ import ee
 import numpy as np
 import rasterio as rio
 import requests
+from pip._vendor.progress import monotonic
+from pip._vendor.progress.bar import IncrementalBar
 from rasterio import Affine
 from rasterio import MemoryFile
 from rasterio.crs import CRS
@@ -39,8 +41,9 @@ from rasterio.windows import Window
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 from tqdm import tqdm
-from pip._vendor.progress.bar import IncrementalBar
-from pip._vendor.progress import monotonic
+import pandas as pd
+from geedim import info
+from geedim.image import split_id
 
 
 def requests_retry_session(
@@ -97,6 +100,7 @@ class TiledDownloadBar(IncrementalBar):
         with self.lock:
             IncrementalBar.next(self, n=n)
 
+
 class TileDownload:
     def __init__(self, image: ee.Image, transform: Affine, window: Window):
         self._image = image
@@ -125,21 +129,20 @@ class TileDownload:
             dict(crs=self._image.projection().crs(), crs_transform=tuple(self._transform)[:6],
                  dimensions=self._shape[::-1], filePerBand=False, fileFormat='GeoTIFF'))
 
-        # download into buffer
+        # download zip into buffer
         zip_buffer = BytesIO()
         resp = session.get(url, stream=True)
         download_size = int(resp.headers.get('content-length', 0))
-        for data in resp.iter_content(chunk_size=1024):
+        for data in resp.iter_content(chunk_size=10240):
             zip_buffer.write(data)
             bar.update(len(data) / download_size)
-
         zip_buffer.flush()
 
         # extract geotiff from zipped buffer into another buffer
         zip_file = zipfile.ZipFile(zip_buffer)
         ext_buffer = BytesIO(zip_file.read(zip_file.filelist[0]))
 
-        # read the geotiff with rasterio memory file
+        # read the geotiff with a rasterio memory file
         with MemoryFile(ext_buffer) as mem_file:
             with mem_file.open() as ds:
                 array = ds.read()
@@ -230,7 +233,7 @@ class ImageDownload:
                     return False
             return True
 
-        if is_prime(num_tiles):
+        if num_tiles > 4 and is_prime(num_tiles):
             num_tiles += 1
 
         # factorise num_tiles into num of tiles down x,y axes
@@ -310,9 +313,8 @@ class ImageDownload:
 
         session = requests_retry_session(5, status_forcelist=[500, 502, 503, 504])
         tiles = list(self.tiles())
-        bar_format = '{desc}: |{bar:32}| {n:.1f}/{total_fmt} tiles [{percentage:.1f}%] in {elapsed} (eta: {remaining})'
+        bar_format = '{desc}: |{bar:32}| {n:.1f}/{total_fmt} tile(s) [{percentage:.1f}%] in {elapsed} (eta: {remaining})'
         bar = tqdm(desc=filename.name, total=len(tiles), bar_format=bar_format)
-        # bar = TiledDownloadBar(filename.name, max=len(tiles))
         with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), rio.open(filename, 'w', **self._profile) as out_ds, bar:
             # threaded downloading of tiles into output dataset
             def download_tile(tile):
