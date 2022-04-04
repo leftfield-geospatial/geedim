@@ -20,7 +20,7 @@ import ee
 import numpy as np
 import pandas as pd
 
-from geedim import export, collection, root_path, info, image
+from geedim import download, collection, root_path, info, image
 from tests.util import _test_image_file, _test_search_results, _setup_test
 
 
@@ -125,8 +125,9 @@ class TestApi(unittest.TestCase):
                 name = impdict["image_id"].replace('/', '-')
                 crs_str = impdict["crs"].replace(':', '_') if impdict["crs"] else 'None'
                 filename = root_path.joinpath(f'data/outputs/tests/{name}_{crs_str}_{impdict["scale"]}m.tif')
-                export.download_image(gd_image, filename, region=region, crs=impdict["crs"], scale=impdict["scale"],
-                                      resampling=impdict["resampling"], overwrite=True)
+                dim = download.ImageDownload(gd_image.ee_image)
+                dim.download(filename, region=region, crs=impdict["crs"], scale=impdict["scale"],
+                             resampling=impdict["resampling"], overwrite=True)
                 impdict.pop('image_id')
                 _test_image_file(self, image_obj=gd_image, filename=filename, region=region, **impdict)
 
@@ -137,7 +138,9 @@ class TestApi(unittest.TestCase):
                   "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
         image_id = 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190128'
         ee_image = ee.Image(image_id)
-        export.export_image(ee_image, image_id.replace('/', '-'), folder='geedim_test', region=region, wait=False)
+        dim = download.ImageDownload(ee_image)
+        dim.export(image_id.replace('/', '-'), folder='geedim_test', region=region, wait=False)
+        # export.export_image(ee_image, )
 
     def _test_composite(self, ee_image):
         """ Test the metadata of a composite ee.Image for validity. """

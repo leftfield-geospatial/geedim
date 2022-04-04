@@ -22,7 +22,7 @@ import warnings
 import numpy as np
 import pandas as pd
 
-from geedim import export, info, image, root_path, _ee_init
+from geedim import download, info, image, root_path, _ee_init
 
 if importlib.util.find_spec("rasterio"):
     import rasterio as rio
@@ -68,7 +68,7 @@ def _test_search_results(test_case, res_df, start_date, end_date, valid_portion=
 
 
 def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=None,
-                     mask=image.MaskedImage._default_params['mask'], resampling=export._default_resampling,
+                     mask=image.MaskedImage._default_params['mask'], resampling='near',
                      cloud_dist=image.MaskedImage._default_params['cloud_dist']):
     """ Test downloaded image file against corresponding image object """
 
@@ -87,8 +87,10 @@ def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=Non
     gd_info = gd_image.info
     sr_band_df = pd.DataFrame.from_dict(info.collection_info[gd_coll_name]['bands'])
 
-    exp_image = export._ExportImage(gd_image, name=gd_image.id, exp_region=region, exp_crs=crs, exp_scale=scale)
-    exp_image.parse_attributes()
+    dim = download.ImageDownload(gd_image.ee_image)
+    exp_image, _, _ = dim._prepare_for_export(region=region, crs=crs, scale=scale)
+    # exp_image = export._ExportImage(gd_image, name=gd_image.id, exp_region=region, exp_crs=crs, exp_scale=scale)
+    # exp_image.parse_attributes()
 
     region_arr = pd.DataFrame(region['coordinates'][0], columns=['x', 'y'])  # avoid numpy dependency
     region_bounds = rio.coords.BoundingBox(region_arr.x.min(), region_arr.y.min(), region_arr.x.max(),
@@ -99,9 +101,9 @@ def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=Non
     with rio.open(filename) as im:
         # check bands, crs and scale
         test_case.assertEqual(len(gd_info['bands']), im.count, msg='EE and download image band count match')
-        exp_epsg = CRS.from_string(exp_image.exp_crs).to_epsg()
+        exp_epsg = CRS.from_string(crs if crs else dim.crs).to_epsg()
         test_case.assertEqual(exp_epsg, im.crs.to_epsg(), msg='EE and download image CRS match')
-        test_case.assertAlmostEqual(exp_image.exp_scale, im.res[0], places=3,
+        test_case.assertAlmostEqual(scale if scale else dim.scale, im.res[0], places=3,
                                     msg='EE and download image scale match')
 
         # check image bounds coincide with region
