@@ -25,6 +25,7 @@ import ee
 from geedim import collection as coll_api
 from geedim import export as export_api
 from geedim import info, image, _ee_init
+from geedim.download import ImageDownload
 
 
 class _CmdChainResults(object):
@@ -70,16 +71,19 @@ def _export_im_list(im_list, path='', wait=True, overwrite=False, do_download=Tr
     export_tasks = []
 
     for im_dict in im_list:
+        dim = ImageDownload(im_dict['image'])
         if do_download:
             filename = pathlib.Path(path).joinpath(im_dict['name'] + '.tif')
-            export_api.download_image(im_dict['image'], filename, overwrite=overwrite, **kwargs)
+            # export_api.download_image(im_dict['image'], filename, overwrite=overwrite, **kwargs)
+            dim.download(filename, overwrite=overwrite, **kwargs)
         else:
-            task = export_api.export_image(im_dict['image'], im_dict['name'], folder=path, wait=False, **kwargs)
+            task = dim.export(im_dict['name'], folder=path, wait=False, **kwargs)
+            # task = export_api.export_image(im_dict['image'], im_dict['name'], folder=path, wait=False, **kwargs)
             export_tasks.append(task)
 
     if wait:
         for task in export_tasks:
-            export_api.monitor_export_task(task)
+            ImageDownload.monitor_export_task(task)
 
 
 def _create_im_list(ids, **kwargs):
@@ -92,7 +96,7 @@ def _create_im_list(ids, **kwargs):
             im_list.append(dict(image=ee.Image(im_id), name=im_id.replace('/', '-')))
         else:
             gd_image = image.get_class(ee_coll_name).from_id(im_id, **kwargs)
-            im_list.append(dict(image=gd_image, name=im_id.replace('/', '-')))
+            im_list.append(dict(image=gd_image.ee_image, name=im_id.replace('/', '-')))
 
     return im_list
 

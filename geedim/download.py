@@ -285,7 +285,8 @@ class ImageDownload(Image):
             tile_window = Window(tile_start[1], tile_start[0], clip_tile_shape[1], clip_tile_shape[0])
             yield TileDownload(image, profile['transform'], tile_window)
 
-    def _monitor_export_task(self, task, label=None):
+    @staticmethod
+    def monitor_export_task(task, label=None):
         """
         Monitor and display the progress of an export task
 
@@ -340,7 +341,7 @@ class ImageDownload(Image):
         task.start()
 
         if wait:  # wait for completion
-            self._monitor_export_task(task)
+            self.monitor_export_task(task)
 
         return task
 
