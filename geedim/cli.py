@@ -121,7 +121,7 @@ def _export_download(res=_CmdChainResults(), do_download=True, **kwargs):
     if (params.region is None) and (params.bbox is None or len(params.bbox) == 0):
         if res.search_region is None:
             raise click.BadOptionUsage('region',
-                                       'Either pass --region / --box, or chain this command with a succesful `search`')
+                                       'Either pass --region / --box, or chain this command with a successful `search`')
         else:
             region = res.search_region
     else:

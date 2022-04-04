@@ -30,6 +30,7 @@ from typing import Tuple
 
 import ee
 import numpy as np
+import pandas as pd
 import rasterio as rio
 import requests
 from rasterio import Affine
@@ -117,21 +118,67 @@ class ImageDownload(Image):
     def __init__(self, image: ee.Image):
         Image.__init__(self, ee_image=image)
         self._out_lock = threading.Lock()
-        self._threads = multiprocessing.cpu_count()
+        self._threads = max(multiprocessing.cpu_count(), 4)
 
-    def _prepare_for_export(self, region=None, crs=None, scale=None, resampling='near'):
+    def _auto_dtype(self):
+        band_df = pd.DataFrame(self.info['ee_info']['bands'])
+        dtype_df = pd.DataFrame(band_df.data_type.tolist(), index=band_df.id)
+        if all(dtype_df.precision == 'int'):
+            dtype_min = dtype_df['min'].min()
+            dtype_max = dtype_df['max'].max()
+            bits = 0
+            for bound in [abs(dtype_max), abs(dtype_min)]:
+                bound_bits = 0 if bound == 0 else 2 ** np.ceil(np.log2(np.log2(abs(bound))))
+                bits += bound_bits
+            bits = min(max(bits, 8), 64)
+            dtype = f'{"u" if dtype_min >= 0 else ""}int{int(bits)}'
+        elif any(dtype_df.precision == 'double'):
+            dtype = 'float64'
+        else:
+            dtype = 'float32'
+        return dtype
+
+    def _convert_dtype(self, image, dtype=None):
+        if dtype is None:
+            dtype = self._auto_dtype()
+
+        # TODO: check the nodata vals that GEE uses for each dtype
+        conv_dict = dict(
+            float32=dict(conv=ee.Image.toFloat, nodata=float('nan')),
+            float64=dict(conv=ee.Image.toDouble, nodata=float('nan')),
+            uint8=dict(conv=ee.Image.toUint8, nodata=0),
+            int8=dict(conv=ee.Image.toInt8, nodata=np.iinfo('int8').min),
+            uint16=dict(conv=ee.Image.toUint16, nodata=0),
+            int16=dict(conv=ee.Image.toInt16, nodata=np.iinfo('int16').min),
+            uint32=dict(conv=ee.Image.toUint32, nodata=0),
+            int32=dict(conv=ee.Image.toInt32, nodata=np.iinfo('int32').min),
+            int64=dict(conv=ee.Image.toInt64, nodata=np.iinfo('int64').min),
+        )
+        if dtype not in conv_dict:
+            raise ValueError(f'Unrecognised dtype: {dtype}')
+
+        return conv_dict[dtype]['conv'](image), dtype, conv_dict[dtype]['nodata']
+
+    def _prepare_for_export(self, region=None, crs=None, scale=None, resampling='near', dtype=None):
         if not region or not crs or not scale:
             # check if this image is a composite (also retrieve this image's min crs, min scale, and footprint)
             if not self.scale:
-                raise ValueError(f'Image appears to be a composite, specify a region, scale and crs')
+                raise ValueError(f'Image appears to be a composite, specify a region, crs and scale')
         region = region or self.footprint  # TODO: what happens if this is not in the download crs
         crs = crs or self.crs
         scale = scale or self.scale
+
+        if crs == "SR-ORG:6974":
+            raise ValueError(
+                "There is an earth engine bug exporting in SR-ORG:6974, specify another CRS: "
+                "https://issuetracker.google.com/issues/194561313"
+            )
         ee_image = self._ee_image.resample(resampling) if resampling != 'near' else self._ee_image
+        ee_image, dtype, nodata = self._convert_dtype(ee_image, dtype=dtype)
         export_args = dict(region=region, crs=crs, scale=scale, fileFormat='GeoTIFF', filePerBand=False)
         ee_image, _ = ee_image.prepare_for_export(export_args)
         # we now need transform, shape and band count to set up the profile
-        info = ee_image.getInfo()
+        info = ee_image.getInfo()  # could be avoided in some cases but is cleaner like this
         band_info = info['bands'][0]  # all bands are same crs & scale now
         transform = Affine(*band_info['crs_transform'])
         if 'origin' in band_info:
@@ -139,33 +186,38 @@ class ImageDownload(Image):
 
         shape = band_info['dimensions'][::-1]
         count = len(info['bands'])
-        dtype = self._get_dtype(band_info)
-        profile = dict(driver='GTiff', dtype=dtype, nodata=0, width=shape[1], height=shape[0],
+        profile = dict(driver='GTiff', dtype=dtype, nodata=nodata, width=shape[1], height=shape[0],
                        count=count, crs=CRS.from_string(crs), transform=transform, compress='deflate',
                        interleave='band', tiled=True)
         return ee_image, profile
 
-    def _get_dtype(self, band_info):
-        # TODO: each band has different min/max vals
-        ee_data_type = band_info['data_type']
+    def _build_overviews(self, im, max_num_levels=8, min_level_pixels=256):
+        """
+        Build internal overviews, downsampled by successive powers of 2, for a rasterio dataset.
 
-        if ee_data_type['precision'] == 'int':
-            # TODO: dtype_bits will not be correct for cases where part of the range is <0, but the range is not symm about 0
-            dtype_range = ee_data_type['max'] - ee_data_type['min']
-            dtype_bits = 2 ** np.ceil(np.log2(np.log2(dtype_range))).astype('int')
-            poss_int_bits = [8, 16, 32, 64]
-            if not dtype_bits in poss_int_bits:
-                return 'int64'  # revert to int64 in unusual cases
-            else:
-                return f'int{dtype_bits}' if ee_data_type['min'] < 0 else f'uint{dtype_bits}'
-        elif ee_data_type['precision'] == 'double':
-            return 'float64'
-        else:
-            raise ValueError(f'Unknown image data type: {ee_data_type}')
+        Parameters
+        ----------
+        im: rasterio.io.DatasetWriter
+            An open rasterio dataset to write the metadata to.
+        max_num_levels: int, optional
+            Maximum number of overview levels to build.
+        min_level_pixels: int, pixel
+            Minimum width/height (in pixels) of any overview level.
+        """
+
+        # limit overviews so that the highest level has at least 2**8=256 pixels along the shortest dimension,
+        # and so there are no more than 8 levels.
+        if im.closed:
+            raise ValueError('Image dataset is closed')
+
+        max_ovw_levels = int(np.min(np.log2(im.shape)))
+        min_level_shape_pow2 = int(np.log2(min_level_pixels))
+        num_ovw_levels = np.min([max_num_levels, max_ovw_levels - min_level_shape_pow2])
+        ovw_levels = [2 ** m for m in range(1, num_ovw_levels + 1)]
+        im.build_overviews(ovw_levels, Resampling.average)
 
     def _get_tile_shape(self, profile, max_download_size=33554432, max_grid_dimension=10000) -> Tuple[int, int]:
         """Internal function to find a tile shape that satisfies download limits and is roughly square"""
-        # TODO incorporate max_grid_dimension
         # find the ttl number of tiles needed to satisfy max_download_size
         image_shape = (profile['height'], profile['width'])
         dtype_size = np.dtype(profile['dtype']).itemsize
@@ -224,36 +276,10 @@ class ImageDownload(Image):
             tile_window = Window(tile_start[1], tile_start[0], clip_tile_shape[1], clip_tile_shape[0])
             yield TileDownload(image, profile['transform'], tile_window)
 
-    def _build_overviews(self, im, max_num_levels=8, min_level_pixels=256):
-        """
-        Build internal overviews, downsampled by successive powers of 2, for a rasterio dataset.
-
-        Parameters
-        ----------
-        im: rasterio.io.DatasetWriter
-            An open rasterio dataset to write the metadata to.
-        max_num_levels: int, optional
-            Maximum number of overview levels to build.
-        min_level_pixels: int, pixel
-            Minimum width/height (in pixels) of any overview level.
-        """
-
-        # limit overviews so that the highest level has at least 2**8=256 pixels along the shortest dimension,
-        # and so there are no more than 8 levels.
-        if im.closed:
-            raise ValueError('Image dataset is closed')
-
-        max_ovw_levels = int(np.min(np.log2(im.shape)))
-        min_level_shape_pow2 = int(np.log2(min_level_pixels))
-        num_ovw_levels = np.min([max_num_levels, max_ovw_levels - min_level_shape_pow2])
-        ovw_levels = [2 ** m for m in range(1, num_ovw_levels + 1)]
-        im.build_overviews(ovw_levels, Resampling.average)
-
-    def download(self, filename: pathlib.Path, region=None, crs=None, scale=None, resampling='near', mask=True,
-                 overwrite=False):
+    def download(self, filename: pathlib.Path, region=None, crs=None, scale=None, resampling='near', dtype=None,
+                 mask=True, overwrite=False):
         # TODO: resampling.  in __init__ where we know if it is composite or not?
         # TODO: write metadata and build overviews
-        image, profile = self._prepare_for_export(region=region, crs=crs, scale=scale)
         filename = pathlib.Path(filename)
         if filename.exists():
             if overwrite:
@@ -261,12 +287,15 @@ class ImageDownload(Image):
             else:
                 raise FileExistsError(f'{filename} exists')
 
+        image, profile = self._prepare_for_export(region=region, crs=crs, scale=scale, resampling=resampling,
+                                                  dtype=dtype)
         session = requests_retry_session(5, status_forcelist=[500, 502, 503, 504])
         tiles = list(self.tiles(image, profile))
         bar_format = '{desc}: |{bar:32}| {n:.1f}/{total_fmt} tile(s) [{percentage:.1f}%] in {elapsed} (eta: {remaining})'
         bar = tqdm(desc=filename.name, total=len(tiles), bar_format=bar_format)
         out_ds = rio.open(filename, 'w', **profile)
         warnings.filterwarnings('ignore', category=TqdmWarning)
+
         with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), out_ds, bar:
             # threaded downloading of tiles into output dataset
             def download_tile(tile):

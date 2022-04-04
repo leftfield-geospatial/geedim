@@ -55,17 +55,19 @@ def get_info(ee_image, min=True):
     ee_image : ee.Image
                The image whose information to retrieve.
     min : bool, optional
-          Retrieve the crs & scale corresponding to the band with the minimum (True) or maximum (False) scale.
-          (default: True)
+          Retrieve the crs, crs_transform & scale corresponding to the band with the minimum (True) or maximum (False)
+          scale.(default: True)
 
     Returns
     -------
     dict
         Dictionary of image information with 'id', 'properties', 'bands', 'crs' and 'scale' keys.
     """
-    gd_info = dict(id=None, properties={}, bands=[], crs=None, scale=None, crs_transform=None, footprint=None)
+    # TODO: lose the need for ee_info below, perhaps change Image class to return ee_info with its .info property
+    gd_info = dict(id=None, properties={}, bands=[], crs=None, crs_transform=None, scale=None, footprint=None,
+                   ee_info=None)
     ee_info = ee_image.getInfo()  # retrieve image info from cloud
-    gd_info['_ee_info'] = ee_info
+    gd_info['ee_info'] = ee_info
 
     if "id" in ee_info:
         gd_info["id"] = ee_info["id"]
@@ -524,6 +526,7 @@ class MaskedImage(Image):
 class LandsatImage(MaskedImage):
     """ Base class for cloud/shadow masking and quality scoring landsat8_c2_l2 and landsat7_c2_l2 images """
 
+    #TODO: remove these dtype conversions here and leave it up to download.
     @staticmethod
     def _im_transform(ee_image):
         return ee.Image.toUint16(ee_image)
