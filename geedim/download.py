@@ -21,6 +21,7 @@ import multiprocessing
 import os
 import pathlib
 import threading
+import time
 import warnings
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -33,6 +34,7 @@ import numpy as np
 import pandas as pd
 import rasterio as rio
 import requests
+from pip._vendor.progress.spinner import Spinner
 from rasterio import Affine
 from rasterio import MemoryFile
 from rasterio.crs import CRS
@@ -177,17 +179,24 @@ class ImageDownload(Image):
         ee_image, dtype, nodata = self._convert_dtype(ee_image, dtype=dtype)
         export_args = dict(region=region, crs=crs, scale=scale, fileFormat='GeoTIFF', filePerBand=False)
         ee_image, _ = ee_image.prepare_for_export(export_args)
-        # we now need transform, shape and band count to set up the profile
-        info = ee_image.getInfo()  # could be avoided in some cases but is cleaner like this
-        band_info = info['bands'][0]  # all bands are same crs & scale now
+        return ee_image, dtype, nodata
+
+    def _prepare_for_download(self, mask=True, **kwargs):
+        # resample, convert, clip and reproject image according to download params
+        ee_image, dtype, nodata = self._prepare_for_export(**kwargs)
+        # _prepare_for_export adjusts crs, dimensions, crs_transform etc so get the latest image info
+        info = ee_image.getInfo()
+
+        # get transform, shape and band count of the prepared image to configure up the output image profile
+        band_info = info['bands'][0]  # all bands are same crs & scale after prepare_for_export
         transform = Affine(*band_info['crs_transform'])
         if 'origin' in band_info:
             transform *= Affine.translation(*band_info['origin'])
 
         shape = band_info['dimensions'][::-1]
         count = len(info['bands'])
-        profile = dict(driver='GTiff', dtype=dtype, nodata=nodata, width=shape[1], height=shape[0],
-                       count=count, crs=CRS.from_string(crs), transform=transform, compress='deflate',
+        profile = dict(driver='GTiff', dtype=dtype, nodata=nodata if mask else None, width=shape[1], height=shape[0],
+                       count=count, crs=CRS.from_string(band_info['crs']), transform=transform, compress='deflate',
                        interleave='band', tiled=True)
         return ee_image, profile
 
@@ -276,8 +285,66 @@ class ImageDownload(Image):
             tile_window = Window(tile_start[1], tile_start[0], clip_tile_shape[1], clip_tile_shape[0])
             yield TileDownload(image, profile['transform'], tile_window)
 
-    def download(self, filename: pathlib.Path, region=None, crs=None, scale=None, resampling='near', dtype=None,
-                 mask=True, overwrite=False):
+    def _monitor_export_task(self, task, label=None):
+        """
+        Monitor and display the progress of an export task
+
+        Parameters
+        ----------
+        task : ee.batch.Task
+               WW task to monitor
+        label: str, optional
+               Optional label for progress display (default: use task description)
+        """
+        pause = 0.1
+        status = ee.data.getOperation(task.name)
+
+        if label is None:
+            label = f'{status["metadata"]["description"][:80]}'
+
+        # TODO: make this into an iterator?
+        # wait for export preparation to complete, displaying a spin toggle
+        def spin():
+            with Spinner(f'Preparing {label}: ') as spinner:
+                while 'progress' not in status['metadata']:
+                    time.sleep(pause)
+                    spinner.next()
+                spinner.writeln(f'Preparing {label}: done')
+
+        spin_thread = threading.Thread(target=spin)
+        spin_thread.start()
+        while 'progress' not in status['metadata']:
+            time.sleep(5 * pause)
+            status = ee.data.getOperation(task.name)  # get task status
+        spin_thread.join()
+
+        # wait for export to complete, displaying a progress bar
+        bar_format = '{desc}: |{bar:32}| [{percentage:.1f}%] in {elapsed} (eta: {remaining})'
+        with tqdm(desc=f'Exporting {label}', total=1, bar_format=bar_format) as bar:
+            while ('done' not in status) or (not status['done']):
+                time.sleep(10 * pause)
+                status = ee.data.getOperation(task.name)  # get task status
+                bar.update(status['metadata']['progress'] - bar.n)
+
+        if status['metadata']['state'] != 'SUCCEEDED':
+            raise IOError(f"Export failed \n{status}")
+
+    def export(self, filename, folder='', wait=True, **kwargs):
+        # TODO: resampling.  in __init__ where we know if it is composite or not?
+        # TODO: write metadata and build overviews
+
+        image, _, _ = self._prepare_for_export(**kwargs)
+        # create export task and start
+        task = ee.batch.Export.image.toDrive(image=image, description=filename[:100], folder=folder,
+                                             fileNamePrefix=filename, maxPixels=1e9)
+        task.start()
+
+        if wait:  # wait for completion
+            self._monitor_export_task(task)
+
+        return task
+
+    def download(self, filename: pathlib.Path, overwrite=False, **kwargs):
         # TODO: resampling.  in __init__ where we know if it is composite or not?
         # TODO: write metadata and build overviews
         filename = pathlib.Path(filename)
@@ -287,8 +354,7 @@ class ImageDownload(Image):
             else:
                 raise FileExistsError(f'{filename} exists')
 
-        image, profile = self._prepare_for_export(region=region, crs=crs, scale=scale, resampling=resampling,
-                                                  dtype=dtype)
+        image, profile = self._prepare_for_download(**kwargs)
         session = requests_retry_session(5, status_forcelist=[500, 502, 503, 504])
         tiles = list(self.tiles(image, profile))
         bar_format = '{desc}: |{bar:32}| {n:.1f}/{total_fmt} tile(s) [{percentage:.1f}%] in {elapsed} (eta: {remaining})'
