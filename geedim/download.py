@@ -112,11 +112,16 @@ class TileDownload:
         with MemoryFile(ext_buffer) as mem_file:
             with mem_file.open() as ds:
                 array = ds.read()
+                if array.dtype == np.dtype('float32') or array.dtype == np.dtype('float64'):
+                    # GEE sets nodata to -inf for float data types, (but does not populate the nodata field)
+                    # rasterio won't allow nodata=-inf, so this is a workaround to change nodata to nan at source
+                    array[np.isinf(array)] = np.nan
 
         return array
 
 
 class ImageDownload(Image):
+    float_nodata = float('nan')
     def __init__(self, image: ee.Image):
         Image.__init__(self, ee_image=image)
         self._out_lock = threading.Lock()
@@ -126,13 +131,14 @@ class ImageDownload(Image):
         band_df = pd.DataFrame(self.info['ee_info']['bands'])
         dtype_df = pd.DataFrame(band_df.data_type.tolist(), index=band_df.id)
         if all(dtype_df.precision == 'int'):
+            # TODO: rasterio.dtypes.get_minimum_dtype
             dtype_min = dtype_df['min'].min()
             dtype_max = dtype_df['max'].max()
             bits = 0
             for bound in [abs(dtype_max), abs(dtype_min)]:
                 bound_bits = 0 if bound == 0 else 2 ** np.ceil(np.log2(np.log2(abs(bound))))
                 bits += bound_bits
-            bits = min(max(bits, 8), 64)
+            bits = min(max(bits, 8), 32)
             dtype = f'{"u" if dtype_min >= 0 else ""}int{int(bits)}'
         elif any(dtype_df.precision == 'double'):
             dtype = 'float64'
@@ -146,18 +152,18 @@ class ImageDownload(Image):
 
         # TODO: check the nodata vals that GEE uses for each dtype
         conv_dict = dict(
-            float32=dict(conv=ee.Image.toFloat, nodata=float('nan')),
-            float64=dict(conv=ee.Image.toDouble, nodata=float('nan')),
+            float32=dict(conv=ee.Image.toFloat, nodata=self.float_nodata),
+            float64=dict(conv=ee.Image.toDouble, nodata=self.float_nodata),
             uint8=dict(conv=ee.Image.toUint8, nodata=0),
             int8=dict(conv=ee.Image.toInt8, nodata=np.iinfo('int8').min),
             uint16=dict(conv=ee.Image.toUint16, nodata=0),
             int16=dict(conv=ee.Image.toInt16, nodata=np.iinfo('int16').min),
             uint32=dict(conv=ee.Image.toUint32, nodata=0),
             int32=dict(conv=ee.Image.toInt32, nodata=np.iinfo('int32').min),
-            int64=dict(conv=ee.Image.toInt64, nodata=np.iinfo('int64').min),
+            # int64=dict(conv=ee.Image.toInt64, nodata=np.iinfo('int64').min),
         )
         if dtype not in conv_dict:
-            raise ValueError(f'Unrecognised dtype: {dtype}')
+            raise ValueError(f'Unsupported dtype: {dtype}')
 
         return conv_dict[dtype]['conv'](image), dtype, conv_dict[dtype]['nodata']
 
