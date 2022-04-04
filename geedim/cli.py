@@ -26,6 +26,7 @@ from geedim import collection as coll_api
 from geedim import export as export_api
 from geedim import info, image, _ee_init
 from geedim.download import ImageDownload
+from rasterio.dtypes import dtype_ranges
 
 
 class _CmdChainResults(object):
@@ -149,10 +150,10 @@ def _export_download(res=_CmdChainResults(), do_download=True, **kwargs):
     # download/export the image list
     if do_download:
         _export_im_list(im_list, region=region, path=params.download_dir, crs=crs, scale=params.scale,
-                        resampling=params.resampling, overwrite=params.overwrite, do_download=True)
+                        resampling=params.resampling, overwrite=params.overwrite, dtype=params.dtype, do_download=True)
     else:
         _export_im_list(im_list, region=region, path=params.drive_folder, crs=crs, scale=params.scale,
-                        resampling=params.resampling, do_download=False, wait=params.wait)
+                        resampling=params.resampling, dtype=params.dtype, do_download=False, wait=params.wait)
 
 
 """ Define click options that are common to more than one command """
@@ -198,6 +199,14 @@ scale_option = click.option(
     default=None,
     help="Resample image bands to this pixel resolution (m). \n[default: minimum of the source band resolutions]",
     required=False,
+)
+dtype_option = click.option(
+    "--dtype",
+    "dtype",
+    type=click.Choice(list(dtype_ranges.keys()), case_sensitive=False),
+    default=None,
+    help="Convert image(s) to this data type.",
+    show_default=True,
 )
 mask_option = click.option(
     "-m/-nm",
@@ -327,6 +336,7 @@ cli.add_command(search)
 )
 @crs_option
 @scale_option
+@dtype_option
 @mask_option
 @resampling_option
 @cloud_dist_option
@@ -340,7 +350,8 @@ cli.add_command(search)
     show_default=False,
 )
 @click.pass_context
-def download(ctx, image_id, bbox, region, download_dir, crs, scale, mask, resampling, cloud_dist, overwrite=False):
+def download(ctx, image_id, bbox, region, download_dir, crs, scale, dtype, mask, resampling, cloud_dist,
+             overwrite=False):
     """ Download image(s), with cloud and shadow masking """
     _export_download(res=ctx.obj, do_download=True, **ctx.params)
 
@@ -374,7 +385,7 @@ cli.add_command(download)
     required=False,
 )
 @click.pass_context
-def export(ctx, image_id, bbox, region, drive_folder, crs, scale, mask, resampling, cloud_dist, wait):
+def export(ctx, image_id, bbox, region, drive_folder, crs, scale, dtype, mask, resampling, cloud_dist, wait):
     """ Export image(s) to Google Drive, with cloud and shadow masking """
     _export_download(res=ctx.obj, do_download=False, **ctx.params)
 
