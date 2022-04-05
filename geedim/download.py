@@ -44,7 +44,7 @@ from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 from tqdm import tqdm, TqdmWarning
 
-from geedim.image import Image
+from geedim import info
 
 
 def requests_retry_session(
@@ -66,6 +66,80 @@ def requests_retry_session(
     session.mount('https://', adapter)
     return session
 
+def split_id(image_id):
+    """
+    Split Earth Engine image ID into collection and index components.
+
+    Parameters
+    ----------
+    image_id: str
+              Earth engine image ID.
+
+    Returns
+    -------
+    tuple
+        A tuple of strings: (collection name, image index).
+    """
+    index = image_id.split("/")[-1]
+    ee_coll_name = "/".join(image_id.split("/")[:-1])
+    return ee_coll_name, index
+
+def get_info(ee_image, min=True):
+    """
+    Retrieve Earth Engine image metadata
+
+    Parameters
+    ----------
+    ee_image : ee.Image
+               The image whose information to retrieve.
+    min : bool, optional
+          Retrieve the crs, crs_transform & scale corresponding to the band with the minimum (True) or maximum (False)
+          scale.(default: True)
+
+    Returns
+    -------
+    dict
+        Dictionary of image information with 'id', 'properties', 'bands', 'crs' and 'scale' keys.
+    """
+    # TODO: lose the need for ee_info below, perhaps change Image class to return ee_info with its .info property
+    gd_info = dict(id=None, properties={}, bands=[], crs=None, crs_transform=None, scale=None, footprint=None,
+                   ee_info=None)
+    ee_info = ee_image.getInfo()  # retrieve image info from cloud
+    gd_info['ee_info'] = ee_info
+
+    if "id" in ee_info:
+        gd_info["id"] = ee_info["id"]
+
+    if "properties" in ee_info:
+        gd_info["properties"] = ee_info["properties"]
+        if 'system:footprint' in ee_info["properties"]:
+            gd_info['footprint'] = ee_info['properties']['system:footprint']
+
+    if "bands" in ee_info:
+        # get scale & crs corresponding to min/max scale band (exclude 'EPSG:4326' (composite/constant) bands)
+        band_df = pd.DataFrame(ee_info["bands"])
+        scales = pd.DataFrame(band_df["crs_transform"].tolist())[0].abs().astype(float)
+        band_df["scale"] = scales
+        filt_band_df = band_df[(band_df.crs != "EPSG:4326") & (band_df.scale != 1)]
+        if filt_band_df.shape[0] > 0:
+            idx = filt_band_df.scale.idxmin() if min else filt_band_df.scale.idxmax()
+            gd_info["crs"], gd_info["scale"]  = filt_band_df.loc[idx, ["crs", "scale"]]
+            # gd_info["crs_transform"] = Affine(*filt_band_df.loc[idx, "crs_transform"])
+            # if 'origin' in filt_band_df and not np.isnan(filt_band_df.loc[idx, 'origin']):
+            #     gd_info["crs_transform"] *= Affine.translation(*filt_band_df.loc[idx, 'origin'])
+
+        # populate band metadata
+        ee_coll_name = split_id(str(gd_info["id"]))[0]
+        if ee_coll_name in info.ee_to_gd:  # include SR band metadata if it exists
+            # TODO: don't assume all the bands are in band_df, there could have been a select
+            # use DataFrame to concat SR band metadata from collection_info with band IDs from the image
+            sr_band_list = info.collection_info[info.ee_to_gd[ee_coll_name]]["bands"].copy()
+            sr_band_dict = {bdict['id']: bdict for bdict in sr_band_list}
+            gd_info["bands"] = [sr_band_dict[id] if id in sr_band_dict else dict(id=id) for id in band_df.id]
+        else:  # just use the image band IDs
+            gd_info["bands"] = band_df[["id"]].to_dict("records")
+
+    return gd_info
 
 class TileDownload:
     def __init__(self, image: ee.Image, transform: Affine, window: Window):
@@ -118,6 +192,54 @@ class TileDownload:
                     array[np.isinf(array)] = np.nan
 
         return array
+
+class Image(object):
+    def __init__(self, ee_image):
+        """
+        Base class to wrap any ee.Image and provide access to metadata.
+
+        Parameters
+        ----------
+        ee_image : ee.Image
+                   Image to wrap.
+        """
+        if not isinstance(ee_image, ee.Image):
+            raise TypeError('image must be an instance of ee.Image')
+        self._ee_image = ee_image
+        self._info = None
+
+    @property
+    def ee_image(self):
+        """ ee.Image: The wrapped image. """
+        return self._ee_image
+
+    @property
+    def info(self):
+        """ dict: Image information as from get_info(). """
+        if self._info is None:
+            self._info = get_info(self._ee_image)
+        return self._info
+
+    @property
+    def id(self):
+        """ str: Earth Engine image ID. """
+        return self.info["id"]
+
+    @property
+    def crs(self):
+        """ str, None: Image CRS corresponding to minimum scale band, as EPSG string. None if all bands are in
+        EPSG:4326. """
+        return self.info["crs"]
+
+    @property
+    def scale(self):
+        """ float, None: Scale (m) corresponding to minimum scale band.  None if all bands are in EPSG:4326. """
+        return self.info["scale"]
+
+    @property
+    def footprint(self):
+        """ geojson: Polygon of the image extent. """
+        return self.info["footprint"]
 
 
 class ImageDownload(Image):
@@ -326,8 +448,8 @@ class ImageDownload(Image):
         spin_thread.join()
 
         # wait for export to complete, displaying a progress bar
-        bar_format = '{desc}: |{bar:32}| [{percentage:.1f}%] in {elapsed} (eta: {remaining})'
-        with tqdm(desc=f'Exporting {label}', total=1, bar_format=bar_format) as bar:
+        bar_format = '{desc}: |{bar}| [{percentage:5.1f}%] in {elapsed:>5s} (eta: {remaining:>5s})'
+        with tqdm(desc=f'Exporting {label}', total=1, bar_format=bar_format, dynamic_ncols=True) as bar:
             while ('done' not in status) or (not status['done']):
                 time.sleep(10 * pause)
                 status = ee.data.getOperation(task.name)  # get task status
@@ -364,8 +486,8 @@ class ImageDownload(Image):
         image, profile = self._prepare_for_download(**kwargs)
         session = requests_retry_session(5, status_forcelist=[500, 502, 503, 504])
         tiles = list(self.tiles(image, profile))
-        bar_format = '{desc}: |{bar:32}| {n:.1f}/{total_fmt} tile(s) [{percentage:.1f}%] in {elapsed} (eta: {remaining})'
-        bar = tqdm(desc=filename.name, total=len(tiles), bar_format=bar_format)
+        bar_format = '{desc}: |{bar}| {n:4.1f}/{total_fmt} tile(s) [{percentage:5.1f}%] in {elapsed:>5s} (eta: {remaining:>5s})'
+        bar = tqdm(desc=filename.name, total=len(tiles), bar_format=bar_format, dynamic_ncols=True)
         out_ds = rio.open(filename, 'w', **profile)
         warnings.filterwarnings('ignore', category=TqdmWarning)
 

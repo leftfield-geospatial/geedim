@@ -23,6 +23,7 @@ import ee
 import numpy as np
 import pandas as pd
 from geedim import info
+from geedim.download import ImageDownload, Image
 from rasterio import Affine
 
 
@@ -45,63 +46,6 @@ def split_id(image_id):
     ee_coll_name = "/".join(image_id.split("/")[:-1])
     return ee_coll_name, index
 
-
-def get_info(ee_image, min=True):
-    """
-    Retrieve Earth Engine image metadata
-
-    Parameters
-    ----------
-    ee_image : ee.Image
-               The image whose information to retrieve.
-    min : bool, optional
-          Retrieve the crs, crs_transform & scale corresponding to the band with the minimum (True) or maximum (False)
-          scale.(default: True)
-
-    Returns
-    -------
-    dict
-        Dictionary of image information with 'id', 'properties', 'bands', 'crs' and 'scale' keys.
-    """
-    # TODO: lose the need for ee_info below, perhaps change Image class to return ee_info with its .info property
-    gd_info = dict(id=None, properties={}, bands=[], crs=None, crs_transform=None, scale=None, footprint=None,
-                   ee_info=None)
-    ee_info = ee_image.getInfo()  # retrieve image info from cloud
-    gd_info['ee_info'] = ee_info
-
-    if "id" in ee_info:
-        gd_info["id"] = ee_info["id"]
-
-    if "properties" in ee_info:
-        gd_info["properties"] = ee_info["properties"]
-        if 'system:footprint' in ee_info["properties"]:
-            gd_info['footprint'] = ee_info['properties']['system:footprint']
-
-    if "bands" in ee_info:
-        # get scale & crs corresponding to min/max scale band (exclude 'EPSG:4326' (composite/constant) bands)
-        band_df = pd.DataFrame(ee_info["bands"])
-        scales = pd.DataFrame(band_df["crs_transform"].tolist())[0].abs().astype(float)
-        band_df["scale"] = scales
-        filt_band_df = band_df[(band_df.crs != "EPSG:4326") & (band_df.scale != 1)]
-        if filt_band_df.shape[0] > 0:
-            idx = filt_band_df.scale.idxmin() if min else filt_band_df.scale.idxmax()
-            gd_info["crs"], gd_info["scale"]  = filt_band_df.loc[idx, ["crs", "scale"]]
-            # gd_info["crs_transform"] = Affine(*filt_band_df.loc[idx, "crs_transform"])
-            # if 'origin' in filt_band_df and not np.isnan(filt_band_df.loc[idx, 'origin']):
-            #     gd_info["crs_transform"] *= Affine.translation(*filt_band_df.loc[idx, 'origin'])
-
-        # populate band metadata
-        ee_coll_name = split_id(str(gd_info["id"]))[0]
-        if ee_coll_name in info.ee_to_gd:  # include SR band metadata if it exists
-            # TODO: don't assume all the bands are in band_df, there could have been a select
-            # use DataFrame to concat SR band metadata from collection_info with band IDs from the image
-            sr_band_list = info.collection_info[info.ee_to_gd[ee_coll_name]]["bands"].copy()
-            sr_band_dict = {bdict['id']: bdict for bdict in sr_band_list}
-            gd_info["bands"] = [sr_band_dict[id] if id in sr_band_dict else dict(id=id) for id in band_df.id]
-        else:  # just use the image band IDs
-            gd_info["bands"] = band_df[["id"]].to_dict("records")
-
-    return gd_info
 
 
 def get_projection(image, min=True):
@@ -213,58 +157,12 @@ if importlib.util.find_spec("rasterio"):  # if rasterio is installed
 
 ##
 # Image classes
-class Image(object):
-    def __init__(self, ee_image):
-        """
-        Base class to wrap any ee.Image and provide access to metadata.
-
-        Parameters
-        ----------
-        ee_image : ee.Image
-                   Image to wrap.
-        """
-        if not isinstance(ee_image, ee.Image):
-            raise TypeError('image must be an instance of ee.Image')
-        self._ee_image = ee_image
-        self._info = None
-
-    @property
-    def ee_image(self):
-        """ ee.Image: The wrapped image. """
-        return self._ee_image
-
-    @property
-    def info(self):
-        """ dict: Image information as from get_info(). """
-        if self._info is None:
-            self._info = get_info(self._ee_image)
-        return self._info
-
-    @property
-    def id(self):
-        """ str: Earth Engine image ID. """
-        return self.info["id"]
-
-    @property
-    def crs(self):
-        """ str, None: Image CRS corresponding to minimum scale band, as EPSG string. None if all bands are in
-        EPSG:4326. """
-        return self.info["crs"]
-
-    @property
-    def scale(self):
-        """ float, None: Scale (m) corresponding to minimum scale band.  None if all bands are in EPSG:4326. """
-        return self.info["scale"]
-
-    @property
-    def footprint(self):
-        """ geojson: Polygon of the image extent. """
-        return self.info["footprint"]
 
 
-class MaskedImage(Image):
+class MaskedImage(ImageDownload):
 
     _default_params = dict(mask=False, cloud_dist=5000)
+    _gd_coll_name = ""  # geedim image collection name
 
     def __init__(self, ee_image, mask=_default_params['mask'], cloud_dist=_default_params['cloud_dist']):
         """
@@ -288,9 +186,8 @@ class MaskedImage(Image):
         ee_image = ee_image.unmask()
         self._masks = self._get_image_masks(ee_image)
         self._score = self._get_image_score(ee_image)
-        self._ee_image = self._process_image(ee_image, mask=mask, masks=self._masks, score=self._score)
-        self._info = None
-        self._projection = None
+        ee_image = self._process_image(ee_image, mask=mask, masks=self._masks, score=self._score)
+        Image.__init__(self, ee_image)
 
     @classmethod
     def from_id(cls, image_id, mask=_default_params['mask'], cloud_dist=_default_params['cloud_dist']):
@@ -331,8 +228,6 @@ class MaskedImage(Image):
         if region is not None:
             gd_image._ee_image = cls.set_region_stats(gd_image, region)
         return gd_image
-
-    _gd_coll_name = ""  # geedim image collection name
 
     @staticmethod
     def _im_transform(ee_image):
