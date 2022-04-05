@@ -201,12 +201,12 @@ scale_option = click.option(
     required=False,
 )
 dtype_option = click.option(
+    "-dt",
     "--dtype",
-    "dtype",
     type=click.Choice(list(dtype_ranges.keys()), case_sensitive=False),
     default=None,
     help="Convert image(s) to this data type.",
-    show_default=True,
+    required=False,
 )
 mask_option = click.option(
     "-m/-nm",
@@ -374,6 +374,7 @@ cli.add_command(download)
 )
 @crs_option
 @scale_option
+@dtype_option
 @mask_option
 @resampling_option
 @cloud_dist_option
