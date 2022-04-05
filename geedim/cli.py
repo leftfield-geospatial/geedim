@@ -43,7 +43,7 @@ def _extract_region(region=None, bbox=None, region_buf=10):
     """ Return geojson dict from region or bbox parameters """
 
     if (bbox is None or len(bbox) == 0) and (region is None):
-        raise click.BadOptionUsage('region', 'Either pass --region or --bbox')
+        return None
 
     if isinstance(region, dict):
         region_dict = region
@@ -123,14 +123,12 @@ def _export_download(res=_CmdChainResults(), do_download=True, **kwargs):
     params = arg_tuple(**kwargs)
 
     # get the download/export region
-    if (params.region is None) and (params.bbox is None or len(params.bbox) == 0):
-        if res.search_region is None:
-            raise click.BadOptionUsage('region',
-                                       'Either pass --region / --box, or chain this command with a successful `search`')
+    region = _extract_region(region=params.region, bbox=params.bbox) or res.search_region
+    if region is None:
+        if res.comp_image is not None:
+            raise click.BadOptionUsage('region', 'One of --region or --box is required for a composite image.')
         else:
-            region = res.search_region
-    else:
-        region = _extract_region(region=params.region, bbox=params.bbox)  # get region geojson
+            pass  # TODO log message that footprint will be used
 
     # interpret the CRS
     crs = _interpret_crs(params.crs)
@@ -290,6 +288,8 @@ def search(res, collection, start_date, end_date, bbox, region, valid_portion, o
     """ Search for images """
 
     res.search_region = _extract_region(region=region, bbox=bbox)  # store region for chaining
+    if res.search_region is None:
+        raise click.BadOptionUsage('region', 'Either pass --region or --bbox')
     res.search_ids = None
 
     click.echo(f'\nSearching for {info.gd_to_ee[collection]} images between '
