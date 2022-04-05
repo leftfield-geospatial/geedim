@@ -36,7 +36,6 @@ class _CmdChainResults(object):
         self.search_ids = None
         self.search_region = None
         self.comp_image = None
-        self.comp_id = None
 
 
 def _extract_region(region=None, bbox=None, region_buf=10):
@@ -133,7 +132,7 @@ def _export_download(res=_CmdChainResults(), do_download=True, **kwargs):
     # create a list of Image objects and names
     im_list = []
     if res.comp_image is not None:  # download/export chained with composite command
-        im_list.append(dict(image=Image(res.comp_image)))
+        im_list.append(dict(image=res.comp_image))
     elif res.search_ids is not None:  # download/export chained with search command
         im_list = _create_im_list(res.search_ids, mask=params.mask, cloud_dist=params.cloud_dist)
     elif len(params.image_id) > 0:  # download/export image ids specified on command line
@@ -426,7 +425,7 @@ def composite(res, image_id, mask, method, resampling, cloud_dist):
             res.search_ids = None
 
     gd_collection = coll_api.Collection.from_ids(image_id, mask=mask, cloud_dist=cloud_dist)
-    res.comp_image, res.comp_id = gd_collection.composite(method=method, resampling=resampling)
+    res.comp_image = gd_collection.composite(method=method, resampling=resampling)
 
 
 cli.add_command(composite)

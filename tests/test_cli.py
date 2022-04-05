@@ -122,11 +122,11 @@ class TestCli(unittest.TestCase):
 
         # recreate composite image and check against downloaded file
         gd_collection = collection.Collection.from_ids(comp_ids, mask=pdict['mask'])
-        comp_im, comp_id = gd_collection.composite(method)
-        comp_fn = download_dir.joinpath(comp_id.replace('/', '-') + '.tif')
+        comp_im = gd_collection.composite(method)
+        comp_fn = download_dir.joinpath(comp_im.name + '.tif')
         with open(region_filename) as f:
             region = json.load(f)
-        _test_image_file(self, image_obj=image.Image(comp_im), filename=comp_fn, region=region, **pdict)
+        _test_image_file(self, image_obj=comp_im, filename=comp_fn, region=region, **pdict)
 
     def test_search_composite_download(self):
         """ Test chaining of search, composite and download commands, to create and download one composite image. """
@@ -156,8 +156,8 @@ class TestCli(unittest.TestCase):
         _test_search_results(self, res_df, start_date, end_date)  # check results
 
         gd_collection = collection.Collection.from_ids(res_df.ID.values, mask=pdict['mask'])
-        comp_im, comp_id = gd_collection.composite(method)
-        comp_fn = download_dir.joinpath(comp_id.replace('/', '-') + '.tif')
+        comp_im = gd_collection.composite(method)
+        comp_fn = download_dir.joinpath(comp_im.name + '.tif')
         with open(region_filename) as f:
             region = json.load(f)
-        _test_image_file(self, image_obj=image.Image(comp_im), filename=comp_fn, region=region, **pdict)
+        _test_image_file(self, image_obj=comp_im, filename=comp_fn, region=region, **pdict)

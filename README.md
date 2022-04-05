@@ -6,7 +6,7 @@
 # `geedim`
 Searching, compositing and downloading of satellite imagery from [Google Earth Engine](https://earthengine.google.com/) (EE). 
 ## Description
-`geedim` provides a command line interface (CLI) and API for searching by date, region, and cloud/shadow statistics.  It optionally performs basic cloud/shadow masking, and cloud-free compositing.  Images and composites (including metadata) can be downloaded, or exported to Google Drive.
+geedim provides a command line interface and API for searching EE images by date, region, and cloud/shadow statistics. It optionally performs cloud/shadow masking, and cloud-free compositing. Images and composites can be downloaded (without size limits and including metadata), or exported to Google Drive.
 
 It supports access to the following surface reflectance image collections:
 
@@ -141,32 +141,27 @@ Options:
   -b, --bbox FLOAT...             Region defined by bounding box co-ordinates
                                   in WGS84 (xmin, ymin, xmax, ymax).  [One of
                                   --bbox or --region is required.]
-
   -r, --region FILE               Region defined by geojson or raster file.
                                   [One of --bbox or --region is required.]
-
   -dd, --download-dir DIRECTORY   Download image file(s) to this directory.
                                   [default: cwd]
-
   -c, --crs TEXT                  Reproject image(s) to this CRS (EPSG string
                                   or path to text file containing WKT).
                                   [default: source CRS]
-
   -s, --scale FLOAT               Resample image bands to this pixel
                                   resolution (m).  [default: minimum of the
                                   source band resolutions]
-
+  -dt, --dtype [int8|uint8|uint16|int16|uint32|int32|float32|float64]
+                                  Convert image(s) to this data type.
   -m, --mask / -nm, --no-mask     Do/don't apply (cloud and shadow) nodata
                                   mask(s).  [default: --no-mask]
-
   -rs, --resampling [near|bilinear|bicubic]
                                   Resampling method.  [default: near]
   -cd, --cloud-dist FLOAT         Search for cloud/shadow inside this radius
                                   (m) to determine compositing quality score.
-                                  [default: 5000]                                  
+                                  [default: 5000]
   -o, --overwrite                 Overwrite the destination file if it exists.
                                   [default: prompt the user for confirmation]
-
   --help                          Show this message and exit.
 ```
 
@@ -184,34 +179,28 @@ Options:
   -b, --bbox FLOAT...             Region defined by bounding box co-ordinates
                                   in WGS84 (xmin, ymin, xmax, ymax).  [One of
                                   --bbox or --region is required.]
-
   -r, --region FILE               Region defined by geojson or raster file.
                                   [One of --bbox or --region is required.]
-
   -df, --drive-folder TEXT        Export image(s) to this Google Drive folder.
                                   [default: root]
-
   -c, --crs TEXT                  Reproject image(s) to this CRS (EPSG string
                                   or path to text file containing WKT).
                                   [default: source CRS]
-
   -s, --scale FLOAT               Resample image bands to this pixel
                                   resolution (m).  [default: minimum of the
                                   source band resolutions]
-
   -m, --mask / -nm, --no-mask     Do/don't apply (cloud and shadow) nodata
                                   mask(s).  [default: --no-mask]
-
   -rs, --resampling [near|bilinear|bicubic]
                                   Resampling method.  [default: near]
   -cd, --cloud-dist FLOAT         Search for cloud/shadow inside this radius
                                   (m) to determine compositing quality score.
-                                  [default: 5000]                                  
+                                  [default: 5000]
   -w, --wait / -nw, --no-wait     Wait / don't wait for export to complete.
                                   [default: --wait]
-
   --help                          Show this message and exit.
 ```
+
 #### Examples
 ```shell
 geedim download -i LANDSAT/LC08/C02/T1_L2/LC08_172083_20190128 -b 23.9 -33.6 24 -33.5 --resampling bilinear --mask
@@ -265,7 +254,7 @@ geedim search -c landsat8_c2_l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -
 ### Example 
 ```python
 import ee
-from geedim import collection, image, export
+from geedim import collection, image
 
 ee.Initialize()     #initialise earth engine
 
@@ -282,26 +271,26 @@ print(gd_collection.summary)
 
 # create and download an image
 im = image.get_class(gd_coll_name).from_id('COPERNICUS/S2_SR/20190115T080251_20190115T082230_T35HKC')
-export.download_image(im, 's2_image.tif', region=region)
+im.download('s2_image.tif', region=region)
 
 # composite search results and download
-comp_res = gd_collection.composite()
-export.download_image(comp_res.image, 's2_comp_image.tif', region=region, crs='EPSG:32735', scale=30)
+comp_image = gd_collection.composite()
+comp_image.download('s2_comp_image.tif', region=region, crs='EPSG:32735', scale=30, overwrite=True)
 ```
 
 ## Known limitations
-- GEE limits image downloads to 10MB, images larger than this can exported to Google Drive.
 - There is a GEE bug exporting MODIS in its native CRS, this can be worked around by re-projecting to another CRS with the `--crs` `download`/`export` option.  Please star [the issue](https://issuetracker.google.com/issues/194561313) if it affects you.
 
 ## License
 This project is licensed under the terms of the [Apache-2.0 License](LICENSE).
 
 ## Contributing
-Contributions are welcome!  Please report bugs or contact me with questions [here](https://github.com/dugalh/geedim/issues).
+Contributions are welcome.  Report bugs or contact me with questions [here](https://github.com/dugalh/geedim/issues).
 
 ## Credits
+- Tiled downloading was inspired by and adapted from [GEES2Downloader](https://github.com/cordmaur/GEES2Downloader) under terms of the [MIT license](https://github.com/cordmaur/GEES2Downloader/blob/main/LICENSE). 
 - Medoid compositing was adapted from [gee_tools](https://github.com/gee-community/gee_tools) under the terms of the [MIT license](https://github.com/gee-community/gee_tools/blob/master/LICENSE).
-- The CLI was informed by [landsatxplore](https://github.com/yannforget/landsatxplore).
+- The CLI design was informed by [landsatxplore](https://github.com/yannforget/landsatxplore).
 
 ## Author
 **Dugal Harris** - [dugalh@gmail.com](mailto:dugalh@gmail.com)

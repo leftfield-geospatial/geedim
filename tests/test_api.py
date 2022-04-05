@@ -138,10 +138,9 @@ class TestApi(unittest.TestCase):
         ee_image = ee.Image(image_id)
         download.Image(ee_image).export(image_id.replace('/', '-'), folder='geedim_test', region=region, wait=False)
 
-    def _test_composite(self, ee_image):
+    def _test_composite(self, gd_image):
         """ Test the metadata of a composite ee.Image for validity. """
 
-        gd_image = image.Image(ee_image)
         ee_coll_name = image.split_id(gd_image.id)[0]
         gd_coll_name = info.ee_to_gd[ee_coll_name]
 
@@ -187,7 +186,7 @@ class TestApi(unittest.TestCase):
             for method in methods:
                 with self.subTest('Composite', method=method, **param_dict):
                     gd_collection = collection.Collection.from_ids(**param_dict)
-                    comp_im, comp_id = gd_collection.composite(method=method, resampling='bilinear')
+                    comp_im = gd_collection.composite(method=method, resampling='bilinear')
                     self._test_composite(comp_im)
 
 ##

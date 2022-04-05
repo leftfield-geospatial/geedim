@@ -22,7 +22,7 @@ from datetime import datetime, timedelta
 import ee
 import geedim.image
 import pandas as pd
-from geedim import image, info, medoid
+from geedim import image, info, medoid, download
 from geedim.export import _default_resampling
 
 
@@ -182,7 +182,7 @@ class Collection(object):
         method : str, optional
                  Compositing method to use (q_mosaic|mosaic|median|medoid).  (Default: q_mosaic).
         resampling : str, optional
-               Resampling method for compositing and reprojecting: ("near"|"bilinear"|"bicubic") (default: "near")
+               Resampling method for compositing and re-projecting: ("near"|"bilinear"|"bicubic") (default: "near")
 
         Returns
         -------
@@ -220,8 +220,7 @@ class Collection(object):
         comp_image = comp_image.set("system:id", comp_id)
         # TODO: persist source CRS and scale by reprojecting?
 
-        composite_result = collections.namedtuple("CompositeResult", ["image", "id"])
-        return composite_result(comp_image, comp_id)
+        return download.Image(comp_image)
 
     def _get_summary_df(self, ee_collection):
         """
