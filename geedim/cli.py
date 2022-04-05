@@ -25,7 +25,7 @@ import ee
 from geedim import collection as coll_api
 from geedim import export as export_api
 from geedim import info, image, _ee_init
-from geedim.download import ImageDownload
+from geedim.download import Image
 from rasterio.dtypes import dtype_ranges
 
 
@@ -72,19 +72,16 @@ def _export_im_list(im_list, path='', wait=True, overwrite=False, do_download=Tr
     export_tasks = []
 
     for im_dict in im_list:
-        dim = ImageDownload(im_dict['image'])
         if do_download:
-            filename = pathlib.Path(path).joinpath(im_dict['name'] + '.tif')
-            # export_api.download_image(im_dict['image'], filename, overwrite=overwrite, **kwargs)
-            dim.download(filename, overwrite=overwrite, **kwargs)
+            filename = pathlib.Path(path).joinpath(im_dict['image'].name + '.tif')
+            im_dict['image'].download(filename, overwrite=overwrite, **kwargs)
         else:
-            task = dim.export(im_dict['name'], folder=path, wait=False, **kwargs)
-            # task = export_api.export_image(im_dict['image'], im_dict['name'], folder=path, wait=False, **kwargs)
+            task = im_dict['image'].export(im_dict['image'].name, folder=path, wait=False, **kwargs)
             export_tasks.append(task)
 
     if wait:
         for task in export_tasks:
-            ImageDownload.monitor_export_task(task)
+            Image.monitor_export_task(task)
 
 
 def _create_im_list(ids, **kwargs):
@@ -94,10 +91,10 @@ def _create_im_list(ids, **kwargs):
     for im_id in ids:
         ee_coll_name, im_idx = image.split_id(im_id)
         if ee_coll_name not in info.ee_to_gd:
-            im_list.append(dict(image=ee.Image(im_id), name=im_id.replace('/', '-')))
+            im_list.append(dict(image=Image(ee.Image(im_id))))
         else:
             gd_image = image.get_class(ee_coll_name).from_id(im_id, **kwargs)
-            im_list.append(dict(image=gd_image.ee_image, name=im_id.replace('/', '-')))
+            im_list.append(dict(image=gd_image))
 
     return im_list
 
@@ -136,7 +133,7 @@ def _export_download(res=_CmdChainResults(), do_download=True, **kwargs):
     # create a list of Image objects and names
     im_list = []
     if res.comp_image is not None:  # download/export chained with composite command
-        im_list.append(dict(image=res.comp_image, name=res.comp_id.replace('/', '-')))
+        im_list.append(dict(image=Image(res.comp_image)))
     elif res.search_ids is not None:  # download/export chained with search command
         im_list = _create_im_list(res.search_ids, mask=params.mask, cloud_dist=params.cloud_dist)
     elif len(params.image_id) > 0:  # download/export image ids specified on command line
