@@ -22,7 +22,7 @@ import warnings
 import numpy as np
 import pandas as pd
 
-from geedim import download, info, image, root_path, _ee_init
+from geedim import info, image, root_path, _ee_init
 
 if importlib.util.find_spec("rasterio"):
     import rasterio as rio
@@ -87,10 +87,7 @@ def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=Non
     gd_info = gd_image.info
     sr_band_df = pd.DataFrame.from_dict(info.collection_info[gd_coll_name]['bands'])
 
-    dim = download.ImageDownload(gd_image.ee_image)
-    exp_image, _, _ = dim._prepare_for_export(region=region, crs=crs, scale=scale)
-    # exp_image = export._ExportImage(gd_image, name=gd_image.id, exp_region=region, exp_crs=crs, exp_scale=scale)
-    # exp_image.parse_attributes()
+    exp_image, _ = gd_image._prepare_for_export(region=region, crs=crs, scale=scale)
 
     region_arr = pd.DataFrame(region['coordinates'][0], columns=['x', 'y'])  # avoid numpy dependency
     region_bounds = rio.coords.BoundingBox(region_arr.x.min(), region_arr.y.min(), region_arr.x.max(),
@@ -101,9 +98,9 @@ def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=Non
     with rio.open(filename) as im:
         # check bands, crs and scale
         test_case.assertEqual(len(gd_info['bands']), im.count, msg='EE and download image band count match')
-        exp_epsg = CRS.from_string(crs if crs else dim.crs).to_epsg()
+        exp_epsg = CRS.from_string(crs if crs else gd_image.crs).to_epsg()
         test_case.assertEqual(exp_epsg, im.crs.to_epsg(), msg='EE and download image CRS match')
-        test_case.assertAlmostEqual(scale if scale else dim.scale, im.res[0], places=3,
+        test_case.assertAlmostEqual(scale if scale else gd_image.scale, im.res[0], places=3,
                                     msg='EE and download image scale match')
 
         # check image bounds coincide with region
@@ -111,7 +108,7 @@ def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=Non
         test_case.assertFalse(rio.coords.disjoint_bounds(region_bounds, im_bounds_wgs84),
                               msg='Search and image bounds match')
 
-        if mask: # and not ('sentinel2' in gd_coll_name):  # check mask is same as VALID_MASK band
+        if mask:  # and not ('sentinel2' in gd_coll_name):  # check mask is same as VALID_MASK band
             im_mask = im.read_masks(im.descriptions.index('VALID_MASK') + 1).astype(bool)
             valid_mask = im.read(im.descriptions.index('VALID_MASK') + 1, masked=False) != im.nodata
             test_case.assertTrue(np.all(im_mask == valid_mask), 'mask == VALID_MASK')
@@ -126,7 +123,7 @@ def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=Non
         # do basic checks on image content
         sr_band_df = pd.DataFrame.from_dict(info.collection_info[gd_coll_name]['bands'])
         for band_i, band_row in sr_band_df.iterrows():
-            if 'BT' not in band_row.abbrev and band_row.bw_start < 5:   # exclude mid-far IR
+            if 'BT' not in band_row.abbrev and band_row.bw_start < 5:  # exclude mid-far IR
                 sr_band = im.read(im.descriptions.index(band_row.id) + 1, masked=True)
                 test_case.assertTrue(sr_band.mean() > 100, f'Mean {band_row.id} reflectance > 100')
                 test_case.assertTrue(len(np.unique(sr_band)) > 100, f'Distinct {band_row.id} reflectance values > 100')
@@ -141,6 +138,5 @@ def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=Non
                 valid_mask = (valid_mask != im.nodata)
                 score[~valid_mask] = 0
             test_case.assertAlmostEqual(avg_score, score.mean(), delta=20, msg='EE and file avg scores match')
-            test_case.assertAlmostEqual(valid_portion, 100*valid_mask.mean(), delta=5,
+            test_case.assertAlmostEqual(valid_portion, 100 * valid_mask.mean(), delta=5,
                                         msg='EE and file valid portions match')
-

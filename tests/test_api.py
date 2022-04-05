@@ -14,7 +14,6 @@
     limitations under the License.
 """
 import unittest
-from datetime import datetime, timedelta
 
 import ee
 import numpy as np
@@ -70,7 +69,6 @@ class TestApi(unittest.TestCase):
         max_score = sr_image.reduceRegion(reducer='max', geometry=region, scale=2 * gd_image.scale).getInfo()
         self.assertTrue(max_score['SCORE'] < cloud_dist * 1.1, 'Max(SCORE) < 1.1*CLOUD_DIST')
 
-
     def test_image(self):
         """ Test geedim.image.MaskedImage sub-classes. """
         im_param_list = [
@@ -120,14 +118,14 @@ class TestApi(unittest.TestCase):
             gd_coll_name = info.ee_to_gd[ee_coll_name]
             with self.subTest('Download', **impdict):
                 # create image.MaskedImage
-                gd_image = image.get_class(gd_coll_name)._from_id(impdict["image_id"], mask=impdict['mask'], region=region)
+                gd_image = image.get_class(gd_coll_name)._from_id(impdict["image_id"], mask=impdict['mask'],
+                                                                  region=region)
                 # create a filename for these parameters
                 name = impdict["image_id"].replace('/', '-')
                 crs_str = impdict["crs"].replace(':', '_') if impdict["crs"] else 'None'
                 filename = root_path.joinpath(f'data/outputs/tests/{name}_{crs_str}_{impdict["scale"]}m.tif')
-                dim = download.ImageDownload(gd_image.ee_image)
-                dim.download(filename, region=region, crs=impdict["crs"], scale=impdict["scale"],
-                             resampling=impdict["resampling"], overwrite=True)
+                gd_image.download(filename, region=region, crs=impdict["crs"], scale=impdict["scale"],
+                                  resampling=impdict["resampling"], overwrite=True)
                 impdict.pop('image_id')
                 _test_image_file(self, image_obj=gd_image, filename=filename, region=region, **impdict)
 
@@ -138,9 +136,7 @@ class TestApi(unittest.TestCase):
                   "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
         image_id = 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190128'
         ee_image = ee.Image(image_id)
-        dim = download.ImageDownload(ee_image)
-        dim.export(image_id.replace('/', '-'), folder='geedim_test', region=region, wait=False)
-        # export.export_image(ee_image, )
+        download.Image(ee_image).export(image_id.replace('/', '-'), folder='geedim_test', region=region, wait=False)
 
     def _test_composite(self, ee_image):
         """ Test the metadata of a composite ee.Image for validity. """
