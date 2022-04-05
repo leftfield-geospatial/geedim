@@ -23,7 +23,7 @@ import ee
 import numpy as np
 import pandas as pd
 from geedim import info
-from geedim.download import ImageDownload, Image
+from geedim.download import Image
 from rasterio import Affine
 
 
@@ -159,7 +159,7 @@ if importlib.util.find_spec("rasterio"):  # if rasterio is installed
 # Image classes
 
 
-class MaskedImage(ImageDownload):
+class MaskedImage(Image):
 
     _default_params = dict(mask=False, cloud_dist=5000)
     _gd_coll_name = ""  # geedim image collection name
