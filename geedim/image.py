@@ -24,9 +24,7 @@ import pathlib
 import threading
 import time
 import warnings
-import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from io import BytesIO
 from itertools import product
 from typing import Tuple, Dict
 
@@ -34,20 +32,15 @@ import ee
 import numpy as np
 import pandas as pd
 import rasterio as rio
-import rasterio.io
-import requests
 from pip._vendor.progress.spinner import Spinner
-from rasterio import Affine
-from rasterio import MemoryFile
 from rasterio.crs import CRS
 from rasterio.enums import Resampling
 from rasterio.warp import transform_geom
 from rasterio.windows import Window
-from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
 from tqdm import tqdm, TqdmWarning
 
 from geedim import info
+from geedim.tile import _requests_retry_session, Tile
 
 """EE image property key for image region"""
 _footprint_key = "system:footprint"
@@ -127,17 +120,6 @@ def get_bounds(filename, expand=5):  # pragma coverage
     return image_bounds(src_bbox_wgs84, im.crs.to_epsg())
 
 
-def _requests_retry_session(retries=3, backoff_factor=0.3, status_forcelist=(500, 502, 504), session=None):
-    """A persistent requests session configured for retries"""
-    session = session or requests.Session()
-    retry = Retry(total=retries, read=retries, connect=retries, backoff_factor=backoff_factor,
-                  status_forcelist=status_forcelist)
-    adapter = HTTPAdapter(max_retries=retry)
-    session.mount('http://', adapter)
-    session.mount('https://', adapter)
-    return session
-
-
 def get_info(ee_image, min=True):
     """
     Retrieve Earth Engine image metadata
@@ -190,82 +172,6 @@ def get_info(ee_image, min=True):
             gd_info["bands"] = band_df[["id"]].to_dict("records")
 
     return gd_info
-
-
-class TileDownload:
-    """Class for encapsulating and downloading a GEE image tile (i.e. a rectangular region of interest in the image)"""
-
-    def __init__(self, image: ee.Image, transform: Affine, window: Window):
-        """
-        Create an instance of TileDownload.
-
-        Parameters
-        ----------
-        image: ee.Image
-            An EE image to derive the tile from.
-        transform: Affine
-            A rasterio geo-transform for `image`.
-        window: Window
-            A rasterio window into `image`, specifying the region of interest for this tile.
-        """
-        self._image = image
-        self._window = window
-        # offset the image geo-transform origin so that it corresponds to the UL corner of the tile.
-        self._transform = transform * Affine.translation(window.col_off, window.row_off)
-        self._shape = (window.height, window.width)
-
-    @property
-    def window(self) -> Window:
-        """The rasterio window into the source image."""
-        return self._window
-
-    def download(self, session=None, bar: tqdm = None):
-        """
-
-        Parameters
-        ----------
-        session: requests.Session, optional
-            Session to use for downloading.
-        bar: tqdm, optional
-            A tqdm progress bar to update with the download progress.
-
-        Returns
-        -------
-        array: numpy.ndarray
-            The tile pixel data in a 3D array (bands down the first dimension).
-        """
-        # TODO: get image crs from DownloadImage where it is found for the output dataset, rather than reget it here
-        session = session if session else requests
-
-        # get image download url
-        url = self._image.getDownloadURL(
-            dict(crs=self._image.projection().crs(), crs_transform=tuple(self._transform)[:6],
-                 dimensions=self._shape[::-1], filePerBand=False, fileFormat='GeoTIFF'))
-
-        # download zip into buffer
-        zip_buffer = BytesIO()
-        resp = session.get(url, stream=True)
-        download_size = int(resp.headers.get('content-length', 0))
-        for data in resp.iter_content(chunk_size=10240):
-            zip_buffer.write(data)
-            if bar:
-                bar.update(len(data) / download_size)
-        zip_buffer.flush()
-
-        # extract geotiff from zipped buffer into another buffer
-        zip_file = zipfile.ZipFile(zip_buffer)
-        ext_buffer = BytesIO(zip_file.read(zip_file.filelist[0]))
-
-        # read the geotiff with a rasterio memory file
-        with MemoryFile(ext_buffer) as mem_file:
-            with mem_file.open() as ds:
-                array = ds.read()
-                if (array.dtype == np.dtype('float32')) or (array.dtype == np.dtype('float64')):
-                    # GEE sets nodata to -inf for float data types, (but does not populate the nodata field)
-                    # rasterio won't allow nodata=-inf, so this is a workaround to change nodata to nan at source
-                    array[np.isinf(array)] = np.nan
-
-        return array
 
 
 class BaseImage:
@@ -452,14 +358,14 @@ class BaseImage:
 
         # get transform, shape and band count of the prepared image to configure up the output image profile
         band_info = info['bands'][0]  # all bands are same crs & scale after prepare_for_export
-        transform = Affine(*band_info['crs_transform'])
+        transform = rio.Affine(*band_info['crs_transform'])
         if 'origin' in band_info:
-            transform *= Affine.translation(*band_info['origin'])
+            transform *= rio.Affine.translation(*band_info['origin'])
 
         shape = band_info['dimensions'][::-1]
         count = len(info['bands'])
         nodata_dict = dict(
-            float32=self.float_nodata,  # see workaround note in TileDownload.download(...)
+            float32=self.float_nodata,  # see workaround note in Tile.download(...)
             float64=self.float_nodata,  # ditto
             uint8=0,
             int8=np.iinfo('int8').min,
@@ -474,7 +380,7 @@ class BaseImage:
                        interleave='band', tiled=True)
         return ee_image, profile
 
-    def _build_overviews(self, dataset: rasterio.io.DatasetWriter, max_num_levels=8, min_ovw_pixels=256):
+    def _build_overviews(self, dataset: rio.io.DatasetWriter, max_num_levels=8, min_ovw_pixels=256):
         """Build internal overviews, downsampled by successive powers of 2, for an open rasterio dataset."""
         if dataset.closed:
             raise IOError('Image dataset is closed')
@@ -543,7 +449,7 @@ class BaseImage:
             tile_stop = np.clip(np.add(tile_start, tile_shape), a_min=None, a_max=image_shape)
             clip_tile_shape = (tile_stop - tile_start).tolist()  # tolist is just to convert to native int
             tile_window = Window(tile_start[1], tile_start[0], clip_tile_shape[1], clip_tile_shape[0])
-            yield TileDownload(image, profile['transform'], tile_window)
+            yield Tile(image, profile['transform'], tile_window)
 
     @staticmethod
     def monitor_export_task(task, label: str = None):
