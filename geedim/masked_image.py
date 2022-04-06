@@ -18,9 +18,10 @@
 import collections
 
 import ee
+import numpy as np
 
 from geedim import info
-from geedim.image import BaseImage, split_id, get_projection
+from geedim.image import BaseImage, split_id
 
 
 ##
@@ -608,3 +609,52 @@ def get_class(coll_name):
         return gd_coll_name_map[info.ee_to_gd[coll_name]]
     else:
         raise ValueError(f"Unknown collection name: {coll_name}")
+
+
+def get_projection(image, min=True):
+    """
+    Get the min/max scale projection of image bands.  Server side - no calls to getInfo().
+    Adapted from from https://github.com/gee-community/gee_tools, MIT license.
+
+    Parameters
+    ----------
+    image : ee.Image, geedim.image.BaseImage
+            The image whose min/max projection to retrieve.
+    min: bool, optional
+         Retrieve the projection corresponding to the band with the minimum (True) or maximum (False) scale.
+         (default: True)
+
+    Returns
+    -------
+    ee.Projection
+        The requested projection.
+    """
+    if isinstance(image, BaseImage):
+        image = image.ee_image
+
+    bands = image.bandNames()
+
+    transform = np.array([1, 0, 0, 0, 1, 0])
+    if min:
+        compare = ee.Number.lte
+        init_proj = ee.Projection('EPSG:4326', list(1e100 * transform))
+    else:
+        compare = ee.Number.gte
+        init_proj = ee.Projection('EPSG:4326', list(1e-100 * transform))
+
+    def compare_scale(name, prev_proj):
+        """ Server side comparison of band scales"""
+        prev_proj = ee.Projection(prev_proj)
+        prev_scale = prev_proj.nominalScale()
+
+        curr_proj = image.select([name]).projection()
+        curr_scale = ee.Number(curr_proj.nominalScale())
+
+        # compare scales, excluding WGS84 bands (constant or composite bands)
+        condition = (
+            compare(curr_scale, prev_scale).And(curr_proj.crs().compareTo(ee.String("EPSG:4326"))).neq(ee.Number(0))
+        )
+        comp_proj = ee.Algorithms.If(condition, curr_proj, prev_proj)
+        return ee.Projection(comp_proj)
+
+    return ee.Projection(bands.iterate(compare_scale, init_proj))

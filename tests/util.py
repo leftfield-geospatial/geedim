@@ -15,22 +15,17 @@
 """
 
 import glob
-import importlib
 import os
 import warnings
 
 import numpy as np
 import pandas as pd
+import rasterio as rio
+from rasterio.crs import CRS
+from rasterio.warp import transform_bounds
 
 import geedim.image
 from geedim import info, masked_image, root_path, _ee_init
-
-if importlib.util.find_spec("rasterio"):
-    import rasterio as rio
-    from rasterio.crs import CRS
-    from rasterio.warp import transform_bounds
-else:
-    raise ModuleNotFoundError('Rasterio is needed to run the unit tests: `conda install -c conda-forge rasterio`')
 
 
 def _setup_test():
