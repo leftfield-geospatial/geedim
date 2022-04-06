@@ -156,8 +156,7 @@ bbox_option = click.option(
     "--bbox",
     type=click.FLOAT,
     nargs=4,
-    help="Region defined by bounding box co-ordinates in WGS84 (xmin, ymin, xmax, ymax).  "
-         "[One of --bbox or --region is required.]",
+    help="Region defined by bounding box co-ordinates in WGS84 (xmin, ymin, xmax, ymax).",
     required=False,
     default=None,
 )
@@ -166,7 +165,7 @@ region_option = click.option(
     "--region",
     type=click.Path(exists=True, file_okay=True, dir_okay=False, writable=False, readable=True, resolve_path=True,
                     allow_dash=False),
-    help="Region defined by geojson or raster file.  [One of --bbox or --region is required.]",
+    help="Region defined by geojson or raster file.",
     required=False,
 )
 image_id_option = click.option(
@@ -261,7 +260,14 @@ def cli(ctx):
     required=False,
 )
 @bbox_option
-@region_option
+@click.option(
+    "-r",
+    "--region",
+    type=click.Path(exists=True, file_okay=True, dir_okay=False, writable=False, readable=True, resolve_path=True,
+                    allow_dash=False),
+    help="Region defined by geojson or raster file. [One of --bbox or --region is required]",
+    required=False,
+)
 @click.option(
     "-vp",
     "--valid-portion",
@@ -349,7 +355,7 @@ cli.add_command(search)
 @click.pass_context
 def download(ctx, image_id, bbox, region, download_dir, crs, scale, dtype, mask, resampling, cloud_dist,
              overwrite=False):
-    """ Download image(s), with cloud and shadow masking """
+    """Download image(s), without size limits and including metadata, and with optional cloud and shadow masking."""
     _export_download(res=ctx.obj, do_download=True, **ctx.params)
 
 
@@ -384,7 +390,7 @@ cli.add_command(download)
 )
 @click.pass_context
 def export(ctx, image_id, bbox, region, drive_folder, crs, scale, dtype, mask, resampling, cloud_dist, wait):
-    """ Export image(s) to Google Drive, with cloud and shadow masking """
+    """ Export image(s) to Google Drive, with optional cloud and shadow masking """
     _export_download(res=ctx.obj, do_download=False, **ctx.params)
 
 

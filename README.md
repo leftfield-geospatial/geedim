@@ -134,15 +134,14 @@ geedim download --help
 ```
 Usage: geedim download [OPTIONS]
 
-  Download image(s), with cloud and shadow masking
+  Download image(s), without size limits and including metadata, and with
+  optional cloud and shadow masking.
 
 Options:
   -i, --id TEXT                   Earth engine image ID(s).
   -b, --bbox FLOAT...             Region defined by bounding box co-ordinates
-                                  in WGS84 (xmin, ymin, xmax, ymax).  [One of
-                                  --bbox or --region is required.]
+                                  in WGS84 (xmin, ymin, xmax, ymax).
   -r, --region FILE               Region defined by geojson or raster file.
-                                  [One of --bbox or --region is required.]
   -dd, --download-dir DIRECTORY   Download image file(s) to this directory.
                                   [default: cwd]
   -c, --crs TEXT                  Reproject image(s) to this CRS (EPSG string
@@ -172,15 +171,13 @@ geedim export --help
 ```
 Usage: geedim export [OPTIONS]
 
-  Export image(s) to Google Drive, with cloud and shadow masking
+  Export image(s) to Google Drive, with optional cloud and shadow masking
 
 Options:
   -i, --id TEXT                   Earth engine image ID(s).
   -b, --bbox FLOAT...             Region defined by bounding box co-ordinates
-                                  in WGS84 (xmin, ymin, xmax, ymax).  [One of
-                                  --bbox or --region is required.]
+                                  in WGS84 (xmin, ymin, xmax, ymax).
   -r, --region FILE               Region defined by geojson or raster file.
-                                  [One of --bbox or --region is required.]
   -df, --drive-folder TEXT        Export image(s) to this Google Drive folder.
                                   [default: root]
   -c, --crs TEXT                  Reproject image(s) to this CRS (EPSG string
@@ -189,6 +186,8 @@ Options:
   -s, --scale FLOAT               Resample image bands to this pixel
                                   resolution (m).  [default: minimum of the
                                   source band resolutions]
+  -dt, --dtype [int8|uint8|uint16|int16|uint32|int32|float32|float64]
+                                  Convert image(s) to this data type.
   -m, --mask / -nm, --no-mask     Do/don't apply (cloud and shadow) nodata
                                   mask(s).  [default: --no-mask]
   -rs, --resampling [near|bilinear|bicubic]
@@ -276,7 +275,7 @@ im.download('s2_image.tif', region=region)
 
 # composite search results and download
 comp_image = gd_collection.composite()
-comp_image.download('s2_comp_image.tif', region=region, crs='EPSG:32735', scale=30, overwrite=True)
+comp_image.download('s2_comp_image.tif', region=region, crs='EPSG:32735', scale=30)
 ```
 
 ## Known limitations
