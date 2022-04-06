@@ -19,7 +19,8 @@ import ee
 import numpy as np
 import pandas as pd
 
-from geedim import download, collection, root_path, info, image
+import geedim.image
+from geedim import image, collection, root_path, info, masked_image
 from tests.util import _test_image_file, _test_search_results, _setup_test
 
 
@@ -31,13 +32,13 @@ class TestApi(unittest.TestCase):
         """ Initialise Earth Engine once for all the tests here. """
         _setup_test()
 
-    def _test_image(self, image_id, mask=image.MaskedImage._default_params['mask'],
-                    cloud_dist=image.MaskedImage._default_params['cloud_dist']):
+    def _test_image(self, image_id, mask=masked_image.MaskedImage._default_params['mask'],
+                    cloud_dist=masked_image.MaskedImage._default_params['cloud_dist']):
         """ Test the validity of a geedim.image.MaskedImage by checking metadata.  """
 
-        ee_coll_name = image.split_id(image_id)[0]
+        ee_coll_name = geedim.image.split_id(image_id)[0]
         gd_coll_name = info.ee_to_gd[ee_coll_name]
-        gd_image = image.get_class(gd_coll_name).from_id(image_id, mask=mask, cloud_dist=cloud_dist)
+        gd_image = masked_image.get_class(gd_coll_name).from_id(image_id, mask=mask, cloud_dist=cloud_dist)
         self.assertTrue(gd_image.id == image_id, 'IDs match')
 
         sr_band_df = pd.DataFrame.from_dict(info.collection_info[gd_coll_name]['bands'])
@@ -114,12 +115,12 @@ class TestApi(unittest.TestCase):
         ]
 
         for impdict in im_param_list:
-            ee_coll_name = image.split_id(impdict['image_id'])[0]
+            ee_coll_name = geedim.image.split_id(impdict['image_id'])[0]
             gd_coll_name = info.ee_to_gd[ee_coll_name]
             with self.subTest('Download', **impdict):
                 # create image.MaskedImage
-                gd_image = image.get_class(gd_coll_name)._from_id(impdict["image_id"], mask=impdict['mask'],
-                                                                  region=region)
+                gd_image = masked_image.get_class(gd_coll_name)._from_id(impdict["image_id"], mask=impdict['mask'],
+                                                                         region=region)
                 # create a filename for these parameters
                 name = impdict["image_id"].replace('/', '-')
                 crs_str = impdict["crs"].replace(':', '_') if impdict["crs"] else 'None'
@@ -136,12 +137,12 @@ class TestApi(unittest.TestCase):
                   "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
         image_id = 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190128'
         ee_image = ee.Image(image_id)
-        download.Image(ee_image).export(image_id.replace('/', '-'), folder='geedim_test', region=region, wait=False)
+        image.BaseImage(ee_image).export(image_id.replace('/', '-'), folder='geedim_test', region=region, wait=False)
 
     def _test_composite(self, gd_image):
         """ Test the metadata of a composite ee.Image for validity. """
 
-        ee_coll_name = image.split_id(gd_image.id)[0]
+        ee_coll_name = geedim.image.split_id(gd_image.id)[0]
         gd_coll_name = info.ee_to_gd[ee_coll_name]
 
         sr_band_df = pd.DataFrame.from_dict(info.collection_info[gd_coll_name]['bands'])

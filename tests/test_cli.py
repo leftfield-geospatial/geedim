@@ -21,7 +21,8 @@ from datetime import datetime, timedelta
 import pandas as pd
 from click.testing import CliRunner
 
-from geedim import root_path, cli, collection, image
+import geedim.image
+from geedim import root_path, cli, collection, masked_image
 from tests.util import _test_image_file, _test_search_results, _setup_test
 
 
@@ -85,8 +86,8 @@ class TestCli(unittest.TestCase):
                     region = json.load(f)
 
                 filename = download_dir.joinpath(image_id.replace('/', '-') + '.tif')
-                ee_coll_name = image.split_id(image_id)[0]
-                gd_image = image.get_class(ee_coll_name)._from_id(image_id, mask=True, region=region)
+                ee_coll_name = geedim.image.split_id(image_id)[0]
+                gd_image = masked_image.get_class(ee_coll_name)._from_id(image_id, mask=True, region=region)
                 _test_image_file(self, image_obj=gd_image, filename=filename, region=region, crs=crs, scale=scale,
                                  mask=True)
 
@@ -141,7 +142,8 @@ class TestCli(unittest.TestCase):
 
         cli_params = ['search', '-c', 'sentinel2_sr', '-r', str(region_filename), '-s',
                       start_date.strftime("%Y-%m-%d"), '-e', end_date.strftime("%Y-%m-%d"), '-o', f'{results_filename}',
-                      'composite', '-cm', method, '-m' if pdict['mask'] else '-nm', 'download', '-dd', str(download_dir),
+                      'composite', '-cm', method, '-m' if pdict['mask'] else '-nm', 'download', '-dd',
+                      str(download_dir),
                       '--crs', pdict['crs'], '--scale', pdict['scale'], '-o']
 
         result = CliRunner().invoke(cli.cli, cli_params, terminal_width=100)

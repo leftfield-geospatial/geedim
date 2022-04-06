@@ -22,7 +22,8 @@ import warnings
 import numpy as np
 import pandas as pd
 
-from geedim import info, image, root_path, _ee_init
+import geedim.image
+from geedim import info, masked_image, root_path, _ee_init
 
 if importlib.util.find_spec("rasterio"):
     import rasterio as rio
@@ -51,7 +52,7 @@ def _test_search_results(test_case, res_df, start_date, end_date, valid_portion=
     test_case.assertGreater(res_df.shape[1], 1, 'Search results contain two or more columns')
 
     image_id = res_df.ID[0]
-    ee_coll_name = image.split_id(image_id)[0]
+    ee_coll_name = geedim.image.split_id(image_id)[0]
     gd_coll_name = info.ee_to_gd[ee_coll_name]
     summary_key_df = pd.DataFrame(info.collection_info[gd_coll_name]['properties'])
 
@@ -68,18 +69,18 @@ def _test_search_results(test_case, res_df, start_date, end_date, valid_portion=
 
 
 def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=None,
-                     mask=image.MaskedImage._default_params['mask'], resampling='near',
-                     cloud_dist=image.MaskedImage._default_params['cloud_dist']):
+                     mask=masked_image.MaskedImage._default_params['mask'], resampling='near',
+                     cloud_dist=masked_image.MaskedImage._default_params['cloud_dist']):
     """ Test downloaded image file against corresponding image object """
 
     # create objects to test against
     if isinstance(image_obj, str):  # create image.MaskedImage from ID
-        ee_coll_name = image.split_id(image_obj)[0]
+        ee_coll_name = geedim.image.split_id(image_obj)[0]
         gd_coll_name = info.ee_to_gd[ee_coll_name]
-        gd_image = image.get_class(gd_coll_name).from_id(image_obj, mask=mask, cloud_dist=cloud_dist)
-    elif isinstance(image_obj, image.Image):
+        gd_image = masked_image.get_class(gd_coll_name).from_id(image_obj, mask=mask, cloud_dist=cloud_dist)
+    elif isinstance(image_obj, masked_image.BaseImage):
         gd_image = image_obj
-        ee_coll_name = image.split_id(gd_image.id)[0]
+        ee_coll_name = geedim.image.split_id(gd_image.id)[0]
         gd_coll_name = info.ee_to_gd[ee_coll_name]
     else:
         raise TypeError(f'Unsupported image_obj type: {image_obj.__class__}')

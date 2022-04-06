@@ -251,12 +251,13 @@ Composite the results of a search and download the result.
 geedim search -c landsat8_c2_l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 composite -cm q_mosaic --mask download --scale 30 --crs EPSG:3857
 ```
 ## API
-### Example 
+### Example
+
 ```python
 import ee
-from geedim import collection, image
+from geedim import collection, masked_image
 
-ee.Initialize()     #initialise earth engine
+ee.Initialize()  # initialise earth engine
 
 # geojson region to search / download
 region = {"type": "Polygon",
@@ -270,7 +271,7 @@ print(gd_collection.summary_key)
 print(gd_collection.summary)
 
 # create and download an image
-im = image.get_class(gd_coll_name).from_id('COPERNICUS/S2_SR/20190115T080251_20190115T082230_T35HKC')
+im = masked_image.get_class(gd_coll_name).from_id('COPERNICUS/S2_SR/20190115T080251_20190115T082230_T35HKC')
 im.download('s2_image.tif', region=region)
 
 # composite search results and download

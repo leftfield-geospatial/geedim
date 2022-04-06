@@ -1,33 +1,55 @@
 """
-    Copyright 2021 Dugal Harris - dugalh@gmail.com
+   Copyright 2021 Dugal Harris - dugalh@gmail.com
 
-    Licensed under the Apache License, Version 2.0 (the "License");
-    you may not use this file except in compliance with the License.
-    You may obtain a copy of the License at
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
 
        http://www.apache.org/licenses/LICENSE-2.0
 
-    Unless required by applicable law or agreed to in writing, software
-    distributed under the License is distributed on an "AS IS" BASIS,
-    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-    See the License for the specific language governing permissions and
-    limitations under the License.
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
 """
 
-# Functionality for wrapping, cloud/shadow masking and scoring Earth Engine images
+##
+# Functions to download and export Earth Engine images
 import collections
-import importlib.util
 import logging
+import multiprocessing
+import os
+import pathlib
+import threading
+import time
+import warnings
+import zipfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from io import BytesIO
+from itertools import product
+from typing import Tuple, Dict
 
 import ee
 import numpy as np
 import pandas as pd
-from geedim import info
-from geedim.download import Image
+import rasterio as rio
+import rasterio.io
+import requests
+from pip._vendor.progress.spinner import Spinner
 from rasterio import Affine
+from rasterio import MemoryFile
+from rasterio.crs import CRS
+from rasterio.enums import Resampling
+from rasterio.warp import transform_geom
+from rasterio.windows import Window
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
+from tqdm import tqdm, TqdmWarning
+
+from geedim import info
 
 
-##
 def split_id(image_id):
     """
     Split Earth Engine image ID into collection and index components.
@@ -47,7 +69,6 @@ def split_id(image_id):
     return ee_coll_name, index
 
 
-
 def get_projection(image, min=True):
     """
     Get the min/max scale projection of image bands.  Server side - no calls to getInfo().
@@ -55,7 +76,7 @@ def get_projection(image, min=True):
 
     Parameters
     ----------
-    image : ee.Image, geedim.image.Image
+    image : ee.Image, geedim.image.BaseImage
             The image whose min/max projection to retrieve.
     min: bool, optional
          Retrieve the projection corresponding to the band with the minimum (True) or maximum (False) scale.
@@ -66,7 +87,7 @@ def get_projection(image, min=True):
     ee.Projection
         The requested projection.
     """
-    if isinstance(image, Image):
+    if isinstance(image, BaseImage):
         image = image.ee_image
 
     bands = image.bandNames()
@@ -97,647 +118,626 @@ def get_projection(image, min=True):
     return ee.Projection(bands.iterate(compare_scale, init_proj))
 
 
-if importlib.util.find_spec("rasterio"):  # if rasterio is installed
-    import rasterio as rio
-    from rasterio.warp import transform_geom
-
-
-    def get_bounds(filename, expand=5):  # pragma coverage
-        """
-        Get a geojson polygon representing the bounds of an image.
-
-        Parameters
-        ----------
-        filename :  str, pathlib.Path
-                    Path of the image file whose bounds to find.
-        expand :    int
-                    Percentage (0-100) by which to expand the bounds (default: 5).
-
-        Returns
-        -------
-        bounds : dict
-                 Geojson polygon.
-        crs : str
-              Image CRS as EPSG string.
-        """
-        try:
-            # GEE sets tif colorinterp tags incorrectly, suppress rasterio warning relating to this:
-            # 'Sum of Photometric type-related color channels and ExtraSamples doesn't match SamplesPerPixel'
-            logging.getLogger("rasterio").setLevel(logging.ERROR)
-            with rio.open(filename) as im:
-                bbox = im.bounds
-                if (im.crs.linear_units == "metre") and (expand > 0):  # expand the bounding box
-                    expand_x = (bbox.right - bbox.left) * expand / 100.0
-                    expand_y = (bbox.top - bbox.bottom) * expand / 100.0
-                    bbox_expand = rio.coords.BoundingBox(
-                        bbox.left - expand_x,
-                        bbox.bottom - expand_y,
-                        bbox.right + expand_x,
-                        bbox.top + expand_y,
-                    )
-                else:
-                    bbox_expand = bbox
-
-                coordinates = [
-                    [bbox_expand.right, bbox_expand.bottom],
-                    [bbox_expand.right, bbox_expand.top],
-                    [bbox_expand.left, bbox_expand.top],
-                    [bbox_expand.left, bbox_expand.bottom],
-                    [bbox_expand.right, bbox_expand.bottom],
-                ]
-
-                bbox_expand_dict = dict(type="Polygon", coordinates=[coordinates])
-                src_bbox_wgs84 = transform_geom(im.crs, "WGS84", bbox_expand_dict)  # convert to WGS84 geojson
-        finally:
-            logging.getLogger("rasterio").setLevel(logging.WARNING)
-
-        image_bounds = collections.namedtuple('ImageBounds', ['bounds', 'crs'])
-        return image_bounds(src_bbox_wgs84, im.crs.to_epsg())
-
-
-##
-# Image classes
-
-
-class MaskedImage(Image):
-
-    _default_params = dict(mask=False, cloud_dist=5000)
-    _gd_coll_name = ""  # geedim image collection name
-
-    def __init__(self, ee_image, mask=_default_params['mask'], cloud_dist=_default_params['cloud_dist']):
-        """
-        Class to cloud/shadow mask and quality score Earth engine images from supported collections.
-
-        Parameters
-        ----------
-        ee_image : ee.Image
-            Earth engine image to wrap.
-        mask : bool, optional
-            Apply a validity (cloud & shadow) mask to the image (default: False).
-        cloud_dist : int, optional
-            The radius (m) to search for cloud/shadow for quality scoring (default: 5000).
-        """
-        # prevent instantiation of base class(es)
-        if self.gd_coll_name not in info.collection_info:
-            raise NotImplementedError("This base class cannot be instantiated, use a sub-class")
-
-        # construct the cloud/shadow masks and cloudless score
-        self._cloud_dist = cloud_dist
-        ee_image = ee_image.unmask()
-        self._masks = self._get_image_masks(ee_image)
-        self._score = self._get_image_score(ee_image)
-        ee_image = self._process_image(ee_image, mask=mask, masks=self._masks, score=self._score)
-        Image.__init__(self, ee_image)
-
-    @classmethod
-    def from_id(cls, image_id, mask=_default_params['mask'], cloud_dist=_default_params['cloud_dist']):
-        """
-        Earth engine image wrapper for cloud/shadow masking and quality scoring.
-
-        Parameters
-        ----------
-        image_id : str
-                   ID of earth engine image to wrap.
-        mask : bool, optional
-            Apply a validity (cloud & shadow) mask to the image (default: False).
-        cloud_dist : int, optional
-            The radius (m) to search for cloud/shadow for quality scoring (default: 5000).
-
-        Returns
-        -------
-        geedim.image.MaskedImage
-            The image object.
-        """
-        # check image is from a supported collection
-        ee_coll_name = split_id(image_id)[0]
-        if ee_coll_name not in info.ee_to_gd:
-            raise ValueError(f"Unsupported collection: {ee_coll_name}")
-
-        # check this class supports the image's collection
-        gd_coll_name = info.ee_to_gd[ee_coll_name]
-        if gd_coll_name != cls._gd_coll_name:
-            raise ValueError(f"{cls.__name__} only supports images from {info.gd_to_ee[cls._gd_coll_name]}")
-
-        ee_image = ee.Image(image_id)
-        return cls(ee_image, mask=mask, cloud_dist=cloud_dist)
-
-    @classmethod
-    def _from_id(cls, image_id, mask=_default_params['mask'], cloud_dist=_default_params['cloud_dist'], region=None):
-        """ Internal method for creating an image with region statistics. """
-        gd_image = cls.from_id(image_id, mask=mask, cloud_dist=cloud_dist)
-        if region is not None:
-            gd_image._ee_image = cls.set_region_stats(gd_image, region)
-        return gd_image
-
-    @staticmethod
-    def _im_transform(ee_image):
-        """ Optional data type conversion to run after masking and scoring. """
-        return ee_image
-
-    @property
-    def ee_image(self):
-        """ ee.Image: The wrapped image. """
-        return self._ee_image
-
-    @property
-    def nodata(self):
-        return 0
-
-    @property
-    def gd_coll_name(self):
-        """ str: geedim collection name (landsat7_c2_l2|landsat8_c2_l2|sentinel2_toa|sentinel2_sr|modis_nbar). """
-        return self._gd_coll_name
-
-    @property
-    def masks(self):
-        """ dict: A dictionary of ee.Image objects for each of the fill, cloud, shadow and validity masks. """
-        return self._masks
-
-    @property
-    def score(self):
-        """ ee.Image: Pixel quality score (distance to nearest cloud/shadow (m)). """
-        return self._score
-
-    @classmethod
-    def ee_collection(cls):
-        """
-        Returns the ee.ImageCollection corresponding to this image.
-
-        Returns
-        -------
-        ee.ImageCollection
-        """
-        return ee.ImageCollection(info.gd_to_ee[cls._gd_coll_name])
-
-    @classmethod
-    def set_region_stats(cls, image_obj, region, mask=False):
-        """
-        Set VALID_PORTION and AVG_SCORE statistics for a specified region in an image object.
-
-        Parameters
-        ----------
-        image_obj: ee.Image, geedim.image.Image
-                    Image object whose region statistics to find and set
-        region : dict, geojson, ee.Geometry
-                 Region inside of which to find statistics
-        mask : bool, optional
-               Apply the validity (cloud & shadow) mask to the image (default: False)
-
-        Returns
-        -------
-         : ee.Image
-            EE image with VALID_PORTION and AVG_SCORE properties set.
-        """
-        if isinstance(image_obj, ee.Image):
-            gd_image = cls(image_obj, mask=mask)
-        elif isinstance(image_obj, cls):
-            gd_image = image_obj
-        else:
-            raise TypeError(f'Unexpected image_obj type: {type(image_obj)}')
-
-        stats_image = ee.Image([gd_image.masks["valid_mask"], gd_image.score])
-        proj = get_projection(stats_image, min=False)
-
-        # sum number of image pixels over the region
-        region_sum = (
-            ee.Image(1)
-            .reduceRegion(reducer="sum", geometry=region, crs=proj.crs(), scale=proj.nominalScale(),
-                          bestEffort=True)
-        )
-
-        # sum VALID_MASK and SCORE over image
-        stats = (
-            stats_image
-            .reduceRegion(reducer="sum", geometry=region, crs=proj.crs(), scale=proj.nominalScale(),
-                          bestEffort=True)
-            .rename(["VALID_MASK", "SCORE"], ["VALID_PORTION", "AVG_SCORE"])
-        )
-
-        # find average VALID_MASK and SCORE over region (not the same as image if image does not cover region)
-        def region_mean(key, value):
-            return ee.Number(value).divide(ee.Number(region_sum.get("constant")))
-
-        stats = stats.map(region_mean)
-        stats = stats.set("VALID_PORTION", ee.Number(stats.get("VALID_PORTION")).multiply(100))
-        return gd_image.ee_image.set(stats)
-
-    def _get_image_masks(self, ee_image):
-        """
-        Derive cloud, shadow, fill and validity masks for an image.
-
-        Parameters
-        ----------
-        ee_image : ee.Image
-                   Derive masks for this image.
-
-        Returns
-        -------
-        dict
-            A dictionary of ee.Image objects for each of the fill, cloud, shadow and validity masks.
-        """
-        # create constant masks for this base class
-        masks = dict(
-            cloud_mask=ee.Image(0).rename("CLOUD_MASK"),
-            shadow_mask=ee.Image(0).rename("SHADOW_MASK"),
-            fill_mask=ee.Image(1).rename("FILL_MASK"),
-            valid_mask=ee.Image(1).rename("VALID_MASK"),
-        )
-
-        return masks
-
-    # TODO: provide CLI access to cloud_dist
-    def _get_image_score(self, ee_image, masks=None):
-        """
-        Get the cloud/shadow distance quality score for this image.
-
-        Parameters
-        ----------
-        ee_image : ee.Image
-                   Find the score for this image.
-        masks : dict, optional
-                Existing masks as returned by _get_image_masks(...) (default: calculate the masks).
-        Returns
-        -------
-        ee.Image
-            The cloud/shadow distance score (m) as a single band image.
-        """
-        radius = 1.5  # morphological pixel radius
-        proj = get_projection(ee_image, min=False)  # use maximum scale projection to save processing time
-        if masks is None:
-            masks = self._get_image_masks(ee_image)
-
-        # combine cloud and shadow masks and morphologically open to remove small isolated patches
-        cloud_shadow_mask = masks["cloud_mask"].Or(masks["shadow_mask"])
-        cloud_shadow_mask = cloud_shadow_mask.focal_min(radius=radius).focal_max(radius=radius)
-        cloud_pix = ee.Number(self._cloud_dist).divide(proj.nominalScale()).round()  # cloud_dist in pixels
-
-        # distance to nearest cloud/shadow (m)
-        score = (
-            cloud_shadow_mask.fastDistanceTransform(neighborhood=cloud_pix, units="pixels", metric="squared_euclidean")
-            .sqrt()
-            .multiply(proj.nominalScale())
-            .rename("SCORE")
-            .reproject(crs=proj.crs(), scale=proj.nominalScale())  # reproject to force calculation at correct scale
-        )
-
-        # clip score to cloud_dist and set to 0 in unfilled areas
-        score = (score.
-                 where(score.gt(ee.Image(self._cloud_dist)), self._cloud_dist).
-                 where(masks["fill_mask"].Not(), 0))
-        return score
-
-    def _process_image(self, ee_image, mask=False, masks=None, score=None):
-        """
-        Create, and add, mask and score bands to a an Earth Engine image.
-
-        Parameters
-        ----------
-        ee_image : ee.Image
-                   Earth engine image to add bands to.
-        mask : bool, optional
-               Apply any validity mask to the image by setting nodata (default: False).
-
-        Returns
-        -------
-        ee.Image
-            The processed image with added mask and score bands.
-        """
-        if masks is None:
-            masks = self._get_image_masks(ee_image)
-        if score is None:
-            score = self._get_image_score(ee_image, masks=masks)
-
-        ee_image = ee_image.addBands(ee.Image(list(masks.values())), overwrite=True)
-        ee_image = ee_image.addBands(score, overwrite=True)
-
-        if mask:  # apply the validity mask to all bands (i.e. set those areas to nodata)
-            ee_image = ee_image.mask(self._masks["valid_mask"])
-        # else:  # sentinel and landsat come with default mask on SR==0, so force unmask
-        #     ee_image = ee_image.unmask()
-
-        return self._im_transform(ee_image)
-
-
-class LandsatImage(MaskedImage):
-    """ Base class for cloud/shadow masking and quality scoring landsat8_c2_l2 and landsat7_c2_l2 images """
-
-    #TODO: remove these dtype conversions here and leave it up to download.
-    @staticmethod
-    def _im_transform(ee_image):
-        return ee.Image.toUint16(ee_image)
-
-    @staticmethod
-    def _split_band_names(ee_image):
-        """Get SR and non-SR band names"""
-        all_bands = ee_image.bandNames()
-        init_bands = ee.List([])
-
-        def add_refl_bands(band, refl_bands):
-            """ Server side function to add SR band names to a list """
-            refl_bands = ee.Algorithms.If(
-                ee.String(band).rindex("SR_B").eq(0), ee.List(refl_bands).add(band), refl_bands
-            )
-            return refl_bands
-
-        sr_bands = ee.List(all_bands.iterate(add_refl_bands, init_bands))
-        non_sr_bands = all_bands.removeAll(sr_bands)
-        split_band_names = collections.namedtuple("SplitBandNames", ["sr", "non_sr"])
-        return split_band_names(sr_bands, non_sr_bands)
-
-    def _get_image_masks(self, ee_image):
-        # get cloud, shadow and fill masks from QA_PIXEL
-        qa_pixel = ee_image.select("QA_PIXEL")
-
-        # incorporate the existing mask (for zero SR pixels) into the shadow mask
-        sr_bands, non_sr_bands = LandsatImage._split_band_names(ee_image)
-        ee_mask = ee_image.select(sr_bands).reduce(ee.Reducer.allNonZero())
-        fill_mask = qa_pixel.bitwiseAnd(1).eq(0).And(ee_mask).rename("FILL_MASK")
-
-        # TODO: include Landsat 8 SR_QA_AEROSOL in cloud mask? it has lots of false positives which skews valid portion
-        cloud_mask = qa_pixel.bitwiseAnd((1 << 1) | (1 << 2) | (1 << 3)).neq(0).rename("CLOUD_MASK")
-        shadow_mask = qa_pixel.bitwiseAnd(1 << 4).neq(0)
-        shadow_mask = shadow_mask.rename("SHADOW_MASK")
-
-        # combine cloud, shadow and fill masks into validity mask
-        valid_mask = ((cloud_mask.Or(shadow_mask)).Not()).And(fill_mask).rename("VALID_MASK")
-
-        return dict(cloud_mask=cloud_mask, shadow_mask=shadow_mask, fill_mask=fill_mask, valid_mask=valid_mask)
-
-
-class Landsat8Image(LandsatImage):
-    """ Class for cloud/shadow masking and quality scoring landsat8_c2_l2 images """
-    _gd_coll_name = "landsat8_c2_l2"
-
-
-class Landsat7Image(LandsatImage):
-    """ Class for cloud/shadow masking and quality scoring landsat7_c2_l2 images """
-    _gd_coll_name = "landsat7_c2_l2"
-
-
-class Landsat5Image(LandsatImage):
-    """ Class for cloud/shadow masking and quality scoring landsat5_c2_l2 images """
-    _gd_coll_name = "landsat5_c2_l2"
-
-
-class Landsat4Image(LandsatImage):
-    """ Class for cloud/shadow masking and quality scoring landsat4_c2_l2 images """
-    _gd_coll_name = "landsat4_c2_l2"
-
-
-class Sentinel2Image(MaskedImage):  # pragma: no cover
+def get_bounds(filename, expand=5):  # pragma coverage
     """
-    Base class for cloud masking and quality scoring sentinel2_sr and sentinel2_toa images
-
-    (Does not use cloud probability).
-    """
-
-    @staticmethod
-    def _im_transform(ee_image):
-        return ee.Image.toUint16(ee_image)
-
-    def _get_image_masks(self, ee_image):
-        masks = MaskedImage._get_image_masks(self, ee_image)  # get constant masks
-
-        # derive cloud mask (only)
-        qa = ee_image.select("QA60")  # bits 10 and 11 are opaque and cirrus clouds respectively
-        cloud_mask = qa.bitwiseAnd((1 << 11) | (1 << 10)).neq(0).rename("CLOUD_MASK")
-
-        # update validity and cloud masks
-        valid_mask = cloud_mask.Not().rename("VALID_MASK")
-        masks.update(cloud_mask=cloud_mask, valid_mask=valid_mask)
-        return masks
-
-
-class Sentinel2SrImage(Sentinel2Image):  # pragma: no cover
-    """
-    Class for cloud masking and quality scoring sentinel2_sr images
-
-    (Does not use cloud probability).
-    """
-    _gd_coll_name = "sentinel2_sr"
-
-
-class Sentinel2ToaImage(Sentinel2Image):  # pragma: no cover
-    """
-    Class for cloud masking and quality scoring sentinel2_toa images
-
-    (Does not use cloud probability).
-    """
-    _gd_coll_name = "sentinel2_toa"
-
-
-class Sentinel2ClImage(MaskedImage):
-    """
-    Base class for cloud/shadow masking and quality scoring sentinel2_sr and sentinel2_toa images.
-
-    (Uses cloud probability to improve cloud/shadow masking).
-    """
-
-    def __init__(self, ee_image, mask=MaskedImage._default_params['mask'],
-                 cloud_dist=MaskedImage._default_params['cloud_dist']):
-        # TODO: provide CLI access to these attributes
-
-        # set attributes before their use in __init__ below
-        self._cloud_prob_thresh = 35  # Cloud probability (%); values greater than are considered cloud
-        self._cloud_proj_dist = 1  # Maximum distance (km) to search for cloud shadows from cloud edges
-        self._buffer = 100  # Distance (m) to dilate the edge of cloud-identified objects
-
-        MaskedImage.__init__(self, ee_image, mask=mask, cloud_dist=cloud_dist)
-
-    @staticmethod
-    def _im_transform(ee_image):
-        return ee.Image.toUint16(ee_image)
-
-    @classmethod
-    def from_id(cls, image_id, mask=MaskedImage._default_params['mask'],
-                cloud_dist=MaskedImage._default_params['cloud_dist']):
-        # check image_id
-        ee_coll_name = split_id(image_id)[0]
-        if ee_coll_name not in info.ee_to_gd:
-            raise ValueError(f"Unsupported collection: {ee_coll_name}")
-
-        gd_coll_name = info.ee_to_gd[ee_coll_name]
-        if gd_coll_name != cls._gd_coll_name:
-            raise ValueError(
-                f"{cls.__name__} only supports images from the {info.gd_to_ee[cls._gd_coll_name]} collection"
-            )
-
-        ee_image = ee.Image(image_id)
-
-        # get cloud probability for ee_image and add as a band
-        cloud_prob = ee.Image(f"COPERNICUS/S2_CLOUD_PROBABILITY/{split_id(image_id)[1]}")
-        ee_image = ee_image.addBands(cloud_prob, overwrite=True)
-        return cls(ee_image, mask=mask, cloud_dist=cloud_dist)
-
-    def _get_image_masks(self, ee_image):
-        """
-        Derive cloud, shadow and validity masks for an image, using the additional cloud probability band.
-
-        Adapted from https://developers.google.com/earth-engine/tutorials/community/sentinel-2-s2cloudless
-
-        Parameters
-        ----------
-        ee_image : ee.Image
-                   Derive masks for this image
-
-        Returns
-        -------
-        dict
-            A dictionary of ee.Image objects for each of the fill, cloud, shadow and validity masks.
-        """
-
-        masks = MaskedImage._get_image_masks(self, ee_image)  # get constant masks from base class
-        proj = get_projection(ee_image, min=False)  # use maximum scale projection to save processing time
-
-        # threshold the added cloud probability to get the initial cloud mask
-        cloud_prob = ee_image.select("probability")
-        cloud_mask = cloud_prob.gt(self._cloud_prob_thresh).rename("CLOUD_MASK")
-
-        # TODO: dilate valid_mask by _buffer ?
-        # See https://en.wikipedia.org/wiki/Solar_azimuth_angle
-        # get solar azimuth
-        shadow_azimuth = ee.Number(-90).add(ee.Number(ee_image.get("MEAN_SOLAR_AZIMUTH_ANGLE")))
-
-        # remove small clouds
-        cloud_mask_open = (
-            cloud_mask.focal_min(self._buffer, "circle", "meters").focal_max(self._buffer, "circle", "meters")
-        )
-
-        # project the opened cloud mask in the direction of sun's rays (i.e. shadows)
-        proj_dist_pix = ee.Number(self._cloud_proj_dist * 1000).divide(proj.nominalScale()).round()
-        proj_cloud_mask = (
-            cloud_mask_open.directionalDistanceTransform(shadow_azimuth, proj_dist_pix)
-            .select("distance")
-            .mask()
-            .rename("PROJ_CLOUD_MASK")
-            .reproject(crs=proj.crs(), scale=proj.nominalScale())  # force calculation at correct scale
-        )
-
-        if self.gd_coll_name == "sentinel2_sr":  # use SCL band to reduce shadow_mask
-            # Get the shadow mask from the SCL band and perform morphological opening to remove small isolated blobs
-            scl = ee_image.select("SCL")
-            dark_shadow_mask = (
-                scl.eq(3)
-                .Or(scl.eq(2))
-                .focal_min(self._buffer, "circle", "meters")
-                .focal_max(2 * self._buffer, "circle", "meters")
-            )
-            # improve the shadow mask by combining it with the projected cloud mask
-            shadow_mask = proj_cloud_mask.And(dark_shadow_mask).rename("SHADOW_MASK")
-        else:
-            shadow_mask = proj_cloud_mask.rename("SHADOW_MASK")  # mask all areas that could be cloud shadow
-
-        # incorporate the existing mask (for zero SR pixels) into the shadow mask
-        zero_sr_mask = ee_image.mask().reduce(ee.Reducer.allNonZero()).Not()
-        shadow_mask = shadow_mask.Or(zero_sr_mask).rename("SHADOW_MASK")
-
-        # combine cloud and shadow masks
-        valid_mask = (cloud_mask.Or(shadow_mask)).Not().rename("VALID_MASK")
-        masks.update(cloud_mask=cloud_mask, shadow_mask=shadow_mask, valid_mask=valid_mask)
-        return masks
-
-    @classmethod
-    def ee_collection(cls):
-        """
-        Returns an augmented ee.ImageCollection with cloud probability bands added to multi-spectral images.
-
-        Returns
-        -------
-        ee.ImageCollection
-        """
-        s2_sr_toa_col = ee.ImageCollection(info.gd_to_ee[cls._gd_coll_name])
-        s2_cloudless_col = ee.ImageCollection("COPERNICUS/S2_CLOUD_PROBABILITY")
-
-        # create a collection of index-matched images from the SR/TOA and cloud probability collections
-        filt = ee.Filter.equals(leftField="system:index", rightField="system:index")
-        inner_join = ee.ImageCollection(ee.Join.inner().apply(s2_sr_toa_col, s2_cloudless_col, filt))
-
-        # re-configure the collection so that cloud probability is added as a band to the SR/TOA image
-        def map(feature):
-            """ Server-side function to concatenate images """
-            return ee.Image.cat(feature.get("primary"), feature.get("secondary"))
-
-        return inner_join.map(map)
-
-
-class Sentinel2SrClImage(Sentinel2ClImage):
-    """
-    Class for cloud/shadow masking and quality scoring sentinel2_sr images.
-
-    (Uses cloud probability to improve cloud/shadow masking).
-    """
-    _gd_coll_name = "sentinel2_sr"
-
-
-class Sentinel2ToaClImage(Sentinel2ClImage):
-    """
-    Class for cloud/shadow masking and quality scoring sentinel2_toa images.
-
-    (Uses cloud probability to improve cloud/shadow masking).
-    """
-    _gd_coll_name = "sentinel2_toa"
-
-
-class ModisNbarImage(MaskedImage):
-    """
-    Class for wrapping modis_nbar images.
-
-    (These images are already cloud/shadow free composites, so no further processing is done on them, and
-    constant cloud, shadow etc masks are used).
-    """
-
-    @staticmethod
-    def _im_transform(ee_image):
-        return ee.Image.toUint16(ee_image)
-
-    _gd_coll_name = "modis_nbar"
-
-
-##
-
-
-def get_class(coll_name):
-    """
-    Get the ProcImage subclass for wrapping image from a specified collection.
+    Get a geojson polygon representing the bounds of an image.
 
     Parameters
     ----------
-    coll_name : str
-                geedim or Earth Engine collection name to get class for.
-                (landsat7_c2_l2|landsat8_c2_l2|sentinel2_toa|sentinel2_sr|modis_nbar) or
-                (LANDSAT/LE07/C02/T1_L2|LANDSAT/LC08/C02/T1_L2|COPERNICUS/S2|COPERNICUS/S2_SR|MODIS/006/MCD43A4).
+    filename :  str, pathlib.Path
+                Path of the image file whose bounds to find.
+    expand :    int
+                Percentage (0-100) by which to expand the bounds (default: 5).
 
     Returns
     -------
-    geedim.image.ProcImage
-        The class corresponding to coll_name.
+    bounds : dict
+             Geojson polygon.
+    crs : str
+          Image CRS as EPSG string.
     """
-    # TODO: populate this list by traversing the class hierarchy
-    # TODO: allow coll_name = full image id
-    # import inspect
-    # from geedim import image
-    # def find_subclasses():
-    #     image_classes = {cls._gd_coll_name: cls for name, cls in inspect.getmembers(image)
-    #                      if inspect.isclass(cls) and issubclass(cls, image.Image) and not cls is image.Image}
-    #
-    #     return image_classes
+    try:
+        # GEE sets tif colorinterp tags incorrectly, suppress rasterio warning relating to this:
+        # 'Sum of Photometric type-related color channels and ExtraSamples doesn't match SamplesPerPixel'
+        logging.getLogger("rasterio").setLevel(logging.ERROR)
+        with rio.open(filename) as im:
+            bbox = im.bounds
+            if (im.crs.linear_units == "metre") and (expand > 0):  # expand the bounding box
+                expand_x = (bbox.right - bbox.left) * expand / 100.0
+                expand_y = (bbox.top - bbox.bottom) * expand / 100.0
+                bbox_expand = rio.coords.BoundingBox(
+                    bbox.left - expand_x,
+                    bbox.bottom - expand_y,
+                    bbox.right + expand_x,
+                    bbox.top + expand_y,
+                )
+            else:
+                bbox_expand = bbox
 
-    gd_coll_name_map = dict(
-        landsat4_c2_l2=Landsat4Image,
-        landsat5_c2_l2=Landsat5Image,
-        landsat7_c2_l2=Landsat7Image,
-        landsat8_c2_l2=Landsat8Image,
-        sentinel2_toa=Sentinel2ToaClImage,
-        sentinel2_sr=Sentinel2SrClImage,
-        modis_nbar=ModisNbarImage,
-    )
+            coordinates = [
+                [bbox_expand.right, bbox_expand.bottom],
+                [bbox_expand.right, bbox_expand.top],
+                [bbox_expand.left, bbox_expand.top],
+                [bbox_expand.left, bbox_expand.bottom],
+                [bbox_expand.right, bbox_expand.bottom],
+            ]
 
-    if split_id(coll_name)[0] in info.ee_to_gd:
-        coll_name = split_id(coll_name)[0]
+            bbox_expand_dict = dict(type="Polygon", coordinates=[coordinates])
+            src_bbox_wgs84 = transform_geom(im.crs, "WGS84", bbox_expand_dict)  # convert to WGS84 geojson
+    finally:
+        logging.getLogger("rasterio").setLevel(logging.WARNING)
 
-    if coll_name in gd_coll_name_map:
-        return gd_coll_name_map[coll_name]
-    elif coll_name in info.ee_to_gd:
-        return gd_coll_name_map[info.ee_to_gd[coll_name]]
-    else:
-        raise ValueError(f"Unknown collection name: {coll_name}")
+    image_bounds = collections.namedtuple('ImageBounds', ['bounds', 'crs'])
+    return image_bounds(src_bbox_wgs84, im.crs.to_epsg())
+
+
+def _requests_retry_session(retries=3, backoff_factor=0.3, status_forcelist=(500, 502, 504), session=None):
+    """A persistent requests session configured for retries"""
+    session = session or requests.Session()
+    retry = Retry(total=retries, read=retries, connect=retries, backoff_factor=backoff_factor,
+                  status_forcelist=status_forcelist)
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    return session
+
+
+def get_info(ee_image, min=True):
+    """
+    Retrieve Earth Engine image metadata
+
+    Parameters
+    ----------
+    ee_image : ee.Image
+               The image whose information to retrieve.
+    min : bool, optional
+          Retrieve the crs, crs_transform & scale corresponding to the band with the minimum (True) or maximum (False)
+          scale.(default: True)
+
+    Returns
+    -------
+    dict
+        Dictionary of image information with 'id', 'properties', 'bands', 'crs' and 'scale' keys.
+    """
+    # TODO: lose the need for ee_info below, perhaps change Image class to return ee_info with its .info property
+    gd_info = dict(id=None, properties={}, bands=[], crs=None, scale=None, footprint=None, ee_info=None)
+    ee_info = ee_image.getInfo()  # retrieve image info from cloud
+    gd_info['ee_info'] = ee_info
+
+    if "id" in ee_info:
+        gd_info["id"] = ee_info["id"]
+
+    if "properties" in ee_info:
+        gd_info["properties"] = ee_info["properties"]
+        if 'system:footprint' in ee_info["properties"]:
+            gd_info['footprint'] = ee_info['properties']['system:footprint']
+
+    if "bands" in ee_info:
+        # get scale & crs corresponding to min/max scale band (exclude 'EPSG:4326' (composite/constant) bands)
+        band_df = pd.DataFrame(ee_info["bands"])
+        scales = pd.DataFrame(band_df["crs_transform"].tolist())[0].abs().astype(float)
+        band_df["scale"] = scales
+        filt_band_df = band_df[(band_df.crs != "EPSG:4326") & (band_df.scale != 1)]
+        if filt_band_df.shape[0] > 0:
+            idx = filt_band_df.scale.idxmin() if min else filt_band_df.scale.idxmax()
+            gd_info["crs"], gd_info["scale"] = filt_band_df.loc[idx, ["crs", "scale"]]
+
+        # populate band metadata
+        ee_coll_name = split_id(str(gd_info["id"]))[0]
+        if ee_coll_name in info.ee_to_gd:  # include SR band metadata if it exists
+            # TODO: don't assume all the bands are in band_df, there could have been a select
+            # use DataFrame to concat SR band metadata from collection_info with band IDs from the image
+            sr_band_list = info.collection_info[info.ee_to_gd[ee_coll_name]]["bands"].copy()
+            sr_band_dict = {bdict['id']: bdict for bdict in sr_band_list}
+            gd_info["bands"] = [sr_band_dict[id] if id in sr_band_dict else dict(id=id) for id in band_df.id]
+        else:  # just use the image band IDs
+            gd_info["bands"] = band_df[["id"]].to_dict("records")
+
+    return gd_info
+
+
+class TileDownload:
+    """Class for encapsulating and downloading a GEE image tile (i.e. a rectangular region of interest in the image)"""
+
+    def __init__(self, image: ee.Image, transform: Affine, window: Window):
+        """
+        Create an instance of TileDownload.
+
+        Parameters
+        ----------
+        image: ee.Image
+            An EE image to derive the tile from.
+        transform: Affine
+            A rasterio geo-transform for `image`.
+        window: Window
+            A rasterio window into `image`, specifying the region of interest for this tile.
+        """
+        self._image = image
+        self._window = window
+        # offset the image geo-transform origin so that it corresponds to the UL corner of the tile.
+        self._transform = transform * Affine.translation(window.col_off, window.row_off)
+        self._shape = (window.height, window.width)
+
+    @property
+    def window(self) -> Window:
+        """The rasterio window into the source image."""
+        return self._window
+
+    def download(self, session=None, bar: tqdm = None):
+        """
+
+        Parameters
+        ----------
+        session: requests.Session, optional
+            Session to use for downloading.
+        bar: tqdm, optional
+            A tqdm progress bar to update with the download progress.
+
+        Returns
+        -------
+        array: numpy.ndarray
+            The tile pixel data in a 3D array (bands down the first dimension).
+        """
+        # TODO: get image crs from DownloadImage where it is found for the output dataset, rather than reget it here
+        session = session if session else requests
+
+        # get image download url
+        url = self._image.getDownloadURL(
+            dict(crs=self._image.projection().crs(), crs_transform=tuple(self._transform)[:6],
+                 dimensions=self._shape[::-1], filePerBand=False, fileFormat='GeoTIFF'))
+
+        # download zip into buffer
+        zip_buffer = BytesIO()
+        resp = session.get(url, stream=True)
+        download_size = int(resp.headers.get('content-length', 0))
+        for data in resp.iter_content(chunk_size=10240):
+            zip_buffer.write(data)
+            if bar:
+                bar.update(len(data) / download_size)
+        zip_buffer.flush()
+
+        # extract geotiff from zipped buffer into another buffer
+        zip_file = zipfile.ZipFile(zip_buffer)
+        ext_buffer = BytesIO(zip_file.read(zip_file.filelist[0]))
+
+        # read the geotiff with a rasterio memory file
+        with MemoryFile(ext_buffer) as mem_file:
+            with mem_file.open() as ds:
+                array = ds.read()
+                if (array.dtype == np.dtype('float32')) or (array.dtype == np.dtype('float64')):
+                    # GEE sets nodata to -inf for float data types, (but does not populate the nodata field)
+                    # rasterio won't allow nodata=-inf, so this is a workaround to change nodata to nan at source
+                    array[np.isinf(array)] = np.nan
+
+        return array
+
+
+class BaseImage:
+    """
+    Base class for encapsulating an EE image.
+
+    Provides access to metadata, download and export functionality.
+    """
+    float_nodata = float('nan')
+
+    def __init__(self, image: ee.Image):
+
+        if not isinstance(image, ee.Image):
+            raise TypeError('image must be an instance of ee.Image')
+        self._ee_image = image
+        self._info = None
+        self._out_lock = threading.Lock()
+        self._threads = max(multiprocessing.cpu_count(), 4)
+
+    @property
+    def ee_image(self) -> ee.Image:
+        """The encapsulated EE image."""
+        return self._ee_image
+
+    @property
+    def info(self) -> Dict:
+        """The image metadata in a dict."""
+        if self._info is None:
+            self._info = get_info(self._ee_image)
+        return self._info
+
+    @property
+    def id(self) -> str:
+        """The EE image ID."""
+        return self.info["id"]
+
+    @property
+    def name(self) -> str:
+        """The image name (the ID with slashes replaces by dashes)."""
+        return self.id.replace('/', '-')
+
+    @property
+    def crs(self) -> str:
+        """
+        The image CRS corresponding to minimum scale band, as an EPSG string.
+        Will return None if all bands are in EPSG:4326 (i.e. the image is a composite).
+        """
+        return self.info["crs"]
+
+    @property
+    def scale(self) -> float:
+        """
+        The scale (m) corresponding to minimum scale band.
+        Will return None if all bands are in EPSG:4326 (i.e. the image is a composite).
+        """
+        return self.info["scale"]
+
+    @property
+    def footprint(self) -> Dict:
+        """A geojson polygon of the image extent."""
+        return self.info["footprint"]
+
+    def _auto_dtype(self):
+        """Return the minimum (lowest memory) data type to represent the values of the encapsulated image."""
+
+        band_df = pd.DataFrame(self.info['ee_info']['bands'])
+        dtype_df = pd.DataFrame(band_df.data_type.tolist(), index=band_df.id)
+        if all(dtype_df.precision == 'int'):
+            dtype_min = dtype_df['min'].min()  # minimum image value
+            dtype_max = dtype_df['max'].max()  # maximum image value
+
+            # determine the number of integer bits required to represent the value range
+            bits = 0
+            for bound in [abs(dtype_max), abs(dtype_min)]:
+                bound_bits = 0 if bound == 0 else 2 ** np.ceil(np.log2(np.log2(abs(bound))))
+                bits += bound_bits
+            bits = min(max(bits, 8), 32)  # clamp bits to allowed values
+            dtype = f'{"u" if dtype_min >= 0 else ""}int{int(bits)}'
+        elif any(dtype_df.precision == 'double'):
+            dtype = 'float64'
+        else:
+            dtype = 'float32'
+        return dtype
+
+    def _convert_dtype(self, image, dtype=None):
+        """
+        Converts the data type of an image, choosing a minimal target type, if one is not specified.
+
+        Parameters
+        ----------
+        image: ee.Image
+            The image to convert.
+        dtype: str, optional
+            The data type to convert the image to, as a valid rasterio dtype string.  If not specified, a miminal
+            dtype that can represent the `image` values will be chosen automatically.
+
+        Returns
+        -------
+        image: ee.Image
+            The converted image.
+        dtype: str
+            The automatically selected dtype
+        """
+        if dtype is None:
+            dtype = self._auto_dtype()
+
+        conv_dict = dict(
+            float32=ee.Image.toFloat,
+            float64=ee.Image.toDouble,
+            uint8=ee.Image.toUint8,
+            int8=ee.Image.toInt8,
+            uint16=ee.Image.toUint16,
+            int16=ee.Image.toInt16,
+            uint32=ee.Image.toUint32,
+            int32=ee.Image.toInt32,
+        )
+        if dtype not in conv_dict:
+            raise ValueError(f'Unsupported dtype: {dtype}')
+
+        return conv_dict[dtype](image), dtype
+
+    def _prepare_for_export(self, region=None, crs=None, scale=None, resampling='near', dtype=None):
+        """
+        Prepare the encapsulated image for export to Google Drive.  Will reproject, resample, clip and convert the image
+        according to the provided parameters.
+
+        Returns the prepared image, and it's data type.
+        Parameters
+        ----------
+        region : dict, geojson, ee.Geometry, optional
+            Region of interest (WGS84) to export (default: export the entire image granule if it has one).
+        crs : str, optional
+            WKT, EPSG etc specification of CRS to export to.  Where image bands have different CRSs, all are
+            re-projected to this CRS.
+            (default: use the CRS of the minimum scale band if available).
+        scale : float, optional
+            Pixel scale (m) to export to.  Where image bands have different scales, all are re-projected to this scale.
+            (default: use the minimum scale of image bands if available).
+        resampling : str, optional
+            Resampling method: ("near"|"bilinear"|"bicubic") (default: "near")
+        dtype: str, optional
+            Data type to export to ("uint8"|"int8"|"uint16"|"int16"|"uint32"|"int32"|"float32"|"float64")
+            (default: auto select a minimal type)
+
+        Returns
+        -------
+        image: ee.Image
+            The prepared image.
+        dtype: str
+            The dtype of the converted image.
+        """
+
+        if not region or not crs or not scale:
+            # check if this image is a composite
+            # (note that self.scale below will result in a EE getInfo() call to retrieve scale, crs etc)
+            if not self.scale:
+                raise ValueError(f'Image appears to be a composite, specify a region, crs and scale')
+        region = region or self.footprint  # TODO: test if this region is not in the download crs
+        crs = crs or self.crs
+        scale = scale or self.scale
+
+        if crs == "SR-ORG:6974":
+            raise ValueError(
+                "There is an earth engine bug exporting in SR-ORG:6974, specify another CRS: "
+                "https://issuetracker.google.com/issues/194561313"
+            )
+        ee_image = self._ee_image.resample(resampling) if resampling != 'near' else self._ee_image
+        ee_image, dtype = self._convert_dtype(ee_image, dtype=dtype)
+        export_args = dict(region=region, crs=crs, scale=scale, fileFormat='GeoTIFF', filePerBand=False)
+        ee_image, _ = ee_image.prepare_for_export(export_args)
+        return ee_image, dtype
+
+    def _prepare_for_download(self, mask=True, **kwargs):
+        """
+        Prepare the encapsulated image for tiled downloading to local GeoTIFF. Will reproject, resample, clip and
+        convert the image according to the provided parameters.
+
+        Returns the prepared image and a rasterio profile for the download GeoTIFF.
+        """
+        # resample, convert, clip and reproject image according to download params
+        ee_image, dtype = self._prepare_for_export(**kwargs)
+        # _prepare_for_export adjusts crs, dimensions, crs_transform etc so get the latest image info
+        info = ee_image.getInfo()
+
+        # get transform, shape and band count of the prepared image to configure up the output image profile
+        band_info = info['bands'][0]  # all bands are same crs & scale after prepare_for_export
+        transform = Affine(*band_info['crs_transform'])
+        if 'origin' in band_info:
+            transform *= Affine.translation(*band_info['origin'])
+
+        shape = band_info['dimensions'][::-1]
+        count = len(info['bands'])
+        nodata_dict = dict(
+            float32=self.float_nodata,  # see workaround note in TileDownload.download(...)
+            float64=self.float_nodata,  # ditto
+            uint8=0,
+            int8=np.iinfo('int8').min,
+            uint16=0,
+            int16=np.iinfo('int16').min,
+            uint32=0,
+            int32=np.iinfo('int32').min
+        )
+        nodata = nodata_dict[dtype] if mask else None
+        profile = dict(driver='GTiff', dtype=dtype, nodata=nodata, width=shape[1], height=shape[0], count=count,
+                       crs=CRS.from_string(band_info['crs']), transform=transform, compress='deflate',
+                       interleave='band', tiled=True)
+        return ee_image, profile
+
+    def _build_overviews(self, dataset: rasterio.io.DatasetWriter, max_num_levels=8, min_ovw_pixels=256):
+        """Build internal overviews, downsampled by successive powers of 2, for an open rasterio dataset."""
+        if dataset.closed:
+            raise IOError('Image dataset is closed')
+
+        # limit overviews so that the highest level has at least 2**8=256 pixels along the shortest dimension,
+        # and so there are no more than 8 levels.
+        max_ovw_levels = int(np.min(np.log2(dataset.shape)))
+        min_level_shape_pow2 = int(np.log2(min_ovw_pixels))
+        num_ovw_levels = np.min([max_num_levels, max_ovw_levels - min_level_shape_pow2])
+        ovw_levels = [2 ** m for m in range(1, num_ovw_levels + 1)]
+        dataset.build_overviews(ovw_levels, Resampling.average)
+
+    def _get_tile_shape(self, profile: Dict, max_download_size=33554432, max_grid_dimension=10000) -> Tuple[int, int]:
+        """Return a tile shape for the encapsulated image that satisfies GEE download limits and is near-square."""
+        # find the total number of tiles we must divide the image into to satisfy max_download_size
+        image_shape = (profile['height'], profile['width'])
+        dtype_size = np.dtype(profile['dtype']).itemsize
+        image_size = np.prod(np.int64((profile['count'], dtype_size, *image_shape)))
+        num_tiles = np.ceil(image_size / max_download_size)
+
+        # increment num_tiles if it is prime (This is so that we can factorize num_tiles into x & y dimension
+        # components, and don't have all tiles along a single dimension.
+        def is_prime(x):
+            for d in range(2, int(x ** 0.5) + 1):
+                if x % d == 0:
+                    return False
+            return True
+
+        if num_tiles > 4 and is_prime(num_tiles):
+            num_tiles += 1
+
+        # factorise num_tiles into the number of tiles down x,y axes
+        def factors(x):
+            facts = np.arange(1, x + 1)
+            facts = facts[np.mod(x, facts) == 0]
+            return np.vstack((facts, x / facts)).transpose()
+
+        fact_num_tiles = factors(num_tiles)
+
+        # choose the factors that produce a near-square tile shape
+        fact_aspect_ratios = fact_num_tiles[:, 0] / fact_num_tiles[:, 1]
+        image_aspect_ratio = image_shape[0] / image_shape[1]
+        fact_idx = np.argmin(np.abs(fact_aspect_ratios - image_aspect_ratio))
+        shape_num_tiles = fact_num_tiles[fact_idx, :]
+
+        # find the tile shape and clip to max_grid_dimension if necessary
+        tile_shape = np.ceil(image_shape / shape_num_tiles).astype('int')
+        tile_shape[tile_shape > max_grid_dimension] = max_grid_dimension
+        return tuple(tile_shape.tolist())
+
+    def tiles(self, image, profile):
+        """
+        Iterator over the image tiles.
+
+        Yields:
+        -------
+        tile: DownloadTile
+            A tile of the encapsulated image that can be downloaded.
+        """
+        tile_shape = self._get_tile_shape(profile)
+
+        # split the image up into tiles of at most `tile_shape` dimension
+        image_shape = (profile['height'], profile['width'])
+        start_range = product(range(0, image_shape[0], tile_shape[0]), range(0, image_shape[1], tile_shape[1]))
+        for tile_start in start_range:
+            tile_stop = np.clip(np.add(tile_start, tile_shape), a_min=None, a_max=image_shape)
+            clip_tile_shape = (tile_stop - tile_start).tolist()  # tolist is just to convert to native int
+            tile_window = Window(tile_start[1], tile_start[0], clip_tile_shape[1], clip_tile_shape[0])
+            yield TileDownload(image, profile['transform'], tile_window)
+
+    @staticmethod
+    def monitor_export_task(task, label: str = None):
+        """
+        Monitor and display the progress of an export task
+
+        Parameters
+        ----------
+        task : ee.batch.Task
+               EE task to monitor
+        label: str, optional
+               Optional label for progress display (default: use task description)
+        """
+        pause = 0.1
+        status = ee.data.getOperation(task.name)
+
+        if label is None:
+            label = f'{status["metadata"]["description"][:80]}'
+
+        def spin():
+            """Wait for export preparation to complete, displaying a spin toggle"""
+            with Spinner(f'Preparing {label}: ') as spinner:
+                while 'progress' not in status['metadata']:
+                    time.sleep(pause)
+                    spinner.next()
+                spinner.writeln(f'Preparing {label}: done')
+
+        # run the spinner in a separate thread so it does not hang on EE calls
+        spin_thread = threading.Thread(target=spin)
+        spin_thread.start()
+
+        # poll EE until the export preparation is complete
+        while 'progress' not in status['metadata']:
+            time.sleep(5 * pause)
+            status = ee.data.getOperation(task.name)
+        spin_thread.join()
+
+        # wait for export to complete, displaying a progress bar
+        bar_format = '{desc}: |{bar}| [{percentage:5.1f}%] in {elapsed:>5s} (eta: {remaining:>5s})'
+        with tqdm(desc=f'Exporting {label}', total=1, bar_format=bar_format, dynamic_ncols=True) as bar:
+            while ('done' not in status) or (not status['done']):
+                time.sleep(10 * pause)
+                status = ee.data.getOperation(task.name)  # get task status
+                bar.update(status['metadata']['progress'] - bar.n)
+
+        if status['metadata']['state'] != 'SUCCEEDED':
+            raise IOError(f"Export failed \n{status}")
+
+    def export(self, filename, folder='', wait=True, **kwargs):
+        """
+        Export the encapsulated image to Google Drive.
+
+        Parameters
+        ----------
+        filename : str
+                   The name of the task and destination file
+        folder : str, optional
+                 Google Drive folder to export to (default: root).
+        wait : bool
+               Wait for the export to complete before returning (default: True)
+        kwargs:
+            region : dict, geojson, ee.Geometry, optional
+                Region of interest (WGS84) to export (default: export the entire image granule if it has one).
+            crs : str, optional
+                WKT, EPSG etc specification of CRS to export to.  Where image bands have different CRSs, all are
+                re-projected to this CRS.
+                (default: use the CRS of the minimum scale band if available).
+            scale : float, optional
+                Pixel scale (m) to export to.  Where image bands have different scales, all are re-projected to this
+                scale. (default: use the minimum scale of image bands if available).
+            resampling : str, optional
+                Resampling method: ("near"|"bilinear"|"bicubic") (default: "near")
+            dtype: str, optional
+                Data type to export to ("uint8"|"int8"|"uint16"|"int16"|"uint32"|"int32"|"float32"|"float64")
+                (default: auto select a minimal type)
+        """
+
+        # TODO: test composite of resampled images and resampled composite
+        image, _ = self._prepare_for_export(**kwargs)
+        # create export task and start
+        task = ee.batch.Export.image.toDrive(image=image, description=filename[:100], folder=folder,
+                                             fileNamePrefix=filename, maxPixels=1e9)
+        task.start()
+        if wait:  # wait for completion
+            self.monitor_export_task(task)
+        return task
+
+    def download(self, filename: pathlib.Path, overwrite=False, **kwargs):
+        """
+        Download the encapsulated image to a GeoTiff file.
+
+        There is no size limit on the EE image - it is split into tiles, and re-assembled locally, to work around the
+        EE download size limit.
+
+        Parameters
+        ----------
+        filename: pathlib.Path, str
+           Name of the destination file.
+        overwrite : bool, optional
+            Overwrite the destination file if it exists, otherwise prompt the user (default: True)
+        kwargs:
+            region : dict, geojson, ee.Geometry, optional
+                Region of interest (WGS84) to export (default: export the entire image granule if it has one).
+            crs : str, optional
+                WKT, EPSG etc specification of CRS to export to.  Where image bands have different CRSs, all are
+                re-projected to this CRS.
+                (default: use the CRS of the minimum scale band if available).
+            scale : float, optional
+                Pixel scale (m) to export to.  Where image bands have different scales, all are re-projected to this
+                scale. (default: use the minimum scale of image bands if available).
+            resampling : str, optional
+                Resampling method: ("near"|"bilinear"|"bicubic") (default: "near")
+            dtype: str, optional
+                Data type to export to ("uint8"|"int8"|"uint16"|"int16"|"uint32"|"int32"|"float32"|"float64")
+
+        """
+
+        filename = pathlib.Path(filename)
+        if filename.exists():
+            if overwrite:
+                os.remove(filename)
+            else:
+                raise FileExistsError(f'{filename} exists')
+
+        image, profile = self._prepare_for_download(**kwargs)
+        session = _requests_retry_session(5, status_forcelist=[500, 502, 503, 504])
+
+        tiles = list(self.tiles(image, profile))
+        bar_format = '{desc}: |{bar}| {n:4.1f}/{total_fmt} tile(s) [{percentage:5.1f}%] in {elapsed:>5s} (eta: {remaining:>5s})'
+        bar = tqdm(desc=filename.name, total=len(tiles), bar_format=bar_format, dynamic_ncols=True)
+        out_ds = rio.open(filename, 'w', **profile)
+        warnings.filterwarnings('ignore', category=TqdmWarning)
+
+        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), out_ds, bar:
+            def download_tile(tile):
+                """Download a tile and write into the destination GeoTIFF."""
+                tile_array = tile.download(session, bar)
+                with self._out_lock:
+                    out_ds.write(tile_array, window=tile.window)
+
+            with ThreadPoolExecutor(max_workers=self._threads) as executor:
+                # Run the tile downloads in a thread pool
+                futures = [executor.submit(download_tile, tile) for tile in tiles]
+                for future in as_completed(futures):
+                    future.result()
+
+            # populate GeoTIFF metadata and build overviews
+            out_ds.update_tags(**self.info['properties'])
+            for band_i, band_info in enumerate(self.info['bands']):
+                if 'id' in band_info:
+                    out_ds.set_band_description(band_i + 1, band_info['id'])
+                out_ds.update_tags(band_i + 1, **band_info)
+            self._build_overviews(out_ds)

@@ -21,12 +21,12 @@ from collections import namedtuple
 
 import click
 import ee
-
-from geedim import collection as coll_api
-from geedim import export as export_api
-from geedim import info, image, _ee_init
-from geedim.download import Image
 from rasterio.dtypes import dtype_ranges
+
+import geedim.image
+from geedim import collection as coll_api
+from geedim import info, masked_image, _ee_init
+from geedim.image import BaseImage
 
 
 class _CmdChainResults(object):
@@ -54,7 +54,7 @@ def _extract_region(region=None, bbox=None, region_buf=10):
             with open(region) as f:
                 region_dict = json.load(f)
         elif importlib.util.find_spec("rasterio"):  # rasterio is installed, extract region from raster file
-            region_dict, _ = image.get_bounds(region, expand=region_buf)
+            region_dict, _ = geedim.image.get_bounds(region, expand=region_buf)
         else:
             raise click.BadParameter(f'{region} is not a valid geojson or raster file.')
     else:  # convert bbox to geojson
@@ -80,19 +80,19 @@ def _export_im_list(im_list, path='', wait=True, overwrite=False, do_download=Tr
 
     if wait:
         for task in export_tasks:
-            Image.monitor_export_task(task)
+            BaseImage.monitor_export_task(task)
 
 
 def _create_im_list(ids, **kwargs):
-    """ Return a list of Image objects and names, given download/export CLI parameters """
+    """ Return a list of BaseImage objects and names, given download/export CLI parameters """
     im_list = []
 
     for im_id in ids:
-        ee_coll_name, im_idx = image.split_id(im_id)
+        ee_coll_name, im_idx = geedim.image.split_id(im_id)
         if ee_coll_name not in info.ee_to_gd:
-            im_list.append(dict(image=Image(ee.Image(im_id))))
+            im_list.append(dict(image=BaseImage(ee.Image(im_id))))
         else:
-            gd_image = image.get_class(ee_coll_name).from_id(im_id, **kwargs)
+            gd_image = masked_image.get_class(ee_coll_name).from_id(im_id, **kwargs)
             im_list.append(dict(image=gd_image))
 
     return im_list
@@ -205,7 +205,7 @@ dtype_option = click.option(
 mask_option = click.option(
     "-m/-nm",
     "--mask/--no-mask",
-    default=image.MaskedImage._default_params['mask'],
+    default=masked_image.MaskedImage._default_params['mask'],
     help="Do/don't apply (cloud and shadow) nodata mask(s).  [default: --no-mask]",
     required=False,
 )
@@ -221,11 +221,12 @@ cloud_dist_option = click.option(
     "-cd",
     "--cloud-dist",
     type=click.FLOAT,
-    default=image.MaskedImage._default_params['cloud_dist'],
+    default=masked_image.MaskedImage._default_params['cloud_dist'],
     help="Search for cloud/shadow inside this radius (m) to determine compositing quality score.",
     show_default=True,
     required=False,
 )
+
 
 # Define the geedim CLI and chained command group
 @click.group(chain=True)

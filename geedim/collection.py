@@ -16,13 +16,14 @@
 
 ##
 # Functionality for searching and compositing EE image collections
-import collections
 from datetime import datetime, timedelta
 
 import ee
-import geedim.image
 import pandas as pd
-from geedim import image, info, medoid, download
+
+import geedim.image
+import geedim.masked_image
+from geedim import masked_image, info, medoid, image
 from geedim.export import _default_resampling
 
 
@@ -43,15 +44,15 @@ class Collection(object):
         self._gd_coll_name = gd_coll_name
         self._ee_coll_name = info.gd_to_ee[self._gd_coll_name]
         self._collection_info = info.collection_info[gd_coll_name]
-        self._image_class = image.get_class(gd_coll_name)  # geedim.image.*Image class for this collection
+        self._image_class = masked_image.get_class(gd_coll_name)  # geedim.image.*Image class for this collection
         self._ee_collection = None  # the wrapped ee.ImageCollection
 
         self._summary_key_df = pd.DataFrame(self._collection_info["properties"])  # key to metadata summary
         self._summary_df = None  # summary of the image metadata
 
     @classmethod
-    def from_ids(cls, image_ids, mask=image.MaskedImage._default_params['mask'],
-                 cloud_dist=image.MaskedImage._default_params['cloud_dist']):
+    def from_ids(cls, image_ids, mask=masked_image.MaskedImage._default_params['mask'],
+                 cloud_dist=masked_image.MaskedImage._default_params['cloud_dist']):
         """
         Create collection from image IDs
 
@@ -69,11 +70,11 @@ class Collection(object):
         geedim.collection.Collection
         """
         # check image IDs are valid
-        ee_coll_name = image.split_id(image_ids[0])[0]
+        ee_coll_name = geedim.image.split_id(image_ids[0])[0]
         if ee_coll_name not in info.ee_to_gd:
             raise ValueError(f"Unsupported collection: {ee_coll_name}")
 
-        id_check = [image.split_id(im_id)[0] == ee_coll_name for im_id in image_ids[1:]]
+        id_check = [geedim.image.split_id(im_id)[0] == ee_coll_name for im_id in image_ids[1:]]
         if not all(id_check):
             raise ValueError("All images must belong to the same collection")
 
@@ -157,10 +158,10 @@ class Collection(object):
             # filter the image collection, finding cloud/shadow masks, and region stats
             self._ee_collection = (
                 self._image_class.ee_collection()
-                .filterDate(start_date, end_date)
-                .filterBounds(region)
-                .map(lambda ee_image: self._image_class.set_region_stats(ee_image, region, mask=mask))
-                .filter(ee.Filter.gte("VALID_PORTION", valid_portion))
+                    .filterDate(start_date, end_date)
+                    .filterBounds(region)
+                    .map(lambda ee_image: self._image_class.set_region_stats(ee_image, region, mask=mask))
+                    .filter(ee.Filter.gte("VALID_PORTION", valid_portion))
             )
         finally:
             # update summary_df with image metadata from the filtered collection
@@ -220,7 +221,7 @@ class Collection(object):
         comp_image = comp_image.set("system:id", comp_id)
         # TODO: persist source CRS and scale by reprojecting?
 
-        return download.Image(comp_image)
+        return image.BaseImage(comp_image)
 
     def _get_summary_df(self, ee_collection):
         """

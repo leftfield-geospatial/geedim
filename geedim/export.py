@@ -30,12 +30,13 @@ import ee
 import numpy as np
 import requests
 
-from geedim import image
+from geedim import masked_image
 
 """EE image property key for image region"""
 _footprint_key = "system:footprint"
 """Default EE image resampling method"""
 _default_resampling = 'near'
+
 
 def write_pam_xml(obj, filename):
     """
@@ -43,8 +44,8 @@ def write_pam_xml(obj, filename):
 
     Parameters
     ----------
-    obj : ee.Image, geedim.image.Image, dict
-          Image object whose metadata to write
+    obj : ee.Image, geedim.image.BaseImage, dict
+          BaseImage object whose metadata to write
     filename : str, pathlib.Path
                Path of the output file (use *.aux.xml)
     """
@@ -52,8 +53,8 @@ def write_pam_xml(obj, filename):
     if isinstance(obj, dict):
         gd_info = obj
     elif isinstance(obj, ee.Image):
-        gd_info = image.get_info(obj)
-    elif isinstance(obj, image.Image):
+        gd_info = masked_image.get_info(obj)
+    elif isinstance(obj, masked_image.BaseImage):
         gd_info = obj.info
     else:
         raise TypeError(f"Unsupported type: {obj.__class__}")
@@ -85,16 +86,16 @@ def write_pam_xml(obj, filename):
         f.write(xml_str)
 
 
-class _ExportImage(image.Image):
+class _ExportImage(masked_image.BaseImage):
     """ Helper class for determining export/download crs, scale and region parameters"""
 
-    def __init__(self, image_obj, name="Image", exp_region=None, exp_crs=None, exp_scale=None,
+    def __init__(self, image_obj, name="BaseImage", exp_region=None, exp_crs=None, exp_scale=None,
                  resampling=_default_resampling):
-        if isinstance(image_obj, image.Image):
-            image.Image.__init__(self, image_obj.ee_image)
+        if isinstance(image_obj, masked_image.BaseImage):
+            masked_image.BaseImage.__init__(self, image_obj.ee_image)
             self._info = image_obj.info
         else:
-            image.Image.__init__(self, image_obj)
+            masked_image.BaseImage.__init__(self, image_obj)
 
         self.name = name
         self.exp_region = exp_region
@@ -125,7 +126,7 @@ class _ExportImage(image.Image):
             )
 
         if self.exp_crs is None:
-            self.exp_crs = self.crs     # CRS corresponding to minimum scale band
+            self.exp_crs = self.crs  # CRS corresponding to minimum scale band
         if self.exp_scale is None:
             self.exp_scale = self.scale  # minimum scale of the bands
         if self.exp_region is None:
@@ -147,7 +148,7 @@ def export_image(image_obj, filename, folder="", region=None, crs=None, scale=No
 
     Parameters
     ----------
-    image_obj : ee.Image, geedim.image.Image
+    image_obj : ee.Image, geedim.image.BaseImage
                The image to export
     filename : str
                The name of the task and destination file
@@ -244,7 +245,7 @@ def download_image(image_obj, filename, region=None, crs=None, scale=None, resam
 
     Parameters
     ----------
-    image_obj : ee.Image, geedim.image.Image
+    image_obj : ee.Image, geedim.image.BaseImage
                The image to export
     filename : str, pathlib.Path
                Name of the destination file
