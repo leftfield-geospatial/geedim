@@ -49,6 +49,11 @@ from tqdm import tqdm, TqdmWarning
 
 from geedim import info
 
+"""EE image property key for image region"""
+_footprint_key = "system:footprint"
+"""Default EE image resampling method"""
+_default_resampling = 'near'
+
 
 def split_id(image_id):
     """
@@ -382,7 +387,7 @@ class BaseImage:
 
         return conv_dict[dtype](image), dtype
 
-    def _prepare_for_export(self, region=None, crs=None, scale=None, resampling='near', dtype=None):
+    def _prepare_for_export(self, region=None, crs=None, scale=None, resampling=_default_resampling, dtype=None):
         """
         Prepare the encapsulated image for export to Google Drive.  Will reproject, resample, clip and convert the image
         according to the provided parameters.
@@ -427,7 +432,7 @@ class BaseImage:
                 "There is an earth engine bug exporting in SR-ORG:6974, specify another CRS: "
                 "https://issuetracker.google.com/issues/194561313"
             )
-        ee_image = self._ee_image.resample(resampling) if resampling != 'near' else self._ee_image
+        ee_image = self._ee_image.resample(resampling) if resampling != _default_resampling else self._ee_image
         ee_image, dtype = self._convert_dtype(ee_image, dtype=dtype)
         export_args = dict(region=region, crs=crs, scale=scale, fileFormat='GeoTIFF', filePerBand=False)
         ee_image, _ = ee_image.prepare_for_export(export_args)

@@ -24,7 +24,7 @@ import pandas as pd
 import geedim.image
 import geedim.masked_image
 from geedim import masked_image, info, medoid, image
-from geedim.export import _default_resampling
+from geedim.image import _default_resampling
 
 
 ##
