@@ -25,7 +25,7 @@ from rasterio.crs import CRS
 from rasterio.warp import transform_bounds
 
 from geedim.image import split_id
-from geedim import info, masked_image, root_path, _ee_init
+from geedim import info, masked_image, root_path, _ee_init, image_from_id
 
 
 def _setup_test():
@@ -48,8 +48,7 @@ def _test_search_results(test_case, res_df, start_date, end_date, valid_portion=
 
     image_id = res_df.ID[0]
     ee_coll_name = split_id(image_id)[0]
-    gd_coll_name = info.ee_to_gd[ee_coll_name]
-    summary_key_df = pd.DataFrame(info.collection_info[gd_coll_name]['properties'])
+    summary_key_df = pd.DataFrame(info.collection_info[ee_coll_name]['properties'])
 
     test_case.assertTrue(set(res_df.columns) == set(summary_key_df.ABBREV),
                          'Search results have correct columns')
@@ -57,7 +56,7 @@ def _test_search_results(test_case, res_df, start_date, end_date, valid_portion=
                          'Search results are in correct date range')
     test_case.assertTrue(all([ee_coll_name in im_id for im_id in res_df.ID.values]),
                          'Search results have correct EE ID')
-    if gd_coll_name != 'modis_nbar':
+    if ee_coll_name != 'MODIS/006/MCD43A4':
         test_case.assertTrue(all(res_df.VALID >= valid_portion) and all(res_df.VALID <= 100),
                              'Search results have correct validity range')
         test_case.assertTrue(all(res_df.SCORE >= 0), 'Search results have correct q score range')
@@ -71,17 +70,14 @@ def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=Non
     # create objects to test against
     if isinstance(image_obj, str):  # create image.MaskedImage from ID
         ee_coll_name = split_id(image_obj)[0]
-        gd_coll_name = info.ee_to_gd[ee_coll_name]
-        gd_image = masked_image.get_class(gd_coll_name).from_id(image_obj, mask=mask, cloud_dist=cloud_dist)
+        gd_image = image_from_id(image_obj, mask=mask, cloud_dist=cloud_dist)
     elif isinstance(image_obj, masked_image.BaseImage):
         gd_image = image_obj
         ee_coll_name = split_id(gd_image.id)[0]
-        gd_coll_name = info.ee_to_gd[ee_coll_name]
     else:
         raise TypeError(f'Unsupported image_obj type: {image_obj.__class__}')
 
     gd_info = gd_image.info
-    sr_band_df = pd.DataFrame.from_dict(info.collection_info[gd_coll_name]['bands'])
 
     exp_image, _ = gd_image._prepare_for_export(region=region, crs=crs, scale=scale)
 
@@ -117,7 +113,7 @@ def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=Non
             # pyplot.figure();pyplot.subplot(2,2,1);pyplot.imshow(im_mask);pyplot.subplot(2,2,2);pyplot.imshow(valid_mask);pyplot.subplot(2,2,3);pyplot.imshow(cloud_mask);pyplot.subplot(2,2,4);pyplot.imshow(shadow_mask)
 
         # do basic checks on image content
-        sr_band_df = pd.DataFrame.from_dict(info.collection_info[gd_coll_name]['bands'])
+        sr_band_df = pd.DataFrame.from_dict(info.collection_info[ee_coll_name]['bands'])
         for band_i, band_row in sr_band_df.iterrows():
             if 'BT' not in band_row.abbrev and band_row.bw_start < 5:  # exclude mid-far IR
                 sr_band = im.read(im.descriptions.index(band_row.id) + 1, masked=True)

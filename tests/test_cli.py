@@ -22,7 +22,7 @@ import pandas as pd
 from click.testing import CliRunner
 
 import geedim.image
-from geedim import root_path, cli, collection, masked_image
+from geedim import root_path, cli, collection, masked_image, image_from_id
 from tests.util import _test_image_file, _test_search_results, _setup_test
 
 

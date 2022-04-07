@@ -29,22 +29,21 @@ from geedim.image import _default_resampling
 
 ##
 class Collection(object):
-    def __init__(self, gd_coll_name):
+    def __init__(self, ee_coll_name):
         """
         Class for searching and compositing an EE image collection
 
         Parameters
         ----------
-        gd_coll_name : str
-                       geedim collection name:(landsat7_c2_l2|landsat8_c2_l2|sentinel2_toa|sentinel2_sr|modis_nbar)
+        ee_coll_name : str
+                       EE image collection ID
         """
-        if gd_coll_name not in info.gd_to_ee:
-            raise ValueError(f"Unsupported collection: {gd_coll_name}")
+        if ee_coll_name not in info.collection_info:
+            raise ValueError(f"Unsupported collection: {ee_coll_name}")
 
-        self._gd_coll_name = gd_coll_name
-        self._ee_coll_name = info.gd_to_ee[self._gd_coll_name]
-        self._collection_info = info.collection_info[gd_coll_name]
-        self._image_class = masked_image.get_class(gd_coll_name)  # geedim.masked_image.*Image class for this collection
+        self._ee_coll_name = ee_coll_name
+        self._collection_info = info.collection_info[ee_coll_name]
+        self._image_class = masked_image.get_class(ee_coll_name)  # geedim.masked_image.*Image class for this collection
         self._ee_collection = None  # the wrapped ee.ImageCollection
 
         self._summary_key_df = pd.DataFrame(self._collection_info["properties"])  # key to metadata summary
@@ -79,8 +78,7 @@ class Collection(object):
             raise ValueError("All images must belong to the same collection")
 
         # create the collection object
-        gd_coll_name = info.ee_to_gd[ee_coll_name]
-        gd_collection = cls(gd_coll_name)
+        gd_collection = cls(ee_coll_name)
 
         # build and wrap an ee.ImageCollection of processed (masked and scored) images
         im_list = ee.List([])

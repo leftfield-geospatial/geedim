@@ -165,7 +165,7 @@ def get_info(ee_image, min=True):
         if ee_coll_name in info.ee_to_gd:  # include SR band metadata if it exists
             # TODO: don't assume all the bands are in band_df, there could have been a select
             # use DataFrame to concat SR band metadata from collection_info with band IDs from the image
-            sr_band_list = info.collection_info[info.ee_to_gd[ee_coll_name]]["bands"].copy()
+            sr_band_list = info.collection_info[ee_coll_name]["bands"].copy()
             sr_band_dict = {bdict['id']: bdict for bdict in sr_band_list}
             gd_info["bands"] = [sr_band_dict[id] if id in sr_band_dict else dict(id=id) for id in band_df.id]
         else:  # just use the image band IDs

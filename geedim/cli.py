@@ -235,7 +235,7 @@ def cli(ctx):
 @click.option(
     "-c",
     "--collection",
-    type=click.Choice(list(info.gd_to_ee.keys()), case_sensitive=False),
+    type=click.Choice(list(info.gd_to_ee.keys())[:-1], case_sensitive=False),
     help="Earth Engine image collection to search.",
     default="landsat8_c2_l2",
     show_default=True,
@@ -289,12 +289,12 @@ def search(res, collection, start_date, end_date, bbox, region, valid_portion, o
     if res.search_region is None:
         raise click.BadOptionUsage('region', 'Either pass --region or --bbox')
     res.search_ids = None
-
-    click.echo(f'\nSearching for {info.gd_to_ee[collection]} images between '
+    ee_coll_name = info.gd_to_ee[collection]
+    click.echo(f'\nSearching for {ee_coll_name} images between '
                f'{start_date.strftime("%Y-%m-%d")} and {end_date.strftime("%Y-%m-%d")}...')
 
     # create collection wrapper and search
-    gd_collection = coll_api.Collection(collection)
+    gd_collection = coll_api.Collection(ee_coll_name)
     im_df = gd_collection.search(start_date, end_date, res.search_region, valid_portion=valid_portion)
 
     if im_df.shape[0] == 0:

@@ -367,7 +367,7 @@ class Sentinel2ClImage(MaskedImage):
         self._cloud_prob_thresh = 35  # Cloud probability (%); values greater than are considered cloud
         self._cloud_proj_dist = 1  # Maximum distance (km) to search for cloud shadows from cloud edges
         self._buffer = 100  # Distance (m) to dilate the edge of cloud-identified objects
-
+        #TODO: warn and or document that ee_image needs to have the CLOUD_PROB band already as in from_id
         MaskedImage.__init__(self, ee_image, mask=mask, cloud_dist=cloud_dist)
 
     @staticmethod
@@ -536,6 +536,7 @@ def get_class(coll_name):
     """
     # TODO: populate this list by traversing the class hierarchy
     # TODO: allow coll_name = full image id
+    # TODO: combine with __init__.image_from_id()
     # import inspect
     # from geedim import image
     # def find_subclasses():

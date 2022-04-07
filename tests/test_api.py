@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 
 import geedim.image
-from geedim import image, collection, root_path, info, masked_image
+from geedim import image, collection, root_path, info, masked_image, image_from_id
 from tests.util import _test_image_file, _test_search_results, _setup_test
 
 
@@ -37,11 +37,10 @@ class TestApi(unittest.TestCase):
         """ Test the validity of a geedim.image.MaskedImage by checking metadata.  """
 
         ee_coll_name = geedim.image.split_id(image_id)[0]
-        gd_coll_name = info.ee_to_gd[ee_coll_name]
-        gd_image = masked_image.get_class(gd_coll_name).from_id(image_id, mask=mask, cloud_dist=cloud_dist)
+        gd_image = image_from_id(image_id, mask=mask, cloud_dist=cloud_dist)
         self.assertTrue(gd_image.id == image_id, 'IDs match')
 
-        sr_band_df = pd.DataFrame.from_dict(info.collection_info[gd_coll_name]['bands'])
+        sr_band_df = pd.DataFrame.from_dict(info.collection_info[ee_coll_name]['bands'])
         for key in ['bands', 'properties', 'id', 'crs', 'scale']:
             self.assertTrue(key in gd_image.info.keys(), msg='Image gd_info complete')
             self.assertTrue(gd_image.info[key] is not None, msg='Image gd_info complete')
@@ -86,17 +85,17 @@ class TestApi(unittest.TestCase):
         """ Test search on supported image collections.  """
         region = {"type": "Polygon",
                   "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
-        search_date_dict = {'landsat5_c2_l2': ['2005-01-01', '2005-06-01'],
-                            'landsat7_c2_l2': ['2019-01-01', '2019-02-01'],
-                            'landsat8_c2_l2': ['2019-01-01', '2019-02-01'],
-                            'sentinel2_toa': ['2019-01-01', '2019-02-01'],
-                            'sentinel2_sr': ['2019-01-01', '2019-02-01'],
-                            'modis_nbar': ['2019-01-01', '2019-02-01']}
+        search_date_dict = {'LANDSAT/LT05/C02/T1_L2': ['2005-01-01', '2005-06-01'],
+                            'LANDSAT/LE07/C02/T1_L2': ['2019-01-01', '2019-02-01'],
+                            'LANDSAT/LC08/C02/T1_L2': ['2019-01-01', '2019-02-01'],
+                            'COPERNICUS/S2': ['2019-01-01', '2019-02-01'],
+                            'COPERNICUS/S2_SR': ['2019-01-01', '2019-02-01'],
+                            'MODIS/006/MCD43A4': ['2019-01-01', '2019-02-01']}
         valid_portion = 10
-        for gd_coll_name, search_dates in search_date_dict.items():
+        for ee_coll_name, search_dates in search_date_dict.items():
             # find search start / end dates based on collection start / end
-            with self.subTest('Search', gd_coll_name=gd_coll_name):
-                gd_collection = collection.Collection(gd_coll_name)
+            with self.subTest('Search', ee_coll_name=ee_coll_name):
+                gd_collection = collection.Collection(ee_coll_name)
                 res_df = gd_collection.search(search_dates[0], search_dates[1], region, valid_portion=valid_portion)
                 _test_search_results(self, res_df, search_dates[0], search_dates[1], valid_portion=valid_portion)
 
@@ -116,10 +115,9 @@ class TestApi(unittest.TestCase):
 
         for impdict in im_param_list:
             ee_coll_name = geedim.image.split_id(impdict['image_id'])[0]
-            gd_coll_name = info.ee_to_gd[ee_coll_name]
             with self.subTest('Download', **impdict):
                 # create image.MaskedImage
-                gd_image = masked_image.get_class(gd_coll_name)._from_id(impdict["image_id"], mask=impdict['mask'],
+                gd_image = masked_image.get_class(ee_coll_name)._from_id(impdict["image_id"], mask=impdict['mask'],
                                                                          region=region)
                 # create a filename for these parameters
                 name = impdict["image_id"].replace('/', '-')
@@ -143,9 +141,7 @@ class TestApi(unittest.TestCase):
         """ Test the metadata of a composite ee.Image for validity. """
 
         ee_coll_name = geedim.image.split_id(gd_image.id)[0]
-        gd_coll_name = info.ee_to_gd[ee_coll_name]
-
-        sr_band_df = pd.DataFrame.from_dict(info.collection_info[gd_coll_name]['bands'])
+        sr_band_df = pd.DataFrame.from_dict(info.collection_info[ee_coll_name]['bands'])
         for key in ['bands', 'properties', 'id']:
             self.assertTrue(key in gd_image.info.keys(), msg='Image gd_info complete')
             self.assertTrue(gd_image.info[key] is not None, msg='Image gd_info complete')

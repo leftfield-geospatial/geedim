@@ -69,7 +69,7 @@ def image_from_id(image_id: str, **kwargs):
         'MODIS/006/MCD43A4': ModisNbarImage
     }
     if ee_coll_name in masked_image_dict:
-        return masked_image_dict[ee_coll_name](ee.Image(image_id), **kwargs)
+        return masked_image_dict[ee_coll_name].from_id(image_id, **kwargs)
     else:
         if len(kwargs) > 0:
             raise ValueError(f'{list(kwargs.keys())} arguments are not supported for {ee_coll_name} collection')
