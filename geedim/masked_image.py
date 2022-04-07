@@ -28,6 +28,7 @@ from geedim.image import BaseImage, split_id
 # Image classes
 
 
+
 class MaskedImage(BaseImage):
     _default_params = dict(mask=False, cloud_dist=5000)
     _gd_coll_name = ""  # geedim image collection name
@@ -106,10 +107,6 @@ class MaskedImage(BaseImage):
     def ee_image(self):
         """ ee.Image: The wrapped image. """
         return self._ee_image
-
-    @property
-    def nodata(self):
-        return 0
 
     @property
     def gd_coll_name(self):
@@ -481,19 +478,35 @@ class Sentinel2ClImage(MaskedImage):
                 .reproject(crs=proj.crs(), scale=proj.nominalScale())  # force calculation at correct scale
         )
 
-        if self.gd_coll_name == "sentinel2_sr":  # use SCL band to reduce shadow_mask
-            # Get the shadow mask from the SCL band and perform morphological opening to remove small isolated blobs
-            scl = ee_image.select("SCL")
-            dark_shadow_mask = (
-                scl.eq(3)
-                    .Or(scl.eq(2))
-                    .focal_min(self._buffer, "circle", "meters")
-                    .focal_max(2 * self._buffer, "circle", "meters")
-            )
-            # improve the shadow mask by combining it with the projected cloud mask
-            shadow_mask = proj_cloud_mask.And(dark_shadow_mask).rename("SHADOW_MASK")
+        if True:
+            # TODO: check the below is using scl for sentinel2_sr
+            # if this is an S2_SR image, use SCL to find the shadow_mask, else just use proj_cloud_mask
+            ee_coll_name = ee.String(ee_image.get('system:id')).split('/').slice(0, -1).join('/')
+            shadow_mask = ee.Image(
+                ee.Algorithms.If(
+                    ee_coll_name.equals('COPERNICUS/S2_SR'),
+                    proj_cloud_mask.And(
+                        ee_image.select("SCL").eq(3).
+                            Or(ee_image.select("SCL").eq(2)).
+                            focal_min(self._buffer, "circle", "meters").
+                            focal_max(2 * self._buffer, "circle", "meters")
+                    ).rename("SHADOW_MASK"),
+                proj_cloud_mask.rename("SHADOW_MASK")
+            ))
         else:
-            shadow_mask = proj_cloud_mask.rename("SHADOW_MASK")  # mask all areas that could be cloud shadow
+            if self.gd_coll_name == "sentinel2_sr":  # use SCL band to reduce shadow_mask
+                # Get the shadow mask from the SCL band and perform morphological opening to remove small isolated blobs
+                scl = ee_image.select("SCL")
+                dark_shadow_mask = (
+                    scl.eq(3)
+                        .Or(scl.eq(2))
+                        .focal_min(self._buffer, "circle", "meters")
+                        .focal_max(2 * self._buffer, "circle", "meters")
+                )
+                # improve the shadow mask by combining it with the projected cloud mask
+                shadow_mask = proj_cloud_mask.And(dark_shadow_mask).rename("SHADOW_MASK")
+            else:
+                shadow_mask = proj_cloud_mask.rename("SHADOW_MASK")  # mask all areas that could be cloud shadow
 
         # incorporate the existing mask (for zero SR pixels) into the shadow mask
         zero_sr_mask = ee_image.mask().reduce(ee.Reducer.allNonZero()).Not()
