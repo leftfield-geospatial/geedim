@@ -15,10 +15,10 @@
 """
 # Metadata for geedim supported Earth Engine collections
 collection_info = {
-    "landsat4_c2_l2": {
+    "LANDSAT/LT04/C02/T1_L2": {
         "start_date": "1982-08-22",
         "end_date": "1993-06-24",
-        "ee_coll_name": "LANDSAT/LT04/C02/T1_L2",
+        "gd_coll_name": "landsat4_c2_l2",
         "bands": [
             {"id": "SR_B1", "name": "blue", "abbrev": "B", "bw_start": 0.45, "bw_end": 0.52, "res": 30},
             {"id": "SR_B2", "name": "green", "abbrev": "G", "bw_start": 0.52, "bw_end": 0.60, "res": 30},
@@ -39,10 +39,10 @@ collection_info = {
             {"PROPERTY": "SUN_AZIMUTH", "ABBREV": "SAA", "DESCRIPTION": "Solar azimuth angle (deg)"},
             {"PROPERTY": "SUN_ELEVATION", "ABBREV": "SEA", "DESCRIPTION": "Solar elevation angle (deg)"}
         ]},
-    "landsat5_c2_l2": {
+    "LANDSAT/LT05/C02/T1_L2": {
         "start_date": "1984-03-16",
         "end_date": "2012-05-05",
-        "ee_coll_name": "LANDSAT/LT05/C02/T1_L2",
+        "gd_coll_name": "landsat5_c2_l2",
         "bands": [
             {"id": "SR_B1", "name": "blue", "abbrev": "B", "bw_start": 0.45, "bw_end": 0.52, "res": 30},
             {"id": "SR_B2", "name": "green", "abbrev": "G", "bw_start": 0.52, "bw_end": 0.60, "res": 30},
@@ -63,10 +63,10 @@ collection_info = {
             {"PROPERTY": "SUN_AZIMUTH", "ABBREV": "SAA", "DESCRIPTION": "Solar azimuth angle (deg)"},
             {"PROPERTY": "SUN_ELEVATION", "ABBREV": "SEA", "DESCRIPTION": "Solar elevation angle (deg)"}
         ]},
-    "landsat7_c2_l2": {
+    "LANDSAT/LE07/C02/T1_L2": {
         "start_date": "1999-01-01",
         "end_date": None,
-        "ee_coll_name": "LANDSAT/LE07/C02/T1_L2",
+        "gd_coll_name": "landsat7_c2_l2",
         "bands": [
             {"id": "SR_B1", "name": "blue", "abbrev": "B", "bw_start": 0.45, "bw_end": 0.52, "res": 30},
             {"id": "SR_B2", "name": "green", "abbrev": "G", "bw_start": 0.52, "bw_end": 0.60, "res": 30},
@@ -89,10 +89,10 @@ collection_info = {
             {"PROPERTY": "SUN_AZIMUTH", "ABBREV": "SAA", "DESCRIPTION": "Solar azimuth angle (deg)"},
             {"PROPERTY": "SUN_ELEVATION", "ABBREV": "SEA", "DESCRIPTION": "Solar elevation angle (deg)"}
         ]},
-    "landsat8_c2_l2": {
+    "LANDSAT/LC08/C02/T1_L2": {
         "start_date": "2013-04-11",
         "end_date": None,
-        "ee_coll_name": "LANDSAT/LC08/C02/T1_L2",
+        "gd_coll_name": "landsat8_c2_l2",
         "bands": [
             {"id": "SR_B1", "name": "ultra blue", "abbrev": "UB", "bw_start": 0.435, "bw_end": 0.451, "res": 30},
             {"id": "SR_B2", "name": "blue", "abbrev": "B", "bw_start": 0.452, "bw_end": 0.512, "res": 30},
@@ -116,10 +116,10 @@ collection_info = {
             {"PROPERTY": "SUN_AZIMUTH", "ABBREV": "SAA", "DESCRIPTION": "Solar azimuth angle (deg)"},
             {"PROPERTY": "SUN_ELEVATION", "ABBREV": "SEA", "DESCRIPTION": "Solar elevation angle (deg)"}
         ]},
-    "sentinel2_toa": {
+    "COPERNICUS/S2": {
         "start_date": "2015-06-23",
         "end_date": None,
-        "ee_coll_name": "COPERNICUS/S2",
+        "gd_coll_name": "sentinel2_toa",
         "bands": [
             {"id": "B1", "name": "aerosols", "abbrev": "UB", "bw_start": 0.421, "bw_end": 0.447, "res": 60},
             {"id": "B2", "name": "blue", "abbrev": "B", "bw_start": 0.439, "bw_end": 0.535, "res": 10},
@@ -151,10 +151,10 @@ collection_info = {
             {"PROPERTY": "MEAN_INCIDENCE_ZENITH_ANGLE_B1", "ABBREV": "VZA",
              "DESCRIPTION": "View (B1) zenith angle (deg)"}
         ]},
-    "sentinel2_sr": {
+    "COPERNICUS/S2_SR": {
         "start_date": "2017-03-28",
         "end_date": None,
-        "ee_coll_name": "COPERNICUS/S2_SR",
+        "gd_coll_name": "sentinel2_sr",
         "bands": [
             {"id": "B1", "name": "aerosols", "abbrev": "UB", "bw_start": 0.421, "bw_end": 0.447, "res": 60},
             {"id": "B2", "name": "blue", "abbrev": "B", "bw_start": 0.439, "bw_end": 0.535, "res": 10},
@@ -186,10 +186,10 @@ collection_info = {
             {"PROPERTY": "MEAN_INCIDENCE_ZENITH_ANGLE_B1", "ABBREV": "VZA",
              "DESCRIPTION": "View (B1) zenith angle (deg)"}
         ]},
-    "modis_nbar": {
+    "MODIS/006/MCD43A4": {
         "start_date": "2000-02-18",
         "end_date": None,
-        "ee_coll_name": "MODIS/006/MCD43A4",
+        "gd_coll_name": "modis_nbar",
         "bands": [
             {"id": "Nadir_Reflectance_Band1", "name": "red", "abbrev": "R", "bw_start": 0.620, "bw_end": 0.670,
              "res": 500},
@@ -209,14 +209,23 @@ collection_info = {
         "properties": [
             {"PROPERTY": "system:id", "ABBREV": "ID", "DESCRIPTION": "Earth Engine image id"},
             {"PROPERTY": "system:time_start", "ABBREV": "DATE", "DESCRIPTION": "Image capture date/time (UTC)"}
+        ]},
+    "*": {
+        "start_date": None,
+        "end_date": None,
+        "gd_coll_name": "generic",
+        "bands": [],
+        "properties": [
+            {"PROPERTY": "system:id", "ABBREV": "ID", "DESCRIPTION": "Earth Engine image id"},
+            {"PROPERTY": "system:time_start", "ABBREV": "DATE", "DESCRIPTION": "Image capture date/time (UTC)"}
         ]}
 }
 
 # Dict to convert from geedim to Earth Engine collection names
-gd_to_ee = dict([(k, v['ee_coll_name']) for k, v in collection_info.items()])
+ee_to_gd = dict([(k, v['gd_coll_name']) for k, v in collection_info.items()])
 
 # Dict to convert from Earth Engine to geedim collection names
-ee_to_gd = dict([(v['ee_coll_name'], k) for k, v in collection_info.items()])
+gd_to_ee = dict([(v['gd_coll_name'], k) for k, v in collection_info.items()])
 
 # "Two way" dict to convert Earth Engine to/from geedim collection names
 coll_names = dict(**gd_to_ee, **ee_to_gd)
