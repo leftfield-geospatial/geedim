@@ -25,7 +25,7 @@ from rasterio.dtypes import dtype_ranges
 
 import geedim.image
 from geedim import collection as coll_api
-from geedim import info, masked_image, _ee_init
+from geedim import info, masked_image, _ee_init, image_from_id
 from geedim.image import BaseImage
 
 
@@ -84,16 +84,11 @@ def _export_im_list(im_list, path='', wait=True, overwrite=False, do_download=Tr
 
 
 def _create_im_list(ids, **kwargs):
-    """ Return a list of BaseImage objects and names, given download/export CLI parameters """
+    """ Return a list of *Image objects and names, given download/export CLI parameters """
     im_list = []
 
     for im_id in ids:
-        ee_coll_name, im_idx = geedim.image.split_id(im_id)
-        if ee_coll_name not in info.ee_to_gd:
-            im_list.append(dict(image=BaseImage(ee.Image(im_id))))
-        else:
-            gd_image = masked_image.get_class(ee_coll_name).from_id(im_id, **kwargs)
-            im_list.append(dict(image=gd_image))
+            im_list.append(dict(image=image_from_id(im_id, **kwargs)))
 
     return im_list
 

@@ -18,6 +18,9 @@ import os
 import pathlib
 
 import ee
+from .masked_image import LandsatImage, Sentinel2ClImage, ModisNbarImage
+from .image import BaseImage, split_id
+from . import info
 
 if '__file__' in globals():
     root_path = pathlib.Path(__file__).absolute().parents[1]
@@ -52,3 +55,22 @@ def _ee_init():
                 os.remove(filename)
         else:
             ee.Initialize()
+
+def image_from_id(image_id: str, **kwargs):
+    ee_coll_name, _ = split_id(image_id)
+
+    masked_image_dict = {
+        'LANDSAT/LT04/C02/T1_L2': LandsatImage,
+        'LANDSAT/LT05/C02/T1_L2': LandsatImage,
+        'LANDSAT/LE07/C02/T1_L2': LandsatImage,
+        'LANDSAT/LC08/C02/T1_L2': LandsatImage,
+        'COPERNICUS/S2': Sentinel2ClImage,
+        'COPERNICUS/S2_SR': Sentinel2ClImage,
+        'MODIS/006/MCD43A4': ModisNbarImage
+    }
+    if ee_coll_name in masked_image_dict:
+        return masked_image_dict[ee_coll_name](ee.Image(image_id), **kwargs)
+    else:
+        if len(kwargs) > 0:
+            raise ValueError(f'{list(kwargs.keys())} arguments are not supported for {ee_coll_name} collection')
+        return BaseImage(ee.Image(image_id))
