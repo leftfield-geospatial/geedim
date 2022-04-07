@@ -44,7 +44,7 @@ class Collection(object):
         self._gd_coll_name = gd_coll_name
         self._ee_coll_name = info.gd_to_ee[self._gd_coll_name]
         self._collection_info = info.collection_info[gd_coll_name]
-        self._image_class = masked_image.get_class(gd_coll_name)  # geedim.image.*Image class for this collection
+        self._image_class = masked_image.get_class(gd_coll_name)  # geedim.masked_image.*Image class for this collection
         self._ee_collection = None  # the wrapped ee.ImageCollection
 
         self._summary_key_df = pd.DataFrame(self._collection_info["properties"])  # key to metadata summary
@@ -156,8 +156,10 @@ class Collection(object):
             raise ValueError("`end_date` must be at least a day later than `start_date`")
         try:
             # filter the image collection, finding cloud/shadow masks, and region stats
+            # TODO: move the self._image_class.ee_collection() to __init__ so we can also search from_ids created
+            #  collections
             self._ee_collection = (
-                self._image_class.ee_collection()
+                self._image_class.ee_collection(self._ee_coll_name)
                     .filterDate(start_date, end_date)
                     .filterBounds(region)
                     .map(lambda ee_image: self._image_class.set_region_stats(ee_image, region, mask=mask))

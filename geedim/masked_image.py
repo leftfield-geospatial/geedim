@@ -31,7 +31,7 @@ from geedim.image import BaseImage, split_id
 
 class MaskedImage(BaseImage):
     _default_params = dict(mask=False, cloud_dist=5000)
-    _gd_coll_name = ""  # geedim image collection name
+    supported_ee_coll_names = []
 
     def __init__(self, ee_image, mask=_default_params['mask'], cloud_dist=_default_params['cloud_dist']):
         """
@@ -47,7 +47,8 @@ class MaskedImage(BaseImage):
             The radius (m) to search for cloud/shadow for quality scoring (default: 5000).
         """
         # prevent instantiation of base class(es)
-        if self.gd_coll_name not in info.collection_info:
+        # if self.gd_coll_name not in info.collection_info:
+        if len(self.supported_ee_coll_names) == 0:
             raise NotImplementedError("This base class cannot be instantiated, use a sub-class")
 
         # construct the cloud/shadow masks and cloudless score
@@ -79,13 +80,9 @@ class MaskedImage(BaseImage):
         """
         # check image is from a supported collection
         ee_coll_name = split_id(image_id)[0]
-        if ee_coll_name not in info.ee_to_gd:
-            raise ValueError(f"Unsupported collection: {ee_coll_name}")
-
-        # check this class supports the image's collection
-        gd_coll_name = info.ee_to_gd[ee_coll_name]
-        if gd_coll_name != cls._gd_coll_name:
-            raise ValueError(f"{cls.__name__} only supports images from {info.gd_to_ee[cls._gd_coll_name]}")
+        if ee_coll_name not in cls.supported_ee_coll_names:
+            raise ValueError(f"Unsupported collection: {ee_coll_name}.  "
+                             f"{cls.__name__} supports images from {cls.supported_ee_coll_names}")
 
         ee_image = ee.Image(image_id)
         return cls(ee_image, mask=mask, cloud_dist=cloud_dist)
@@ -109,11 +106,6 @@ class MaskedImage(BaseImage):
         return self._ee_image
 
     @property
-    def gd_coll_name(self):
-        """ str: geedim collection name (landsat7_c2_l2|landsat8_c2_l2|sentinel2_toa|sentinel2_sr|modis_nbar). """
-        return self._gd_coll_name
-
-    @property
     def masks(self):
         """ dict: A dictionary of ee.Image objects for each of the fill, cloud, shadow and validity masks. """
         return self._masks
@@ -124,7 +116,7 @@ class MaskedImage(BaseImage):
         return self._score
 
     @classmethod
-    def ee_collection(cls):
+    def ee_collection(cls, ee_coll_name):
         """
         Returns the ee.ImageCollection corresponding to this image.
 
@@ -132,7 +124,11 @@ class MaskedImage(BaseImage):
         -------
         ee.ImageCollection
         """
-        return ee.ImageCollection(info.gd_to_ee[cls._gd_coll_name])
+        if not ee_coll_name in cls.supported_ee_coll_names:
+            raise ValueError(f"Unsupported collection: {ee_coll_name}.  {cls.__name__} supports images from "
+                               "{cls.supported_ee_coll_names}")
+        return ee.ImageCollection(ee_coll_name)
+
 
     @classmethod
     def set_region_stats(cls, image_obj, region, mask=False):
@@ -285,7 +281,8 @@ class MaskedImage(BaseImage):
 
 class LandsatImage(MaskedImage):
     """ Base class for cloud/shadow masking and quality scoring landsat8_c2_l2 and landsat7_c2_l2 images """
-
+    supported_ee_coll_names = ['LANDSAT/LT04/C02/T1_L2', 'LANDSAT/LT05/C02/T1_L2', 'LANDSAT/LE07/C02/T1_L2',
+                               'LANDSAT/LC08/C02/T1_L2']
     # TODO: remove these dtype conversions here and leave it up to download.
     @staticmethod
     def _im_transform(ee_image):
@@ -329,32 +326,13 @@ class LandsatImage(MaskedImage):
         return dict(cloud_mask=cloud_mask, shadow_mask=shadow_mask, fill_mask=fill_mask, valid_mask=valid_mask)
 
 
-class Landsat8Image(LandsatImage):
-    """ Class for cloud/shadow masking and quality scoring landsat8_c2_l2 images """
-    _gd_coll_name = "landsat8_c2_l2"
-
-
-class Landsat7Image(LandsatImage):
-    """ Class for cloud/shadow masking and quality scoring landsat7_c2_l2 images """
-    _gd_coll_name = "landsat7_c2_l2"
-
-
-class Landsat5Image(LandsatImage):
-    """ Class for cloud/shadow masking and quality scoring landsat5_c2_l2 images """
-    _gd_coll_name = "landsat5_c2_l2"
-
-
-class Landsat4Image(LandsatImage):
-    """ Class for cloud/shadow masking and quality scoring landsat4_c2_l2 images """
-    _gd_coll_name = "landsat4_c2_l2"
-
-
 class Sentinel2Image(MaskedImage):  # pragma: no cover
     """
     Base class for cloud masking and quality scoring sentinel2_sr and sentinel2_toa images
 
     (Does not use cloud probability).
     """
+    supported_ee_coll_names = ['COPERNICUS/S2', 'COPERNICUS/S2_SR']
 
     @staticmethod
     def _im_transform(ee_image):
@@ -373,30 +351,13 @@ class Sentinel2Image(MaskedImage):  # pragma: no cover
         return masks
 
 
-class Sentinel2SrImage(Sentinel2Image):  # pragma: no cover
-    """
-    Class for cloud masking and quality scoring sentinel2_sr images
-
-    (Does not use cloud probability).
-    """
-    _gd_coll_name = "sentinel2_sr"
-
-
-class Sentinel2ToaImage(Sentinel2Image):  # pragma: no cover
-    """
-    Class for cloud masking and quality scoring sentinel2_toa images
-
-    (Does not use cloud probability).
-    """
-    _gd_coll_name = "sentinel2_toa"
-
-
 class Sentinel2ClImage(MaskedImage):
     """
     Base class for cloud/shadow masking and quality scoring sentinel2_sr and sentinel2_toa images.
 
     (Uses cloud probability to improve cloud/shadow masking).
     """
+    supported_ee_coll_names = ['COPERNICUS/S2', 'COPERNICUS/S2_SR']
 
     def __init__(self, ee_image, mask=MaskedImage._default_params['mask'],
                  cloud_dist=MaskedImage._default_params['cloud_dist']):
@@ -418,14 +379,9 @@ class Sentinel2ClImage(MaskedImage):
                 cloud_dist=MaskedImage._default_params['cloud_dist']):
         # check image_id
         ee_coll_name = split_id(image_id)[0]
-        if ee_coll_name not in info.ee_to_gd:
-            raise ValueError(f"Unsupported collection: {ee_coll_name}")
-
-        gd_coll_name = info.ee_to_gd[ee_coll_name]
-        if gd_coll_name != cls._gd_coll_name:
-            raise ValueError(
-                f"{cls.__name__} only supports images from the {info.gd_to_ee[cls._gd_coll_name]} collection"
-            )
+        if ee_coll_name not in cls.supported_ee_coll_names:
+            raise ValueError(f"Unsupported collection: {ee_coll_name}.  "
+                             f"{cls.__name__} only supports images from {cls.supported_ee_coll_names}")
 
         ee_image = ee.Image(image_id)
 
@@ -518,7 +474,7 @@ class Sentinel2ClImage(MaskedImage):
         return masks
 
     @classmethod
-    def ee_collection(cls):
+    def ee_collection(cls, ee_coll_name):
         """
         Returns an augmented ee.ImageCollection with cloud probability bands added to multi-spectral images.
 
@@ -526,7 +482,10 @@ class Sentinel2ClImage(MaskedImage):
         -------
         ee.ImageCollection
         """
-        s2_sr_toa_col = ee.ImageCollection(info.gd_to_ee[cls._gd_coll_name])
+        if not ee_coll_name in cls.supported_ee_coll_names:
+            raise ValueError(f"Unsupported collection: {ee_coll_name}.  {cls.__name__} supports images from "
+                               "{cls.supported_ee_coll_names}")
+        s2_sr_toa_col = ee.ImageCollection(ee_coll_name)
         s2_cloudless_col = ee.ImageCollection("COPERNICUS/S2_CLOUD_PROBABILITY")
 
         # create a collection of index-matched images from the SR/TOA and cloud probability collections
@@ -541,24 +500,6 @@ class Sentinel2ClImage(MaskedImage):
         return inner_join.map(map)
 
 
-class Sentinel2SrClImage(Sentinel2ClImage):
-    """
-    Class for cloud/shadow masking and quality scoring sentinel2_sr images.
-
-    (Uses cloud probability to improve cloud/shadow masking).
-    """
-    _gd_coll_name = "sentinel2_sr"
-
-
-class Sentinel2ToaClImage(Sentinel2ClImage):
-    """
-    Class for cloud/shadow masking and quality scoring sentinel2_toa images.
-
-    (Uses cloud probability to improve cloud/shadow masking).
-    """
-    _gd_coll_name = "sentinel2_toa"
-
-
 class ModisNbarImage(MaskedImage):
     """
     Class for wrapping modis_nbar images.
@@ -566,12 +507,12 @@ class ModisNbarImage(MaskedImage):
     (These images are already cloud/shadow free composites, so no further processing is done on them, and
     constant cloud, shadow etc masks are used).
     """
+    supported_ee_coll_names = ['MODIS/006/MCD43A4']
 
     @staticmethod
     def _im_transform(ee_image):
         return ee.Image.toUint16(ee_image)
 
-    _gd_coll_name = "modis_nbar"
 
 
 ##
@@ -604,12 +545,12 @@ def get_class(coll_name):
     #     return image_classes
 
     gd_coll_name_map = dict(
-        landsat4_c2_l2=Landsat4Image,
-        landsat5_c2_l2=Landsat5Image,
-        landsat7_c2_l2=Landsat7Image,
-        landsat8_c2_l2=Landsat8Image,
-        sentinel2_toa=Sentinel2ToaClImage,
-        sentinel2_sr=Sentinel2SrClImage,
+        landsat4_c2_l2=LandsatImage,
+        landsat5_c2_l2=LandsatImage,
+        landsat7_c2_l2=LandsatImage,
+        landsat8_c2_l2=LandsatImage,
+        sentinel2_toa=Sentinel2ClImage,
+        sentinel2_sr=Sentinel2ClImage,
         modis_nbar=ModisNbarImage,
     )
 

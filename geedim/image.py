@@ -187,6 +187,7 @@ class BaseImage:
         if not isinstance(image, ee.Image):
             raise TypeError('image must be an instance of ee.Image')
         self._ee_image = image
+        self._ee_coll_name = ee.String(image.get('system:id')).split('/').slice(0, -1).join('/')
         self._info = None
         self._out_lock = threading.Lock()
         self._threads = max(multiprocessing.cpu_count(), 4)
