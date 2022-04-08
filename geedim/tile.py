@@ -93,6 +93,8 @@ class Tile:
         zip_buffer = BytesIO()
         resp = session.get(url, stream=True)
         download_size = int(resp.headers.get('content-length', 0))
+        if download_size == 0 or not resp.ok:
+            raise IOError(resp.json())
         for data in resp.iter_content(chunk_size=10240):
             zip_buffer.write(data)
             if bar:
