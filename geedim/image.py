@@ -247,6 +247,14 @@ class BaseImage:
         return self.info["dimensions"]
 
     @property
+    def transform(self) -> rio.Affine:
+        """
+        The geo-transform of this image as a rasterio Affine transform.
+        Will return None if the image has no fixed projection.
+        """
+        return self.info["dimensions"]
+
+    @property
     def footprint(self) -> Dict:
         """A geojson polygon of the image extent."""
         return self.info["footprint"]
@@ -345,10 +353,10 @@ class BaseImage:
             # One or more of region, crs and scale were not provided, so get the image values to use instead
             if not self.scale:
                 # Raise an error if this image is a composite (or similar)
-                raise ValueError(f'This image does not have a fixed projection and requires you to specify a region, '
+                raise ValueError(f'This image does not have a fixed projection, you need to specify a region, '
                                  f'crs and scale.')
         if not region and not self.footprint:
-            raise ValueError(f'This image does not have a footprint, specify a region.')
+            raise ValueError(f'This image does not have a footprint, you need to specify a region.')
 
         region = region or self.footprint  # TODO: test if this region is not in the download crs
         crs = crs or self.crs
@@ -418,6 +426,8 @@ class BaseImage:
         # find the total number of tiles we must divide the image into to satisfy max_download_size
         image_shape = np.int64((profile['height'], profile['width']))
         dtype_size = np.dtype(profile['dtype']).itemsize
+        if profile['dtype'].endswith('int8'):
+            dtype_size *= 2     # workaround for GEE overestimate of *int8 dtype download sizes
 
         image_size = np.prod(image_shape) * profile['count'] * dtype_size
         # ceil_size is the worst case extra tile size due to np.ceil(image_shape / shape_num_tiles).astype('int')
