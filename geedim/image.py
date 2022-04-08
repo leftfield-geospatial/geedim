@@ -138,7 +138,8 @@ def get_info(ee_image, min=True):
         Dictionary of image information with 'id', 'properties', 'bands', 'crs' and 'scale' keys.
     """
     # TODO: lose the need for ee_info below, perhaps change Image class to return ee_info with its .info property
-    gd_info = dict(id=None, properties={}, bands=[], crs=None, scale=None, footprint=None, ee_info=None)
+    gd_info = dict(id=None, properties={}, bands=[], crs=None, crs_transform=None, scale=None, dimensions=None,
+                   footprint=None, ee_info=None)
     ee_info = ee_image.getInfo()  # retrieve image info from cloud
     gd_info['ee_info'] = ee_info
 
@@ -155,10 +156,17 @@ def get_info(ee_image, min=True):
         band_df = pd.DataFrame(ee_info["bands"])
         scales = pd.DataFrame(band_df["crs_transform"].tolist())[0].abs().astype(float)
         band_df["scale"] = scales
-        filt_band_df = band_df[(band_df.crs != "EPSG:4326") & (band_df.scale != 1)]
+        filt_band_df = band_df[~((band_df.crs == "EPSG:4326") & (band_df.scale == 1))]
         if filt_band_df.shape[0] > 0:
             idx = filt_band_df.scale.idxmin() if min else filt_band_df.scale.idxmax()
-            gd_info["crs"], gd_info["scale"] = filt_band_df.loc[idx, ["crs", "scale"]]
+            sel_band_df = filt_band_df.loc[idx]
+            gd_info['crs'], gd_info['scale'] = sel_band_df[['crs', 'scale']]
+            if 'dimensions' in sel_band_df:
+                gd_info['dimensions'] = sel_band_df['dimensions'][::-1]
+            gd_info['crs_transform'] = rio.Affine(*sel_band_df['crs_transform'])
+            if ('origin' in sel_band_df) and not np.any(np.isnan(sel_band_df['origin'])):
+                gd_info['crs_transform'] *= rio.Affine.translation(*sel_band_df['origin'])
+
 
         # populate band metadata
         ee_coll_name = split_id(str(gd_info["id"]))[0]
@@ -218,7 +226,7 @@ class BaseImage:
     def crs(self) -> str:
         """
         The image CRS corresponding to minimum scale band, as an EPSG string.
-        Will return None if all bands are in EPSG:4326 (i.e. the image is a composite).
+        Will return None if the image has no fixed projection.
         """
         return self.info["crs"]
 
@@ -226,9 +234,17 @@ class BaseImage:
     def scale(self) -> float:
         """
         The scale (m) corresponding to minimum scale band.
-        Will return None if all bands are in EPSG:4326 (i.e. the image is a composite).
+        Will return None if the image has no fixed projection.
         """
         return self.info["scale"]
+
+    @property
+    def dimensions(self) -> Tuple[int, int]:
+        """
+        The (row, column) dimensions of this image.
+        Will return None if the image has no fixed projection.
+        """
+        return self.info["dimensions"]
 
     @property
     def footprint(self) -> Dict:
@@ -326,11 +342,13 @@ class BaseImage:
         """
 
         if not region or not crs or not scale:
-            # check if this image is a composite
-            # (note that self.scale below will result in a EE getInfo() call to retrieve scale, crs etc)
+            # One or more of region, crs and scale were not provided, so get the image values to use instead
             if not self.scale:
-                # TODO: generalise this error message to something like image is not in a projected CRS
-                raise ValueError(f'This image is in WGS84, a requires you to specify a region, crs and scale')
+                # Raise an error if this image is a composite (or similar)
+                raise ValueError(f'This image does not have a fixed projection and requires you to specify a region, '
+                                 f'crs and scale.')
+        if not region and not self.footprint:
+            raise ValueError(f'This image does not have a footprint, specify a region.')
 
         region = region or self.footprint  # TODO: test if this region is not in the download crs
         crs = crs or self.crs
@@ -341,6 +359,7 @@ class BaseImage:
                 "There is an earth engine bug exporting in SR-ORG:6974, specify another CRS: "
                 "https://issuetracker.google.com/issues/194561313"
             )
+
         ee_image = self._ee_image.resample(resampling) if resampling != _default_resampling else self._ee_image
         ee_image, dtype = self._convert_dtype(ee_image, dtype=dtype)
         export_args = dict(region=region, crs=crs, scale=scale, fileFormat='GeoTIFF', filePerBand=False)
@@ -356,16 +375,14 @@ class BaseImage:
         """
         # resample, convert, clip and reproject image according to download params
         ee_image, dtype = self._prepare_for_export(**kwargs)
-        # _prepare_for_export adjusts crs, dimensions, crs_transform etc so get the latest image info
-        info = ee_image.getInfo()
+        # _prepare_for_export adjusts crs, dimensions, crs_transform etc so get the latest image info for populating
+        # the rasterio profile
+        info = get_info(ee_image)
 
         # get transform, shape and band count of the prepared image to configure up the output image profile
-        band_info = info['bands'][0]  # all bands are same crs & scale after prepare_for_export
-        transform = rio.Affine(*band_info['crs_transform'])
-        if 'origin' in band_info:
-            transform *= rio.Affine.translation(*band_info['origin'])
+        # band_info = info['bands'][0]  # all bands are same crs & scale after prepare_for_export
 
-        shape = band_info['dimensions'][::-1]
+        shape = info['dimensions']
         count = len(info['bands'])
         nodata_dict = dict(
             float32=self.float_nodata,  # see workaround note in Tile.download(...)
@@ -379,7 +396,7 @@ class BaseImage:
         )
         nodata = nodata_dict[dtype] if mask else None
         profile = dict(driver='GTiff', dtype=dtype, nodata=nodata, width=shape[1], height=shape[0], count=count,
-                       crs=CRS.from_string(band_info['crs']), transform=transform, compress='deflate',
+                       crs=CRS.from_string(info['crs']), transform=info['crs_transform'], compress='deflate',
                        interleave='band', tiled=True)
         return ee_image, profile
 
