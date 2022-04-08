@@ -71,6 +71,16 @@ def image_from_id(image_id: str, **kwargs):
     if ee_coll_name in masked_image_dict:
         return masked_image_dict[ee_coll_name].from_id(image_id, **kwargs)
     else:
-        if len(kwargs) > 0:
-            raise ValueError(f'{list(kwargs.keys())} arguments are not supported for {ee_coll_name} collection')
+        # if len(kwargs) > 0:
+        #     raise ValueError(f'{list(kwargs.keys())} arguments are not supported for {ee_coll_name} collection')
         return BaseImage(ee.Image(image_id))
+
+
+def collection_from_list(image_list: list, **kwargs):
+    ee_image_list = []
+    list_types = [type[image_obj] for image_obj in image_list]
+    for image_obj in image_list:
+        if isinstance(image_obj, str):
+            ee_image_list.append(image_from_id(image_obj, **kwargs))
+        elif isinstance(ee.Image, str):
+            ee_image_list.append(image_obj)

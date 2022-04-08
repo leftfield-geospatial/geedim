@@ -264,7 +264,7 @@ region = {"type": "Polygon",
 
 # make collection and search
 gd_coll_name = 'sentinel2_sr'
-gd_collection = collection.Collection(gd_coll_name)
+gd_collection = collection.MaskedCollection(gd_coll_name)
 res_df = gd_collection.search('2019-01-10', '2019-01-21', region)
 print(gd_collection.summary_key)
 print(gd_collection.summary)

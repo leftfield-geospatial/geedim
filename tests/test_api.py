@@ -95,7 +95,7 @@ class TestApi(unittest.TestCase):
         for ee_coll_name, search_dates in search_date_dict.items():
             # find search start / end dates based on collection start / end
             with self.subTest('Search', ee_coll_name=ee_coll_name):
-                gd_collection = collection.Collection(ee_coll_name)
+                gd_collection = collection.MaskedCollection(ee_coll_name)
                 res_df = gd_collection.search(search_dates[0], search_dates[1], region, valid_portion=valid_portion)
                 _test_search_results(self, res_df, search_dates[0], search_dates[1], valid_portion=valid_portion)
 
@@ -170,7 +170,7 @@ class TestApi(unittest.TestCase):
     def test_composite(self):
         """ Test each composite method on different collections. """
 
-        methods = collection.Collection.composite_methods
+        methods = collection.MaskedCollection.composite_methods
         param_list = [
             {'image_ids': ['LANDSAT/LE07/C02/T1_L2/LE07_171083_20190129', 'LANDSAT/LE07/C02/T1_L2/LE07_171083_20190214',
                            'LANDSAT/LE07/C02/T1_L2/LE07_171083_20190302'], 'mask': True, 'cloud_dist': 5000},
@@ -182,7 +182,7 @@ class TestApi(unittest.TestCase):
         for param_dict in param_list:
             for method in methods:
                 with self.subTest('Composite', method=method, **param_dict):
-                    gd_collection = collection.Collection.from_ids(**param_dict)
+                    gd_collection = collection.MaskedCollection.from_ids(**param_dict)
                     comp_im = gd_collection.composite(method=method, resampling='bilinear')
                     self._test_composite(comp_im)
 

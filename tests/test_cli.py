@@ -122,7 +122,7 @@ class TestCli(unittest.TestCase):
         self.assertTrue(result.exit_code == 0, result.exception)
 
         # recreate composite image and check against downloaded file
-        gd_collection = collection.Collection.from_ids(comp_ids, mask=pdict['mask'])
+        gd_collection = collection.MaskedCollection.from_ids(comp_ids, mask=pdict['mask'])
         comp_im = gd_collection.composite(method)
         comp_fn = download_dir.joinpath(comp_im.name + '.tif')
         with open(region_filename) as f:
@@ -157,7 +157,7 @@ class TestCli(unittest.TestCase):
         res_df.DATE = [datetime.utcfromtimestamp(ts / 1000) for ts in res_df.DATE.values]
         _test_search_results(self, res_df, start_date, end_date)  # check results
 
-        gd_collection = collection.Collection.from_ids(res_df.ID.values, mask=pdict['mask'])
+        gd_collection = collection.MaskedCollection.from_ids(res_df.ID.values, mask=pdict['mask'])
         comp_im = gd_collection.composite(method)
         comp_fn = download_dir.joinpath(comp_im.name + '.tif')
         with open(region_filename) as f:
