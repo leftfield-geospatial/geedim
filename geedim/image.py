@@ -182,7 +182,7 @@ class BaseImage:
     """
     float_nodata = float('nan')
 
-    def __init__(self, image: ee.Image):
+    def __init__(self, image: ee.Image, num_threads=None):
 
         if not isinstance(image, ee.Image):
             raise TypeError('image must be an instance of ee.Image')
@@ -190,7 +190,7 @@ class BaseImage:
         self._ee_coll_name = ee.String(image.get('system:id')).split('/').slice(0, -1).join('/')
         self._info = None
         self._out_lock = threading.Lock()
-        self._threads = max(multiprocessing.cpu_count(), 4)
+        self._num_threads = num_threads or max(multiprocessing.cpu_count(), 4)
 
     @property
     def ee_image(self) -> ee.Image:
@@ -329,7 +329,9 @@ class BaseImage:
             # check if this image is a composite
             # (note that self.scale below will result in a EE getInfo() call to retrieve scale, crs etc)
             if not self.scale:
-                raise ValueError(f'Image appears to be a composite, specify a region, crs and scale')
+                # TODO: generalise this error message to something like image is not in a projected CRS
+                raise ValueError(f'This image is in WGS84, a requires you to specify a region, crs and scale')
+
         region = region or self.footprint  # TODO: test if this region is not in the download crs
         crs = crs or self.crs
         scale = scale or self.scale
@@ -397,10 +399,18 @@ class BaseImage:
     def _get_tile_shape(self, profile: Dict, max_download_size=33554432, max_grid_dimension=10000) -> Tuple[int, int]:
         """Return a tile shape for the encapsulated image that satisfies GEE download limits and is near-square."""
         # find the total number of tiles we must divide the image into to satisfy max_download_size
-        image_shape = (profile['height'], profile['width'])
+        image_shape = np.int64((profile['height'], profile['width']))
         dtype_size = np.dtype(profile['dtype']).itemsize
-        image_size = np.prod(np.int64((profile['count'], dtype_size, *image_shape)))
-        num_tiles = np.ceil(image_size / max_download_size)
+
+        image_size = np.prod(image_shape) * profile['count'] * dtype_size
+        # ceil_size is the worst case extra tile size due to np.ceil(image_shape / shape_num_tiles).astype('int')
+        ceil_size = np.sum(image_shape) * profile['count'] * dtype_size
+        #  the total tile download size (tds) should be <= max_download_size, and
+        #   tds <= image_size/num_tiles + ceil_size, which gives us:
+        num_tiles = np.ceil(image_size / (max_download_size - ceil_size))
+
+        # TODO: warn if num_tiles is big, and add debug message about the approx size of the file
+        #  and use the tile_shape to report raw size downloaded rather than num tiles.
 
         # increment num_tiles if it is prime (This is so that we can factorize num_tiles into x & y dimension
         # components, and don't have all tiles along a single dimension.
@@ -578,6 +588,7 @@ class BaseImage:
         image, profile = self._prepare_for_download(**kwargs)
         session = _requests_retry_session(5, status_forcelist=[500, 502, 503, 504])
 
+        # TODO avoid retrieving all the tiles up front - there can be 1000s
         tiles = list(self.tiles(image, profile))
         bar_format = '{desc}: |{bar}| {n:4.1f}/{total_fmt} tile(s) [{percentage:5.1f}%] in {elapsed:>5s} (eta: {remaining:>5s})'
         bar = tqdm(desc=filename.name, total=len(tiles), bar_format=bar_format, dynamic_ncols=True)
@@ -591,11 +602,17 @@ class BaseImage:
                 with self._out_lock:
                     out_ds.write(tile_array, window=tile.window)
 
-            with ThreadPoolExecutor(max_workers=self._threads) as executor:
+            with ThreadPoolExecutor(max_workers=self._num_threads) as executor:
                 # Run the tile downloads in a thread pool
                 futures = [executor.submit(download_tile, tile) for tile in tiles]
-                for future in as_completed(futures):
-                    future.result()
+                try:
+                    for future in as_completed(futures):
+                        future.result()
+                except:
+                    # TODO: log message that we are cancelling download
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    raise
+            # TODO parse specific expections like ee.ee_exception.EEException: "Total request size (55039924 bytes) must be less than or equal to 50331648 bytes."
 
             # populate GeoTIFF metadata and build overviews
             out_ds.update_tags(**self.info['properties'])
