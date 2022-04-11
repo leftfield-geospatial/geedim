@@ -79,7 +79,7 @@ def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=Non
 
     gd_info = gd_image.info
 
-    exp_image, _ = gd_image._prepare_for_export(region=region, crs=crs, scale=scale)
+    exp_image = gd_image._prepare_for_export(region=region, crs=crs, scale=scale)
 
     region_arr = pd.DataFrame(region['coordinates'][0], columns=['x', 'y'])  # avoid numpy dependency
     region_bounds = rio.coords.BoundingBox(region_arr.x.min(), region_arr.y.min(), region_arr.x.max(),

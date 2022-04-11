@@ -16,6 +16,7 @@
 
 # Functionality for wrapping, cloud/shadow masking and scoring Earth Engine images
 import collections
+import logging
 
 import ee
 import numpy as np
@@ -23,7 +24,7 @@ import numpy as np
 from geedim import info
 from geedim.image import BaseImage, split_id
 
-
+logger = logging.getLogger(__name__)
 ##
 # Image classes
 
@@ -435,7 +436,7 @@ class Sentinel2ClImage(MaskedImage):
         )
 
         if True:
-            # TODO: check the below is using scl for sentinel2_sr
+            # TODO: check the below is using scl for sentinel2_sr, and what are the speed implications of the if
             # if this is an S2_SR image, use SCL to find the shadow_mask, else just use proj_cloud_mask
             ee_coll_name = ee.String(ee_image.get('system:id')).split('/').slice(0, -1).join('/')
             shadow_mask = ee.Image(

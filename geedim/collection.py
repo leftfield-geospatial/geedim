@@ -17,6 +17,7 @@
 ##
 # Functionality for searching and compositing EE image collections
 from datetime import datetime, timedelta
+import logging
 
 import ee
 import pandas as pd
@@ -25,6 +26,7 @@ from geedim import masked_image, info, medoid, image, image_from_id
 from geedim.image import _default_resampling, BaseImage, split_id
 from geedim.masked_image import MaskedImage
 
+logger = logging.getLogger(__name__)
 
 ##
 class BaseCollection:
@@ -40,7 +42,8 @@ class BaseCollection:
                        EE image collection ID
         """
         if ee_coll_name in info.collection_info:
-            pass # TODO log warning
+            logger.warning(f'You are instantiating BaseCollection with {ee_coll_name}, but could use MaskedCollection, '
+                           f'which supports cloud/shadow free compositing.')
 
         self._ee_coll_name = ee_coll_name
         self._collection_info = info.collection_info['*']
