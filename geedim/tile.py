@@ -17,7 +17,6 @@
 import zipfile
 from io import BytesIO
 
-import ee
 import numpy as np
 import requests
 from affine import Affine
@@ -42,23 +41,21 @@ def _requests_retry_session(retries=3, backoff_factor=0.3, status_forcelist=(500
 class Tile:
     """Class for encapsulating and downloading a GEE image tile (i.e. a rectangular region of interest in the image)"""
 
-    def __init__(self, image: ee.Image, transform: Affine, window: Window):
+    def __init__(self, exp_image: 'BaseImage', window: Window):
         """
         Create an instance of Tile.
 
         Parameters
         ----------
-        image: ee.Image
-            An EE image to derive the tile from.
-        transform: Affine
-            A rasterio geo-transform for `image`.
+        exp_image: BaseImage
+            A BaseImage instance to derive the tile from.
         window: Window
             A rasterio window into `image`, specifying the region of interest for this tile.
         """
-        self._image = image
+        self._exp_image = exp_image
         self._window = window
         # offset the image geo-transform origin so that it corresponds to the UL corner of the tile.
-        self._transform = transform * Affine.translation(window.col_off, window.row_off)
+        self._transform = exp_image.transform * Affine.translation(window.col_off, window.row_off)
         self._shape = (window.height, window.width)
 
     @property
@@ -85,9 +82,9 @@ class Tile:
         session = session if session else requests
 
         # get image download url
-        url = self._image.getDownloadURL(
-            dict(crs=self._image.projection().crs(), crs_transform=tuple(self._transform)[:6],
-                 dimensions=self._shape[::-1], filePerBand=False, fileFormat='GeoTIFF'))
+        url = self._exp_image.ee_image.getDownloadURL(
+            dict(crs=self._exp_image.crs, crs_transform=tuple(self._transform)[:6], dimensions=self._shape[::-1],
+                 filePerBand=False, fileFormat='GeoTIFF'))
 
         # download zip into buffer
         zip_buffer = BytesIO()
@@ -97,7 +94,7 @@ class Tile:
             raise IOError(resp.json())
         for data in resp.iter_content(chunk_size=10240):
             zip_buffer.write(data)
-            if bar:
+            if bar is not None:
                 bar.update(len(data) / download_size)
         zip_buffer.flush()
 

@@ -37,10 +37,14 @@ from rasterio.crs import CRS
 from rasterio.enums import Resampling
 from rasterio.warp import transform_geom
 from rasterio.windows import Window
-from tqdm import tqdm, TqdmWarning
+from tqdm import TqdmWarning
+from tqdm import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
 
 from geedim import info
-from geedim.tile import _requests_retry_session, Tile
+from geedim.tile import Tile, _requests_retry_session
+
+logger = logging.getLogger(__name__)
 
 """EE image property key for image region"""
 _footprint_key = "system:footprint"
@@ -124,18 +128,19 @@ class BaseImage:
     """
     Base class for encapsulating an EE image.
 
-    Provides access to metadata, download and export functionality.
+    Provides client-side access to metadata, download and export functionality.
     """
     float_nodata = float('nan')
 
-    def __init__(self, image: ee.Image, num_threads=None):
+    def __init__(self, ee_image: ee.Image, num_threads=None):
 
-        if not isinstance(image, ee.Image):
-            raise TypeError('image must be an instance of ee.Image')
-        self._ee_image = image
+        if not isinstance(ee_image, ee.Image):
+            raise TypeError('ee_image must be an instance of ee.Image')
+        self._ee_image = ee_image
         self._ee_info = None
-        self._ee_coll_name = ee.String(image.get('system:id')).split('/').slice(0, -1).join('/')
-        self._info = None
+        self._min_projection = None
+        self._min_dtype = None
+        self._ee_coll_name = ee.String(ee_image.get('system:id')).split('/').slice(0, -1).join('/')
         self._out_lock = threading.Lock()
         self._num_threads = num_threads or max(multiprocessing.cpu_count(), 4)
 
@@ -143,6 +148,13 @@ class BaseImage:
     def ee_image(self) -> ee.Image:
         """The encapsulated EE image."""
         return self._ee_image
+
+    @ee_image.setter
+    def ee_image(self, value: ee.Image):
+        self._ee_info = None
+        self._min_projection = None
+        self._min_dtype = None
+        self._ee_image = value
 
     @property
     def ee_info(self) -> Dict:
@@ -166,9 +178,11 @@ class BaseImage:
         return self.ee_info['id'].replace('/', '-')
 
     @property
-    def _min_projection(self) -> Dict:
+    def min_projection(self) -> Dict:
         """A dict of the projection information corresponding to the minimum scale band."""
-        return self._get_projection(self.ee_info, min=True)
+        if not self._min_projection:
+            self._min_projection = self._get_projection(self.ee_info, min=True)
+        return self._min_projection
 
     @property
     def crs(self) -> str:
@@ -176,7 +190,7 @@ class BaseImage:
         The image CRS corresponding to minimum scale band, as an EPSG string.
         Will return None if the image has no fixed projection.
         """
-        return self._min_projection['crs']
+        return self.min_projection['crs']
 
     @property
     def scale(self) -> float:
@@ -184,28 +198,35 @@ class BaseImage:
         The scale (m) corresponding to minimum scale band.
         Will return None if the image has no fixed projection.
         """
-        return self._min_projection['scale']
+        return self.min_projection['scale']
 
     @property
-    def dimensions(self) -> Tuple[int, int]:
+    def shape(self) -> Tuple[int, int]:
         """
-        The (row, column) dimensions of the minimim scale band.
+        The (row, column) dimensions of the minimum scale band.
         Will return None if the image has no fixed projection.
         """
-        return self._min_projection['dimensions']
+        return self.min_projection['shape']
 
     @property
-    def crs_transform(self) -> rio.Affine:
+    def count(self) -> int:
+        """The number of image bands"""
+        return len(self.ee_info['bands']) if 'bands' in self.ee_info else None
+
+    @property
+    def transform(self) -> rio.Affine:
         """
         The geo-transform of the minimim scale band, as a rasterio Affine transform.
         Will return None if the image has no fixed projection.
         """
-        return self._min_projection['crs_transform']
+        return self.min_projection['transform']
 
     @property
     def dtype(self) -> str:
         """The minimal size data type required to represent the values in this image."""
-        return self._get_min_dtype(self.ee_info)
+        if not self._min_dtype:
+            self._min_dtype = self._get_min_dtype(self.ee_info)
+        return self._min_dtype
 
     @property
     def footprint(self) -> Dict:
@@ -222,16 +243,15 @@ class BaseImage:
     @property
     def info(self) -> Dict:
         """All the BasicImage properties packed into a dictionary"""
-        return dict(id=self.id, properties=self.properties, crs=self.crs, scale=self.scale,
-                    crs_transform=self.crs_transform, dimensions=self.dimensions, footprint=self.footprint,
-                    dtype=self.dtype, bands=self.band_metadata)
+        return dict(id=self.id, properties=self.properties, footprint=self.footprint, bands=self.band_metadata,
+                    **self.min_projection)
 
     @staticmethod
     def _get_projection(ee_info: Dict, min=True) -> Dict:
         """
         Return the projection information corresponding to the min/max scale band, for an EE image info dictionary
         """
-        projection_info = dict(crs=None, crs_transform=None, dimensions=None, scale=None, dtype=None)
+        projection_info = dict(crs=None, transform=None, shape=None, scale=None, dtype=None)
         if 'bands' in ee_info:
             # get scale & crs corresponding to min/max scale band (exclude 'EPSG:4326' (composite/constant) bands)
             band_df = pd.DataFrame(ee_info['bands'])
@@ -243,10 +263,10 @@ class BaseImage:
                 sel_band_df = filt_band_df.loc[idx]
                 projection_info['crs'], projection_info['scale'] = sel_band_df[['crs', 'scale']]
                 if 'dimensions' in sel_band_df:
-                    projection_info['dimensions'] = sel_band_df['dimensions'][::-1]
-                projection_info['crs_transform'] = rio.Affine(*sel_band_df['crs_transform'])
+                    projection_info['shape'] = sel_band_df['dimensions'][::-1]
+                projection_info['transform'] = rio.Affine(*sel_band_df['crs_transform'])
                 if ('origin' in sel_band_df) and not np.any(np.isnan(sel_band_df['origin'])):
-                    projection_info['crs_transform'] *= rio.Affine.translation(*sel_band_df['origin'])
+                    projection_info['transform'] *= rio.Affine.translation(*sel_band_df['origin'])
         return projection_info
 
     @staticmethod
@@ -279,7 +299,6 @@ class BaseImage:
         ee_coll_name, _ = split_id(ee_info['id'])
         band_df = pd.DataFrame(ee_info['bands'])
         if ee_coll_name in info.collection_info:  # include SR band metadata if it exists
-            # TODO: don't assume all the bands are in band_df, there could have been a select
             # use DataFrame to concat SR band metadata from collection_info with band IDs from the image
             sr_band_list = info.collection_info[ee_coll_name]["bands"].copy()
             sr_band_dict = {bdict['id']: bdict for bdict in sr_band_list}
@@ -288,27 +307,22 @@ class BaseImage:
             band_metadata = band_df[["id"]].to_dict("records")
         return band_metadata
 
-    def _convert_dtype(self, image, dtype=None):
+    def _convert_dtype(self, ee_image, dtype):
         """
-        Converts the data type of an image, choosing a minimal target type, if one is not specified.
+        Converts the data type of an image.
 
         Parameters
         ----------
-        image: ee.Image
+        ee_image: ee.Image
             The image to convert.
-        dtype: str, optional
-            The data type to convert the image to, as a valid rasterio dtype string.  If not specified, a miminal
-            dtype that can represent the `image` values will be chosen automatically.
+        dtype: str
+            The data type to convert the image to, as a valid rasterio dtype string.
 
         Returns
         -------
-        image: ee.Image
+        ee_image: ee.Image
             The converted image.
-        dtype: str
-            The automatically selected dtype
         """
-        dtype = dtype or self.dtype
-
         conv_dict = dict(
             float32=ee.Image.toFloat,
             float64=ee.Image.toDouble,
@@ -322,7 +336,7 @@ class BaseImage:
         if dtype not in conv_dict:
             raise ValueError(f'Unsupported dtype: {dtype}')
 
-        return conv_dict[dtype](image), dtype
+        return conv_dict[dtype](ee_image)
 
     def _prepare_for_export(self, region=None, crs=None, scale=None, resampling=_default_resampling, dtype=None):
         """
@@ -349,10 +363,8 @@ class BaseImage:
 
         Returns
         -------
-        image: ee.Image
+        exp_image: BaseImage
             The prepared image.
-        dtype: str
-            The dtype of the converted image.
         """
 
         if not region or not crs or not scale:
@@ -375,12 +387,12 @@ class BaseImage:
             )
 
         ee_image = self._ee_image.resample(resampling) if resampling != _default_resampling else self._ee_image
-        ee_image, dtype = self._convert_dtype(ee_image, dtype=dtype)
+        ee_image = self._convert_dtype(ee_image, dtype=dtype or self.dtype)
         export_args = dict(region=region, crs=crs, scale=scale, fileFormat='GeoTIFF', filePerBand=False)
         ee_image, _ = ee_image.prepare_for_export(export_args)
-        return ee_image, dtype
+        return BaseImage(ee_image)
 
-    def _prepare_for_download(self, mask=True, **kwargs):
+    def _prepare_for_download(self, mask=True, **kwargs) -> ('BaseImage', Dict):
         """
         Prepare the encapsulated image for tiled downloading to local GeoTIFF. Will reproject, resample, clip and
         convert the image according to the provided parameters.
@@ -388,14 +400,7 @@ class BaseImage:
         Returns the prepared image and a rasterio profile for the download GeoTIFF.
         """
         # resample, convert, clip and reproject image according to download params
-        ee_image, dtype = self._prepare_for_export(**kwargs)
-        # _prepare_for_export adjusts crs, dimensions, crs_transform etc so get the latest image info for populating
-        # the rasterio profile
-        ee_info = ee_image.getInfo()
-        min_projection = self._get_projection(ee_info)  # get projection info to configure the download geotiff
-
-        shape = min_projection['dimensions']
-        count = len(ee_info['bands'])
+        exp_image = self._prepare_for_export(**kwargs)
         nodata_dict = dict(
             float32=self.float_nodata,  # see workaround note in Tile.download(...)
             float64=self.float_nodata,  # ditto
@@ -406,29 +411,31 @@ class BaseImage:
             uint32=0,
             int32=np.iinfo('int32').min
         )
-        nodata = nodata_dict[dtype] if mask else None
-        profile = dict(driver='GTiff', dtype=dtype, nodata=nodata, width=shape[1], height=shape[0], count=count,
-                       crs=CRS.from_string(min_projection['crs']), transform=min_projection['crs_transform'],
+        nodata = nodata_dict[exp_image.dtype] if mask else None
+        profile = dict(driver='GTiff', dtype=exp_image.dtype, nodata=nodata, width=exp_image.shape[1],
+                       height=exp_image.shape[0],
+                       count=exp_image.count, crs=CRS.from_string(exp_image.crs), transform=exp_image.transform,
                        compress='deflate', interleave='band', tiled=True)
-        return ee_image, profile
+        return exp_image, profile
 
-    def _get_tile_shape(self, profile: Dict, max_download_size=33554432, max_grid_dimension=10000) -> Tuple[int, int]:
-        """Return a tile shape for the encapsulated image that satisfies GEE download limits and is near-square."""
+    def _get_tile_shape(self, exp_image: 'BaseImage', max_download_size=33554432, max_grid_dimension=10000) -> (Tuple[
+                                                                                                                    int, int],
+                                                                                                                int,
+                                                                                                                float):
+        """Return a tile shape for provided BaseImage that satisfies GEE download limits, and is 'square-ish'."""
+
         # find the total number of tiles we must divide the image into to satisfy max_download_size
-        image_shape = np.int64((profile['height'], profile['width']))
-        dtype_size = np.dtype(profile['dtype']).itemsize
-        if profile['dtype'].endswith('int8'):
+        image_shape = np.int64(exp_image.shape)
+        dtype_size = np.dtype(exp_image.dtype).itemsize
+        if exp_image.dtype.endswith('int8'):
             dtype_size *= 2  # workaround for GEE overestimate of *int8 dtype download sizes
 
-        image_size = np.prod(image_shape) * profile['count'] * dtype_size
+        image_size = np.prod(image_shape) * exp_image.count * dtype_size
         # ceil_size is the worst case extra tile size due to np.ceil(image_shape / shape_num_tiles).astype('int')
-        ceil_size = np.sum(image_shape) * profile['count'] * dtype_size
+        ceil_size = np.sum(image_shape) * exp_image.count * dtype_size
         #  the total tile download size (tds) should be <= max_download_size, and
         #   tds <= image_size/num_tiles + ceil_size, which gives us:
         num_tiles = np.ceil(image_size / (max_download_size - ceil_size))
-
-        # TODO: warn if num_tiles is big, and add debug message about the approx size of the file
-        #  and use the tile_shape to report raw size downloaded rather than num tiles.
 
         # increment num_tiles if it is prime (This is so that we can factorize num_tiles into x & y dimension
         # components, and don't have all tiles along a single dimension.
@@ -458,7 +465,22 @@ class BaseImage:
         # find the tile shape and clip to max_grid_dimension if necessary
         tile_shape = np.ceil(image_shape / shape_num_tiles).astype('int')
         tile_shape[tile_shape > max_grid_dimension] = max_grid_dimension
-        return tuple(tile_shape.tolist())
+        tile_shape = tuple(tile_shape.tolist())
+        # logger.debug(f'Download tile shape: {tile_shape}')
+        download_size = int(num_tiles * np.prod(tile_shape) * exp_image.count * dtype_size)
+
+        def human_size(bytes, units=['bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB']):
+            """
+            Returns a human readable string representation of bytes -
+            see https://stackoverflow.com/questions/1094841/get-human-readable-version-of-file-size
+            """
+            return f'{bytes:.1f}{units[0]}' if bytes < 1024 else human_size(bytes >> 10, units[1:])
+
+        logger.info(f'Raw download size: {human_size(download_size)}')
+        if download_size > 1 << 30:
+            logger.warning('Consider adjusting the `scale`, `dtype` and/or `region` parameters to reduce the download '
+                           'size.')
+        return tile_shape, num_tiles, download_size
 
     def _build_overviews(self, dataset: rio.io.DatasetWriter, max_num_levels=8, min_ovw_pixels=256):
         """Build internal overviews, downsampled by successive powers of 2, for an open rasterio dataset."""
@@ -485,7 +507,7 @@ class BaseImage:
                 dataset.set_band_description(band_i + 1, band_info['id'])
             dataset.update_tags(band_i + 1, **band_info)
 
-    def tiles(self, image, profile):
+    def tiles(self, exp_image: 'BaseImage', tile_shape=None):
         """
         Iterator over the image tiles.
 
@@ -494,16 +516,17 @@ class BaseImage:
         tile: DownloadTile
             A tile of the encapsulated image that can be downloaded.
         """
-        tile_shape = self._get_tile_shape(profile)
+        if not tile_shape:
+            tile_shape, num_tiles, download_size = self._get_tile_shape(exp_image)
 
         # split the image up into tiles of at most `tile_shape` dimension
-        image_shape = (profile['height'], profile['width'])
+        image_shape = exp_image.shape
         start_range = product(range(0, image_shape[0], tile_shape[0]), range(0, image_shape[1], tile_shape[1]))
         for tile_start in start_range:
             tile_stop = np.clip(np.add(tile_start, tile_shape), a_min=None, a_max=image_shape)
             clip_tile_shape = (tile_stop - tile_start).tolist()  # tolist is just to convert to native int
             tile_window = Window(tile_start[1], tile_start[0], clip_tile_shape[1], clip_tile_shape[0])
-            yield Tile(image, profile['transform'], tile_window)
+            yield Tile(exp_image, tile_window)
 
     @staticmethod
     def monitor_export_task(task, label: str = None):
@@ -582,9 +605,9 @@ class BaseImage:
         """
 
         # TODO: test composite of resampled images and resampled composite
-        image, _ = self._prepare_for_export(**kwargs)
+        exp_image = self._prepare_for_export(**kwargs)
         # create export task and start
-        task = ee.batch.Export.image.toDrive(image=image, description=filename[:100], folder=folder,
+        task = ee.batch.Export.image.toDrive(image=exp_image.ee_image, description=filename[:100], folder=folder,
                                              fileNamePrefix=filename, maxPixels=1e9)
         task.start()
         if wait:  # wait for completion
@@ -628,17 +651,19 @@ class BaseImage:
             else:
                 raise FileExistsError(f'{filename} exists')
 
-        image, profile = self._prepare_for_download(**kwargs)
+            #
+        exp_image, profile = self._prepare_for_download(**kwargs)
         session = _requests_retry_session(5, status_forcelist=[500, 502, 503, 504])
 
-        # TODO avoid retrieving all the tiles up front - there can be 1000s
-        tiles = list(self.tiles(image, profile))
+        tile_shape, num_tiles, download_size = self._get_tile_shape(exp_image)
+        tiles = self.tiles(exp_image, tile_shape=tile_shape)
         bar_format = '{desc}: |{bar}| {n:4.1f}/{total_fmt} tile(s) [{percentage:5.1f}%] in {elapsed:>5s} (eta: {remaining:>5s})'
-        bar = tqdm(desc=filename.name, total=len(tiles), bar_format=bar_format, dynamic_ncols=True)
+        bar = tqdm(desc=filename.name, total=num_tiles, bar_format=bar_format, dynamic_ncols=True)
+        redir_tqdm = logging_redirect_tqdm([logging.getLogger(__package__)])
         out_ds = rio.open(filename, 'w', **profile)
         warnings.filterwarnings('ignore', category=TqdmWarning)
 
-        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), out_ds, bar:
+        with redir_tqdm, rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), out_ds, bar:
             def download_tile(tile):
                 """Download a tile and write into the destination GeoTIFF."""
                 tile_array = tile.download(session, bar)
@@ -652,7 +677,7 @@ class BaseImage:
                     for future in as_completed(futures):
                         future.result()
                 except:
-                    # TODO: log message that we are cancelling download
+                    logger.info('Cancelling download ...')
                     executor.shutdown(wait=False, cancel_futures=True)
                     raise
             # TODO parse specific expections like ee.ee_exception.EEException: "Total request size (55039924 bytes) must be less than or equal to 50331648 bytes."
