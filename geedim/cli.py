@@ -15,18 +15,50 @@
 """
 import importlib
 import json
+import logging
 import os
 import pathlib
+import sys
 from collections import namedtuple
 
 import click
-import ee
 from rasterio.dtypes import dtype_ranges
 
 import geedim.image
 from geedim import collection as coll_api
-from geedim import info, masked_image, _ee_init, image_from_id
+from geedim import info, masked_image, _ee_init, image_from_id, version
 from geedim.image import BaseImage
+
+logger = logging.getLogger(__name__)
+
+
+class _PlainInfoFormatter(logging.Formatter):
+    """logging formatter to format INFO logs without the module name etc prefix"""
+
+    def format(self, record):
+        if record.levelno == logging.INFO:
+            self._style._fmt = "%(message)s"
+        else:
+            self._style._fmt = "%(levelname)s:%(name)s: %(message)s"
+        return super().format(record)
+
+
+class _GeedimCommand(click.Command):
+    """
+    click Command class that formats single newlines in help strings as single newlines.
+    """
+
+    def get_help(self, ctx):
+        """Format help strings with single newlines as single newlines."""
+        # adapted from https://stackoverflow.com/questions/55585564/python-click-formatting-help-text
+        orig_wrap_test = click.formatting.wrap_text
+
+        def wrap_text(text, width, **kwargs):
+            text = text.replace('\n', '\n\n')
+            return orig_wrap_test(text, width, **kwargs).replace('\n\n', '\n')
+
+        click.formatting.wrap_text = wrap_text
+        return click.Command.get_help(self, ctx)
 
 
 class _CmdChainResults(object):
@@ -36,6 +68,23 @@ class _CmdChainResults(object):
         self.search_ids = None
         self.search_region = None
         self.comp_image = None
+
+
+def _configure_logging(verbosity):
+    """configure python logging level"""
+    # adapted from rasterio https://github.com/rasterio/rasterio
+    log_level = max(10, 20 - 10 * verbosity)
+
+    # limit logging config to homonim by applying to package logger, rather than root logger
+    # pkg_logger level etc are then 'inherited' by logger = getLogger(__name__) in the modules
+    pkg_logger = logging.getLogger(__package__)
+    formatter = _PlainInfoFormatter()
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(formatter)
+    pkg_logger.addHandler(handler)
+    pkg_logger.setLevel(log_level)
+    logging.captureWarnings(True)
+
 
 def _collection_cb(ctx, param, value):
     """click callback to validate collection name"""
@@ -73,7 +122,6 @@ def _extract_region(region=None, bbox=None, region_buf=10):
 
 def _export_im_list(im_list, path='', wait=True, overwrite=False, do_download=True, **kwargs):
     """ Export/download image(s) """
-    click.echo('\nDownloading:\n') if do_download else click.echo('\nExporting:\n')
     export_tasks = []
 
     for im_dict in im_list:
@@ -94,7 +142,7 @@ def _create_im_list(ids, **kwargs):
     im_list = []
 
     for im_id in ids:
-            im_list.append(dict(image=image_from_id(im_id, **kwargs)))
+        im_list.append(dict(image=image_from_id(im_id, **kwargs)))
 
     return im_list
 
@@ -121,11 +169,13 @@ def _export_download(res=_CmdChainResults(), do_download=True, **kwargs):
 
     # get the download/export region
     region = _extract_region(region=params.region, bbox=params.bbox) or res.search_region
+
+    logger.info('\nDownloading:\n') if do_download else logger.info('\nExporting:\n')
     if region is None:
         if res.comp_image is not None:
             raise click.BadOptionUsage('region', 'One of --region or --box is required for a composite image.')
         else:
-            pass  # TODO log message that footprint will be used
+            logger.info('No region specified, using the image footprint.')
 
     # interpret the CRS
     crs = _interpret_crs(params.crs)
@@ -230,18 +280,29 @@ cloud_dist_option = click.option(
 
 # Define the geedim CLI and chained command group
 @click.group(chain=True)
+@click.option(
+    '--verbose', '-v',
+    count=True,
+    help="Increase verbosity.")
+@click.option(
+    '--quiet', '-q',
+    count=True,
+    help="Decrease verbosity.")
+@click.version_option(version=version.__version__, message="%(version)s")
 @click.pass_context
-def cli(ctx):
+def cli(ctx, verbose, quiet):
     _ee_init()
     ctx.obj = _CmdChainResults()  # object to hold chained results
+    verbosity = verbose - quiet
+    _configure_logging(verbosity)
 
 
 # Define search command options
-@click.command()
+@click.command(cls=_GeedimCommand)
 @click.option(
     "-c",
     "--collection",
-    type=click.STRING,       #click.Choice(list(info.gd_to_ee.keys())[:-1], case_sensitive=False),
+    type=click.STRING,  # click.Choice(list(info.gd_to_ee.keys())[:-1], case_sensitive=False),
     help="Earth Engine image collection to search.",
     default="landsat8_c2_l2",
     show_default=True,
@@ -297,8 +358,8 @@ def search(res, collection, start_date, end_date, bbox, region, valid_portion, o
         raise click.BadOptionUsage('region', 'Either pass --region or --bbox')
     res.search_ids = None
 
-    click.echo(f'\nSearching for {collection} images between '
-               f'{start_date.strftime("%Y-%m-%d")} and {end_date.strftime("%Y-%m-%d")}...')
+    logger.info(f'\nSearching for {collection} images between '
+                f'{start_date.strftime("%Y-%m-%d")} and {end_date.strftime("%Y-%m-%d")}...')
 
     # create collection wrapper and search
     if collection in info.ee_to_gd:
@@ -309,12 +370,12 @@ def search(res, collection, start_date, end_date, bbox, region, valid_portion, o
         im_df = gd_collection.search(start_date, end_date, res.search_region)
 
     if im_df.shape[0] == 0:
-        click.echo('No images found\n')
+        logger.info('No images found\n')
     else:
         res.search_ids = im_df.ID.values.tolist()  # store ids for chaining
-        click.echo(f'{len(res.search_ids)} images found\n')
-        click.echo(f'Image property descriptions:\n\n{gd_collection.summary_key}\n')
-        click.echo(f'Search Results:\n\n{gd_collection.summary}')
+        logger.info(f'{len(res.search_ids)} images found\n')
+        logger.info(f'Image property descriptions:\n\n{gd_collection.summary_key}\n')
+        logger.info(f'Search Results:\n\n{gd_collection.summary}')
 
     # write results to file
     if output is not None:
@@ -331,7 +392,7 @@ cli.add_command(search)
 
 
 # Define download command options
-@click.command()
+@click.command(cls=_GeedimCommand)
 @image_id_option
 @bbox_option
 @region_option
@@ -369,7 +430,7 @@ cli.add_command(download)
 
 
 # Define export command options
-@click.command()
+@click.command(cls=_GeedimCommand)
 @image_id_option
 @bbox_option
 @region_option
@@ -404,7 +465,7 @@ cli.add_command(export)
 
 
 # Define composite command options
-@click.command()
+@click.command(cls=_GeedimCommand)
 @image_id_option
 @click.option(
     "-cm",
