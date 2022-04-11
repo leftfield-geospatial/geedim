@@ -26,7 +26,7 @@ import time
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from itertools import product
-from typing import Tuple, Dict
+from typing import Tuple, Dict, List
 
 import ee
 import numpy as np
@@ -120,68 +120,6 @@ def get_bounds(filename, expand=5):  # pragma coverage
     return image_bounds(src_bbox_wgs84, im.crs.to_epsg())
 
 
-def get_info(ee_image, min=True):
-    """
-    Retrieve Earth Engine image metadata
-
-    Parameters
-    ----------
-    ee_image : ee.Image
-               The image whose information to retrieve.
-    min : bool, optional
-          Retrieve the crs, crs_transform & scale corresponding to the band with the minimum (True) or maximum (False)
-          scale.(default: True)
-
-    Returns
-    -------
-    dict
-        Dictionary of image information with 'id', 'properties', 'bands', 'crs' and 'scale' keys.
-    """
-    # TODO: lose the need for ee_info below, perhaps change Image class to return ee_info with its .info property
-    gd_info = dict(id=None, properties={}, bands=[], crs=None, crs_transform=None, scale=None, dimensions=None,
-                   footprint=None, ee_info=None)
-    ee_info = ee_image.getInfo()  # retrieve image info from cloud
-    gd_info['ee_info'] = ee_info
-
-    if "id" in ee_info:
-        gd_info["id"] = ee_info["id"]
-
-    if "properties" in ee_info:
-        gd_info["properties"] = ee_info["properties"]
-        if 'system:footprint' in ee_info["properties"]:
-            gd_info['footprint'] = ee_info['properties']['system:footprint']
-
-    if "bands" in ee_info:
-        # get scale & crs corresponding to min/max scale band (exclude 'EPSG:4326' (composite/constant) bands)
-        band_df = pd.DataFrame(ee_info["bands"])
-        scales = pd.DataFrame(band_df["crs_transform"].tolist())[0].abs().astype(float)
-        band_df["scale"] = scales
-        filt_band_df = band_df[~((band_df.crs == "EPSG:4326") & (band_df.scale == 1))]
-        if filt_band_df.shape[0] > 0:
-            idx = filt_band_df.scale.idxmin() if min else filt_band_df.scale.idxmax()
-            sel_band_df = filt_band_df.loc[idx]
-            gd_info['crs'], gd_info['scale'] = sel_band_df[['crs', 'scale']]
-            if 'dimensions' in sel_band_df:
-                gd_info['dimensions'] = sel_band_df['dimensions'][::-1]
-            gd_info['crs_transform'] = rio.Affine(*sel_band_df['crs_transform'])
-            if ('origin' in sel_band_df) and not np.any(np.isnan(sel_band_df['origin'])):
-                gd_info['crs_transform'] *= rio.Affine.translation(*sel_band_df['origin'])
-
-
-        # populate band metadata
-        ee_coll_name = split_id(str(gd_info["id"]))[0]
-        if ee_coll_name in info.ee_to_gd:  # include SR band metadata if it exists
-            # TODO: don't assume all the bands are in band_df, there could have been a select
-            # use DataFrame to concat SR band metadata from collection_info with band IDs from the image
-            sr_band_list = info.collection_info[ee_coll_name]["bands"].copy()
-            sr_band_dict = {bdict['id']: bdict for bdict in sr_band_list}
-            gd_info["bands"] = [sr_band_dict[id] if id in sr_band_dict else dict(id=id) for id in band_df.id]
-        else:  # just use the image band IDs
-            gd_info["bands"] = band_df[["id"]].to_dict("records")
-
-    return gd_info
-
-
 class BaseImage:
     """
     Base class for encapsulating an EE image.
@@ -195,6 +133,7 @@ class BaseImage:
         if not isinstance(image, ee.Image):
             raise TypeError('image must be an instance of ee.Image')
         self._ee_image = image
+        self._ee_info = None
         self._ee_coll_name = ee.String(image.get('system:id')).split('/').slice(0, -1).join('/')
         self._info = None
         self._out_lock = threading.Lock()
@@ -206,21 +145,30 @@ class BaseImage:
         return self._ee_image
 
     @property
-    def info(self) -> Dict:
+    def ee_info(self) -> Dict:
         """The image metadata in a dict."""
-        if self._info is None:
-            self._info = get_info(self._ee_image)
-        return self._info
+        if self._ee_info is None:
+            self._ee_info = self._ee_image.getInfo()
+        return self._ee_info
+
+    @property
+    def properties(self) -> Dict:
+        return self.ee_info['properties'] if 'properties' in self.ee_info else None
 
     @property
     def id(self) -> str:
         """The EE image ID."""
-        return self.info["id"]
+        return self.ee_info["id"]
 
     @property
     def name(self) -> str:
         """The image name (the ID with slashes replaces by dashes)."""
-        return self.id.replace('/', '-')
+        return self.ee_info['id'].replace('/', '-')
+
+    @property
+    def _min_projection(self) -> Dict:
+        """A dict of the projection information corresponding to the minimum scale band."""
+        return self._get_projection(self.ee_info, min=True)
 
     @property
     def crs(self) -> str:
@@ -228,7 +176,7 @@ class BaseImage:
         The image CRS corresponding to minimum scale band, as an EPSG string.
         Will return None if the image has no fixed projection.
         """
-        return self.info["crs"]
+        return self._min_projection['crs']
 
     @property
     def scale(self) -> float:
@@ -236,50 +184,109 @@ class BaseImage:
         The scale (m) corresponding to minimum scale band.
         Will return None if the image has no fixed projection.
         """
-        return self.info["scale"]
+        return self._min_projection['scale']
 
     @property
     def dimensions(self) -> Tuple[int, int]:
         """
-        The (row, column) dimensions of this image.
+        The (row, column) dimensions of the minimim scale band.
         Will return None if the image has no fixed projection.
         """
-        return self.info["dimensions"]
+        return self._min_projection['dimensions']
 
     @property
-    def transform(self) -> rio.Affine:
+    def crs_transform(self) -> rio.Affine:
         """
-        The geo-transform of this image as a rasterio Affine transform.
+        The geo-transform of the minimim scale band, as a rasterio Affine transform.
         Will return None if the image has no fixed projection.
         """
-        return self.info["dimensions"]
+        return self._min_projection['crs_transform']
+
+    @property
+    def dtype(self) -> str:
+        """The minimal size data type required to represent the values in this image."""
+        return self._get_min_dtype(self.ee_info)
 
     @property
     def footprint(self) -> Dict:
         """A geojson polygon of the image extent."""
-        return self.info["footprint"]
+        if 'system:footprint' not in self.ee_info['properties']:
+            return None
+        return self.ee_info['properties']['system:footprint']
 
-    def _auto_dtype(self):
-        """Return the minimum (lowest memory) data type to represent the values of the encapsulated image."""
+    @property
+    def band_metadata(self) -> List:
+        """A list of dicts describing the image bands."""
+        return self._get_band_metadata(self.ee_info)
 
-        band_df = pd.DataFrame(self.info['ee_info']['bands'])
-        dtype_df = pd.DataFrame(band_df.data_type.tolist(), index=band_df.id)
-        if all(dtype_df.precision == 'int'):
-            dtype_min = dtype_df['min'].min()  # minimum image value
-            dtype_max = dtype_df['max'].max()  # maximum image value
+    @property
+    def info(self) -> Dict:
+        """All the BasicImage properties packed into a dictionary"""
+        return dict(id=self.id, properties=self.properties, crs=self.crs, scale=self.scale,
+                    crs_transform=self.crs_transform, dimensions=self.dimensions, footprint=self.footprint,
+                    dtype=self.dtype, bands=self.band_metadata)
 
-            # determine the number of integer bits required to represent the value range
-            bits = 0
-            for bound in [abs(dtype_max), abs(dtype_min)]:
-                bound_bits = 0 if bound == 0 else 2 ** np.ceil(np.log2(np.log2(abs(bound))))
-                bits += bound_bits
-            bits = min(max(bits, 8), 32)  # clamp bits to allowed values
-            dtype = f'{"u" if dtype_min >= 0 else ""}int{int(bits)}'
-        elif any(dtype_df.precision == 'double'):
-            dtype = 'float64'
-        else:
-            dtype = 'float32'
+    @staticmethod
+    def _get_projection(ee_info: Dict, min=True) -> Dict:
+        """
+        Return the projection information corresponding to the min/max scale band, for an EE image info dictionary
+        """
+        projection_info = dict(crs=None, crs_transform=None, dimensions=None, scale=None, dtype=None)
+        if 'bands' in ee_info:
+            # get scale & crs corresponding to min/max scale band (exclude 'EPSG:4326' (composite/constant) bands)
+            band_df = pd.DataFrame(ee_info['bands'])
+            scales = pd.DataFrame(band_df['crs_transform'].tolist())[0].abs().astype(float)
+            band_df['scale'] = scales
+            filt_band_df = band_df[~((band_df.crs == 'EPSG:4326') & (band_df.scale == 1))]
+            if filt_band_df.shape[0] > 0:
+                idx = filt_band_df.scale.idxmin() if min else filt_band_df.scale.idxmax()
+                sel_band_df = filt_band_df.loc[idx]
+                projection_info['crs'], projection_info['scale'] = sel_band_df[['crs', 'scale']]
+                if 'dimensions' in sel_band_df:
+                    projection_info['dimensions'] = sel_band_df['dimensions'][::-1]
+                projection_info['crs_transform'] = rio.Affine(*sel_band_df['crs_transform'])
+                if ('origin' in sel_band_df) and not np.any(np.isnan(sel_band_df['origin'])):
+                    projection_info['crs_transform'] *= rio.Affine.translation(*sel_band_df['origin'])
+        return projection_info
+
+    @staticmethod
+    def _get_min_dtype(ee_info: Dict):
+        """Return the minimal size data type for an EE image info dictionary"""
+        dtype = None
+        if 'bands' in ee_info:
+            band_df = pd.DataFrame(ee_info['bands'])
+            dtype_df = pd.DataFrame(band_df.data_type.tolist(), index=band_df.id)
+            if all(dtype_df.precision == 'int'):
+                dtype_min = dtype_df['min'].min()  # minimum image value
+                dtype_max = dtype_df['max'].max()  # maximum image value
+
+                # determine the number of integer bits required to represent the value range
+                bits = 0
+                for bound in [abs(dtype_max), abs(dtype_min)]:
+                    bound_bits = 0 if bound == 0 else 2 ** np.ceil(np.log2(np.log2(abs(bound))))
+                    bits += bound_bits
+                bits = min(max(bits, 8), 32)  # clamp bits to allowed values
+                dtype = f'{"u" if dtype_min >= 0 else ""}int{int(bits)}'
+            elif any(dtype_df.precision == 'double'):
+                dtype = 'float64'
+            else:
+                dtype = 'float32'
         return dtype
+
+    @staticmethod
+    def _get_band_metadata(ee_info) -> List[Dict,]:
+        """Return band metadata given an EE image info dict."""
+        ee_coll_name, _ = split_id(ee_info['id'])
+        band_df = pd.DataFrame(ee_info['bands'])
+        if ee_coll_name in info.collection_info:  # include SR band metadata if it exists
+            # TODO: don't assume all the bands are in band_df, there could have been a select
+            # use DataFrame to concat SR band metadata from collection_info with band IDs from the image
+            sr_band_list = info.collection_info[ee_coll_name]["bands"].copy()
+            sr_band_dict = {bdict['id']: bdict for bdict in sr_band_list}
+            band_metadata = [sr_band_dict[id] if id in sr_band_dict else dict(id=id) for id in band_df.id]
+        else:  # just use the image band IDs
+            band_metadata = band_df[["id"]].to_dict("records")
+        return band_metadata
 
     def _convert_dtype(self, image, dtype=None):
         """
@@ -300,8 +307,7 @@ class BaseImage:
         dtype: str
             The automatically selected dtype
         """
-        if dtype is None:
-            dtype = self._auto_dtype()
+        dtype = dtype or self.dtype
 
         conv_dict = dict(
             float32=ee.Image.toFloat,
@@ -362,10 +368,10 @@ class BaseImage:
         crs = crs or self.crs
         scale = scale or self.scale
 
-        if crs == "SR-ORG:6974":
+        if crs == 'SR-ORG:6974':
             raise ValueError(
-                "There is an earth engine bug exporting in SR-ORG:6974, specify another CRS: "
-                "https://issuetracker.google.com/issues/194561313"
+                'There is an earth engine bug exporting in SR-ORG:6974, specify another CRS: '
+                'https://issuetracker.google.com/issues/194561313'
             )
 
         ee_image = self._ee_image.resample(resampling) if resampling != _default_resampling else self._ee_image
@@ -385,13 +391,11 @@ class BaseImage:
         ee_image, dtype = self._prepare_for_export(**kwargs)
         # _prepare_for_export adjusts crs, dimensions, crs_transform etc so get the latest image info for populating
         # the rasterio profile
-        info = get_info(ee_image)
+        ee_info = ee_image.getInfo()
+        min_projection = self._get_projection(ee_info)  # get projection info to configure the download geotiff
 
-        # get transform, shape and band count of the prepared image to configure up the output image profile
-        # band_info = info['bands'][0]  # all bands are same crs & scale after prepare_for_export
-
-        shape = info['dimensions']
-        count = len(info['bands'])
+        shape = min_projection['dimensions']
+        count = len(ee_info['bands'])
         nodata_dict = dict(
             float32=self.float_nodata,  # see workaround note in Tile.download(...)
             float64=self.float_nodata,  # ditto
@@ -404,22 +408,9 @@ class BaseImage:
         )
         nodata = nodata_dict[dtype] if mask else None
         profile = dict(driver='GTiff', dtype=dtype, nodata=nodata, width=shape[1], height=shape[0], count=count,
-                       crs=CRS.from_string(info['crs']), transform=info['crs_transform'], compress='deflate',
-                       interleave='band', tiled=True)
+                       crs=CRS.from_string(min_projection['crs']), transform=min_projection['crs_transform'],
+                       compress='deflate', interleave='band', tiled=True)
         return ee_image, profile
-
-    def _build_overviews(self, dataset: rio.io.DatasetWriter, max_num_levels=8, min_ovw_pixels=256):
-        """Build internal overviews, downsampled by successive powers of 2, for an open rasterio dataset."""
-        if dataset.closed:
-            raise IOError('Image dataset is closed')
-
-        # limit overviews so that the highest level has at least 2**8=256 pixels along the shortest dimension,
-        # and so there are no more than 8 levels.
-        max_ovw_levels = int(np.min(np.log2(dataset.shape)))
-        min_level_shape_pow2 = int(np.log2(min_ovw_pixels))
-        num_ovw_levels = np.min([max_num_levels, max_ovw_levels - min_level_shape_pow2])
-        ovw_levels = [2 ** m for m in range(1, num_ovw_levels + 1)]
-        dataset.build_overviews(ovw_levels, Resampling.average)
 
     def _get_tile_shape(self, profile: Dict, max_download_size=33554432, max_grid_dimension=10000) -> Tuple[int, int]:
         """Return a tile shape for the encapsulated image that satisfies GEE download limits and is near-square."""
@@ -427,7 +418,7 @@ class BaseImage:
         image_shape = np.int64((profile['height'], profile['width']))
         dtype_size = np.dtype(profile['dtype']).itemsize
         if profile['dtype'].endswith('int8'):
-            dtype_size *= 2     # workaround for GEE overestimate of *int8 dtype download sizes
+            dtype_size *= 2  # workaround for GEE overestimate of *int8 dtype download sizes
 
         image_size = np.prod(image_shape) * profile['count'] * dtype_size
         # ceil_size is the worst case extra tile size due to np.ceil(image_shape / shape_num_tiles).astype('int')
@@ -468,6 +459,31 @@ class BaseImage:
         tile_shape = np.ceil(image_shape / shape_num_tiles).astype('int')
         tile_shape[tile_shape > max_grid_dimension] = max_grid_dimension
         return tuple(tile_shape.tolist())
+
+    def _build_overviews(self, dataset: rio.io.DatasetWriter, max_num_levels=8, min_ovw_pixels=256):
+        """Build internal overviews, downsampled by successive powers of 2, for an open rasterio dataset."""
+        if dataset.closed:
+            raise IOError('Image dataset is closed')
+
+        # limit overviews so that the highest level has at least 2**8=256 pixels along the shortest dimension,
+        # and so there are no more than 8 levels.
+        max_ovw_levels = int(np.min(np.log2(dataset.shape)))
+        min_level_shape_pow2 = int(np.log2(min_ovw_pixels))
+        num_ovw_levels = np.min([max_num_levels, max_ovw_levels - min_level_shape_pow2])
+        ovw_levels = [2 ** m for m in range(1, num_ovw_levels + 1)]
+        dataset.build_overviews(ovw_levels, Resampling.average)
+
+    def _write_metadata(self, dataset: rio.io.DatasetWriter):
+        """Write GEE and geedim image metadata to an open rasterio dataset"""
+        if dataset.closed:
+            raise IOError('Image dataset is closed')
+
+        dataset.update_tags(**self.properties)
+        # populate band metadata
+        for band_i, band_info in enumerate(self.band_metadata):
+            if 'id' in band_info:
+                dataset.set_band_description(band_i + 1, band_info['id'])
+            dataset.update_tags(band_i + 1, **band_info)
 
     def tiles(self, image, profile):
         """
@@ -642,9 +658,5 @@ class BaseImage:
             # TODO parse specific expections like ee.ee_exception.EEException: "Total request size (55039924 bytes) must be less than or equal to 50331648 bytes."
 
             # populate GeoTIFF metadata and build overviews
-            out_ds.update_tags(**self.info['properties'])
-            for band_i, band_info in enumerate(self.info['bands']):
-                if 'id' in band_info:
-                    out_ds.set_band_description(band_i + 1, band_info['id'])
-                out_ds.update_tags(band_i + 1, **band_info)
+            self._write_metadata(out_ds)
             self._build_overviews(out_ds)
