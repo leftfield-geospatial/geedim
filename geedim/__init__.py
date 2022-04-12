@@ -16,11 +16,14 @@
 import json
 import os
 import pathlib
+from typing import Union, List
 
 import ee
-from .masked_image import LandsatImage, Sentinel2ClImage, ModisNbarImage
-from .image import BaseImage, split_id
+
 from . import info
+from .collection import MaskedCollection, BaseCollection
+from .image import BaseImage, split_id
+from .masked_image import LandsatImage, Sentinel2ClImage, ModisNbarImage
 
 if '__file__' in globals():
     root_path = pathlib.Path(__file__).absolute().parents[1]
@@ -56,7 +59,8 @@ def _ee_init():
         else:
             ee.Initialize()
 
-def image_from_id(image_id: str, **kwargs):
+
+def image_from_id(image_id: str, **kwargs) -> BaseImage:
     ee_coll_name, _ = split_id(image_id)
 
     masked_image_dict = {
@@ -76,11 +80,37 @@ def image_from_id(image_id: str, **kwargs):
         return BaseImage(ee.Image(image_id))
 
 
-def collection_from_list(image_list: list, **kwargs):
+def parse_im_list(im_list, **kwargs) -> List[BaseImage,]:
+    """ Return a list of Base/MaskedImage objects, given download/export parameters """
+    _im_list = []
+
+    for im_obj in im_list:
+        if isinstance(im_obj, str):
+            _im_list.append(image_from_id(im_obj, **kwargs))
+        elif isinstance(im_obj, BaseImage):
+            _im_list.append(im_obj)
+        else:
+            raise ValueError(f'Unknown image object type: {type(im_obj)}')
+    return _im_list
+
+
+def collection_from_list(image_list: list, **kwargs) -> Union[BaseCollection, MaskedCollection]:
+    """Create a Base/MaskedCollection from a list of image ID's and/or Base/MaskedImage objects."""
     ee_image_list = []
-    list_types = [type[image_obj] for image_obj in image_list]
+    ee_coll_list = []
     for image_obj in image_list:
         if isinstance(image_obj, str):
-            ee_image_list.append(image_from_id(image_obj, **kwargs))
-        elif isinstance(ee.Image, str):
-            ee_image_list.append(image_obj)
+            ee_coll_name = split_id(image_obj)[0]
+            ee_coll_list.append(ee_coll_name)
+            ee_image_list.append(image_from_id(image_obj, **kwargs).ee_image)
+        elif isinstance(image_obj, BaseImage):
+            ee_coll_name = image_obj.collection
+            ee_coll_list.append(ee_coll_name)
+            ee_image_list.append(image_obj.ee_image)
+        else:
+            raise TypeError(f'Unknown image object type: {type(image_obj)}')
+
+    # TODO if there is a BaseImage in the list, but with collection in info.collection_info, then masked==True. But
+    #  we don't know if this image has genuinely been masked.
+    masked = [ee_coll_name in info.collection_info for ee_coll_name in ee_coll_list]
+    return MaskedCollection.from_ee_list(ee_image_list) if all(masked) else BaseCollection.from_ee_list(ee_image_list)
