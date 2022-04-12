@@ -41,10 +41,6 @@ class BaseCollection:
         ee_coll_name : str
                        EE image collection ID
         """
-        if ee_coll_name in info.collection_info:
-            logger.warning(f'You are instantiating BaseCollection with {ee_coll_name}, but could use MaskedCollection, '
-                           f'which supports cloud/shadow free compositing.')
-
         self._ee_coll_name = ee_coll_name
         self._collection_info = info.collection_info['*']
         self._ee_collection = ee.ImageCollection(ee_coll_name)

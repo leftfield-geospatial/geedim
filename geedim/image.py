@@ -18,7 +18,6 @@
 # Functions to download and export Earth Engine images
 import collections
 import logging
-import multiprocessing
 import os
 import pathlib
 import threading
@@ -142,7 +141,7 @@ class BaseImage:
         self._min_dtype = None
         self._ee_coll_name = ee.String(ee_image.get('system:id')).split('/').slice(0, -1).join('/')
         self._out_lock = threading.Lock()
-        self._num_threads = num_threads or max(multiprocessing.cpu_count(), 4)
+        self._max_threads = num_threads or min(32, (os.cpu_count() or 1) + 4)
 
     @property
     def ee_image(self) -> ee.Image:
@@ -158,7 +157,7 @@ class BaseImage:
 
     @property
     def ee_info(self) -> Dict:
-        """The image metadata in a dict."""
+        """The EE image metadata in a dict."""
         if self._ee_info is None:
             self._ee_info = self._ee_image.getInfo()
         return self._ee_info
@@ -245,6 +244,14 @@ class BaseImage:
         """All the BasicImage properties packed into a dictionary"""
         return dict(id=self.id, properties=self.properties, footprint=self.footprint, bands=self.band_metadata,
                     **self.min_projection)
+
+    @staticmethod
+    def human_size(bytes, units=['bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB']):
+        """
+        Returns a human readable string representation of bytes -
+        see https://stackoverflow.com/questions/1094841/get-human-readable-version-of-file-size
+        """
+        return f'{bytes:.2f} {units[0]}' if bytes < 1024 else BaseImage.human_size(bytes/1000, units[1:])
 
     @staticmethod
     def _get_projection(ee_info: Dict, min=True) -> Dict:
@@ -466,21 +473,7 @@ class BaseImage:
         tile_shape = np.ceil(image_shape / shape_num_tiles).astype('int')
         tile_shape[tile_shape > max_grid_dimension] = max_grid_dimension
         tile_shape = tuple(tile_shape.tolist())
-        # logger.debug(f'Download tile shape: {tile_shape}')
-        download_size = int(num_tiles * np.prod(tile_shape) * exp_image.count * dtype_size)
-
-        def human_size(bytes, units=['bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB']):
-            """
-            Returns a human readable string representation of bytes -
-            see https://stackoverflow.com/questions/1094841/get-human-readable-version-of-file-size
-            """
-            return f'{bytes:.1f}{units[0]}' if bytes < 1024 else human_size(bytes >> 10, units[1:])
-
-        logger.info(f'Raw download size: {human_size(download_size)}')
-        if download_size > 1 << 30:
-            logger.warning('Consider adjusting the `scale`, `dtype` and/or `region` parameters to reduce the download '
-                           'size.')
-        return tile_shape, num_tiles, download_size
+        return tile_shape, num_tiles
 
     def _build_overviews(self, dataset: rio.io.DatasetWriter, max_num_levels=8, min_ovw_pixels=256):
         """Build internal overviews, downsampled by successive powers of 2, for an open rasterio dataset."""
@@ -651,33 +644,59 @@ class BaseImage:
             else:
                 raise FileExistsError(f'{filename} exists')
 
-            #
+        # prepare (resample, convert, reproject) the image for download
         exp_image, profile = self._prepare_for_download(**kwargs)
-        session = _requests_retry_session(5, status_forcelist=[500, 502, 503, 504])
 
-        tile_shape, num_tiles, download_size = self._get_tile_shape(exp_image)
+        # get the dimensions of an image tile that will satisfy GEE download limits
+        tile_shape, num_tiles = self._get_tile_shape(exp_image)
+        # find raw size of the download data (less than the actual download size as the image data is zipped in a
+        # compressed geotiff)
+        dtype_size = np.dtype(exp_image.dtype).itemsize
+        raw_download_size = int(np.prod(exp_image.shape) * exp_image.count * dtype_size)
+        if logger.getEffectiveLevel() <= logging.DEBUG:
+            raw_tile_size = int(np.prod(tile_shape) * exp_image.count * dtype_size)
+            logger.debug(f'{filename.name}:')
+            logger.debug(f'Uncompressed size: {self.human_size(raw_download_size)}')
+            logger.debug(f'Num. tiles: {num_tiles}')
+            logger.debug(f'Tile shape: {tile_shape}')
+            logger.debug(f'Tile size: {self.human_size(int(raw_tile_size))}')
+
+        if raw_download_size > 1e9:
+            # warn if the download is large (>1GB)
+            logger.warning(f'Consider adjusting `region`, `scale` and/or `dtype` to reduce the {filename.name}'
+                           f' download size (raw: {self.human_size(raw_download_size)}).')
+
         tiles = self.tiles(exp_image, tile_shape=tile_shape)
-        bar_format = '{desc}: |{bar}| {n:4.1f}/{total_fmt} tile(s) [{percentage:5.1f}%] in {elapsed:>5s} (eta: {remaining:>5s})'
-        bar = tqdm(desc=filename.name, total=num_tiles, bar_format=bar_format, dynamic_ncols=True)
+        if False:
+            bar_format = '{percentage:5.1f}% of {desc}: |{bar}| {n:4.1f}/{total_fmt} tile(s) in {elapsed:>5s} (eta: {remaining:>5s})'
+            bar = tqdm(desc=desc, total=num_tiles, bar_format=bar_format, dynamic_ncols=True)
+        else:
+            # configure the progress bar to monitor raw/uncompressed download size
+            bar_format = ('{desc}: |{bar}| {n_fmt}/{total_fmt} (raw) [{percentage:5.1f}%] in {elapsed:>5s} '
+                          '(eta: {remaining:>5s})')
+            bar = tqdm(desc=filename.name, total=raw_download_size, bar_format=bar_format, dynamic_ncols=True,
+                       unit_scale=True, unit='B')
+
         redir_tqdm = logging_redirect_tqdm([logging.getLogger(__package__)])
         out_ds = rio.open(filename, 'w', **profile)
+        session = _requests_retry_session(5, status_forcelist=[500, 502, 503, 504])
         warnings.filterwarnings('ignore', category=TqdmWarning)
 
         with redir_tqdm, rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), out_ds, bar:
             def download_tile(tile):
                 """Download a tile and write into the destination GeoTIFF."""
-                tile_array = tile.download(session, bar)
+                tile_array = tile.download(session=session, bar=bar)
                 with self._out_lock:
                     out_ds.write(tile_array, window=tile.window)
 
-            with ThreadPoolExecutor(max_workers=self._num_threads) as executor:
+            with ThreadPoolExecutor(max_workers=self._max_threads) as executor:
                 # Run the tile downloads in a thread pool
                 futures = [executor.submit(download_tile, tile) for tile in tiles]
                 try:
                     for future in as_completed(futures):
                         future.result()
                 except:
-                    logger.info('Cancelling download ...')
+                    logger.info('Cancelling...')
                     executor.shutdown(wait=False, cancel_futures=True)
                     raise
             # TODO parse specific expections like ee.ee_exception.EEException: "Total request size (55039924 bytes) must be less than or equal to 50331648 bytes."

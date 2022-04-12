@@ -63,7 +63,15 @@ class Tile:
         """The rasterio window into the source image."""
         return self._window
 
-    def download(self, session=None, bar: tqdm = None):
+    def _get_download_url_response(self, session=None):
+        """Get tile download url and response."""
+        session = session if session else requests
+        url = self._exp_image.ee_image.getDownloadURL(
+            dict(crs=self._exp_image.crs, crs_transform=tuple(self._transform)[:6], dimensions=self._shape[::-1],
+                 filePerBand=False, fileFormat='GeoTIFF'))
+        return session.get(url, stream=True)
+
+    def download(self, session=None, response=None, bar: tqdm = None):
         """
 
         Parameters
@@ -78,24 +86,26 @@ class Tile:
         array: numpy.ndarray
             The tile pixel data in a 3D array (bands down the first dimension).
         """
-        # TODO: get image crs from DownloadImage where it is found for the output dataset, rather than reget it here
-        session = session if session else requests
 
-        # get image download url
-        url = self._exp_image.ee_image.getDownloadURL(
-            dict(crs=self._exp_image.crs, crs_transform=tuple(self._transform)[:6], dimensions=self._shape[::-1],
-                 filePerBand=False, fileFormat='GeoTIFF'))
+        # get image download url and response
+        if response is None:
+            response = self._get_download_url_response(session=session)
+
+        # find raw and actual download sizes
+        dtype_size = np.dtype(self._exp_image.dtype).itemsize
+        raw_download_size = float(np.prod(self._shape) * self._exp_image.count * dtype_size)
+        download_size = int(response.headers.get('content-length', 0))
+
+        if download_size == 0 or not response.ok:
+            raise IOError(response.json())
 
         # download zip into buffer
         zip_buffer = BytesIO()
-        resp = session.get(url, stream=True)
-        download_size = int(resp.headers.get('content-length', 0))
-        if download_size == 0 or not resp.ok:
-            raise IOError(resp.json())
-        for data in resp.iter_content(chunk_size=10240):
+        for data in response.iter_content(chunk_size=10240):
             zip_buffer.write(data)
             if bar is not None:
-                bar.update(len(data) / download_size)
+                # update with raw download progress
+                bar.update(raw_download_size * (len(data) / download_size))
         zip_buffer.flush()
 
         # extract geotiff from zipped buffer into another buffer

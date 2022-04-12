@@ -174,8 +174,6 @@ def _export_download(res=_CmdChainResults(), do_download=True, **kwargs):
     if region is None:
         if res.comp_image is not None:
             raise click.BadOptionUsage('region', 'One of --region or --box is required for a composite image.')
-        else:
-            logger.info('No region specified, using the image footprint.')
 
     # interpret the CRS
     crs = _interpret_crs(params.crs)
