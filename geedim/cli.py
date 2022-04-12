@@ -13,7 +13,6 @@
     See the License for the specific language governing permissions and
     limitations under the License.
 """
-import importlib
 import json
 import logging
 import os
@@ -22,11 +21,13 @@ import sys
 from collections import namedtuple
 
 import click
+import rasterio.crs as rio_crs
 from rasterio.dtypes import dtype_ranges
+from rasterio.errors import CRSError
 
 import geedim.image
 from geedim import collection as coll_api
-from geedim import info, masked_image, _ee_init, image_from_id, version
+from geedim import info, masked_image, _ee_init, parse_im_list, version, collection_from_list
 from geedim.image import BaseImage
 
 logger = logging.getLogger(__name__)
@@ -65,9 +66,8 @@ class _CmdChainResults(object):
     """ Class to hold results for command chaining """
 
     def __init__(self):
-        self.search_ids = None
-        self.search_region = None
-        self.comp_image = None
+        self.image_list = []
+        self.region = None
 
 
 def _configure_logging(verbosity):
@@ -93,110 +93,94 @@ def _collection_cb(ctx, param, value):
     return value
 
 
-def _extract_region(region=None, bbox=None, region_buf=10):
-    """ Return geojson dict from region or bbox parameters """
+def _image_id_cb(ctx, param, value):
+    """click callback to add image IDs to chain object"""
+    ctx.obj.image_list += list(value)
+    return value
 
-    if (bbox is None or len(bbox) == 0) and (region is None):
-        return None
 
-    if isinstance(region, dict):
-        region_dict = region
-    elif region is not None:  # read region file/string
-        region = pathlib.Path(region)
-        if not region.exists():
-            raise click.BadParameter(f'{region} does not exist.')
-        if 'json' in region.suffix:
-            with open(region) as f:
-                region_dict = json.load(f)
-        elif importlib.util.find_spec("rasterio"):  # rasterio is installed, extract region from raster file
-            region_dict, _ = geedim.image.get_bounds(region, expand=region_buf)
-        else:
-            raise click.BadParameter(f'{region} is not a valid geojson or raster file.')
-    else:  # convert bbox to geojson
-        xmin, ymin, xmax, ymax = bbox
+def _crs_cb(ctx, param, crs):
+    """click callback to validate and parse the CRS."""
+    if crs is not None:
+        try:
+            wkt_fn = pathlib.Path(crs)
+            if wkt_fn.exists():  # read WKT from file, if it exists
+                with open(wkt_fn, 'r') as f:
+                    crs = f.read()
+
+            crs = rio_crs.CRS.from_string(crs).to_wkt()
+        except CRSError as ex:
+            raise click.BadParameter(f'Invalid CRS value: {crs}.\n {str(ex)}', param=param)
+    return crs
+
+
+def _bbox_cb(ctx, param, value):
+    """click callback to validate and parse --bbox"""
+    if value is None or len(value) == 0 or isinstance(value, dict):
+        pass
+    elif isinstance(value, tuple) and len(value) == 4:  # --bbox
+        xmin, ymin, xmax, ymax = value
         coordinates = [[xmax, ymax], [xmax, ymin], [xmin, ymin], [xmin, ymax], [xmax, ymax]]
-        region_dict = dict(type='Polygon', coordinates=[coordinates])
+        value = dict(type='Polygon', coordinates=[coordinates])
+    else:
+        raise click.BadParameter(f'Invalid bbox: {value}.', param=param)
+    # if value is not None:
+    #     ctx.obj.region = value
+    return value
 
-    return region_dict
 
-
-def _export_im_list(im_list, path='', wait=True, overwrite=False, do_download=True, **kwargs):
-    """ Export/download image(s) """
-    export_tasks = []
-
-    for im_dict in im_list:
-        if do_download:
-            filename = pathlib.Path(path).joinpath(im_dict['image'].name + '.tif')
-            im_dict['image'].download(filename, overwrite=overwrite, **kwargs)
+def _region_cb(ctx, param, value):
+    """click callback to validate and parse --region"""
+    if value is None or len(value) == 0 or isinstance(value, dict):
+        pass
+    elif isinstance(value, str):  # read region file/string
+        filename = pathlib.Path(value)
+        if not filename.exists():
+            raise click.BadParameter(f'{filename} does not exist.', param=param)
+        if 'json' in filename.suffix:
+            with open(filename) as f:
+                value = json.load(f)
         else:
-            task = im_dict['image'].export(im_dict['image'].name, folder=path, wait=False, **kwargs)
+            value, _ = geedim.image.get_bounds(value, expand=10)
+    else:
+        raise click.BadParameter(f'Invalid region: {value}.', param=param)
+    # if value is not None:
+    #     ctx.obj.region = value
+    return value
+
+
+def _export_download(res=_CmdChainResults(), wait=False, **kwargs):
+    """ Helper function to execute export/download commands """
+    # TODO: how can we make kwargs passing to download/export and parse_im_list neater and more intuitive
+    arg_tuple = namedtuple('ArgTuple', kwargs)
+    params = arg_tuple(**kwargs)
+
+    res.image_list += list(params.image_id)
+    if len(res.image_list) == 0:
+        raise click.BadOptionUsage('image_id',
+                                   'Either pass --id, or chain this command with a successful `search` or `composite`')
+
+    logger.info('\nDownloading:\n') if params.do_download else logger.info('\nExporting:\n')
+    image_list = parse_im_list(res.image_list, mask=params.mask, cloud_dist=params.cloud_dist)
+
+    res.region = params.region or params.bbox or res.region  # TODO in a callback possible?
+    if res.region is None and any([not im.has_fixed_projection for im in image_list]):
+        raise click.BadOptionUsage('region', 'One of --region or --box is required for a composite image.')
+
+    export_tasks = []
+    common_kwargs = {k: kwargs[k] for k in ['crs', 'scale', 'resampling', 'dtype']}
+    for image_obj in image_list:
+        if params.do_download:
+            filename = pathlib.Path(params.download_dir).joinpath(image_obj.name + '.tif')
+            image_obj.download(filename, overwrite=params.overwrite, region=res.region, **common_kwargs)
+        else:
+            task = image_obj.export(image_obj.name, folder=params.drive_folder, wait=False, region=res.region,
+                                    **common_kwargs)
             export_tasks.append(task)
 
     if wait:
         for task in export_tasks:
             BaseImage.monitor_export_task(task)
-
-
-def _create_im_list(ids, **kwargs):
-    """ Return a list of *Image objects and names, given download/export CLI parameters """
-    im_list = []
-
-    for im_id in ids:
-        im_list.append(dict(image=image_from_id(im_id, **kwargs)))
-
-    return im_list
-
-
-def _interpret_crs(crs):
-    """ return a CRS string from WKT file / EPSG string. """
-    if crs is not None:
-        wkt_fn = pathlib.Path(crs)
-        if wkt_fn.exists():  # read WKT from file, if it exists
-            with open(wkt_fn, 'r') as f:
-                crs = f.read()
-
-        if importlib.util.find_spec("rasterio"):  # clean WKT with rasterio if it is installed
-            from rasterio import crs as rio_crs
-            crs = rio_crs.CRS.from_string(crs).to_wkt()
-    return crs
-
-
-def _export_download(res=_CmdChainResults(), do_download=True, **kwargs):
-    """ Helper function to execute export/download commands """
-
-    arg_tuple = namedtuple('ArgTuple', kwargs)
-    params = arg_tuple(**kwargs)
-
-    # get the download/export region
-    region = _extract_region(region=params.region, bbox=params.bbox) or res.search_region
-
-    logger.info('\nDownloading:\n') if do_download else logger.info('\nExporting:\n')
-    if region is None:
-        if res.comp_image is not None:
-            raise click.BadOptionUsage('region', 'One of --region or --box is required for a composite image.')
-
-    # interpret the CRS
-    crs = _interpret_crs(params.crs)
-
-    # create a list of Image objects and names
-    im_list = []
-    if res.comp_image is not None:  # download/export chained with composite command
-        im_list.append(dict(image=res.comp_image))
-    elif res.search_ids is not None:  # download/export chained with search command
-        im_list = _create_im_list(res.search_ids, mask=params.mask, cloud_dist=params.cloud_dist)
-    elif len(params.image_id) > 0:  # download/export image ids specified on command line
-        im_list = _create_im_list(params.image_id, mask=params.mask, cloud_dist=params.cloud_dist)
-    else:
-        raise click.BadOptionUsage('image_id',
-                                   'Either pass --id, or chain this command with a successful `search` or `composite`')
-
-    # download/export the image list
-    if do_download:
-        _export_im_list(im_list, region=region, path=params.download_dir, crs=crs, scale=params.scale,
-                        resampling=params.resampling, overwrite=params.overwrite, dtype=params.dtype, do_download=True)
-    else:
-        _export_im_list(im_list, region=region, path=params.drive_folder, crs=crs, scale=params.scale,
-                        resampling=params.resampling, dtype=params.dtype, do_download=False, wait=params.wait)
 
 
 """ Define click options that are common to more than one command """
@@ -208,14 +192,16 @@ bbox_option = click.option(
     help="Region defined by bounding box co-ordinates in WGS84 (xmin, ymin, xmax, ymax).",
     required=False,
     default=None,
+    callback=_bbox_cb,
 )
 region_option = click.option(
     "-r",
     "--region",
-    type=click.Path(exists=True, file_okay=True, dir_okay=False, writable=False, readable=True, resolve_path=True,
-                    allow_dash=False),
+    type=click.Path(exists=True, dir_okay=False),
     help="Region defined by geojson or raster file.",
     required=False,
+    default=None,
+    callback=_region_cb,
 )
 image_id_option = click.option(
     "-i",
@@ -225,6 +211,7 @@ image_id_option = click.option(
     help="Earth engine image ID(s).",
     required=False,
     multiple=True,
+    # callback=_image_id_cb,
 )
 crs_option = click.option(
     "-c",
@@ -233,6 +220,7 @@ crs_option = click.option(
     default=None,
     help="Reproject image(s) to this CRS (EPSG string or path to text file containing WKT). \n[default: source CRS]",
     required=False,
+    callback=_crs_cb,
 )
 scale_option = click.option(
     "-s",
@@ -324,10 +312,10 @@ def cli(ctx, verbose, quiet):
 @click.option(
     "-r",
     "--region",
-    type=click.Path(exists=True, file_okay=True, dir_okay=False, writable=False, readable=True, resolve_path=True,
-                    allow_dash=False),
+    type=click.Path(exists=True, dir_okay=False),
     help="Region defined by geojson or raster file. [One of --bbox or --region is required]",
     required=False,
+    callback=_region_cb,
 )
 @click.option(
     "-vp",
@@ -341,8 +329,7 @@ def cli(ctx, verbose, quiet):
 @click.option(
     "-o",
     "--output",
-    type=click.Path(exists=False, file_okay=True, dir_okay=False, writable=True, readable=False, resolve_path=True,
-                    allow_dash=False),
+    type=click.Path(exists=False, dir_okay=False, writable=True),
     default=None,
     help="Write results to this filename, file type inferred from extension: [.csv|.json]",
     required=False,
@@ -351,10 +338,9 @@ def cli(ctx, verbose, quiet):
 def search(res, collection, start_date, end_date, bbox, region, valid_portion, output):
     """ Search for images """
 
-    res.search_region = _extract_region(region=region, bbox=bbox)  # store region for chaining
-    if res.search_region is None:
+    res.region = region or bbox
+    if not res.region:
         raise click.BadOptionUsage('region', 'Either pass --region or --bbox')
-    res.search_ids = None
 
     logger.info(f'\nSearching for {collection} images between '
                 f'{start_date.strftime("%Y-%m-%d")} and {end_date.strftime("%Y-%m-%d")}...')
@@ -362,16 +348,16 @@ def search(res, collection, start_date, end_date, bbox, region, valid_portion, o
     # create collection wrapper and search
     if collection in info.ee_to_gd:
         gd_collection = coll_api.MaskedCollection(collection)
-        im_df = gd_collection.search(start_date, end_date, res.search_region, valid_portion=valid_portion)
+        im_df = gd_collection.search(start_date, end_date, res.region, valid_portion=valid_portion)
     else:
         gd_collection = coll_api.BaseCollection(collection)
-        im_df = gd_collection.search(start_date, end_date, res.search_region)
+        im_df = gd_collection.search(start_date, end_date, res.region)
 
     if im_df.shape[0] == 0:
         logger.info('No images found\n')
     else:
-        res.search_ids = im_df.ID.values.tolist()  # store ids for chaining
-        logger.info(f'{len(res.search_ids)} images found\n')
+        res.image_list += im_df.ID.values.tolist()  # store ids for chaining
+        logger.info(f'{im_df.shape[0]} images found\n')
         logger.info(f'Image property descriptions:\n\n{gd_collection.summary_key}\n')
         logger.info(f'Search Results:\n\n{gd_collection.summary}')
 
@@ -397,7 +383,7 @@ cli.add_command(search)
 @click.option(
     "-dd",
     "--download-dir",
-    type=click.Path(exists=True, file_okay=False, dir_okay=True, writable=True, readable=False, resolve_path=True),
+    type=click.Path(exists=True, file_okay=False, dir_okay=True, writable=True),
     default=os.getcwd(),
     help="Download image file(s) to this directory.  [default: cwd]",
     required=False,
@@ -419,7 +405,7 @@ cli.add_command(search)
 )
 @click.pass_context
 def download(ctx, image_id, bbox, region, download_dir, crs, scale, dtype, mask, resampling, cloud_dist,
-             overwrite=False):
+             overwrite):
     """Download image(s), without size limits and including metadata, and with optional cloud and shadow masking."""
     _export_download(res=ctx.obj, do_download=True, **ctx.params)
 
@@ -488,16 +474,13 @@ def composite(res, image_id, mask, method, resampling, cloud_dist):
     """ Create a cloud-free composite image """
 
     # get image ids from command line or chained search command
-    image_id = list(image_id)
-    if image_id is None or len(image_id) == 0:
-        if res.search_ids is None:
-            raise click.BadOptionUsage('image_id', 'Either pass --id, or chain this command with a successful `search`')
-        else:
-            image_id = res.search_ids
-            res.search_ids = None
+    res.image_list += list(
+        image_id)  # TODO: is it possible to do this in image_id callback, w/o combining chained image_id's together?
+    if len(res.image_list) == 0:
+        raise click.BadOptionUsage('image_id', 'Either pass --id, or chain this command with a successful `search`')
 
-    gd_collection = coll_api.MaskedCollection.from_ids(image_id, mask=mask, cloud_dist=cloud_dist)
-    res.comp_image = gd_collection.composite(method=method, resampling=resampling)
+    gd_collection = collection_from_list(res.image_list, mask=mask, cloud_dist=cloud_dist)
+    res.image_list = [gd_collection.composite(method=method, resampling=resampling)]
 
 
 cli.add_command(composite)
