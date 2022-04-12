@@ -22,7 +22,7 @@ import logging
 import ee
 import pandas as pd
 
-from geedim import masked_image, info, medoid, image, image_from_id
+from geedim import masked_image, info, medoid, image
 from geedim.image import _default_resampling, BaseImage, split_id
 from geedim.masked_image import MaskedImage
 
@@ -42,7 +42,10 @@ class BaseCollection:
                        EE image collection ID
         """
         self._ee_coll_name = ee_coll_name
-        self._collection_info = info.collection_info['*']
+        if ee_coll_name in info.collection_info:
+            self._collection_info = info.collection_info[ee_coll_name]
+        else:
+            self._collection_info = info.collection_info['*']
         self._ee_collection = ee.ImageCollection(ee_coll_name)
 
         self._summary_key_df = pd.DataFrame(self._collection_info["properties"])  # key to metadata summary
@@ -74,6 +77,31 @@ class BaseCollection:
         # build and wrap an ee.ImageCollection of ee.Image's
         im_list = ee.List([ee.Image(im_id) for im_id in image_ids])
         gd_collection._ee_collection = ee.ImageCollection(im_list)
+        return gd_collection
+
+    @classmethod
+    def from_ee_list(cls, image_list, ee_coll_name=None):
+        """
+        Create collection from image IDs
+
+        Parameters
+        ----------
+        image_list : list(ee.Image)
+                    A list of the ee.Image's (must all be from the same collection)
+        ee_coll_name: str, optional
+            The EE collection ID to which the images belong.
+
+        Returns
+        -------
+        collection: cls
+        """
+        if ee_coll_name is None:
+            id = image_list[0].get('system:id').getInfo()
+            ee_coll_name, _ = split_id(id)
+
+        # create the collection object
+        gd_collection = cls(ee_coll_name)
+        gd_collection._ee_collection = ee.ImageCollection(ee.List(image_list))
         return gd_collection
 
     @property
@@ -260,13 +288,8 @@ class MaskedCollection(BaseCollection):
         if ee_coll_name not in info.collection_info:
             raise ValueError(f"Unsupported collection: {ee_coll_name}")
         BaseCollection.__init__(self, ee_coll_name)
-        self._ee_coll_name = ee_coll_name
-        self._collection_info = info.collection_info[ee_coll_name]
         self._image_class = masked_image.get_class(ee_coll_name)  # geedim.masked_image.*Image class for this collection
         self._ee_collection = None  # the wrapped ee.ImageCollection
-
-        self._summary_key_df = pd.DataFrame(self._collection_info["properties"])  # key to metadata summary
-        self._summary_df = None  # summary of the image metadata
 
     @classmethod
     def from_ids(cls, image_ids, mask=masked_image.MaskedImage._default_params['mask'],
@@ -394,7 +417,7 @@ class MaskedCollection(BaseCollection):
             raise ValueError(f"Unsupported composite method: {method}")
 
         # populate image metadata with info on component images
-        comp_image = comp_image.set("COMPONENT_IMAGES", self.summary)
+        comp_image = comp_image.set("COMPONENT_IMAGES", '\n' + self.summary)
 
         # construct an ID for the composite
         start_date = self.summary_df.DATE.iloc[0].strftime("%Y_%m_%d")
@@ -402,59 +425,8 @@ class MaskedCollection(BaseCollection):
 
         comp_id = f"{self._ee_coll_name}/{start_date}-{end_date}-{method.upper()}_COMP"
         comp_image = comp_image.set("system:id", comp_id)
+        comp_image = comp_image.set("system:time_start", self.summary_df.DATE.iloc[0].timestamp() * 1000)
         # TODO: persist source CRS and scale by reprojecting?
-
-        return image.BaseImage(comp_image)
-
-    def _get_summary_df(self, ee_collection):
-        """
-        Retrieve a summary of collection image metadata.
-
-        Parameters
-        ----------
-        ee_collection : ee.ImageCollection
-                        Filtered image collection whose image metadata to retrieve
-
-        Returns
-        -------
-        : pandas.DataFrame
-        pandas.DataFrame with a row of metadata for each image)
-        """
-
-        if ee_collection is None:
-            return pd.DataFrame([], columns=self._summary_key_df.ABBREV)  # return empty dataframe
-
-        # server side aggregation of relevant properties of ee_collection images
-        init_list = ee.List([])
-
-        def aggregrate_props(ee_image, prop_list):
-            all_props = ee_image.propertyNames()
-            prop_dict = ee.Dictionary()
-            for prop_key in self._summary_key_df.PROPERTY.values:
-                prop_dict = prop_dict.set(
-                    prop_key, ee.Algorithms.If(
-                        all_props.contains(prop_key), ee_image.get(prop_key), ee.String("None"))
-                )
-            return ee.List(prop_list).add(prop_dict)
-
-        # retrieve list of dicts of collection image properties (the only call to getInfo() in MaskedCollection)
-        im_prop_list = ee.List(ee_collection.iterate(aggregrate_props, init_list)).getInfo()
-
-        if len(im_prop_list) == 0:
-            return pd.DataFrame([], columns=self._summary_key_df.ABBREV)  # return empty dataframe
-
-        # Convert ee.Date to python datetime
-        start_time_key = "system:time_start"
-        for i, prop_dict in enumerate(im_prop_list):
-            if start_time_key in prop_dict:
-                prop_dict[start_time_key] = datetime.utcfromtimestamp(prop_dict[start_time_key] / 1000)
-
-        # convert property list to DataFrame
-        im_prop_df = pd.DataFrame(im_prop_list, columns=im_prop_list[0].keys())
-        im_prop_df = im_prop_df.sort_values(by=start_time_key).reset_index(drop=True)  # sort by acquisition time
-        im_prop_df = im_prop_df.rename(
-            columns=dict(zip(self._summary_key_df.PROPERTY, self._summary_key_df.ABBREV))
-        )  # abbreviate column names
-        im_prop_df = im_prop_df[self._summary_key_df.ABBREV.to_list()]  # reorder columns
-
-        return im_prop_df
+        # TODO: return MaskedImage for mosaic and q_mosaic - do the QA, mask and score bands mosaic correctly,
+        #  and BasicImage for medoid (?) and median
+        return BaseImage(comp_image)
