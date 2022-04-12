@@ -177,6 +177,11 @@ class BaseImage:
         return self.ee_info['id'].replace('/', '-')
 
     @property
+    def collection(self) -> str:
+        """The EE collection ID for this image."""
+        return split_id(self.ee_info['id'])[0]
+
+    @property
     def min_projection(self) -> Dict:
         """A dict of the projection information corresponding to the minimum scale band."""
         if not self._min_projection:
@@ -219,6 +224,10 @@ class BaseImage:
         Will return None if the image has no fixed projection.
         """
         return self.min_projection['transform']
+
+    @property
+    def has_fixed_projection(self)->bool:
+        return self.scale is not None
 
     @property
     def dtype(self) -> str:
