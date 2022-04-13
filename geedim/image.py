@@ -130,6 +130,7 @@ class BaseImage:
     Provides client-side access to metadata, download and export functionality.
     """
     float_nodata = float('nan')
+    desc_width = 70
 
     def __init__(self, ee_image: ee.Image, num_threads=None):
 
@@ -547,7 +548,7 @@ class BaseImage:
 
         if label is None:
             label = status["metadata"]["description"]
-        label = label if (len(label) < 80) else f'*{label[-79:]}'
+        label = label if (len(label) < BaseImage.desc_width) else f'*{label[-BaseImage.desc_width:]}'
 
         class Spin(threading.Thread):
             stop = False
@@ -689,7 +690,7 @@ class BaseImage:
                            f' download size (raw: {self.human_size(raw_download_size)}).')
 
         # configure the progress bar to monitor raw/uncompressed download size
-        desc = filename.name if (len(filename.name) < 80) else f'*{filename.name[-79:]}'
+        desc = filename.name if (len(filename.name) < self.desc_width) else f'*{filename.name[-self.desc_width:]}'
         bar_format = ('{desc}: |{bar}| {n_fmt}/{total_fmt} (raw) [{percentage:5.1f}%] in {elapsed:>5s} '
                       '(eta: {remaining:>5s})')
         bar = tqdm(desc=desc, total=raw_download_size, bar_format=bar_format, dynamic_ncols=True,
