@@ -80,7 +80,7 @@ def image_from_id(image_id: str, **kwargs) -> BaseImage:
         return BaseImage(ee.Image(image_id))
 
 
-def parse_im_list(im_list, **kwargs) -> List[BaseImage,]:
+def parse_image_list(im_list, **kwargs) -> List[BaseImage,]:
     """ Return a list of Base/MaskedImage objects, given download/export parameters """
     _im_list = []
 

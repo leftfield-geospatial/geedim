@@ -685,6 +685,7 @@ class BaseImage:
                           '(eta: {remaining:>5s})')
             bar = tqdm(desc=filename.name, total=raw_download_size, bar_format=bar_format, dynamic_ncols=True,
                        unit_scale=True, unit='B')
+            # TODO:  make sure desc fits into console width
 
         redir_tqdm = logging_redirect_tqdm([logging.getLogger(__package__)])
         out_ds = rio.open(filename, 'w', **profile)

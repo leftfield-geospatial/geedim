@@ -18,7 +18,7 @@ import logging
 import os
 import pathlib
 import sys
-from collections import namedtuple
+from types import SimpleNamespace
 
 import click
 import rasterio.crs as rio_crs
@@ -27,13 +27,13 @@ from rasterio.errors import CRSError
 
 import geedim.image
 from geedim import collection as coll_api
-from geedim import info, masked_image, _ee_init, parse_im_list, version, collection_from_list
+from geedim import info, masked_image, _ee_init, parse_image_list, version, collection_from_list
 from geedim.image import BaseImage
 
 logger = logging.getLogger(__name__)
 
 
-class _PlainInfoFormatter(logging.Formatter):
+class PlainInfoFormatter(logging.Formatter):
     """logging formatter to format INFO logs without the module name etc prefix"""
 
     def format(self, record):
@@ -44,9 +44,10 @@ class _PlainInfoFormatter(logging.Formatter):
         return super().format(record)
 
 
-class _GeedimCommand(click.Command):
+class ChainedCommand(click.Command):
     """
-    click Command class that formats single newlines in help strings as single newlines.
+    click Command class for managing parameters shared between chained commands,
+    and formatting single newlines in help strings as single newlines.
     """
 
     def get_help(self, ctx):
@@ -61,13 +62,21 @@ class _GeedimCommand(click.Command):
         click.formatting.wrap_text = wrap_text
         return click.Command.get_help(self, ctx)
 
+    def invoke(self, ctx):
+        """Manage shared `image_list` and `region` parameters."""
 
-class _CmdChainResults(object):
-    """ Class to hold results for command chaining """
+        # combine `region` and `bbox` into a single region in the context object
+        region = ctx.params['region'] if 'region' in ctx.params else None
+        bbox = ctx.params['bbox'] if 'bbox' in ctx.params else None
+        region = region or bbox
+        if not region is None:
+            ctx.obj.region = region
 
-    def __init__(self):
-        self.image_list = []
-        self.region = None
+        if 'image_id' in ctx.params:
+            # append any image id's to the image_list
+            ctx.obj.image_list += list(ctx.params['image_id'])
+
+        return click.Command.invoke(self, ctx)
 
 
 def _configure_logging(verbosity):
@@ -78,7 +87,7 @@ def _configure_logging(verbosity):
     # limit logging config to homonim by applying to package logger, rather than root logger
     # pkg_logger level etc are then 'inherited' by logger = getLogger(__name__) in the modules
     pkg_logger = logging.getLogger(__package__)
-    formatter = _PlainInfoFormatter()
+    formatter = PlainInfoFormatter()
     handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(formatter)
     pkg_logger.addHandler(handler)
@@ -90,12 +99,6 @@ def _collection_cb(ctx, param, value):
     """click callback to validate collection name"""
     if value in info.gd_to_ee:
         value = info.gd_to_ee[value]
-    return value
-
-
-def _image_id_cb(ctx, param, value):
-    """click callback to add image IDs to chain object"""
-    ctx.obj.image_list += list(value)
     return value
 
 
@@ -124,8 +127,6 @@ def _bbox_cb(ctx, param, value):
         value = dict(type='Polygon', coordinates=[coordinates])
     else:
         raise click.BadParameter(f'Invalid bbox: {value}.', param=param)
-    # if value is not None:
-    #     ctx.obj.region = value
     return value
 
 
@@ -144,43 +145,18 @@ def _region_cb(ctx, param, value):
             value, _ = geedim.image.get_bounds(value, expand=10)
     else:
         raise click.BadParameter(f'Invalid region: {value}.', param=param)
-    # if value is not None:
-    #     ctx.obj.region = value
     return value
 
 
-def _export_download(res=_CmdChainResults(), wait=False, **kwargs):
-    """ Helper function to execute export/download commands """
-    # TODO: how can we make kwargs passing to download/export and parse_im_list neater and more intuitive
-    arg_tuple = namedtuple('ArgTuple', kwargs)
-    params = arg_tuple(**kwargs)
-
-    res.image_list += list(params.image_id)
-    if len(res.image_list) == 0:
+def _parse_image_list(obj: SimpleNamespace, mask=False, cloud_dist=False):
+    """Validate and prepare the obj.image_list for export/download."""
+    if len(obj.image_list) == 0:
         raise click.BadOptionUsage('image_id',
                                    'Either pass --id, or chain this command with a successful `search` or `composite`')
-
-    logger.info('\nDownloading:\n') if params.do_download else logger.info('\nExporting:\n')
-    image_list = parse_im_list(res.image_list, mask=params.mask, cloud_dist=params.cloud_dist)
-
-    res.region = params.region or params.bbox or res.region  # TODO in a callback possible?
-    if res.region is None and any([not im.has_fixed_projection for im in image_list]):
+    image_list = parse_image_list(obj.image_list, mask=mask, cloud_dist=cloud_dist)
+    if obj.region is None and any([not im.has_fixed_projection for im in image_list]):
         raise click.BadOptionUsage('region', 'One of --region or --box is required for a composite image.')
-
-    export_tasks = []
-    common_kwargs = {k: kwargs[k] for k in ['crs', 'scale', 'resampling', 'dtype']}
-    for image_obj in image_list:
-        if params.do_download:
-            filename = pathlib.Path(params.download_dir).joinpath(image_obj.name + '.tif')
-            image_obj.download(filename, overwrite=params.overwrite, region=res.region, **common_kwargs)
-        else:
-            task = image_obj.export(image_obj.name, folder=params.drive_folder, wait=False, region=res.region,
-                                    **common_kwargs)
-            export_tasks.append(task)
-
-    if wait:
-        for task in export_tasks:
-            BaseImage.monitor_export_task(task)
+    return image_list
 
 
 """ Define click options that are common to more than one command """
@@ -211,7 +187,6 @@ image_id_option = click.option(
     help="Earth engine image ID(s).",
     required=False,
     multiple=True,
-    # callback=_image_id_cb,
 )
 crs_option = click.option(
     "-c",
@@ -277,14 +252,14 @@ cloud_dist_option = click.option(
 @click.version_option(version=version.__version__, message="%(version)s")
 @click.pass_context
 def cli(ctx, verbose, quiet):
-    _ee_init()
-    ctx.obj = _CmdChainResults()  # object to hold chained results
+    ctx.obj = SimpleNamespace(image_list=[], region=None)
     verbosity = verbose - quiet
     _configure_logging(verbosity)
+    _ee_init()
 
 
 # Define search command options
-@click.command(cls=_GeedimCommand)
+@click.command(cls=ChainedCommand)
 @click.option(
     "-c",
     "--collection",
@@ -335,11 +310,10 @@ def cli(ctx, verbose, quiet):
     required=False,
 )
 @click.pass_obj
-def search(res, collection, start_date, end_date, bbox, region, valid_portion, output):
+def search(obj, collection, start_date, end_date, bbox, region, valid_portion, output):
     """ Search for images """
 
-    res.region = region or bbox
-    if not res.region:
+    if not obj.region:
         raise click.BadOptionUsage('region', 'Either pass --region or --bbox')
 
     logger.info(f'\nSearching for {collection} images between '
@@ -348,15 +322,15 @@ def search(res, collection, start_date, end_date, bbox, region, valid_portion, o
     # create collection wrapper and search
     if collection in info.ee_to_gd:
         gd_collection = coll_api.MaskedCollection(collection)
-        im_df = gd_collection.search(start_date, end_date, res.region, valid_portion=valid_portion)
+        im_df = gd_collection.search(start_date, end_date, obj.region, valid_portion=valid_portion)
     else:
         gd_collection = coll_api.BaseCollection(collection)
-        im_df = gd_collection.search(start_date, end_date, res.region)
+        im_df = gd_collection.search(start_date, end_date, obj.region)
 
     if im_df.shape[0] == 0:
         logger.info('No images found\n')
     else:
-        res.image_list += im_df.ID.values.tolist()  # store ids for chaining
+        obj.image_list += im_df.ID.values.tolist()  # store ids for chaining
         logger.info(f'{im_df.shape[0]} images found\n')
         logger.info(f'Image property descriptions:\n\n{gd_collection.summary_key}\n')
         logger.info(f'Search Results:\n\n{gd_collection.summary}')
@@ -376,7 +350,7 @@ cli.add_command(search)
 
 
 # Define download command options
-@click.command(cls=_GeedimCommand)
+@click.command(cls=ChainedCommand)
 @image_id_option
 @bbox_option
 @region_option
@@ -403,18 +377,23 @@ cli.add_command(search)
     required=False,
     show_default=False,
 )
-@click.pass_context
-def download(ctx, image_id, bbox, region, download_dir, crs, scale, dtype, mask, resampling, cloud_dist,
+@click.pass_obj
+def download(obj, image_id, bbox, region, download_dir, crs, scale, dtype, mask, resampling, cloud_dist,
              overwrite):
     """Download image(s), without size limits and including metadata, and with optional cloud and shadow masking."""
-    _export_download(res=ctx.obj, do_download=True, **ctx.params)
+    logger.info('\nDownloading:\n')
+    image_list = _parse_image_list(obj, mask=mask, cloud_dist=cloud_dist)
+    for im in image_list:
+        filename = pathlib.Path(download_dir).joinpath(im.name + '.tif')
+        im.download(filename, overwrite=overwrite, region=obj.region, crs=crs, scale=scale, resampling=resampling,
+                    dtype=dtype)
 
 
 cli.add_command(download)
 
 
 # Define export command options
-@click.command(cls=_GeedimCommand)
+@click.command(cls=ChainedCommand)
 @image_id_option
 @bbox_option
 @region_option
@@ -439,17 +418,27 @@ cli.add_command(download)
     help="Wait / don't wait for export to complete.  [default: --wait]",
     required=False,
 )
-@click.pass_context
-def export(ctx, image_id, bbox, region, drive_folder, crs, scale, dtype, mask, resampling, cloud_dist, wait):
+@click.pass_obj
+def export(obj, image_id, bbox, region, drive_folder, crs, scale, dtype, mask, resampling, cloud_dist, wait):
     """ Export image(s) to Google Drive, with optional cloud and shadow masking """
-    _export_download(res=ctx.obj, do_download=False, **ctx.params)
+    logger.info('\nExporting:\n')
+    image_list = _parse_image_list(obj, mask=mask, cloud_dist=cloud_dist)
+    export_tasks = []
+    for im in image_list:
+        task = im.export(im.name, folder=drive_folder, wait=False, region=obj.region, crs=crs, scale=scale,
+                         resampling=resampling, dtype=dtype)
+        export_tasks.append(task)
+
+    if wait:
+        for task in export_tasks:
+            BaseImage.monitor_export_task(task)
 
 
 cli.add_command(export)
 
 
 # Define composite command options
-@click.command(cls=_GeedimCommand)
+@click.command(cls=ChainedCommand)
 @image_id_option
 @click.option(
     "-cm",
@@ -470,17 +459,15 @@ cli.add_command(export)
 @resampling_option
 @cloud_dist_option
 @click.pass_obj
-def composite(res, image_id, mask, method, resampling, cloud_dist):
+def composite(obj, image_id, mask, method, resampling, cloud_dist):
     """ Create a cloud-free composite image """
 
     # get image ids from command line or chained search command
-    res.image_list += list(
-        image_id)  # TODO: is it possible to do this in image_id callback, w/o combining chained image_id's together?
-    if len(res.image_list) == 0:
+    if len(obj.image_list) == 0:
         raise click.BadOptionUsage('image_id', 'Either pass --id, or chain this command with a successful `search`')
 
-    gd_collection = collection_from_list(res.image_list, mask=mask, cloud_dist=cloud_dist)
-    res.image_list = [gd_collection.composite(method=method, resampling=resampling)]
+    gd_collection = collection_from_list(obj.image_list, mask=mask, cloud_dist=cloud_dist)
+    obj.image_list = [gd_collection.composite(method=method, resampling=resampling)]
 
 
 cli.add_command(composite)
