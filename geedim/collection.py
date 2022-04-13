@@ -289,7 +289,7 @@ class MaskedCollection(BaseCollection):
             raise ValueError(f"Unsupported collection: {ee_coll_name}")
         BaseCollection.__init__(self, ee_coll_name)
         self._image_class = masked_image.get_class(ee_coll_name)  # geedim.masked_image.*Image class for this collection
-        self._ee_collection = None  # the wrapped ee.ImageCollection
+        self._ee_collection = self._image_class.ee_collection(self._ee_coll_name)  # the wrapped ee.ImageCollection
 
     @classmethod
     def from_ids(cls, image_ids, mask=masked_image.MaskedImage._default_params['mask'],
@@ -360,10 +360,8 @@ class MaskedCollection(BaseCollection):
             raise ValueError("`end_date` must be at least a day later than `start_date`")
         try:
             # filter the image collection, finding cloud/shadow masks, and region stats
-            # TODO: move the self._image_class.ee_collection() to __init__ so we can also search from_ids created
-            #  collections
             self._ee_collection = (
-                self._image_class.ee_collection(self._ee_coll_name)
+                self._ee_collection
                     .filterDate(start_date, end_date)
                     .filterBounds(region)
                     .map(lambda ee_image: self._image_class.set_region_stats(ee_image, region, mask=mask))
@@ -426,7 +424,6 @@ class MaskedCollection(BaseCollection):
         comp_id = f"{self._ee_coll_name}/{start_date}-{end_date}-{method.upper()}_COMP"
         comp_image = comp_image.set("system:id", comp_id)
         comp_image = comp_image.set("system:time_start", self.summary_df.DATE.iloc[0].timestamp() * 1000)
-        # TODO: persist source CRS and scale by reprojecting?
         # TODO: return MaskedImage for mosaic and q_mosaic - do the QA, mask and score bands mosaic correctly,
         #  and BasicImage for medoid (?) and median
         return BaseImage(comp_image)
