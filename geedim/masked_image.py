@@ -125,6 +125,8 @@ class MaskedImage(BaseImage):
         -------
         ee.ImageCollection
         """
+        # TODO remove the need for ee_coll_name param, in most cases it should be possible for the image to know what
+        #  collection it comes from
         if not ee_coll_name in cls.supported_ee_coll_names:
             raise ValueError(f"Unsupported collection: {ee_coll_name}.  {cls.__name__} supports images from "
                                "{cls.supported_ee_coll_names}")
@@ -207,7 +209,6 @@ class MaskedImage(BaseImage):
 
         return masks
 
-    # TODO: provide CLI access to cloud_dist
     def _get_image_score(self, ee_image, masks=None):
         """
         Get the cloud/shadow distance quality score for this image.
@@ -520,7 +521,6 @@ def get_class(coll_name):
     geedim.image.ProcImage
         The class corresponding to coll_name.
     """
-    # TODO: populate this list by traversing the class hierarchy
     # TODO: allow coll_name = full image id
     # TODO: combine with __init__.image_from_id()
     # import inspect

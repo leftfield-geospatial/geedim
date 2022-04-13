@@ -312,6 +312,10 @@ def cli(ctx, verbose, quiet):
 @click.pass_obj
 def search(obj, collection, start_date, end_date, bbox, region, valid_portion, output):
     """ Search for images """
+    # TODO: what about chaining search with search, or after composite.  Unlikely use case, but if possible
+    #  would be neat to structure the sw in this way e.g. if the image_list is not empty, then make the collection
+    #  out of that.
+
 
     if not obj.region:
         raise click.BadOptionUsage('region', 'Either pass --region or --bbox')
@@ -378,15 +382,13 @@ cli.add_command(search)
     show_default=False,
 )
 @click.pass_obj
-def download(obj, image_id, bbox, region, download_dir, crs, scale, dtype, mask, resampling, cloud_dist,
-             overwrite):
+def download(obj, image_id, bbox, region, download_dir, mask, cloud_dist, overwrite, **kwargs):
     """Download image(s), without size limits and including metadata, and with optional cloud and shadow masking."""
     logger.info('\nDownloading:\n')
     image_list = _parse_image_list(obj, mask=mask, cloud_dist=cloud_dist)
     for im in image_list:
         filename = pathlib.Path(download_dir).joinpath(im.name + '.tif')
-        im.download(filename, overwrite=overwrite, region=obj.region, crs=crs, scale=scale, resampling=resampling,
-                    dtype=dtype)
+        im.download(filename, overwrite=overwrite, region=obj.region, **kwargs)
 
 
 cli.add_command(download)
@@ -419,15 +421,15 @@ cli.add_command(download)
     required=False,
 )
 @click.pass_obj
-def export(obj, image_id, bbox, region, drive_folder, crs, scale, dtype, mask, resampling, cloud_dist, wait):
+def export(obj, image_id, bbox, region, drive_folder, mask, cloud_dist, wait, **kwargs):
     """ Export image(s) to Google Drive, with optional cloud and shadow masking """
     logger.info('\nExporting:\n')
     image_list = _parse_image_list(obj, mask=mask, cloud_dist=cloud_dist)
     export_tasks = []
     for im in image_list:
-        task = im.export(im.name, folder=drive_folder, wait=False, region=obj.region, crs=crs, scale=scale,
-                         resampling=resampling, dtype=dtype)
+        task = im.export(im.name, folder=drive_folder, wait=False, region=obj.region, **kwargs)
         export_tasks.append(task)
+        logger.info(f'Started {im.name}') if not wait else None
 
     if wait:
         for task in export_tasks:
