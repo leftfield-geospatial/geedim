@@ -546,25 +546,31 @@ class BaseImage:
         status = ee.data.getOperation(task.name)
 
         if label is None:
-            label = f'{status["metadata"]["description"][:80]}'
+            label = status["metadata"]["description"]
+        label = label if (len(label) < 80) else f'*{label[-79:]}'
 
-        def spin():
-            """Wait for export preparation to complete, displaying a spin toggle"""
-            with Spinner(f'Preparing {label}: ') as spinner:
-                while 'progress' not in status['metadata']:
-                    time.sleep(pause)
-                    spinner.next()
-                spinner.writeln(f'Preparing {label}: done')
+        class Spin(threading.Thread):
+            stop = False
+            def run(self):
+                """Wait for export preparation to complete, displaying a spin toggle"""
+                with Spinner(f'Preparing {label}: ') as spinner:
+                    while 'progress' not in status['metadata'] and not self.stop:
+                        time.sleep(pause)
+                        spinner.next()
+                    spinner.writeln(f'Preparing {label}: done') if not self.stop else spinner.writeln('')
 
         # run the spinner in a separate thread so it does not hang on EE calls
-        spin_thread = threading.Thread(target=spin)
+        spin_thread = Spin()
         spin_thread.start()
-
-        # poll EE until the export preparation is complete
-        while 'progress' not in status['metadata']:
-            time.sleep(5 * pause)
-            status = ee.data.getOperation(task.name)
-        spin_thread.join()
+        try:
+            # poll EE until the export preparation is complete
+            while 'progress' not in status['metadata']:
+                time.sleep(5 * pause)
+                status = ee.data.getOperation(task.name)
+            spin_thread.join()
+        except KeyboardInterrupt:
+            spin_thread.stop = True
+            raise
 
         # wait for export to complete, displaying a progress bar
         bar_format = '{desc}: |{bar}| [{percentage:5.1f}%] in {elapsed:>5s} (eta: {remaining:>5s})'
@@ -608,6 +614,12 @@ class BaseImage:
 
         # TODO: test composite of resampled images and resampled composite
         exp_image = self._prepare_for_export(**kwargs)
+
+        dtype_size = np.dtype(exp_image.dtype).itemsize
+        raw_download_size = int(np.prod(exp_image.shape) * exp_image.count * dtype_size)
+        if logger.getEffectiveLevel() <= logging.DEBUG:
+            logger.debug(f'Uncompressed size: {self.human_size(raw_download_size)}')
+
         # create export task and start
         task = ee.batch.Export.image.toDrive(image=exp_image.ee_image, description=filename[:100], folder=folder,
                                              fileNamePrefix=filename, maxPixels=1e9)
@@ -658,6 +670,7 @@ class BaseImage:
 
         # get the dimensions of an image tile that will satisfy GEE download limits
         tile_shape, num_tiles = self._get_tile_shape(exp_image)
+
         # find raw size of the download data (less than the actual download size as the image data is zipped in a
         # compressed geotiff)
         dtype_size = np.dtype(exp_image.dtype).itemsize
@@ -675,22 +688,17 @@ class BaseImage:
             logger.warning(f'Consider adjusting `region`, `scale` and/or `dtype` to reduce the {filename.name}'
                            f' download size (raw: {self.human_size(raw_download_size)}).')
 
-        tiles = self.tiles(exp_image, tile_shape=tile_shape)
-        if False:
-            bar_format = '{percentage:5.1f}% of {desc}: |{bar}| {n:4.1f}/{total_fmt} tile(s) in {elapsed:>5s} (eta: {remaining:>5s})'
-            bar = tqdm(desc=desc, total=num_tiles, bar_format=bar_format, dynamic_ncols=True)
-        else:
-            # configure the progress bar to monitor raw/uncompressed download size
-            bar_format = ('{desc}: |{bar}| {n_fmt}/{total_fmt} (raw) [{percentage:5.1f}%] in {elapsed:>5s} '
-                          '(eta: {remaining:>5s})')
-            bar = tqdm(desc=filename.name, total=raw_download_size, bar_format=bar_format, dynamic_ncols=True,
-                       unit_scale=True, unit='B')
-            # TODO:  make sure desc fits into console width
+        # configure the progress bar to monitor raw/uncompressed download size
+        desc = filename.name if (len(filename.name) < 80) else f'*{filename.name[-79:]}'
+        bar_format = ('{desc}: |{bar}| {n_fmt}/{total_fmt} (raw) [{percentage:5.1f}%] in {elapsed:>5s} '
+                      '(eta: {remaining:>5s})')
+        bar = tqdm(desc=desc, total=raw_download_size, bar_format=bar_format, dynamic_ncols=True,
+                   unit_scale=True, unit='B')
 
-        redir_tqdm = logging_redirect_tqdm([logging.getLogger(__package__)])
-        out_ds = rio.open(filename, 'w', **profile)
         session = _requests_retry_session(5, status_forcelist=[500, 502, 503, 504])
         warnings.filterwarnings('ignore', category=TqdmWarning)
+        redir_tqdm = logging_redirect_tqdm([logging.getLogger(__package__)])    # redirect logging through tqdm
+        out_ds = rio.open(filename, 'w', **profile)     # create output geotiff
 
         with redir_tqdm, rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), out_ds, bar:
             def download_tile(tile):
@@ -701,6 +709,7 @@ class BaseImage:
 
             with ThreadPoolExecutor(max_workers=self._max_threads) as executor:
                 # Run the tile downloads in a thread pool
+                tiles = self.tiles(exp_image, tile_shape=tile_shape)
                 futures = [executor.submit(download_tile, tile) for tile in tiles]
                 try:
                     for future in as_completed(futures):
