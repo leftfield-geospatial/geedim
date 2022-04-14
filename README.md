@@ -119,7 +119,7 @@ geedim search -c landsat8_c2_l2 -b 23.9 -33.6 24 -33.5 -s 2019-01-01 -e 2019-02-
 ```
 
 ### Download / Export
-Download or export image(s) by specifying their ID(s).  Search result image(s) can be downloaded / exported by chaining the `search` and `download` / `export` sub-commands.  Images exceeding EE download limits are split and downloaded in smaller tiles, which are then re-assembled on the client into a GeoTIFF file.  The following auxiliary bands are included in images downloaded / exported from supported [cloud/shadow masking collections](#-cloudshadow-masking-collections):
+Download or export image(s) by specifying their ID(s).  Search result image(s) can be downloaded / exported by chaining the `search` and `download` / `export` sub-commands.  Images exceeding EE download limits are split and downloaded in smaller tiles, which are then re-assembled on the client into a GeoTIFF file.  The following auxiliary bands are included in images downloaded / exported from supported [cloud/shadow masking collections](#cloudshadow-masking-collections):
 
 - FILL_MASK: Filled / captured pixels 
 - CLOUD_MASK: Cloudy pixels 
