@@ -332,7 +332,7 @@ def cli(ctx, verbose, quiet):
 )
 @click.pass_obj
 def search(obj, collection, start_date, end_date, bbox, region, valid_portion, output):
-    """ Search for images """
+    """Search for images."""
     # TODO: what about chaining search with search, or after composite.  Unlikely use case, but if possible
     #  would be neat to structure the sw in this way e.g. if the image_list is not empty, then make the collection
     #  out of that.
@@ -403,7 +403,7 @@ cli.add_command(search)
 )
 @click.pass_obj
 def download(obj, image_id, bbox, region, download_dir, mask, cloud_dist, overwrite, **kwargs):
-    """Download image(s), without size limits and including metadata, and with optional cloud and shadow masking."""
+    """Download image(s)."""
     logger.info('\nDownloading:\n')
     image_list = _parse_image_list(obj, mask=mask, cloud_dist=cloud_dist)
     for im in image_list:
@@ -442,7 +442,7 @@ cli.add_command(download)
 )
 @click.pass_obj
 def export(obj, image_id, bbox, region, drive_folder, mask, cloud_dist, wait, **kwargs):
-    """ Export image(s) to Google Drive, with optional cloud and shadow masking """
+    """Export image(s) to Google Drive."""
     logger.info('\nExporting:\n')
     image_list = _parse_image_list(obj, mask=mask, cloud_dist=cloud_dist)
     export_tasks = []
@@ -482,7 +482,7 @@ cli.add_command(export)
 @cloud_dist_option
 @click.pass_obj
 def composite(obj, image_id, mask, method, resampling, cloud_dist):
-    """ Create a cloud-free composite image """
+    """Create a cloud-free composite image."""
 
     # get image ids from command line or chained search command
     if len(obj.image_list) == 0:

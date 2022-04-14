@@ -75,10 +75,10 @@ Options:
   --help         Show this message and exit.
 
 Commands:
-  composite  Create a cloud-free composite image
-  download   Download image(s), without size limits and including...
-  export     Export image(s) to Google Drive, with optional cloud and...
-  search     Search for images
+  composite  Create a cloud-free composite image.
+  download   Download image(s).
+  export     Export image(s) to Google Drive.
+  search     Search for images.
 ```
 ### Search
 Search for images with filtering by image collection, date, region and portion of cloud/shadow free pixels (in the specified region).  Image metadata of interest is included in the results. 
