@@ -51,20 +51,24 @@ class ChainedCommand(click.Command):
     and formatting single newlines in help strings as single newlines.
     """
 
+
     def get_help(self, ctx):
         """Format help strings with single newlines as single newlines."""
         # adapted from https://stackoverflow.com/questions/55585564/python-click-formatting-help-text
-        orig_wrap_test = click.formatting.wrap_text
+        orig_wrap_text = click.formatting.wrap_text
 
         def wrap_text(text, width, **kwargs):
             text = text.replace('\n', '\n\n')
-            return orig_wrap_test(text, width, **kwargs).replace('\n\n', '\n')
+            return orig_wrap_text(text, width, **kwargs).replace('\n\n', '\n')
 
         click.formatting.wrap_text = wrap_text
         return click.Command.get_help(self, ctx)
 
     def invoke(self, ctx):
         """Manage shared `image_list` and `region` parameters."""
+
+        # initialise earth engine (do it here, rather than in cli() so that it does not delay --help)
+        _ee_init()
 
         # combine `region` and `bbox` into a single region in the context object
         region = ctx.params['region'] if 'region' in ctx.params else None
@@ -257,7 +261,6 @@ def cli(ctx, verbose, quiet):
     ctx.obj = SimpleNamespace(image_list=[], region=None)
     verbosity = verbose - quiet
     _configure_logging(verbosity)
-    _ee_init()  # TODO avoid calling this on --help
 
 
 # Define search command options
