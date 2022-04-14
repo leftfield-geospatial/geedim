@@ -20,7 +20,8 @@ import numpy as np
 import pandas as pd
 
 import geedim.image
-from geedim import image, collection, root_path, info, masked_image, image_from_id, class_from_id
+from geedim import image, collection, root_path, info
+from geedim.masked_image import image_from_id, class_from_id, MaskedImage
 from tests.util import _test_image_file, _test_search_results, _setup_test
 
 
@@ -32,8 +33,8 @@ class TestApi(unittest.TestCase):
         """ Initialise Earth Engine once for all the tests here. """
         _setup_test()
 
-    def _test_image(self, image_id, mask=masked_image.MaskedImage._default_mask,
-                    cloud_dist=masked_image.MaskedImage._default_cloud_dist):
+    def _test_image(self, image_id, mask=MaskedImage._default_mask,
+                    cloud_dist=MaskedImage._default_cloud_dist):
         """ Test the validity of a geedim.image.MaskedImage by checking metadata.  """
 
         ee_coll_name = geedim.image.split_id(image_id)[0]
@@ -118,7 +119,7 @@ class TestApi(unittest.TestCase):
             with self.subTest('Download', **impdict):
                 # create image.MaskedImage
                 gd_image = class_from_id(ee_coll_name)._from_id(impdict["image_id"], mask=impdict['mask'],
-                                                                 region=region)
+                                                                region=region)
                 # create a filename for these parameters
                 name = impdict["image_id"].replace('/', '-')
                 crs_str = impdict["crs"].replace(':', '_') if impdict["crs"] else 'None'

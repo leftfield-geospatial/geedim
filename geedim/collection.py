@@ -18,13 +18,14 @@ import logging
 ##
 # Functionality for searching and compositing EE image collections
 from datetime import datetime, timedelta
+from typing import List, Union
 
 import ee
 import pandas as pd
 
-from geedim import masked_image, info, medoid, image, class_from_id
+from geedim import masked_image, info, medoid, image
 from geedim.image import BaseImage, split_id
-from geedim.masked_image import MaskedImage
+from geedim.masked_image import MaskedImage, class_from_id, image_from_id
 
 logger = logging.getLogger(__name__)
 
@@ -430,3 +431,32 @@ class MaskedCollection(BaseCollection):
         #  would re-calculating the masks and score on the mosaics QA bands work?
         # TODO: leave out the median method entirely?
         return BaseImage(comp_image) if method == 'median' else self._image_class.from_masked_image(comp_image)
+
+
+def image_list_from_mixed_list(image_list: List[Union[BaseImage, str],], **kwargs) -> List[BaseImage,]:
+    """Return a list of Base/MaskedImage objects, given a list of image ID's and/or Base/MaskedImage objects."""
+    image_obj_list = []
+
+    for im_obj in image_list:
+        if isinstance(im_obj, str):
+            image_obj_list.append(image_from_id(im_obj, **kwargs))
+        elif isinstance(im_obj, BaseImage):
+            image_obj_list.append(im_obj)
+        else:
+            raise ValueError(f'Unknown image object type: {type(im_obj)}')
+    return image_obj_list
+
+
+def collection_from_list(image_list: List[Union[BaseImage, str],], **kwargs):
+    """Return a Base/MaskedCollection from a list of image ID's and/or Base/MaskedImage objects."""
+    image_obj_list = image_list_from_mixed_list(image_list, **kwargs)
+    ee_image_list = []
+    masked = []
+    for image_obj in image_obj_list:
+        if isinstance(image_obj, BaseImage):
+            ee_image_list.append(image_obj.ee_image)
+            masked.append(type(image_obj) != BaseImage)  # i.e. it is derived from BaseImage, but not BaseImage itself
+        else:
+            raise TypeError(f'Unknown image object type: {type(image_obj)}')
+
+    return MaskedCollection.from_ee_list(ee_image_list) if all(masked) else BaseCollection.from_ee_list(ee_image_list)

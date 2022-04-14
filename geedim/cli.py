@@ -26,9 +26,10 @@ from rasterio.dtypes import dtype_ranges
 from rasterio.errors import CRSError
 
 from geedim import collection as coll_api
-from geedim import info, masked_image, _ee_init, parse_image_list, version, image_from_id
-from geedim.collection import BaseCollection, MaskedCollection
-from geedim.image import BaseImage, split_id, get_bounds
+from geedim import info, _ee_init, version
+from geedim.collection import MaskedCollection, image_list_from_mixed_list, collection_from_list
+from geedim.image import BaseImage, get_bounds
+from geedim.masked_image import MaskedImage
 
 logger = logging.getLogger(__name__)
 
@@ -148,35 +149,16 @@ def _region_cb(ctx, param, value):
     return value
 
 
-def _parse_image_list(obj: SimpleNamespace, mask=masked_image.MaskedImage._default_mask,
-                      cloud_dist=masked_image.MaskedImage._default_cloud_dist):
+def _validate_image_list(obj: SimpleNamespace, mask=MaskedImage._default_mask,
+                         cloud_dist=MaskedImage._default_cloud_dist):
     """Validate and prepare the obj.image_list for export/download."""
     if len(obj.image_list) == 0:
         raise click.BadOptionUsage('image_id',
                                    'Either pass --id, or chain this command with a successful `search` or `composite`')
-    image_list = parse_image_list(obj.image_list, mask=mask, cloud_dist=cloud_dist)
+    image_list = image_list_from_mixed_list(obj.image_list, mask=mask, cloud_dist=cloud_dist)
     if obj.region is None and any([not im.has_fixed_projection for im in image_list]):
         raise click.BadOptionUsage('region', 'One of --region or --box is required for a composite image.')
     return image_list
-
-
-def _collection_from_list(image_list, **kwargs):
-    """Return a Base/MaskedCollection from a list of image ID's and/or Base/MaskedImage objects."""
-    # TODO: make this accessible from API (__init__)
-    ee_image_list = []
-    masked = []
-    for image_obj in image_list:
-        if isinstance(image_obj, str):
-            ee_coll_name = split_id(image_obj)[0]
-            ee_image_list.append(image_from_id(image_obj, **kwargs).ee_image)
-            masked.append(ee_coll_name in info.collection_info)
-        elif isinstance(image_obj, BaseImage):
-            ee_image_list.append(image_obj.ee_image)
-            masked.append(type(image_obj) != BaseImage)  # i.e. it is derived from BaseImage, but not BaseImage itself
-        else:
-            raise TypeError(f'Unknown image object type: {type(image_obj)}')
-
-    return MaskedCollection.from_ee_list(ee_image_list) if all(masked) else BaseCollection.from_ee_list(ee_image_list)
 
 
 """ Define click options that are common to more than one command """
@@ -236,7 +218,7 @@ dtype_option = click.option(
 mask_option = click.option(
     "-m/-nm",
     "--mask/--no-mask",
-    default=masked_image.MaskedImage._default_mask,
+    default=MaskedImage._default_mask,
     help="Do/don't apply (cloud and shadow) nodata mask(s).  [default: --no-mask]",
     required=False,
 )
@@ -252,7 +234,7 @@ cloud_dist_option = click.option(
     "-cd",
     "--cloud-dist",
     type=click.FLOAT,
-    default=masked_image.MaskedImage._default_cloud_dist,
+    default=MaskedImage._default_cloud_dist,
     help="Search for cloud/shadow inside this radius (m) to determine compositing quality score.",
     show_default=True,
     required=False,
@@ -275,7 +257,7 @@ def cli(ctx, verbose, quiet):
     ctx.obj = SimpleNamespace(image_list=[], region=None)
     verbosity = verbose - quiet
     _configure_logging(verbosity)
-    _ee_init()
+    _ee_init()  # TODO avoid calling this on --help
 
 
 # Define search command options
@@ -405,7 +387,7 @@ cli.add_command(search)
 def download(obj, image_id, bbox, region, download_dir, mask, cloud_dist, overwrite, **kwargs):
     """Download image(s)."""
     logger.info('\nDownloading:\n')
-    image_list = _parse_image_list(obj, mask=mask, cloud_dist=cloud_dist)
+    image_list = _validate_image_list(obj, mask=mask, cloud_dist=cloud_dist)
     for im in image_list:
         filename = pathlib.Path(download_dir).joinpath(im.name + '.tif')
         im.download(filename, overwrite=overwrite, region=obj.region, **kwargs)
@@ -444,7 +426,7 @@ cli.add_command(download)
 def export(obj, image_id, bbox, region, drive_folder, mask, cloud_dist, wait, **kwargs):
     """Export image(s) to Google Drive."""
     logger.info('\nExporting:\n')
-    image_list = _parse_image_list(obj, mask=mask, cloud_dist=cloud_dist)
+    image_list = _validate_image_list(obj, mask=mask, cloud_dist=cloud_dist)
     export_tasks = []
     for im in image_list:
         task = im.export(im.name, folder=drive_folder, wait=False, region=obj.region, **kwargs)
@@ -488,7 +470,7 @@ def composite(obj, image_id, mask, method, resampling, cloud_dist):
     if len(obj.image_list) == 0:
         raise click.BadOptionUsage('image_id', 'Either pass --id, or chain this command with a successful `search`')
 
-    gd_collection = _collection_from_list(obj.image_list, mask=mask, cloud_dist=cloud_dist)
+    gd_collection = collection_from_list(obj.image_list, mask=mask, cloud_dist=cloud_dist)
     obj.image_list = [gd_collection.composite(method=method, resampling=resampling)]
 
 

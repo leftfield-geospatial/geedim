@@ -166,9 +166,8 @@ class BaseImage:
                              f"{cls.__name__} supports images from {cls._supported_collection_ids}")
         ee_image = ee.Image(image_id)
         gd_image = cls(ee_image, **kwargs)
-        gd_image._id = image_id     # set the id attribute from image_id (avoids a call to getInfo() for .id property)
+        gd_image._id = image_id  # set the id attribute from image_id (avoids a call to getInfo() for .id property)
         return gd_image
-
 
     @property
     def ee_image(self) -> ee.Image:
@@ -196,7 +195,7 @@ class BaseImage:
     @property
     def id(self) -> str:
         """The EE image ID."""
-        return self._id or self.ee_info["id"]   # avoid a call to getInfo() if _id is set
+        return self._id or self.ee_info["id"]  # avoid a call to getInfo() if _id is set
 
     @property
     def name(self) -> str:

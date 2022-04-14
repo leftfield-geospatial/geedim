@@ -16,13 +16,8 @@
 import json
 import os
 import pathlib
-from typing import Union, List
 
 import ee
-
-from . import info
-from .image import BaseImage, split_id
-from .masked_image import LandsatImage, Sentinel2ClImage, ModisNbarImage, MaskedImage
 
 if '__file__' in globals():
     root_path = pathlib.Path(__file__).absolute().parents[1]
@@ -57,43 +52,3 @@ def _ee_init():
                 os.remove(filename)
         else:
             ee.Initialize()
-
-
-def class_from_id(image_id: str) -> Union[BaseImage, MaskedImage]:
-    """Return the *Image class that corresponds to the provided EE image/collection ID."""
-
-    masked_image_dict = {
-        'LANDSAT/LT04/C02/T1_L2': LandsatImage,
-        'LANDSAT/LT05/C02/T1_L2': LandsatImage,
-        'LANDSAT/LE07/C02/T1_L2': LandsatImage,
-        'LANDSAT/LC08/C02/T1_L2': LandsatImage,
-        'COPERNICUS/S2': Sentinel2ClImage,
-        'COPERNICUS/S2_SR': Sentinel2ClImage,
-        'MODIS/006/MCD43A4': ModisNbarImage
-    }
-    ee_coll_name, _ = split_id(image_id)
-    if image_id in masked_image_dict:
-        return masked_image_dict[image_id]
-    elif ee_coll_name in masked_image_dict:
-        return masked_image_dict[ee_coll_name]
-    else:
-        return BaseImage
-
-
-def image_from_id(image_id: str, **kwargs) -> BaseImage:
-    """Return a *Image instance for a given EE image ID."""
-    return class_from_id(image_id).from_id(image_id, **kwargs)
-
-
-def parse_image_list(im_list: List[Union[BaseImage, str],], **kwargs) -> List[BaseImage,]:
-    """ Return a list of Base/MaskedImage objects, given download/export parameters """
-    _im_list = []
-
-    for im_obj in im_list:
-        if isinstance(im_obj, str):
-            _im_list.append(image_from_id(im_obj, **kwargs))
-        elif isinstance(im_obj, BaseImage):
-            _im_list.append(im_obj)
-        else:
-            raise ValueError(f'Unknown image object type: {type(im_obj)}')
-    return _im_list

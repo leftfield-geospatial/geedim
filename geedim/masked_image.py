@@ -17,64 +17,17 @@
 # Functionality for wrapping, cloud/shadow masking and scoring Earth Engine images
 import collections
 import logging
+from typing import Union
 
 import ee
 import numpy as np
 
-from geedim import info
 from geedim.image import BaseImage, split_id
 
 logger = logging.getLogger(__name__)
 
 
 ##
-def get_projection(image, min=True):
-    """
-    Get the min/max scale projection of image bands.  Server side - no calls to getInfo().
-    Adapted from from https://github.com/gee-community/gee_tools, MIT license.
-
-    Parameters
-    ----------
-    image : ee.Image, geedim.image.BaseImage
-            The image whose min/max projection to retrieve.
-    min: bool, optional
-         Retrieve the projection corresponding to the band with the minimum (True) or maximum (False) scale.
-         (default: True)
-
-    Returns
-    -------
-    ee.Projection
-        The requested projection.
-    """
-    if isinstance(image, BaseImage):
-        image = image.ee_image
-
-    bands = image.bandNames()
-
-    transform = np.array([1, 0, 0, 0, 1, 0])
-    if min:
-        compare = ee.Number.lte
-        init_proj = ee.Projection('EPSG:4326', list(1e100 * transform))
-    else:
-        compare = ee.Number.gte
-        init_proj = ee.Projection('EPSG:4326', list(1e-100 * transform))
-
-    def compare_scale(name, prev_proj):
-        """ Server side comparison of band scales"""
-        prev_proj = ee.Projection(prev_proj)
-        prev_scale = prev_proj.nominalScale()
-
-        curr_proj = image.select([name]).projection()
-        curr_scale = ee.Number(curr_proj.nominalScale())
-
-        # compare scales, excluding WGS84 bands (constant or composite bands)
-        condition = (
-            compare(curr_scale, prev_scale).And(curr_proj.crs().compareTo(ee.String("EPSG:4326"))).neq(ee.Number(0))
-        )
-        comp_proj = ee.Algorithms.If(condition, curr_proj, prev_proj)
-        return ee.Projection(comp_proj)
-
-    return ee.Projection(bands.iterate(compare_scale, init_proj))
 
 
 class MaskedImage(BaseImage):
@@ -295,7 +248,7 @@ class MaskedImage(BaseImage):
 class LandsatImage(MaskedImage):
     """ Base class for cloud/shadow masking and quality scoring landsat8_c2_l2 and landsat7_c2_l2 images """
     _supported_collection_ids = ['LANDSAT/LT04/C02/T1_L2', 'LANDSAT/LT05/C02/T1_L2', 'LANDSAT/LE07/C02/T1_L2',
-                               'LANDSAT/LC08/C02/T1_L2']
+                                 'LANDSAT/LC08/C02/T1_L2']
 
     # TODO: remove these dtype conversions here and leave it up to download.
     @staticmethod
@@ -524,3 +477,77 @@ class ModisNbarImage(MaskedImage):
     def _im_transform(ee_image):
         return ee.Image.toUint16(ee_image)
 
+
+def class_from_id(image_id: str) -> Union[BaseImage, MaskedImage]:
+    """Return the *Image class that corresponds to the provided EE image/collection ID."""
+
+    masked_image_dict = {
+        'LANDSAT/LT04/C02/T1_L2': LandsatImage,
+        'LANDSAT/LT05/C02/T1_L2': LandsatImage,
+        'LANDSAT/LE07/C02/T1_L2': LandsatImage,
+        'LANDSAT/LC08/C02/T1_L2': LandsatImage,
+        'COPERNICUS/S2': Sentinel2ClImage,
+        'COPERNICUS/S2_SR': Sentinel2ClImage,
+        'MODIS/006/MCD43A4': ModisNbarImage
+    }
+    ee_coll_name, _ = split_id(image_id)
+    if image_id in masked_image_dict:
+        return masked_image_dict[image_id]
+    elif ee_coll_name in masked_image_dict:
+        return masked_image_dict[ee_coll_name]
+    else:
+        return BaseImage
+
+
+def image_from_id(image_id: str, **kwargs) -> BaseImage:
+    """Return a *Image instance for a given EE image ID."""
+    return class_from_id(image_id).from_id(image_id, **kwargs)
+
+
+def get_projection(image, min=True):
+    """
+    Get the min/max scale projection of image bands.  Server side - no calls to getInfo().
+    Adapted from from https://github.com/gee-community/gee_tools, MIT license.
+
+    Parameters
+    ----------
+    image : ee.Image, geedim.image.BaseImage
+            The image whose min/max projection to retrieve.
+    min: bool, optional
+         Retrieve the projection corresponding to the band with the minimum (True) or maximum (False) scale.
+         (default: True)
+
+    Returns
+    -------
+    ee.Projection
+        The requested projection.
+    """
+    if isinstance(image, BaseImage):
+        image = image.ee_image
+
+    bands = image.bandNames()
+
+    transform = np.array([1, 0, 0, 0, 1, 0])
+    if min:
+        compare = ee.Number.lte
+        init_proj = ee.Projection('EPSG:4326', list(1e100 * transform))
+    else:
+        compare = ee.Number.gte
+        init_proj = ee.Projection('EPSG:4326', list(1e-100 * transform))
+
+    def compare_scale(name, prev_proj):
+        """ Server side comparison of band scales"""
+        prev_proj = ee.Projection(prev_proj)
+        prev_scale = prev_proj.nominalScale()
+
+        curr_proj = image.select([name]).projection()
+        curr_scale = ee.Number(curr_proj.nominalScale())
+
+        # compare scales, excluding WGS84 bands (constant or composite bands)
+        condition = (
+            compare(curr_scale, prev_scale).And(curr_proj.crs().compareTo(ee.String("EPSG:4326"))).neq(ee.Number(0))
+        )
+        comp_proj = ee.Algorithms.If(condition, curr_proj, prev_proj)
+        return ee.Projection(comp_proj)
+
+    return ee.Projection(bands.iterate(compare_scale, init_proj))
