@@ -25,10 +25,10 @@ import rasterio.crs as rio_crs
 from rasterio.dtypes import dtype_ranges
 from rasterio.errors import CRSError
 
-import geedim.image
 from geedim import collection as coll_api
-from geedim import info, masked_image, _ee_init, parse_image_list, version, collection_from_list
-from geedim.image import BaseImage
+from geedim import info, masked_image, _ee_init, parse_image_list, version, image_from_id
+from geedim.collection import BaseCollection, MaskedCollection
+from geedim.image import BaseImage, split_id, get_bounds
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +142,7 @@ def _region_cb(ctx, param, value):
             with open(filename) as f:
                 value = json.load(f)
         else:
-            value, _ = geedim.image.get_bounds(value, expand=10)
+            value, _ = get_bounds(value, expand=10)
     else:
         raise click.BadParameter(f'Invalid region: {value}.', param=param)
     return value
@@ -157,6 +157,24 @@ def _parse_image_list(obj: SimpleNamespace, mask=False, cloud_dist=False):
     if obj.region is None and any([not im.has_fixed_projection for im in image_list]):
         raise click.BadOptionUsage('region', 'One of --region or --box is required for a composite image.')
     return image_list
+
+
+def _collection_from_list(image_list, **kwargs):
+    """Return a Base/MaskedCollection from a list of image ID's and/or Base/MaskedImage objects."""
+    ee_image_list = []
+    masked = []
+    for image_obj in image_list:
+        if isinstance(image_obj, str):
+            ee_coll_name = split_id(image_obj)[0]
+            ee_image_list.append(image_from_id(image_obj, **kwargs).ee_image)
+            masked.append(ee_coll_name in info.collection_info)
+        elif isinstance(image_obj, BaseImage):
+            ee_image_list.append(image_obj.ee_image)
+            masked.append(type(image_obj) != BaseImage)  # i.e. it is derived from BaseImage, but not BaseImage itself
+        else:
+            raise TypeError(f'Unknown image object type: {type(image_obj)}')
+
+    return MaskedCollection.from_ee_list(ee_image_list) if all(masked) else BaseCollection.from_ee_list(ee_image_list)
 
 
 """ Define click options that are common to more than one command """
@@ -316,7 +334,6 @@ def search(obj, collection, start_date, end_date, bbox, region, valid_portion, o
     #  would be neat to structure the sw in this way e.g. if the image_list is not empty, then make the collection
     #  out of that.
 
-
     if not obj.region:
         raise click.BadOptionUsage('region', 'Either pass --region or --bbox')
 
@@ -468,7 +485,7 @@ def composite(obj, image_id, mask, method, resampling, cloud_dist):
     if len(obj.image_list) == 0:
         raise click.BadOptionUsage('image_id', 'Either pass --id, or chain this command with a successful `search`')
 
-    gd_collection = collection_from_list(obj.image_list, mask=mask, cloud_dist=cloud_dist)
+    gd_collection = _collection_from_list(obj.image_list, mask=mask, cloud_dist=cloud_dist)
     obj.image_list = [gd_collection.composite(method=method, resampling=resampling)]
 
 

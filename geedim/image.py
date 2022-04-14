@@ -227,7 +227,7 @@ class BaseImage:
         return self.min_projection['transform']
 
     @property
-    def has_fixed_projection(self)->bool:
+    def has_fixed_projection(self) -> bool:
         return self.scale is not None
 
     @property
@@ -261,7 +261,7 @@ class BaseImage:
         Returns a human readable string representation of bytes -
         see https://stackoverflow.com/questions/1094841/get-human-readable-version-of-file-size
         """
-        return f'{bytes:.2f} {units[0]}' if bytes < 1024 else BaseImage.human_size(bytes/1000, units[1:])
+        return f'{bytes:.2f} {units[0]}' if bytes < 1024 else BaseImage.human_size(bytes / 1000, units[1:])
 
     @staticmethod
     def _get_projection(ee_info: Dict, min=True) -> Dict:
@@ -552,6 +552,7 @@ class BaseImage:
 
         class Spin(threading.Thread):
             stop = False
+
             def run(self):
                 """Wait for export preparation to complete, displaying a spin toggle"""
                 with Spinner(f'Preparing {label}: ') as spinner:
@@ -698,8 +699,8 @@ class BaseImage:
 
         session = _requests_retry_session(5, status_forcelist=[500, 502, 503, 504])
         warnings.filterwarnings('ignore', category=TqdmWarning)
-        redir_tqdm = logging_redirect_tqdm([logging.getLogger(__package__)])    # redirect logging through tqdm
-        out_ds = rio.open(filename, 'w', **profile)     # create output geotiff
+        redir_tqdm = logging_redirect_tqdm([logging.getLogger(__package__)])  # redirect logging through tqdm
+        out_ds = rio.open(filename, 'w', **profile)  # create output geotiff
 
         with redir_tqdm, rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), out_ds, bar:
             def download_tile(tile):

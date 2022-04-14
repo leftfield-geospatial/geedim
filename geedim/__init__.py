@@ -21,9 +21,8 @@ from typing import Union, List
 import ee
 
 from . import info
-from .collection import MaskedCollection, BaseCollection
 from .image import BaseImage, split_id
-from .masked_image import LandsatImage, Sentinel2ClImage, ModisNbarImage
+from .masked_image import LandsatImage, Sentinel2ClImage, ModisNbarImage, MaskedImage
 
 if '__file__' in globals():
     root_path = pathlib.Path(__file__).absolute().parents[1]
@@ -60,8 +59,8 @@ def _ee_init():
             ee.Initialize()
 
 
-def image_from_id(image_id: str, **kwargs) -> BaseImage:
-    ee_coll_name, _ = split_id(image_id)
+def class_from_id(image_id: str) -> Union[BaseImage, MaskedImage]:
+    """Return the *Image class that corresponds to the provided EE image/collection ID."""
 
     masked_image_dict = {
         'LANDSAT/LT04/C02/T1_L2': LandsatImage,
@@ -72,15 +71,21 @@ def image_from_id(image_id: str, **kwargs) -> BaseImage:
         'COPERNICUS/S2_SR': Sentinel2ClImage,
         'MODIS/006/MCD43A4': ModisNbarImage
     }
-    if ee_coll_name in masked_image_dict:
-        return masked_image_dict[ee_coll_name].from_id(image_id, **kwargs)
+    ee_coll_name, _ = split_id(image_id)
+    if image_id in masked_image_dict:
+        return masked_image_dict[image_id]
+    elif ee_coll_name in masked_image_dict:
+        return masked_image_dict[ee_coll_name]
     else:
-        # if len(kwargs) > 0:
-        #     raise ValueError(f'{list(kwargs.keys())} arguments are not supported for {ee_coll_name} collection')
-        return BaseImage(ee.Image(image_id))
+        return BaseImage
 
 
-def parse_image_list(im_list, **kwargs) -> List[BaseImage,]:
+def image_from_id(image_id: str, **kwargs) -> BaseImage:
+    """Return a *Image instance for a given EE image ID."""
+    return class_from_id(image_id).from_id(image_id, **kwargs)
+
+
+def parse_image_list(im_list: List[Union[BaseImage, str],], **kwargs) -> List[BaseImage,]:
     """ Return a list of Base/MaskedImage objects, given download/export parameters """
     _im_list = []
 
@@ -92,21 +97,3 @@ def parse_image_list(im_list, **kwargs) -> List[BaseImage,]:
         else:
             raise ValueError(f'Unknown image object type: {type(im_obj)}')
     return _im_list
-
-
-def collection_from_list(image_list: list, **kwargs) -> Union[BaseCollection, MaskedCollection]:
-    """Create a Base/MaskedCollection from a list of image ID's and/or Base/MaskedImage objects."""
-    ee_image_list = []
-    masked = []
-    for image_obj in image_list:
-        if isinstance(image_obj, str):
-            ee_coll_name = split_id(image_obj)[0]
-            ee_image_list.append(image_from_id(image_obj, **kwargs).ee_image)
-            masked.append(ee_coll_name in info.collection_info)
-        elif isinstance(image_obj, BaseImage):
-            ee_image_list.append(image_obj.ee_image)
-            masked.append(type(image_obj) != BaseImage) # i.e. it is derived from BaseImage, but not BaseImage itself
-        else:
-            raise TypeError(f'Unknown image object type: {type(image_obj)}')
-
-    return MaskedCollection.from_ee_list(ee_image_list) if all(masked) else BaseCollection.from_ee_list(ee_image_list)

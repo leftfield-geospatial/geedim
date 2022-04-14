@@ -28,7 +28,53 @@ logger = logging.getLogger(__name__)
 
 
 ##
-# Image classes
+def get_projection(image, min=True):
+    """
+    Get the min/max scale projection of image bands.  Server side - no calls to getInfo().
+    Adapted from from https://github.com/gee-community/gee_tools, MIT license.
+
+    Parameters
+    ----------
+    image : ee.Image, geedim.image.BaseImage
+            The image whose min/max projection to retrieve.
+    min: bool, optional
+         Retrieve the projection corresponding to the band with the minimum (True) or maximum (False) scale.
+         (default: True)
+
+    Returns
+    -------
+    ee.Projection
+        The requested projection.
+    """
+    if isinstance(image, BaseImage):
+        image = image.ee_image
+
+    bands = image.bandNames()
+
+    transform = np.array([1, 0, 0, 0, 1, 0])
+    if min:
+        compare = ee.Number.lte
+        init_proj = ee.Projection('EPSG:4326', list(1e100 * transform))
+    else:
+        compare = ee.Number.gte
+        init_proj = ee.Projection('EPSG:4326', list(1e-100 * transform))
+
+    def compare_scale(name, prev_proj):
+        """ Server side comparison of band scales"""
+        prev_proj = ee.Projection(prev_proj)
+        prev_scale = prev_proj.nominalScale()
+
+        curr_proj = image.select([name]).projection()
+        curr_scale = ee.Number(curr_proj.nominalScale())
+
+        # compare scales, excluding WGS84 bands (constant or composite bands)
+        condition = (
+            compare(curr_scale, prev_scale).And(curr_proj.crs().compareTo(ee.String("EPSG:4326"))).neq(ee.Number(0))
+        )
+        comp_proj = ee.Algorithms.If(condition, curr_proj, prev_proj)
+        return ee.Projection(comp_proj)
+
+    return ee.Projection(bands.iterate(compare_scale, init_proj))
 
 
 class MaskedImage(BaseImage):
@@ -268,10 +314,10 @@ class MaskedImage(BaseImage):
         ee_image = ee_image.addBands(ee.Image(list(masks.values())), overwrite=True)
         ee_image = ee_image.addBands(score, overwrite=True)
 
+        # TODO: can we omit masking here and leave it to composite and download?  Maybe have a mask method that
+        #  for MaskedImage applies VALID_MASK, and for BaseImage just calls mask()?
         if mask:  # apply the validity mask to all bands (i.e. set those areas to nodata)
             ee_image = ee_image.mask(masks["valid_mask"])
-        # else:  # sentinel and landsat come with default mask on SR==0, so force unmask
-        #     ee_image = ee_image.unmask()
 
         return self._im_transform(ee_image)
 
@@ -508,101 +554,3 @@ class ModisNbarImage(MaskedImage):
     def _im_transform(ee_image):
         return ee.Image.toUint16(ee_image)
 
-
-##
-
-
-def get_class(coll_name):
-    """
-    Get the ProcImage subclass for wrapping image from a specified collection.
-
-    Parameters
-    ----------
-    coll_name : str
-                geedim or Earth Engine collection name to get class for.
-                (landsat7_c2_l2|landsat8_c2_l2|sentinel2_toa|sentinel2_sr|modis_nbar) or
-                (LANDSAT/LE07/C02/T1_L2|LANDSAT/LC08/C02/T1_L2|COPERNICUS/S2|COPERNICUS/S2_SR|MODIS/006/MCD43A4).
-
-    Returns
-    -------
-    geedim.image.ProcImage
-        The class corresponding to coll_name.
-    """
-    # TODO: allow coll_name = full image id
-    # TODO: combine with __init__.image_from_id()
-    # import inspect
-    # from geedim import image
-    # def find_subclasses():
-    #     image_classes = {cls._gd_coll_name: cls for name, cls in inspect.getmembers(image)
-    #                      if inspect.isclass(cls) and issubclass(cls, image.BaseImage) and not cls is image.BaseImage}
-    #
-    #     return image_classes
-
-    gd_coll_name_map = dict(
-        landsat4_c2_l2=LandsatImage,
-        landsat5_c2_l2=LandsatImage,
-        landsat7_c2_l2=LandsatImage,
-        landsat8_c2_l2=LandsatImage,
-        sentinel2_toa=Sentinel2ClImage,
-        sentinel2_sr=Sentinel2ClImage,
-        modis_nbar=ModisNbarImage,
-    )
-
-    if split_id(coll_name)[0] in info.ee_to_gd:
-        coll_name = split_id(coll_name)[0]
-
-    if coll_name in gd_coll_name_map:
-        return gd_coll_name_map[coll_name]
-    elif coll_name in info.ee_to_gd:
-        return gd_coll_name_map[info.ee_to_gd[coll_name]]
-    else:
-        raise ValueError(f"Unknown collection name: {coll_name}")
-
-
-def get_projection(image, min=True):
-    """
-    Get the min/max scale projection of image bands.  Server side - no calls to getInfo().
-    Adapted from from https://github.com/gee-community/gee_tools, MIT license.
-
-    Parameters
-    ----------
-    image : ee.Image, geedim.image.BaseImage
-            The image whose min/max projection to retrieve.
-    min: bool, optional
-         Retrieve the projection corresponding to the band with the minimum (True) or maximum (False) scale.
-         (default: True)
-
-    Returns
-    -------
-    ee.Projection
-        The requested projection.
-    """
-    if isinstance(image, BaseImage):
-        image = image.ee_image
-
-    bands = image.bandNames()
-
-    transform = np.array([1, 0, 0, 0, 1, 0])
-    if min:
-        compare = ee.Number.lte
-        init_proj = ee.Projection('EPSG:4326', list(1e100 * transform))
-    else:
-        compare = ee.Number.gte
-        init_proj = ee.Projection('EPSG:4326', list(1e-100 * transform))
-
-    def compare_scale(name, prev_proj):
-        """ Server side comparison of band scales"""
-        prev_proj = ee.Projection(prev_proj)
-        prev_scale = prev_proj.nominalScale()
-
-        curr_proj = image.select([name]).projection()
-        curr_scale = ee.Number(curr_proj.nominalScale())
-
-        # compare scales, excluding WGS84 bands (constant or composite bands)
-        condition = (
-            compare(curr_scale, prev_scale).And(curr_proj.crs().compareTo(ee.String("EPSG:4326"))).neq(ee.Number(0))
-        )
-        comp_proj = ee.Algorithms.If(condition, curr_proj, prev_proj)
-        return ee.Projection(comp_proj)
-
-    return ee.Projection(bands.iterate(compare_scale, init_proj))

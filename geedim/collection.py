@@ -14,19 +14,20 @@
     limitations under the License.
 """
 
+import logging
 ##
 # Functionality for searching and compositing EE image collections
 from datetime import datetime, timedelta
-import logging
 
 import ee
 import pandas as pd
 
-from geedim import masked_image, info, medoid, image
+from geedim import masked_image, info, medoid, image, class_from_id
 from geedim.image import _default_resampling, BaseImage, split_id
 from geedim.masked_image import MaskedImage
 
 logger = logging.getLogger(__name__)
+
 
 ##
 class BaseCollection:
@@ -217,9 +218,9 @@ class BaseCollection:
         try:
             # filter the image collection, finding cloud/shadow masks, and region stats
             self._ee_collection = (self._ee_collection
-                    .filterDate(start_date, end_date)
-                    .filterBounds(region)
-                    )
+                                   .filterDate(start_date, end_date)
+                                   .filterBounds(region)
+                                   )
         finally:
             # update summary_df with image metadata from the filtered collection
             self._summary_df = self._get_summary_df(self._ee_collection)
@@ -272,7 +273,6 @@ class BaseCollection:
         return image.BaseImage(comp_image)
 
 
-
 class MaskedCollection(BaseCollection):
     composite_methods = ["q_mosaic", "mosaic", "median", "medoid"]  # supported composite methods
 
@@ -288,7 +288,7 @@ class MaskedCollection(BaseCollection):
         if ee_coll_name not in info.collection_info:
             raise ValueError(f"Unsupported collection: {ee_coll_name}")
         BaseCollection.__init__(self, ee_coll_name)
-        self._image_class = masked_image.get_class(ee_coll_name)  # geedim.masked_image.*Image class for this collection
+        self._image_class = class_from_id(ee_coll_name)  # geedim.masked_image.*Image class for this collection
         self._ee_collection = self._image_class.ee_collection(self._ee_coll_name)  # the wrapped ee.ImageCollection
 
     @classmethod

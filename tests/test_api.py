@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 
 import geedim.image
-from geedim import image, collection, root_path, info, masked_image, image_from_id
+from geedim import image, collection, root_path, info, masked_image, image_from_id, class_from_id
 from tests.util import _test_image_file, _test_search_results, _setup_test
 
 
@@ -117,8 +117,8 @@ class TestApi(unittest.TestCase):
             ee_coll_name = geedim.image.split_id(impdict['image_id'])[0]
             with self.subTest('Download', **impdict):
                 # create image.MaskedImage
-                gd_image = masked_image.get_class(ee_coll_name)._from_id(impdict["image_id"], mask=impdict['mask'],
-                                                                         region=region)
+                gd_image = class_from_id(ee_coll_name)._from_id(impdict["image_id"], mask=impdict['mask'],
+                                                                 region=region)
                 # create a filename for these parameters
                 name = impdict["image_id"].replace('/', '-')
                 crs_str = impdict["crs"].replace(':', '_') if impdict["crs"] else 'None'

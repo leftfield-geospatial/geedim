@@ -254,7 +254,7 @@ geedim search -c landsat8_c2_l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -
 
 ```python
 import ee
-from geedim import collection, masked_image
+from geedim import collection, masked_image, image_from_id
 
 ee.Initialize()  # initialise earth engine
 
@@ -270,7 +270,7 @@ print(gd_collection.summary_key)
 print(gd_collection.summary)
 
 # create and download an image
-im = masked_image.get_class(gd_coll_name).from_id('COPERNICUS/S2_SR/20190115T080251_20190115T082230_T35HKC')
+im = image_from_id('COPERNICUS/S2_SR/20190115T080251_20190115T082230_T35HKC')
 im.download('s2_image.tif', region=region)
 
 # composite search results and download
