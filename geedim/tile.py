@@ -41,7 +41,7 @@ def _requests_retry_session(retries=3, backoff_factor=0.3, status_forcelist=(500
 class Tile:
     """Class for encapsulating and downloading a GEE image tile (i.e. a rectangular region of interest in the image)"""
 
-    def __init__(self, exp_image: 'BaseImage', window: Window):
+    def __init__(self, exp_image, window: Window):
         """
         Create an instance of Tile.
 
