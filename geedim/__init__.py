@@ -97,20 +97,16 @@ def parse_image_list(im_list, **kwargs) -> List[BaseImage,]:
 def collection_from_list(image_list: list, **kwargs) -> Union[BaseCollection, MaskedCollection]:
     """Create a Base/MaskedCollection from a list of image ID's and/or Base/MaskedImage objects."""
     ee_image_list = []
-    ee_coll_list = []
+    masked = []
     for image_obj in image_list:
         if isinstance(image_obj, str):
             ee_coll_name = split_id(image_obj)[0]
-            ee_coll_list.append(ee_coll_name)
             ee_image_list.append(image_from_id(image_obj, **kwargs).ee_image)
+            masked.append(ee_coll_name in info.collection_info)
         elif isinstance(image_obj, BaseImage):
-            ee_coll_name = image_obj.collection
-            ee_coll_list.append(ee_coll_name)
             ee_image_list.append(image_obj.ee_image)
+            masked.append(type(image_obj) != BaseImage) # i.e. it is derived from BaseImage, but not BaseImage itself
         else:
             raise TypeError(f'Unknown image object type: {type(image_obj)}')
 
-    # TODO if there is a BaseImage in the list, but with collection in info.collection_info, then masked==True. But
-    #  we don't know if this image has genuinely been masked.
-    masked = [ee_coll_name in info.collection_info for ee_coll_name in ee_coll_list]
     return MaskedCollection.from_ee_list(ee_image_list) if all(masked) else BaseCollection.from_ee_list(ee_image_list)
