@@ -128,6 +128,7 @@ class BaseImage:
     _desc_width = 70
     _footprint_key = 'system:footprint'
     _default_resampling = 'near'
+    _supported_collection_ids = ['*']
 
     def __init__(self, ee_image: ee.Image, num_threads=None):
 
@@ -135,11 +136,39 @@ class BaseImage:
             raise TypeError('ee_image must be an instance of ee.Image')
         self._ee_image = ee_image
         self._ee_info = None
+        self._id = None
         self._min_projection = None
         self._min_dtype = None
         self._ee_coll_name = ee.String(ee_image.get('system:id')).split('/').slice(0, -1).join('/')
         self._out_lock = threading.Lock()
         self._max_threads = num_threads or min(32, (os.cpu_count() or 1) + 4)
+
+    @classmethod
+    def from_id(cls, image_id, **kwargs):
+        """
+        Construct a *Image object from an EE image ID.
+
+        Parameters
+        ----------
+        image_id : str
+           ID of earth engine image to wrap.
+        kwargs : optional
+            Any keyword arguments to pass to cls.__init__()
+
+        Returns
+        -------
+        gd_image: BaseImage
+            The image object.
+        """
+        ee_coll_name = split_id(image_id)[0]
+        if (cls._supported_collection_ids != '*') and (ee_coll_name not in cls._supported_collection_ids):
+            raise ValueError(f"Unsupported collection: {ee_coll_name}.  "
+                             f"{cls.__name__} supports images from {cls._supported_collection_ids}")
+        ee_image = ee.Image(image_id)
+        gd_image = cls(ee_image, **kwargs)
+        gd_image._id = image_id     # set the id attribute from image_id (avoids a call to getInfo() for .id property)
+        return gd_image
+
 
     @property
     def ee_image(self) -> ee.Image:
@@ -167,17 +196,17 @@ class BaseImage:
     @property
     def id(self) -> str:
         """The EE image ID."""
-        return self.ee_info["id"]
+        return self._id or self.ee_info["id"]   # avoid a call to getInfo() if _id is set
 
     @property
     def name(self) -> str:
         """The image name (the ID with slashes replaces by dashes)."""
-        return self.ee_info['id'].replace('/', '-')
+        return self.id.replace('/', '-')
 
     @property
-    def collection(self) -> str:
+    def collection_id(self) -> str:
         """The EE collection ID for this image."""
-        return split_id(self.ee_info['id'])[0]
+        return split_id(self.id)[0]
 
     @property
     def min_projection(self) -> Dict:

@@ -79,7 +79,7 @@ def get_projection(image, min=True):
 
 class MaskedImage(BaseImage):
     _default_params = dict(mask=False, cloud_dist=5000)
-    supported_ee_coll_names = []
+    _supported_collection_ids = []
 
     def __init__(self, ee_image, mask=_default_params['mask'], cloud_dist=_default_params['cloud_dist']):
         """
@@ -95,8 +95,7 @@ class MaskedImage(BaseImage):
             The radius (m) to search for cloud/shadow for quality scoring (default: 5000).
         """
         # prevent instantiation of base class(es)
-        # if self.gd_coll_name not in info.collection_info:
-        if len(self.supported_ee_coll_names) == 0:
+        if len(self._supported_collection_ids) == 0:
             raise NotImplementedError("This base class cannot be instantiated, use a sub-class")
 
         # construct the cloud/shadow masks and cloudless score
@@ -104,34 +103,6 @@ class MaskedImage(BaseImage):
         ee_image = ee_image.unmask()
         ee_image = self._process_image(ee_image, mask=mask)
         BaseImage.__init__(self, ee_image)
-
-    @classmethod
-    def from_id(cls, image_id, mask=_default_params['mask'], cloud_dist=_default_params['cloud_dist']):
-        """
-        Earth engine image wrapper for cloud/shadow masking and quality scoring.
-
-        Parameters
-        ----------
-        image_id : str
-                   ID of earth engine image to wrap.
-        mask : bool, optional
-            Apply a validity (cloud & shadow) mask to the image (default: False).
-        cloud_dist : int, optional
-            The radius (m) to search for cloud/shadow for quality scoring (default: 5000).
-
-        Returns
-        -------
-        geedim.masked_image.MaskedImage
-            The image object.
-        """
-        # check image is from a supported collection
-        ee_coll_name = split_id(image_id)[0]
-        if ee_coll_name not in cls.supported_ee_coll_names:
-            raise ValueError(f"Unsupported collection: {ee_coll_name}.  "
-                             f"{cls.__name__} supports images from {cls.supported_ee_coll_names}")
-
-        ee_image = ee.Image(image_id)
-        return cls(ee_image, mask=mask, cloud_dist=cloud_dist)
 
     @classmethod
     def from_masked_image(cls, ee_image):
@@ -167,11 +138,9 @@ class MaskedImage(BaseImage):
         -------
         ee.ImageCollection
         """
-        # TODO remove the need for ee_coll_name param, in most cases it should be possible for the image to know what
-        #  collection it comes from
-        if not ee_coll_name in cls.supported_ee_coll_names:
+        if not ee_coll_name in cls._supported_collection_ids:
             raise ValueError(f"Unsupported collection: {ee_coll_name}.  {cls.__name__} supports images from "
-                             "{cls.supported_ee_coll_names}")
+                             "{cls._supported_collection_ids}")
         return ee.ImageCollection(ee_coll_name)
 
     @classmethod
@@ -324,7 +293,7 @@ class MaskedImage(BaseImage):
 
 class LandsatImage(MaskedImage):
     """ Base class for cloud/shadow masking and quality scoring landsat8_c2_l2 and landsat7_c2_l2 images """
-    supported_ee_coll_names = ['LANDSAT/LT04/C02/T1_L2', 'LANDSAT/LT05/C02/T1_L2', 'LANDSAT/LE07/C02/T1_L2',
+    _supported_collection_ids = ['LANDSAT/LT04/C02/T1_L2', 'LANDSAT/LT05/C02/T1_L2', 'LANDSAT/LE07/C02/T1_L2',
                                'LANDSAT/LC08/C02/T1_L2']
 
     # TODO: remove these dtype conversions here and leave it up to download.
@@ -376,7 +345,7 @@ class Sentinel2Image(MaskedImage):  # pragma: no cover
 
     (Does not use cloud probability).
     """
-    supported_ee_coll_names = ['COPERNICUS/S2', 'COPERNICUS/S2_SR']
+    _supported_collection_ids = ['COPERNICUS/S2', 'COPERNICUS/S2_SR']
 
     @staticmethod
     def _im_transform(ee_image):
@@ -401,7 +370,7 @@ class Sentinel2ClImage(MaskedImage):
 
     (Uses cloud probability to improve cloud/shadow masking).
     """
-    supported_ee_coll_names = ['COPERNICUS/S2', 'COPERNICUS/S2_SR']
+    _supported_collection_ids = ['COPERNICUS/S2', 'COPERNICUS/S2_SR']
 
     def __init__(self, ee_image, mask=MaskedImage._default_params['mask'],
                  cloud_dist=MaskedImage._default_params['cloud_dist']):
@@ -435,16 +404,18 @@ class Sentinel2ClImage(MaskedImage):
                 cloud_dist=MaskedImage._default_params['cloud_dist']):
         # check image_id
         ee_coll_name = split_id(image_id)[0]
-        if ee_coll_name not in cls.supported_ee_coll_names:
+        if ee_coll_name not in cls._supported_collection_ids:
             raise ValueError(f"Unsupported collection: {ee_coll_name}.  "
-                             f"{cls.__name__} only supports images from {cls.supported_ee_coll_names}")
+                             f"{cls.__name__} only supports images from {cls._supported_collection_ids}")
 
         ee_image = ee.Image(image_id)
 
         # get cloud probability for ee_image and add as a band
         cloud_prob = ee.Image(f"COPERNICUS/S2_CLOUD_PROBABILITY/{split_id(image_id)[1]}").rename('CLOUD_PROB')
         ee_image = ee_image.addBands(cloud_prob, overwrite=True)
-        return cls(ee_image, mask=mask, cloud_dist=cloud_dist)
+        gd_image = cls(ee_image, mask=mask, cloud_dist=cloud_dist)
+        gd_image._id = image_id
+        return gd_image
 
     def _get_image_masks(self, ee_image):
         """
@@ -523,9 +494,9 @@ class Sentinel2ClImage(MaskedImage):
         -------
         ee.ImageCollection
         """
-        if not ee_coll_name in cls.supported_ee_coll_names:
+        if not ee_coll_name in cls._supported_collection_ids:
             raise ValueError(f"Unsupported collection: {ee_coll_name}.  {cls.__name__} supports images from "
-                             "{cls.supported_ee_coll_names}")
+                             f"{cls._supported_collection_ids}")
         s2_sr_toa_col = ee.ImageCollection(ee_coll_name)
         s2_cloudless_col = ee.ImageCollection("COPERNICUS/S2_CLOUD_PROBABILITY")
 
@@ -548,7 +519,7 @@ class ModisNbarImage(MaskedImage):
     (These images are already cloud/shadow free composites, so no further processing is done on them, and
     constant cloud, shadow etc masks are used).
     """
-    supported_ee_coll_names = ['MODIS/006/MCD43A4']
+    _supported_collection_ids = ['MODIS/006/MCD43A4']
 
     @staticmethod
     def _im_transform(ee_image):

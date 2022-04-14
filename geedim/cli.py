@@ -341,7 +341,7 @@ def search(obj, collection, start_date, end_date, bbox, region, valid_portion, o
                 f'{start_date.strftime("%Y-%m-%d")} and {end_date.strftime("%Y-%m-%d")}...')
 
     # create collection wrapper and search
-    if collection in info.ee_to_gd:
+    if collection in info.collection_info:
         gd_collection = coll_api.MaskedCollection(collection)
         im_df = gd_collection.search(start_date, end_date, obj.region, valid_portion=valid_portion)
     else:
