@@ -55,9 +55,7 @@ class MaskedImage(BaseImage):
         # construct the cloud/shadow masks and cloudless score
         self._cloud_dist = cloud_dist
         ee_image = ee_image.unmask()
-        self._masks = self._get_image_masks(ee_image)
-        self._score = self._get_image_score(ee_image)
-        ee_image = self._process_image(ee_image, mask=mask, masks=self._masks, score=self._score)
+        ee_image = self._process_image(ee_image, mask=mask)
         BaseImage.__init__(self, ee_image)
 
     @classmethod
@@ -106,16 +104,6 @@ class MaskedImage(BaseImage):
         """ ee.Image: The wrapped image. """
         return self._ee_image
 
-    @property
-    def masks(self):
-        """ dict: A dictionary of ee.Image objects for each of the fill, cloud, shadow and validity masks. """
-        return self._masks
-
-    @property
-    def score(self):
-        """ ee.Image: Pixel quality score (distance to nearest cloud/shadow (m)). """
-        return self._score
-
     @classmethod
     def ee_collection(cls, ee_coll_name):
         """
@@ -159,7 +147,7 @@ class MaskedImage(BaseImage):
         else:
             raise TypeError(f'Unexpected image_obj type: {type(image_obj)}')
 
-        stats_image = ee.Image([gd_image.masks["valid_mask"], gd_image.score])
+        stats_image = ee.Image([gd_image.ee_image.select('VALID_MASK'), gd_image.ee_image.select('SCORE')])
         proj = get_projection(stats_image, min=False)
 
         # sum number of image pixels over the region
@@ -274,7 +262,7 @@ class MaskedImage(BaseImage):
         ee_image = ee_image.addBands(score, overwrite=True)
 
         if mask:  # apply the validity mask to all bands (i.e. set those areas to nodata)
-            ee_image = ee_image.mask(self._masks["valid_mask"])
+            ee_image = ee_image.mask(masks["valid_mask"])
         # else:  # sentinel and landsat come with default mask on SR==0, so force unmask
         #     ee_image = ee_image.unmask()
 
