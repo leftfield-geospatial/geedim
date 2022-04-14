@@ -24,7 +24,7 @@ import rasterio as rio
 from rasterio.crs import CRS
 from rasterio.warp import transform_bounds
 
-from geedim.image import split_id
+from geedim.image import split_id, BaseImage
 from geedim import info, masked_image, root_path, _ee_init, image_from_id
 
 
@@ -63,8 +63,8 @@ def _test_search_results(test_case, res_df, start_date, end_date, valid_portion=
 
 
 def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=None,
-                     mask=masked_image.MaskedImage._default_params['mask'], resampling='near',
-                     cloud_dist=masked_image.MaskedImage._default_params['cloud_dist']):
+                     mask=masked_image.MaskedImage._default_mask, resampling=BaseImage._default_resampling,
+                     cloud_dist=masked_image.MaskedImage._default_cloud_dist):
     """ Test downloaded image file against corresponding image object """
 
     # create objects to test against

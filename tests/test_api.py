@@ -32,8 +32,8 @@ class TestApi(unittest.TestCase):
         """ Initialise Earth Engine once for all the tests here. """
         _setup_test()
 
-    def _test_image(self, image_id, mask=masked_image.MaskedImage._default_params['mask'],
-                    cloud_dist=masked_image.MaskedImage._default_params['cloud_dist']):
+    def _test_image(self, image_id, mask=masked_image.MaskedImage._default_mask,
+                    cloud_dist=masked_image.MaskedImage._default_cloud_dist):
         """ Test the validity of a geedim.image.MaskedImage by checking metadata.  """
 
         ee_coll_name = geedim.image.split_id(image_id)[0]
