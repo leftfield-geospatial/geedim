@@ -284,7 +284,8 @@ def cli(ctx, verbose, quiet):
     "-c",
     "--collection",
     type=click.STRING,  # click.Choice(list(info.gd_to_ee.keys())[:-1], case_sensitive=False),
-    help="Earth Engine image collection to search.",
+    help=f"Earth Engine image collection to search.  [{'|'.join(list(info.gd_to_ee.keys())[:-1])}], or "
+         f"any valid Earth Engine image collection ID.",
     default="landsat8_c2_l2",
     show_default=True,
     callback=_collection_cb,
@@ -390,7 +391,7 @@ cli.add_command(search)
 @dtype_option
 @mask_option
 @resampling_option
-@cloud_dist_option
+@cloud_dist_option  # TODO: move cloud_dist to composite only, where it is relevant.  Omit score from search/download?
 @click.option(
     "-o",
     "--overwrite",

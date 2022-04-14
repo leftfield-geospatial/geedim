@@ -4,11 +4,12 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 # `geedim`
-Searching, compositing and downloading of satellite imagery from [Google Earth Engine](https://earthengine.google.com/) (EE). 
+Searching, compositing, and size limit-free downloading of [Google Earth Engine](https://earthengine.google.com/) imagery. 
 ## Description
-geedim provides a command line interface and API for searching EE images by date, region, and cloud/shadow statistics. It optionally performs cloud/shadow masking, and cloud-free compositing. Images and composites can be downloaded (without size limits and including metadata), or exported to Google Drive.
+`geedim` provides a command line interface and API for searching Google Earth Engine (EE) images by date, region, and cloud/shadow statistics. It optionally performs cloud/shadow masking, and cloud-free compositing. Images and composites can be downloaded (including metadata and without size limits) or exported to Google Drive.
 
-It supports access to the following surface reflectance image collections:
+### Cloud/shadow masking collections
+`geedim` supports cloud/shadow masking on the following surface reflectance image collections:
 
 `geedim` name | EE name| Description
 ---------|-----------|------------
@@ -24,7 +25,7 @@ modis_nbar | [MODIS/006/MCD43A4](https://developers.google.com/earth-engine/data
 `geedim` is a python 3 library, and requires users to be registered with [Google Earth Engine](https://signup.earthengine.google.com).
 
 ## Installation
-`geedim` is available via `pip` and `conda`.  
+`geedim` is available via `pip` and `conda`.  Under Windows, we recommend using `conda` to resolve binary dependencies. 
 ### conda
 The [Miniconda](https://docs.conda.io/en/latest/miniconda.html) installation provides a minimal `conda`.
 ```shell
@@ -45,15 +46,15 @@ Following installation, Earth Engine must be authenticated:
 earthengine authenticate
 ```
 ## Quick Start
-Search for Landsat 8 images
+Search for Landsat 8 images.
 ```shell
 geedim search -c landsat8_c2_l2 -s 2021-06-01 -e 2021-07-01 --bbox 24 -33 24.1 -33.1
 ```
-Download Landsat 8 image 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20210610' with cloud/shadow mask
+Download Landsat 8 image 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20210610' with cloud/shadow mask.
 ```shell
 geedim download -i LANDSAT/LC08/C02/T1_L2/LC08_172083_20210610 --bbox 24 -33 24.1 -33.1 --mask
 ```
-Composite the results of a search, then download with specified CRS and pixel size (scale)
+Composite the results of a search, then download with specified CRS and pixel size (scale).
 ```shell
 geedim search -c landsat8_c2_l2 -s 2021-06-01 -e 2021-07-01 --bbox 24 -33 24.1 -33.1 composite download --crs EPSG:32634 --scale 30
 ```
@@ -68,12 +69,15 @@ geedim --help
 Usage: geedim [OPTIONS] COMMAND1 [ARGS]... [COMMAND2 [ARGS]...]...
 
 Options:
-  --help  Show this message and exit.
+  -v, --verbose  Increase verbosity.
+  -q, --quiet    Decrease verbosity.
+  --version      Show the version and exit.
+  --help         Show this message and exit.
 
 Commands:
   composite  Create a cloud-free composite image
-  download   Download image(s), with cloud and shadow masking
-  export     Export image(s) to Google Drive, with cloud and shadow masking
+  download   Download image(s), without size limits and including...
+  export     Export image(s) to Google Drive, with optional cloud and...
   search     Search for images
 ```
 ### Search
@@ -87,30 +91,26 @@ Usage: geedim search [OPTIONS]
   Search for images
 
 Options:
-  -c, --collection [landsat4_c2_l2|landsat5_c2_l2|landsat7_c2_l2|landsat8_c2_l2|sentinel2_toa|sentinel2_sr|modis_nbar]
-                                  Earth Engine image collection to search.
-                                  [default: landsat8_c2_l2]
-
+  -c, --collection TEXT           Earth Engine image collection to search.  [l
+                                  andsat4_c2_l2|landsat5_c2_l2|landsat7_c2_l2|
+                                  landsat8_c2_l2|sentinel2_toa|sentinel2_sr|mo
+                                  dis_nbar], or any valid Earth Engine image
+                                  collection ID.  [default: landsat8_c2_l2]
   -s, --start-date [%Y-%m-%d|%Y-%m-%dT%H:%M:%S|%Y-%m-%d %H:%M:%S]
                                   Start date (UTC).  [required]
   -e, --end-date [%Y-%m-%d|%Y-%m-%dT%H:%M:%S|%Y-%m-%d %H:%M:%S]
-                                  End date (UTC).   [default: start_date + 1
-                                  day]
-
+                                  End date (UTC).
+                                  [default: start_date + 1 day]
   -b, --bbox FLOAT...             Region defined by bounding box co-ordinates
-                                  in WGS84 (xmin, ymin, xmax, ymax).  [One of
-                                  --bbox or --region is required.]
-
+                                  in WGS84 (xmin, ymin, xmax, ymax).
   -r, --region FILE               Region defined by geojson or raster file.
-                                  [One of --bbox or --region is required.]
-
+                                  [One of --bbox or --region is required]
   -vp, --valid-portion FLOAT RANGE
                                   Lower limit of the portion of valid (cloud
-                                  and shadow free) pixels (%).  [default: 0]
-
+                                  and shadow free) pixels (%).  [default: 0;
+                                  0<=x<=100]
   -o, --output FILE               Write results to this filename, file type
                                   inferred from extension: [.csv|.json]
-
   --help                          Show this message and exit.
 ```
 #### Example
@@ -119,7 +119,7 @@ geedim search -c landsat8_c2_l2 -b 23.9 -33.6 24 -33.5 -s 2019-01-01 -e 2019-02-
 ```
 
 ### Download / Export
-Download or export image(s) by specifying their ID(s).  Search result image(s) can be downloaded / exported by chaining the `search` and `download` / `export` sub-commands.  The following auxiliary bands are included in downloaded / exported images:
+Download or export image(s) by specifying their ID(s).  Search result image(s) can be downloaded / exported by chaining the `search` and `download` / `export` sub-commands.  Images exceeding EE download limits are split and downloaded in smaller tiles, which are then re-assembled on the client into a GeoTIFF file.  The following auxiliary bands are included in images downloaded / exported from supported [cloud/shadow masking collections](#-cloudshadow-masking-collections):
 
 - FILL_MASK: Filled / captured pixels 
 - CLOUD_MASK: Cloudy pixels 
@@ -148,8 +148,9 @@ Options:
                                   or path to text file containing WKT).
                                   [default: source CRS]
   -s, --scale FLOAT               Resample image bands to this pixel
-                                  resolution (m).  [default: minimum of the
-                                  source band resolutions]
+                                  resolution (m).
+                                  [default: minimum of the source band
+                                  resolutions]
   -dt, --dtype [int8|uint8|uint16|int16|uint32|int32|float32|float64]
                                   Convert image(s) to this data type.
   -m, --mask / -nm, --no-mask     Do/don't apply (cloud and shadow) nodata
@@ -184,8 +185,9 @@ Options:
                                   or path to text file containing WKT).
                                   [default: source CRS]
   -s, --scale FLOAT               Resample image bands to this pixel
-                                  resolution (m).  [default: minimum of the
-                                  source band resolutions]
+                                  resolution (m).
+                                  [default: minimum of the source band
+                                  resolutions]
   -dt, --dtype [int8|uint8|uint16|int16|uint32|int32|float32|float64]
                                   Convert image(s) to this data type.
   -m, --mask / -nm, --no-mask     Do/don't apply (cloud and shadow) nodata
@@ -232,16 +234,14 @@ Options:
   -cm, --method [q_mosaic|mosaic|median|medoid]
                                   Compositing method to use.  [default:
                                   q_mosaic]
-
   -m, --mask / -nm, --no-mask     Do/don't apply (cloud and shadow) nodata
                                   mask(s) before compositing.  [default:
                                   --mask]
-
   -rs, --resampling [near|bilinear|bicubic]
                                   Resampling method.  [default: near]
   -cd, --cloud-dist FLOAT         Search for cloud/shadow inside this radius
                                   (m) to determine compositing quality score.
-                                  [default: 5000]                                  
+                                  [default: 5000]
   --help                          Show this message and exit.
 ```
 #### Example
