@@ -243,7 +243,7 @@ resampling_option = click.option(
     "--resampling",
     type=click.Choice(["near", "bilinear", "bicubic"], case_sensitive=True),
     help="Resampling method.",
-    default="near",
+    default=BaseImage._default_resampling,
     show_default=True,
 )
 cloud_dist_option = click.option(
@@ -462,9 +462,9 @@ cli.add_command(export)
 @click.option(
     "-cm",
     "--method",
-    type=click.Choice(coll_api.MaskedCollection.composite_methods, case_sensitive=False),
+    type=click.Choice(coll_api.MaskedCollection._composite_methods, case_sensitive=False),
     help="Compositing method to use.",
-    default="q_mosaic",
+    default=MaskedCollection._default_comp_method,
     show_default=True,
     required=False,
 )

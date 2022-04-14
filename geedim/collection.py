@@ -23,7 +23,7 @@ import ee
 import pandas as pd
 
 from geedim import masked_image, info, medoid, image, class_from_id
-from geedim.image import _default_resampling, BaseImage, split_id
+from geedim.image import BaseImage, split_id
 from geedim.masked_image import MaskedImage
 
 logger = logging.getLogger(__name__)
@@ -31,7 +31,8 @@ logger = logging.getLogger(__name__)
 
 ##
 class BaseCollection:
-    composite_methods = ["mosaic", "median", "medoid"]  # supported composite methods
+    _composite_methods = ["mosaic", "median", "medoid"]  # supported composite methods
+    _default_comp_method = 'mosaic'
 
     def __init__(self, ee_coll_name):
         """
@@ -227,7 +228,7 @@ class BaseCollection:
 
         return self._summary_df
 
-    def composite(self, method="median", resampling=_default_resampling):
+    def composite(self, method=_default_comp_method, resampling=BaseImage._default_resampling):
         """
         Create a composite image.
 
@@ -246,7 +247,7 @@ class BaseCollection:
         comp_image: BaseImage
           The composite image
         """
-        if resampling != _default_resampling:
+        if resampling != BaseImage._default_resampling:
             self._ee_collection = self._ee_collection.map(lambda image: image.resample(resampling))
 
         method = str(method).lower()
@@ -274,7 +275,8 @@ class BaseCollection:
 
 
 class MaskedCollection(BaseCollection):
-    composite_methods = ["q_mosaic", "mosaic", "median", "medoid"]  # supported composite methods
+    _composite_methods = ["q_mosaic", "mosaic", "median", "medoid"]  # supported composite methods
+    _default_comp_method = 'q_mosaic'
 
     def __init__(self, ee_coll_name):
         """
@@ -373,7 +375,7 @@ class MaskedCollection(BaseCollection):
 
         return self._summary_df
 
-    def composite(self, method="q_mosaic", resampling=_default_resampling):
+    def composite(self, method=_default_comp_method, resampling=BaseImage._default_resampling):
         """
         Create a cloud/shadow free composite.
 
@@ -394,7 +396,7 @@ class MaskedCollection(BaseCollection):
         comp_image: MaskedImage
           The composite image, composite image ID
         """
-        if resampling != _default_resampling:
+        if resampling != BaseImage._default_resampling:
             self._ee_collection = self._ee_collection.map(lambda image: image.resample(resampling))
 
         method = str(method).lower()

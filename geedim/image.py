@@ -45,11 +45,6 @@ from geedim.tile import Tile, _requests_retry_session
 
 logger = logging.getLogger(__name__)
 
-"""EE image property key for image region"""
-_footprint_key = "system:footprint"
-"""Default EE image resampling method"""
-_default_resampling = 'near'
-
 
 def split_id(image_id):
     """
@@ -129,8 +124,10 @@ class BaseImage:
 
     Provides client-side access to metadata, download and export functionality.
     """
-    float_nodata = float('nan')
-    desc_width = 70
+    _float_nodata = float('nan')
+    _desc_width = 70
+    _footprint_key = 'system:footprint'
+    _default_resampling = 'near'
 
     def __init__(self, ee_image: ee.Image, num_threads=None):
 
@@ -242,7 +239,7 @@ class BaseImage:
         """A geojson polygon of the image extent."""
         if 'system:footprint' not in self.ee_info['properties']:
             return None
-        return self.ee_info['properties']['system:footprint']
+        return self.ee_info['properties'][self._footprint_key]
 
     @property
     def band_metadata(self) -> List:
@@ -403,7 +400,7 @@ class BaseImage:
                 'https://issuetracker.google.com/issues/194561313'
             )
 
-        ee_image = self._ee_image.resample(resampling) if resampling != _default_resampling else self._ee_image
+        ee_image = self._ee_image.resample(resampling) if resampling != self._default_resampling else self._ee_image
         ee_image = self._convert_dtype(ee_image, dtype=dtype or self.dtype)
         export_args = dict(region=region, crs=crs, scale=scale, fileFormat='GeoTIFF', filePerBand=False)
         ee_image, _ = ee_image.prepare_for_export(export_args)
@@ -419,8 +416,8 @@ class BaseImage:
         # resample, convert, clip and reproject image according to download params
         exp_image = self._prepare_for_export(**kwargs)
         nodata_dict = dict(
-            float32=self.float_nodata,  # see workaround note in Tile.download(...)
-            float64=self.float_nodata,  # ditto
+            float32=self._float_nodata,  # see workaround note in Tile.download(...)
+            float64=self._float_nodata,  # ditto
             uint8=0,
             int8=np.iinfo('int8').min,
             uint16=0,
@@ -435,10 +432,8 @@ class BaseImage:
                        compress='deflate', interleave='band', tiled=True)
         return exp_image, profile
 
-    def _get_tile_shape(self, exp_image: 'BaseImage', max_download_size=33554432, max_grid_dimension=10000) -> (Tuple[
-                                                                                                                    int, int],
-                                                                                                                int,
-                                                                                                                float):
+    def _get_tile_shape(self, exp_image: 'BaseImage', max_download_size=33554432,
+                        max_grid_dimension=10000) -> (Tuple[int, int], int):
         """Return a tile shape for provided BaseImage that satisfies GEE download limits, and is 'square-ish'."""
 
         # find the total number of tiles we must divide the image into to satisfy max_download_size
@@ -548,7 +543,7 @@ class BaseImage:
 
         if label is None:
             label = status["metadata"]["description"]
-        label = label if (len(label) < BaseImage.desc_width) else f'*{label[-BaseImage.desc_width:]}'
+        label = label if (len(label) < BaseImage._desc_width) else f'*{label[-BaseImage._desc_width:]}'
 
         class Spin(threading.Thread):
             stop = False
@@ -691,7 +686,7 @@ class BaseImage:
                            f' download size (raw: {self.human_size(raw_download_size)}).')
 
         # configure the progress bar to monitor raw/uncompressed download size
-        desc = filename.name if (len(filename.name) < self.desc_width) else f'*{filename.name[-self.desc_width:]}'
+        desc = filename.name if (len(filename.name) < self._desc_width) else f'*{filename.name[-self._desc_width:]}'
         bar_format = ('{desc}: |{bar}| {n_fmt}/{total_fmt} (raw) [{percentage:5.1f}%] in {elapsed:>5s} '
                       '(eta: {remaining:>5s})')
         bar = tqdm(desc=desc, total=raw_download_size, bar_format=bar_format, dynamic_ncols=True,

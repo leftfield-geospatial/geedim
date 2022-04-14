@@ -170,7 +170,7 @@ class TestApi(unittest.TestCase):
     def test_composite(self):
         """ Test each composite method on different collections. """
 
-        methods = collection.MaskedCollection.composite_methods
+        methods = collection.MaskedCollection._composite_methods
         param_list = [
             {'image_ids': ['LANDSAT/LE07/C02/T1_L2/LE07_171083_20190129', 'LANDSAT/LE07/C02/T1_L2/LE07_171083_20190214',
                            'LANDSAT/LE07/C02/T1_L2/LE07_171083_20190302'], 'mask': True, 'cloud_dist': 5000},
