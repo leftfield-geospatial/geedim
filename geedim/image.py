@@ -435,7 +435,7 @@ class BaseImage:
         ee_image, _ = ee_image.prepare_for_export(export_args)
         return BaseImage(ee_image)
 
-    def _prepare_for_download(self, mask=True, **kwargs) -> ('BaseImage', Dict):
+    def _prepare_for_download(self, set_nodata=True, **kwargs) -> ('BaseImage', Dict):
         """
         Prepare the encapsulated image for tiled downloading to local GeoTIFF. Will reproject, resample, clip and
         convert the image according to the provided parameters.
@@ -454,7 +454,7 @@ class BaseImage:
             uint32=0,
             int32=np.iinfo('int32').min
         )
-        nodata = nodata_dict[exp_image.dtype] if mask else None
+        nodata = nodata_dict[exp_image.dtype] if set_nodata else None
         profile = dict(driver='GTiff', dtype=exp_image.dtype, nodata=nodata, width=exp_image.shape[1],
                        height=exp_image.shape[0],
                        count=exp_image.count, crs=CRS.from_string(exp_image.crs), transform=exp_image.transform,

@@ -294,8 +294,8 @@ class MaskedCollection(BaseCollection):
         self._ee_collection = self._image_class.ee_collection(self._ee_coll_name)  # the wrapped ee.ImageCollection
 
     @classmethod
-    def from_ids(cls, image_ids, mask=masked_image.MaskedImage._default_params['mask'],
-                 cloud_dist=masked_image.MaskedImage._default_params['cloud_dist']):
+    def from_ids(cls, image_ids, mask=masked_image.MaskedImage._default_mask,
+                 cloud_dist=masked_image.MaskedImage._default_cloud_dist):
         """
         Create collection from image IDs
 
@@ -333,7 +333,7 @@ class MaskedCollection(BaseCollection):
         gd_collection._ee_collection = ee.ImageCollection(im_list)
         return gd_collection
 
-    def search(self, start_date, end_date, region, valid_portion=0, mask=False):
+    def search(self, start_date, end_date, region, valid_portion=0, mask=MaskedImage._default_mask):
         """
         Search for images based on date, region etc criteria
 

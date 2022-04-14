@@ -254,7 +254,7 @@ geedim search -c landsat8_c2_l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -
 
 ```python
 import ee
-from geedim import collection, masked_image, image_from_id
+from geedim import collection, image_from_id
 
 ee.Initialize()  # initialise earth engine
 
@@ -263,8 +263,7 @@ region = {"type": "Polygon",
           "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
 
 # make collection and search
-gd_coll_name = 'sentinel2_sr'
-gd_collection = collection.MaskedCollection(gd_coll_name)
+gd_collection = collection.MaskedCollection('COPERNICUS/S2_SR')
 res_df = gd_collection.search('2019-01-10', '2019-01-21', region)
 print(gd_collection.summary_key)
 print(gd_collection.summary)

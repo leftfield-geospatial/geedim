@@ -78,10 +78,11 @@ def get_projection(image, min=True):
 
 
 class MaskedImage(BaseImage):
-    _default_params = dict(mask=False, cloud_dist=5000)
+    _default_mask = False
+    _default_cloud_dist = 5000
     _supported_collection_ids = []
 
-    def __init__(self, ee_image, mask=_default_params['mask'], cloud_dist=_default_params['cloud_dist']):
+    def __init__(self, ee_image, mask=_default_mask, cloud_dist=_default_cloud_dist):
         """
         Class to cloud/shadow mask and quality score Earth engine images from supported collections.
 
@@ -112,7 +113,7 @@ class MaskedImage(BaseImage):
         return gd_image
 
     @classmethod
-    def _from_id(cls, image_id, mask=_default_params['mask'], cloud_dist=_default_params['cloud_dist'], region=None):
+    def _from_id(cls, image_id, mask=_default_mask, cloud_dist=_default_cloud_dist, region=None):
         """ Internal method for creating an image with region statistics. """
         gd_image = cls.from_id(image_id, mask=mask, cloud_dist=cloud_dist)
         if region is not None:
@@ -144,7 +145,7 @@ class MaskedImage(BaseImage):
         return ee.ImageCollection(ee_coll_name)
 
     @classmethod
-    def set_region_stats(cls, image_obj, region, mask=False):
+    def set_region_stats(cls, image_obj, region, mask=_default_mask):
         """
         Set VALID_PORTION and AVG_SCORE statistics for a specified region in an image object.
 
@@ -259,7 +260,7 @@ class MaskedImage(BaseImage):
                  where(masks["fill_mask"].Not(), 0))
         return score
 
-    def _process_image(self, ee_image, mask=False, masks=None, score=None):
+    def _process_image(self, ee_image, mask=_default_mask, masks=None, score=None):
         """
         Create, and add, mask and score bands to a an Earth Engine image.
 
@@ -372,8 +373,7 @@ class Sentinel2ClImage(MaskedImage):
     """
     _supported_collection_ids = ['COPERNICUS/S2', 'COPERNICUS/S2_SR']
 
-    def __init__(self, ee_image, mask=MaskedImage._default_params['mask'],
-                 cloud_dist=MaskedImage._default_params['cloud_dist']):
+    def __init__(self, ee_image, mask=MaskedImage._default_mask, cloud_dist=MaskedImage._default_cloud_dist):
         """
         Class to cloud/shadow mask and quality score GEE Sentinel-2 images.
 
@@ -400,8 +400,7 @@ class Sentinel2ClImage(MaskedImage):
         return ee.Image.toUint16(ee_image)
 
     @classmethod
-    def from_id(cls, image_id, mask=MaskedImage._default_params['mask'],
-                cloud_dist=MaskedImage._default_params['cloud_dist']):
+    def from_id(cls, image_id, mask=MaskedImage._default_mask, cloud_dist=MaskedImage._default_cloud_dist):
         # check image_id
         ee_coll_name = split_id(image_id)[0]
         if ee_coll_name not in cls._supported_collection_ids:

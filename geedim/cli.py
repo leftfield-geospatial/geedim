@@ -148,7 +148,8 @@ def _region_cb(ctx, param, value):
     return value
 
 
-def _parse_image_list(obj: SimpleNamespace, mask=False, cloud_dist=False):
+def _parse_image_list(obj: SimpleNamespace, mask=masked_image.MaskedImage._default_mask,
+                      cloud_dist=masked_image.MaskedImage._default_cloud_dist):
     """Validate and prepare the obj.image_list for export/download."""
     if len(obj.image_list) == 0:
         raise click.BadOptionUsage('image_id',
@@ -161,6 +162,7 @@ def _parse_image_list(obj: SimpleNamespace, mask=False, cloud_dist=False):
 
 def _collection_from_list(image_list, **kwargs):
     """Return a Base/MaskedCollection from a list of image ID's and/or Base/MaskedImage objects."""
+    # TODO: make this accessible from API (__init__)
     ee_image_list = []
     masked = []
     for image_obj in image_list:
@@ -234,7 +236,7 @@ dtype_option = click.option(
 mask_option = click.option(
     "-m/-nm",
     "--mask/--no-mask",
-    default=masked_image.MaskedImage._default_params['mask'],
+    default=masked_image.MaskedImage._default_mask,
     help="Do/don't apply (cloud and shadow) nodata mask(s).  [default: --no-mask]",
     required=False,
 )
@@ -250,7 +252,7 @@ cloud_dist_option = click.option(
     "-cd",
     "--cloud-dist",
     type=click.FLOAT,
-    default=masked_image.MaskedImage._default_params['cloud_dist'],
+    default=masked_image.MaskedImage._default_cloud_dist,
     help="Search for cloud/shadow inside this radius (m) to determine compositing quality score.",
     show_default=True,
     required=False,
