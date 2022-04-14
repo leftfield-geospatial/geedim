@@ -424,6 +424,7 @@ class MaskedCollection(BaseCollection):
         comp_id = f"{self._ee_coll_name}/{start_date}-{end_date}-{method.upper()}_COMP"
         comp_image = comp_image.set("system:id", comp_id)
         comp_image = comp_image.set("system:time_start", self.summary_df.DATE.iloc[0].timestamp() * 1000)
-        # TODO: return MaskedImage for mosaic and q_mosaic - do the QA, mask and score bands mosaic correctly,
-        #  and BasicImage for medoid (?) and median
-        return BaseImage(comp_image)
+        # TODO: do the QA, mask and score bands mosaic correctly?
+        #  would re-calculating the masks and score on the mosaics QA bands work?
+        # TODO: leave out the median method entirely?
+        return BaseImage(comp_image) if method == 'median' else self._image_class.from_masked_image(comp_image)
