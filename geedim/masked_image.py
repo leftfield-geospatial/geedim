@@ -25,9 +25,10 @@ from geedim import info
 from geedim.image import BaseImage, split_id
 
 logger = logging.getLogger(__name__)
+
+
 ##
 # Image classes
-
 
 
 class MaskedImage(BaseImage):
@@ -87,6 +88,13 @@ class MaskedImage(BaseImage):
         return cls(ee_image, mask=mask, cloud_dist=cloud_dist)
 
     @classmethod
+    def from_masked_image(cls, ee_image):
+        """Wrap an already masked and scored ee.Image (e.g a composite) in MaskedImage."""
+        gd_image = cls(ee.Image(0))
+        gd_image._ee_image = ee_image
+        return gd_image
+
+    @classmethod
     def _from_id(cls, image_id, mask=_default_params['mask'], cloud_dist=_default_params['cloud_dist'], region=None):
         """ Internal method for creating an image with region statistics. """
         gd_image = cls.from_id(image_id, mask=mask, cloud_dist=cloud_dist)
@@ -117,9 +125,8 @@ class MaskedImage(BaseImage):
         #  collection it comes from
         if not ee_coll_name in cls.supported_ee_coll_names:
             raise ValueError(f"Unsupported collection: {ee_coll_name}.  {cls.__name__} supports images from "
-                               "{cls.supported_ee_coll_names}")
+                             "{cls.supported_ee_coll_names}")
         return ee.ImageCollection(ee_coll_name)
-
 
     @classmethod
     def set_region_stats(cls, image_obj, region, mask=False):
@@ -273,6 +280,7 @@ class LandsatImage(MaskedImage):
     """ Base class for cloud/shadow masking and quality scoring landsat8_c2_l2 and landsat7_c2_l2 images """
     supported_ee_coll_names = ['LANDSAT/LT04/C02/T1_L2', 'LANDSAT/LT05/C02/T1_L2', 'LANDSAT/LE07/C02/T1_L2',
                                'LANDSAT/LC08/C02/T1_L2']
+
     # TODO: remove these dtype conversions here and leave it up to download.
     @staticmethod
     def _im_transform(ee_image):
@@ -351,13 +359,25 @@ class Sentinel2ClImage(MaskedImage):
 
     def __init__(self, ee_image, mask=MaskedImage._default_params['mask'],
                  cloud_dist=MaskedImage._default_params['cloud_dist']):
-        # TODO: provide CLI access to these attributes
+        """
+        Class to cloud/shadow mask and quality score GEE Sentinel-2 images.
 
+        Parameters
+        ----------
+        ee_image : ee.Image
+            Earth engine Sentinel-2 image to wrap.  This image must have a `CLOUD_PROB` band containing the
+            corresponding image from the `COPERNICUS/S2_CLOUD_PROBABILITY` collection.
+        mask : bool, optional
+            Apply a validity (cloud & shadow) mask to the image (default: False).
+        cloud_dist : int, optional
+            The radius (m) to search for cloud/shadow for quality scoring (default: 5000).
+        """
+
+        # TODO: provide CLI access to these attributes
         # set attributes before their use in __init__ below
         self._cloud_prob_thresh = 35  # Cloud probability (%); values greater than are considered cloud
         self._cloud_proj_dist = 1  # Maximum distance (km) to search for cloud shadows from cloud edges
         self._buffer = 100  # Distance (m) to dilate the edge of cloud-identified objects
-        #TODO: warn and or document that ee_image needs to have the CLOUD_PROB band already as in from_id
         MaskedImage.__init__(self, ee_image, mask=mask, cloud_dist=cloud_dist)
 
     @staticmethod
@@ -376,7 +396,7 @@ class Sentinel2ClImage(MaskedImage):
         ee_image = ee.Image(image_id)
 
         # get cloud probability for ee_image and add as a band
-        cloud_prob = ee.Image(f"COPERNICUS/S2_CLOUD_PROBABILITY/{split_id(image_id)[1]}")
+        cloud_prob = ee.Image(f"COPERNICUS/S2_CLOUD_PROBABILITY/{split_id(image_id)[1]}").rename('CLOUD_PROB')
         ee_image = ee_image.addBands(cloud_prob, overwrite=True)
         return cls(ee_image, mask=mask, cloud_dist=cloud_dist)
 
@@ -401,7 +421,7 @@ class Sentinel2ClImage(MaskedImage):
         proj = get_projection(ee_image, min=False)  # use maximum scale projection to save processing time
 
         # threshold the added cloud probability to get the initial cloud mask
-        cloud_prob = ee_image.select("probability")
+        cloud_prob = ee_image.select("CLOUD_PROB")
         cloud_mask = cloud_prob.gt(self._cloud_prob_thresh).rename("CLOUD_MASK")
 
         # TODO: dilate valid_mask by _buffer ?
@@ -436,8 +456,8 @@ class Sentinel2ClImage(MaskedImage):
                         focal_min(self._buffer, "circle", "meters").
                         focal_max(2 * self._buffer, "circle", "meters")
                 ).rename("SHADOW_MASK"),
-            proj_cloud_mask.rename("SHADOW_MASK")
-        ))
+                proj_cloud_mask.rename("SHADOW_MASK")
+            ))
 
         # incorporate the existing mask (for zero SR pixels) into the shadow mask
         zero_sr_mask = ee_image.mask().reduce(ee.Reducer.allNonZero()).Not()
@@ -459,7 +479,7 @@ class Sentinel2ClImage(MaskedImage):
         """
         if not ee_coll_name in cls.supported_ee_coll_names:
             raise ValueError(f"Unsupported collection: {ee_coll_name}.  {cls.__name__} supports images from "
-                               "{cls.supported_ee_coll_names}")
+                             "{cls.supported_ee_coll_names}")
         s2_sr_toa_col = ee.ImageCollection(ee_coll_name)
         s2_cloudless_col = ee.ImageCollection("COPERNICUS/S2_CLOUD_PROBABILITY")
 
@@ -470,7 +490,7 @@ class Sentinel2ClImage(MaskedImage):
         # re-configure the collection so that cloud probability is added as a band to the SR/TOA image
         def map(feature):
             """ Server-side function to concatenate images """
-            return ee.Image.cat(feature.get("primary"), feature.get("secondary"))
+            return ee.Image.cat(feature.get("primary"), ee.Image(feature.get("secondary")).rename('CLOUD_PROB'))
 
         return inner_join.map(map)
 
@@ -487,7 +507,6 @@ class ModisNbarImage(MaskedImage):
     @staticmethod
     def _im_transform(ee_image):
         return ee.Image.toUint16(ee_image)
-
 
 
 ##
