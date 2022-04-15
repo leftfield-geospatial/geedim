@@ -27,7 +27,7 @@ from rasterio.errors import CRSError
 
 from geedim import collection as coll_api
 from geedim import info, _ee_init, version
-from geedim.collection import MaskedCollection, image_list_from_mixed_list, collection_from_list
+from geedim.collection import MaskedCollection, image_from_mixed_list, collection_from_mixed_list
 from geedim.image import BaseImage, get_bounds
 from geedim.masked_image import MaskedImage
 
@@ -159,7 +159,7 @@ def _validate_image_list(obj: SimpleNamespace, mask=MaskedImage._default_mask,
     if len(obj.image_list) == 0:
         raise click.BadOptionUsage('image_id',
                                    'Either pass --id, or chain this command with a successful `search` or `composite`')
-    image_list = image_list_from_mixed_list(obj.image_list, mask=mask, cloud_dist=cloud_dist)
+    image_list = image_from_mixed_list(obj.image_list, mask=mask, cloud_dist=cloud_dist)
     if obj.region is None and any([not im.has_fixed_projection for im in image_list]):
         raise click.BadOptionUsage('region', 'One of --region or --box is required for a composite image.')
     return image_list
@@ -473,7 +473,7 @@ def composite(obj, image_id, mask, method, resampling, cloud_dist):
     if len(obj.image_list) == 0:
         raise click.BadOptionUsage('image_id', 'Either pass --id, or chain this command with a successful `search`')
 
-    gd_collection = collection_from_list(obj.image_list, mask=mask, cloud_dist=cloud_dist)
+    gd_collection = collection_from_mixed_list(obj.image_list, mask=mask, cloud_dist=cloud_dist)
     obj.image_list = [gd_collection.composite(method=method, resampling=resampling)]
 
 

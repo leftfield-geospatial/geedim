@@ -17,6 +17,7 @@ landsat4_c2_l2 | [LANDSAT/LT04/C02/T1_L2](https://developers.google.com/earth-en
 landsat5_c2_l2 | [LANDSAT/LT05/C02/T1_L2](https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT05_C02_T1_L2) | Landsat 5, collection 2, tier 1, level 2 surface reflectance 
 landsat7_c2_l2 | [LANDSAT/LE07/C02/T1_L2](https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LE07_C02_T1_L2) | Landsat 7, collection 2, tier 1, level 2 surface reflectance 
 landsat8_c2_l2 | [LANDSAT/LC08/C02/T1_L2](https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C02_T1_L2) | Landsat 8, collection 2, tier 1, level 2 surface reflectance 
+landsat9_c2_l2 | [LANDSAT/LC09/C02/T1_L2](https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC09_C02_T1_L2) | Landsat 9, collection 2, tier 1, level 2 surface reflectance 
 sentinel2_toa | [COPERNICUS/S2](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2) | Sentinel-2, level 1C, top of atmosphere reflectance 
 sentinel2_sr | [COPERNICUS/S2_SR](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR) | Sentinel-2, level 2A, surface reflectance
 modis_nbar | [MODIS/006/MCD43A4](https://developers.google.com/earth-engine/datasets/catalog/MODIS_006_MCD43A4) | MODIS nadir BRDF adjusted reflectance
@@ -88,14 +89,15 @@ geedim search --help
 ```
 Usage: geedim search [OPTIONS]
 
-  Search for images
+  Search for images.
 
 Options:
   -c, --collection TEXT           Earth Engine image collection to search.  [l
                                   andsat4_c2_l2|landsat5_c2_l2|landsat7_c2_l2|
-                                  landsat8_c2_l2|sentinel2_toa|sentinel2_sr|mo
-                                  dis_nbar], or any valid Earth Engine image
-                                  collection ID.  [default: landsat8_c2_l2]
+                                  landsat8_c2_l2|landsat9_c2_l2|sentinel2_toa|
+                                  sentinel2_sr|modis_nbar], or any valid Earth
+                                  Engine image collection ID.  [default:
+                                  landsat8_c2_l2]
   -s, --start-date [%Y-%m-%d|%Y-%m-%dT%H:%M:%S|%Y-%m-%d %H:%M:%S]
                                   Start date (UTC).  [required]
   -e, --end-date [%Y-%m-%d|%Y-%m-%dT%H:%M:%S|%Y-%m-%d %H:%M:%S]

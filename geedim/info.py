@@ -116,6 +116,33 @@ collection_info = {
             {"PROPERTY": "SUN_AZIMUTH", "ABBREV": "SAA", "DESCRIPTION": "Solar azimuth angle (deg)"},
             {"PROPERTY": "SUN_ELEVATION", "ABBREV": "SEA", "DESCRIPTION": "Solar elevation angle (deg)"}
         ]},
+    "LANDSAT/LC09/C02/T1_L2": {
+        "start_date": "2021-10-31",
+        "end_date": None,
+        "gd_coll_name": "landsat9_c2_l2",
+        "bands": [
+            {"id": "SR_B1", "name": "ultra blue", "abbrev": "UB", "bw_start": 0.435, "bw_end": 0.451, "res": 30},
+            {"id": "SR_B2", "name": "blue", "abbrev": "B", "bw_start": 0.452, "bw_end": 0.512, "res": 30},
+            {"id": "SR_B3", "name": "green", "abbrev": "G", "bw_start": 0.533, "bw_end": 0.590, "res": 30},
+            {"id": "SR_B4", "name": "red", "abbrev": "R", "bw_start": 0.636, "bw_end": 0.673, "res": 30},
+            {"id": "SR_B5", "name": "near infrared", "abbrev": "NIR", "bw_start": 0.851, "bw_end": 0.879, "res": 30},
+            {"id": "SR_B6", "name": "shortwave infrared 1", "abbrev": "SWIR1", "bw_start": 1.566, "bw_end": 1.651,
+             "res": 30},
+            {"id": "SR_B7", "name": "shortwave infrared 2", "abbrev": "SWIR2", "bw_start": 2.107, "bw_end": 2.294,
+             "res": 30},
+            {"id": "ST_B10", "name": "brightness temperature", "abbrev": "BT", "bw_start": 10.60, "bw_end": 11.19,
+             "res": 30}
+        ],
+        "properties": [
+            {"PROPERTY": "system:id", "ABBREV": "ID", "DESCRIPTION": "Earth Engine image id"},
+            {"PROPERTY": "system:time_start", "ABBREV": "DATE", "DESCRIPTION": "Image capture date/time (UTC)"},
+            {"PROPERTY": "VALID_PORTION", "ABBREV": "VALID",
+             "DESCRIPTION": "Portion of cloud and shadow free pixels (%)"},
+            {"PROPERTY": "AVG_SCORE", "ABBREV": "SCORE", "DESCRIPTION": "Average distance to cloud/shadow (m)"},
+            {"PROPERTY": "GEOMETRIC_RMSE_MODEL", "ABBREV": "GRMSE", "DESCRIPTION": "Orthorectification RMSE (m)"},
+            {"PROPERTY": "SUN_AZIMUTH", "ABBREV": "SAA", "DESCRIPTION": "Solar azimuth angle (deg)"},
+            {"PROPERTY": "SUN_ELEVATION", "ABBREV": "SEA", "DESCRIPTION": "Solar elevation angle (deg)"}
+        ]},
     "COPERNICUS/S2": {
         "start_date": "2015-06-23",
         "end_date": None,

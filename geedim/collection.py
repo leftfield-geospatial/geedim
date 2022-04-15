@@ -433,7 +433,7 @@ class MaskedCollection(BaseCollection):
         return BaseImage(comp_image) if method == 'median' else self._image_class.from_masked_image(comp_image)
 
 
-def image_list_from_mixed_list(image_list: List[Union[BaseImage, str],], **kwargs) -> List[BaseImage,]:
+def image_from_mixed_list(image_list: List[Union[BaseImage, str],], **kwargs) -> List[BaseImage,]:
     """Return a list of Base/MaskedImage objects, given a list of image ID's and/or Base/MaskedImage objects."""
     image_obj_list = []
 
@@ -447,9 +447,9 @@ def image_list_from_mixed_list(image_list: List[Union[BaseImage, str],], **kwarg
     return image_obj_list
 
 
-def collection_from_list(image_list: List[Union[BaseImage, str],], **kwargs):
+def collection_from_mixed_list(image_list: List[Union[BaseImage, str],], **kwargs):
     """Return a Base/MaskedCollection from a list of image ID's and/or Base/MaskedImage objects."""
-    image_obj_list = image_list_from_mixed_list(image_list, **kwargs)
+    image_obj_list = image_from_mixed_list(image_list, **kwargs)
     ee_image_list = []
     masked = []
     for image_obj in image_obj_list:

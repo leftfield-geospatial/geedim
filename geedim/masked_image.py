@@ -246,9 +246,9 @@ class MaskedImage(BaseImage):
 
 
 class LandsatImage(MaskedImage):
-    """ Base class for cloud/shadow masking and quality scoring landsat8_c2_l2 and landsat7_c2_l2 images """
+    """ Base class for cloud/shadow masking and quality scoring landsat images """
     _supported_collection_ids = ['LANDSAT/LT04/C02/T1_L2', 'LANDSAT/LT05/C02/T1_L2', 'LANDSAT/LE07/C02/T1_L2',
-                                 'LANDSAT/LC08/C02/T1_L2']
+                                 'LANDSAT/LC08/C02/T1_L2', 'LANDSAT/LC09/C02/T1_L2']
 
     # TODO: remove these dtype conversions here and leave it up to download.
     @staticmethod
@@ -486,6 +486,7 @@ def class_from_id(image_id: str) -> Union[BaseImage, MaskedImage]:
         'LANDSAT/LT05/C02/T1_L2': LandsatImage,
         'LANDSAT/LE07/C02/T1_L2': LandsatImage,
         'LANDSAT/LC08/C02/T1_L2': LandsatImage,
+        'LANDSAT/LC09/C02/T1_L2': LandsatImage,
         'COPERNICUS/S2': Sentinel2ClImage,
         'COPERNICUS/S2_SR': Sentinel2ClImage,
         'MODIS/006/MCD43A4': ModisNbarImage
