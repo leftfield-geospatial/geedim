@@ -99,7 +99,7 @@ class BaseCollection:
         collection: cls
         """
         if ee_coll_name is None:
-            id = image_list[0].get('system:id').getInfo()
+            id = image_list[0].getInfo()['id']
             ee_coll_name, _ = split_id(id)
 
         # create the collection object
@@ -270,6 +270,7 @@ class BaseCollection:
         end_date = self.summary_df.DATE.iloc[-1].strftime("%Y_%m_%d")
 
         comp_id = f"{self._ee_coll_name}/{start_date}-{end_date}-{method.upper()}_COMP"
+        comp_image = comp_image.set("system:time_start", self.summary_df.DATE.iloc[0].timestamp() * 1000)
         comp_image = comp_image.set("system:id", comp_id)
 
         return image.BaseImage(comp_image)

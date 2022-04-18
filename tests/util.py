@@ -130,6 +130,6 @@ def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=Non
             if mask:
                 valid_mask = (valid_mask != im.nodata)
                 score[~valid_mask] = 0
-            test_case.assertAlmostEqual(avg_score, score.mean(), delta=20, msg='EE and file avg scores match')
+            test_case.assertAlmostEqual(avg_score, score.mean(), delta=50, msg='EE and file avg scores match')
             test_case.assertAlmostEqual(valid_portion, 100 * valid_mask.mean(), delta=5,
                                         msg='EE and file valid portions match')
