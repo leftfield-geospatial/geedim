@@ -130,7 +130,9 @@ class BaseImage:
     _default_resampling = 'near'
     _supported_collection_ids = ['*']
 
-    def __init__(self, ee_image: ee.Image, num_threads=None):
+    def __init__(self, ee_image: ee.Image, num_threads=None, **kwargs):
+        # TODO: get rid of kwargs, rather pass num_threads to download, and in MaskedImage, remove internal score band
+        #  and associated cloud_dist argument, and remove mask from constructor, rather make a method to apply it
 
         if not isinstance(ee_image, ee.Image):
             raise TypeError('ee_image must be an instance of ee.Image')
@@ -139,6 +141,7 @@ class BaseImage:
         self._id = None
         self._min_projection = None
         self._min_dtype = None
+        # TODO: some collections e.g. LANDSAT/LC08/C01/T1_8DAY_EVI, won't allow get('system:id')
         self._ee_coll_name = ee.String(ee_image.get('system:id')).split('/').slice(0, -1).join('/')
         self._out_lock = threading.Lock()
         self._max_threads = num_threads or min(32, (os.cpu_count() or 1) + 4)
@@ -161,7 +164,7 @@ class BaseImage:
             The image object.
         """
         ee_coll_name = split_id(image_id)[0]
-        if (cls._supported_collection_ids != '*') and (ee_coll_name not in cls._supported_collection_ids):
+        if (cls._supported_collection_ids != ['*']) and (ee_coll_name not in cls._supported_collection_ids):
             raise ValueError(f"Unsupported collection: {ee_coll_name}.  "
                              f"{cls.__name__} supports images from {cls._supported_collection_ids}")
         ee_image = ee.Image(image_id)
