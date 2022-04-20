@@ -123,31 +123,23 @@ class MaskedImage(BaseImage):
         else:
             raise TypeError(f'Unexpected image_obj type: {type(image_obj)}')
 
-        stats_image = ee.Image([gd_image.ee_image.select('VALID_MASK'), gd_image.ee_image.select('SCORE')])
-        proj = get_projection(stats_image, min=False)
+        stats_image = ee.Image([gd_image.ee_image.select(['FILL_MASK', 'VALID_MASK']), ee.Image(1).rename('REGION')])
+        proj = get_projection(gd_image.ee_image, min_scale=False)
 
-        # sum number of image pixels over the region
-        region_sum = (
-            ee.Image(1)
-                .reduceRegion(reducer="sum", geometry=region, crs=proj.crs(), scale=proj.nominalScale(),
-                              bestEffort=True)
-        )
-
-        # sum VALID_MASK and SCORE over image
-        stats = (
+        # sum stats_image bands over region
+        sums = (
             stats_image
                 .reduceRegion(reducer="sum", geometry=region, crs=proj.crs(), scale=proj.nominalScale(),
-                              bestEffort=True)
-                .rename(["VALID_MASK", "SCORE"], ["VALID_PORTION", "AVG_SCORE"])
+                              bestEffort=True, maxPixels=1e6)
+                .rename(['FILL_MASK', 'VALID_MASK', 'REGION'], ['FILL_PORTION', 'VALID_PORTION', 'REGION_SUM'])
         )
 
         # find average VALID_MASK and SCORE over region (not the same as image if image does not cover region)
-        def region_mean(key, value):
-            return ee.Number(value).divide(ee.Number(region_sum.get("constant")))
+        def region_percentage(key, value):
+            return ee.Number(value).multiply(100).divide(ee.Number(sums.get("REGION_SUM")))
 
-        stats = stats.map(region_mean)
-        stats = stats.set("VALID_PORTION", ee.Number(stats.get("VALID_PORTION")).multiply(100))
-        return gd_image.ee_image.set(stats)
+        means = sums.select(['FILL_PORTION', 'VALID_PORTION']).map(region_percentage)
+        return gd_image.ee_image.set(means)
 
     def _get_image_masks(self, ee_image):
         """
@@ -189,7 +181,7 @@ class MaskedImage(BaseImage):
             The cloud/shadow distance score (m) as a single band image.
         """
         radius = 1.5  # morphological pixel radius
-        proj = get_projection(ee_image, min=False)  # use maximum scale projection to save processing time
+        proj = get_projection(ee_image, min_scale=False)  # use maximum scale projection to save processing time
         if masks is None:
             masks = self._get_image_masks(ee_image)
 
@@ -387,7 +379,7 @@ class Sentinel2ClImage(MaskedImage):
         """
 
         masks = MaskedImage._get_image_masks(self, ee_image)  # get constant masks from base class
-        proj = get_projection(ee_image, min=False)  # use maximum scale projection to save processing time
+        proj = get_projection(ee_image, min_scale=False)  # use maximum scale projection to save processing time
 
         # threshold the added cloud probability to get the initial cloud mask
         cloud_prob = ee_image.select("CLOUD_PROB")
@@ -426,15 +418,21 @@ class Sentinel2ClImage(MaskedImage):
                         focal_max(2 * self._buffer, "circle", "meters")
                 ).rename("SHADOW_MASK"),
                 proj_cloud_mask.rename("SHADOW_MASK")
-            ))
+            )).rename("SHADOW_MASK")
+        # shadow_mask = proj_cloud_mask.And(
+        #             ee_image.select("SCL").eq(3).
+        #                 Or(ee_image.select("SCL").eq(2)).
+        #                 focal_min(self._buffer, "circle", "meters").
+        #                 focal_max(2 * self._buffer, "circle", "meters")
+        #         ).rename("SHADOW_MASK")
 
         # incorporate the existing mask (for zero SR pixels) into the shadow mask
-        zero_sr_mask = ee_image.mask().reduce(ee.Reducer.allNonZero()).Not()
-        shadow_mask = shadow_mask.Or(zero_sr_mask).rename("SHADOW_MASK")
+        fill_mask = ee_image.mask().reduce(ee.Reducer.allNonZero()).rename('FILL_MASK')
+        # shadow_mask = shadow_mask.Or(zero_sr_mask).rename("SHADOW_MASK")
 
         # combine cloud and shadow masks
-        valid_mask = (cloud_mask.Or(shadow_mask)).Not().rename("VALID_MASK")
-        masks.update(cloud_mask=cloud_mask, shadow_mask=shadow_mask, valid_mask=valid_mask)
+        valid_mask = ((cloud_mask.Or(shadow_mask)).Not()).And(fill_mask).rename("VALID_MASK")
+        masks.update(cloud_mask=cloud_mask, shadow_mask=shadow_mask, valid_mask=valid_mask, fill_mask=fill_mask)
         return masks
 
     @classmethod
@@ -505,7 +503,7 @@ def image_from_id(image_id: str, **kwargs) -> BaseImage:
     return class_from_id(image_id).from_id(image_id, **kwargs)
 
 
-def get_projection(image, min=True):
+def get_projection(image, min_scale=True):
     """
     Get the min/max scale projection of image bands.  Server side - no calls to getInfo().
     Adapted from from https://github.com/gee-community/gee_tools, MIT license.
@@ -529,7 +527,7 @@ def get_projection(image, min=True):
     bands = image.bandNames()
 
     transform = np.array([1, 0, 0, 0, 1, 0])
-    if min:
+    if min_scale:
         compare = ee.Number.lte
         init_proj = ee.Projection('EPSG:4326', list(1e100 * transform))
     else:
@@ -552,3 +550,44 @@ def get_projection(image, min=True):
         return ee.Projection(comp_proj)
 
     return ee.Projection(bands.iterate(compare_scale, init_proj))
+
+def _get_projection(image, min_scale=True):
+    """
+    Get the min/max scale projection of image bands.  Server side - no calls to getInfo().
+
+    Parameters
+    ----------
+    image : ee.Image, geedim.image.BaseImage
+            The image whose min/max projection to retrieve.
+    min: bool, optional
+         Retrieve the projection corresponding to the band with the minimum (True) or maximum (False) scale.
+         (default: True)
+
+    Returns
+    -------
+    ee.Projection
+        The requested projection.
+    """
+    if isinstance(image, BaseImage):
+        image = image.ee_image
+
+    bands = image.bandNames()
+    def band_crs_scale(band_name):
+        band = image.select([band_name])
+        projection = band.projection()
+        crs = projection.crs()
+        scale = projection.nominalScale()
+        return ee.Feature(None, dict(scale=scale, crs=crs, projection=projection))
+
+    crs_scale_fc = ee.FeatureCollection(bands.map(band_crs_scale))
+    # crs_scale_fc.getInfo()
+    crs_scale_fc = crs_scale_fc.filter(ee.Filter.neq('crs', 'EPSG:4326'))
+
+    def gather_scale_list(feature, _scale_list):
+        return ee.List(_scale_list).add(ee.Number(feature.get('scale')))
+
+    scale_array = ee.Array(crs_scale_fc.iterate(gather_scale_list, ee.List([])))
+    # scale_list.getInfo()
+    feat_idx = scale_array.multiply(-1).argmax() if min_scale else scale_array.argmax()
+    feature = ee.Feature(crs_scale_fc.toList(bands.size()).get(feat_idx.get(0)))
+    return ee.Projection(feature.get('projection'))

@@ -463,7 +463,7 @@ class BaseImage:
                        compress='deflate', interleave='band', tiled=True)
         return exp_image, profile
 
-    def _get_tile_shape(self, exp_image: 'BaseImage', max_download_size=33554432,
+    def _get_tile_shape(self, exp_image: 'BaseImage', max_download_size=32<<20,
                         max_grid_dimension=10000) -> (Tuple[int, int], int):
         """Return a tile shape for provided BaseImage that satisfies GEE download limits, and is 'square-ish'."""
 
