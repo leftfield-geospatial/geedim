@@ -463,6 +463,12 @@ class BaseImage:
                        compress='deflate', interleave='band', tiled=True)
         return exp_image, profile
 
+    @staticmethod
+    def _get_image_size(exp_image: 'BaseImage'):
+        dtype_size = np.dtype(exp_image.dtype).itemsize
+        return exp_image.shape[0] * exp_image.shape[1] * exp_image.count * dtype_size
+
+
     def _get_tile_shape(self, exp_image: 'BaseImage', max_download_size=32<<20,
                         max_grid_dimension=10000) -> (Tuple[int, int], int):
         """Return a tile shape for provided BaseImage that satisfies GEE download limits, and is 'square-ish'."""
@@ -473,9 +479,9 @@ class BaseImage:
         if exp_image.dtype.endswith('int8'):
             dtype_size *= 2  # workaround for GEE overestimate of *int8 dtype download sizes
 
-        image_size = np.prod(image_shape) * exp_image.count * dtype_size
+        image_size = self._get_image_size(exp_image)
         # ceil_size is the worst case extra tile size due to np.ceil(image_shape / shape_num_tiles).astype('int')
-        ceil_size = np.sum(image_shape) * exp_image.count * dtype_size
+        ceil_size = (image_shape[0] + image_shape[1]) * exp_image.count * dtype_size
         #  the total tile download size (tds) should be <= max_download_size, and
         #   tds <= image_size/num_tiles + ceil_size, which gives us:
         num_tiles = np.ceil(image_size / (max_download_size - ceil_size))
@@ -642,9 +648,8 @@ class BaseImage:
 
         # TODO: test composite of resampled images and resampled composite
         exp_image = self._prepare_for_export(**kwargs)
+        raw_download_size = self._get_image_size(exp_image)
 
-        dtype_size = np.dtype(exp_image.dtype).itemsize
-        raw_download_size = int(np.prod(exp_image.shape) * exp_image.count * dtype_size)
         if logger.getEffectiveLevel() <= logging.DEBUG:
             logger.debug(f'Uncompressed size: {self.human_size(raw_download_size)}')
 
@@ -701,10 +706,10 @@ class BaseImage:
 
         # find raw size of the download data (less than the actual download size as the image data is zipped in a
         # compressed geotiff)
-        dtype_size = np.dtype(exp_image.dtype).itemsize
-        raw_download_size = int(np.prod(exp_image.shape) * exp_image.count * dtype_size)
+        raw_download_size = self._get_image_size(exp_image)
         if logger.getEffectiveLevel() <= logging.DEBUG:
-            raw_tile_size = int(np.prod(tile_shape) * exp_image.count * dtype_size)
+            dtype_size = np.dtype(exp_image.dtype).itemsize
+            raw_tile_size = tile_shape[0] * tile_shape[1] * exp_image.count * dtype_size
             logger.debug(f'{filename.name}:')
             logger.debug(f'Uncompressed size: {self.human_size(raw_download_size)}')
             logger.debug(f'Num. tiles: {num_tiles}')

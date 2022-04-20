@@ -69,7 +69,7 @@ class Tile:
         url = self._exp_image.ee_image.getDownloadURL(
             dict(crs=self._exp_image.crs, crs_transform=tuple(self._transform)[:6], dimensions=self._shape[::-1],
                  filePerBand=False, fileFormat='GeoTIFF'))
-        return session.get(url, stream=True)
+        return session.get(url, stream=True), url
 
     def download(self, session=None, response=None, bar: tqdm = None):
         """
@@ -89,11 +89,11 @@ class Tile:
 
         # get image download url and response
         if response is None:
-            response = self._get_download_url_response(session=session)
+            response, url = self._get_download_url_response(session=session)
 
         # find raw and actual download sizes
         dtype_size = np.dtype(self._exp_image.dtype).itemsize
-        raw_download_size = float(np.prod(self._shape) * self._exp_image.count * dtype_size)
+        raw_download_size = float(self._shape[0] * self._shape[1] * self._exp_image.count * dtype_size)
         download_size = int(response.headers.get('content-length', 0))
 
         if download_size == 0 or not response.ok:
