@@ -60,7 +60,7 @@ def _test_search_results(test_case, res_df, start_date, end_date, valid_portion=
     if ee_coll_name != 'MODIS/006/MCD43A4':
         test_case.assertTrue(all(res_df.VALID >= valid_portion) and all(res_df.VALID <= 100),
                              'Search results have correct validity range')
-        test_case.assertTrue(all(res_df.SCORE >= 0), 'Search results have correct q score range')
+        # test_case.assertTrue(all(res_df.SCORE >= 0), 'Search results have correct q score range')
 
 
 def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=None,
