@@ -315,7 +315,7 @@ class Sentinel2ClImage(MaskedImage):
 
     (Uses cloud probability to improve cloud/shadow masking).
     """
-    _supported_collection_ids = ['COPERNICUS/S2', 'COPERNICUS/S2_SR']
+    _supported_collection_ids = []
 
     def __init__(self, ee_image, mask=MaskedImage._default_mask, cloud_dist=MaskedImage._default_cloud_dist):
         """
@@ -360,207 +360,98 @@ class Sentinel2ClImage(MaskedImage):
         gd_image._id = image_id
         return gd_image
 
-    def __get_image_masks(self, ee_image):
-        """eeemont's S2 cloud masking"""
-        method = 'cloud_prob'
-        prob = 60
-        maskCirrus = True
-        maskShadows = True
-        scaledImage = False
-        dark = 0.15
-        cloudDist = 1000
-        buffer = 250
-        cdi = None
-
-        def S2(ee_image):
-            # from https://github.com/r-earthengine/ee_extra under Apache 2.0 license
-            def cloud_prob(img):
-                clouds = img.select('CLOUD_PROB')   # ee.Image(img.get("cloud_mask")).select("probability")
-                # clouds = ee.Image(img.get("CLOUD_PROB")).select("CLOUD_PROB")
-                isCloud = clouds.gte(prob).rename("CLOUD_MASK")
-                return img.addBands(isCloud)
-
-            def QA(img):
-                qa = img.select("QA60")
-                cloudBitMask = 1 << 10
-                isCloud = qa.bitwiseAnd(cloudBitMask).eq(0)
-                if maskCirrus:
-                    cirrusBitMask = 1 << 11
-                    isCloud = isCloud.And(qa.bitwiseAnd(cirrusBitMask).eq(0))
-                isCloud = isCloud.Not().rename("CLOUD_MASK")
-                return img.addBands(isCloud)
-
-            def CDI(img):
-                idx = img.get("system:index")
-                S2TOA = (
-                    ee.ImageCollection("COPERNICUS/S2")
-                        .filter(ee.Filter.eq("system:index", idx))
-                        .first()
-                )
-                CloudDisplacementIndex = ee.Algorithms.Sentinel2.CDI(S2TOA)
-                isCloud = CloudDisplacementIndex.lt(cdi).rename("CLOUD_MASK_CDI")
-                return img.addBands(isCloud)
-
-            def get_shadows(img):
-                notWater = img.select("SCL").neq(6)
-                if not scaledImage:
-                    darkPixels = img.select("B8").lt(dark * 1e4).multiply(notWater)
-                else:
-                    darkPixels = img.select("B8").lt(dark).multiply(notWater)
-                shadowAzimuth = ee.Number(90).subtract(
-                    ee.Number(img.get("MEAN_SOLAR_AZIMUTH_ANGLE"))
-                )
-                cloudProjection = img.select("CLOUD_MASK").directionalDistanceTransform(
-                    shadowAzimuth, int(cloudDist / 60)
-                )
-                cloudProjection = (
-                    cloudProjection.reproject(crs=img.select(0).projection(), scale=60)
-                        .select("distance")
-                        .mask()
-                )
-                isShadow = cloudProjection.multiply(darkPixels).rename("SHADOW_MASK")
-                return img.addBands(isShadow)
-
-            def clean_dilate(img):
-                isCloudShadow = img.select("CLOUD_MASK")
-                if cdi != None:
-                    isCloudShadow = isCloudShadow.And(img.select("CLOUD_MASK_CDI"))
-                if maskShadows:
-                    isCloudShadow = isCloudShadow.add(img.select("SHADOW_MASK")).gt(0)
-                isCloudShadow = (
-                    isCloudShadow.focal_min(20, units="meters")
-                        .focal_max(buffer * 2 / 10, units="meters")
-                )
-                return img.addBands(isCloudShadow.Not().rename("VALID_MASK"))
-
-            def apply_mask(img):
-                return img.updateMask(img.select("VALID_MASK").Not())
-
-            if isinstance(ee_image, ee.image.Image):
-                if method == "cloud_prob":
-                    # S2Clouds = ee.ImageCollection("COPERNICUS/S2_CLOUD_PROBABILITY")
-                    # fil = ee.Filter.equals(
-                    #     leftField="system:index", rightField="system:index"
-                    # )
-                    # S2WithCloudMask = ee.Join.saveFirst("cloud_mask").apply(
-                    #     ee.ImageCollection(args), S2Clouds, fil
-                    # )
-                    S2Masked = cloud_prob(ee_image)
-                elif method == "qa":
-                    S2Masked = QA(ee_image)
-                else:
-                    raise ValueError(f'Unknown cloud/shadow masking method: {method}')
-                if cdi != None:
-                    S2Masked = CDI(S2Masked)
-                if maskShadows:
-                    S2Masked = get_shadows(S2Masked)
-                S2Masked = clean_dilate(S2Masked)
-                # fill_mask = S2Masked.mask().select('B..?').toUint8().reduce(ee.Reducer.allNonZero()).rename('FILL_MASK')
-                # S2Masked.select('VALID_MASK').rename('FILL_MASK')
-                fill_mask = S2Masked.mask().select('B1').rename('FILL_MASK')
-                # fill_mask = fill_mask.reproject(crs=ee_image.select(1).projection(), scale=10)
-                S2Masked = S2Masked.addBands(fill_mask)
-                return S2Masked
-
-            elif isinstance(ee_image, ee.imagecollection.ImageCollection):
-                pass
-                # if method == "cloud_prob":
-                #     S2Clouds = ee.ImageCollection("COPERNICUS/S2_CLOUD_PROBABILITY")
-                #     fil = ee.Filter.equals(
-                #         leftField="system:index", rightField="system:index"
-                #     )
-                #     S2WithCloudMask = ee.Join.saveFirst("cloud_mask").apply(
-                #         args, S2Clouds, fil
-                #     )
-                #     S2Masked = ee.ImageCollection(S2WithCloudMask).map(cloud_prob)
-                # elif method == "qa":
-                #     S2Masked = args.map(QA)
-                # if cdi != None:
-                #     S2Masked = S2Masked.map(CDI)
-                # if maskShadows:
-                #     S2Masked = S2Masked.map(get_shadows)
-                # S2Masked = S2Masked.map(clean_dilate).map(apply_mask)
-
-        _ee_image = S2(ee_image)
-
-        return dict(fill_mask=_ee_image.select('FILL_MASK'), valid_mask=_ee_image.select('VALID_MASK'),
-                    cloud_mask=_ee_image.select('CLOUD_MASK'), shadow_mask=_ee_image.select('SHADOW_MASK'))
-
-
-    def _get_image_masks(self, ee_image):
+    def _get_image_masks(self, ee_image, s2_toa=False, method='cloud_prob', prob=60, dark=0.15, cloud_dist=1000,
+                         buffer=250, cdi=None):
         """
         Derive cloud, shadow and validity masks for an image, using the additional cloud probability band.
 
-        Adapted from https://developers.google.com/earth-engine/tutorials/community/sentinel-2-s2cloudless
+        Adapted from https://github.com/r-earthengine/ee_extra, under Apache 2.0 license
 
         Parameters
         ----------
         ee_image : ee.Image
                    Derive masks for this image
+        s2_toa : bool, optional
+            S2 TOA/SR collection.  Set to True if this image is from COPERNICUS/S2, or False if it is from
+            COPERNICUS/S2_SR.
+        method : str, optional
+            Method used to mask clouds.
+            Available options:
+                - 'cloud_prob' : Use cloud probability.
+                - 'qa' : Use Quality Assessment band.
+        prob : float, optional
+            Cloud probability threshold. Valid just for method = 'cloud_prob'.
+        dark : float, optional
+            NIR threshold [0-1]. NIR values below this threshold are potential cloud shadows.
+        cloud_dist : int, optional
+            Maximum distance in meters (m) to look for cloud shadows from cloud edges.
+        buffer : int, optional
+            Distance in meters (m) to dilate cloud and cloud shadows objects.
+        cdi : float, optional
+            Cloud Displacement Index threshold. Values below this threshold are considered potential clouds.
+            A cdi = None means that the index is not used.
+            For more info see 'Frantz, D., HaS, E., Uhl, A., Stoffels, J., Hill, J. 2018. Improvement of the Fmask
+            algorithm for Sentinel-2 images: Separating clouds from bright surfaces based on parallax effects. Remote
+            Sensing of Environment 2015: 471-481'.
 
         Returns
         -------
         dict
             A dictionary of ee.Image objects for each of the fill, cloud, shadow and validity masks.
         """
+        mask_cirrus = True
+        mask_shadows = True
+        proj_scale = 60
+        # maskCirrus : Whether to mask cirrus clouds. Valid just for method = 'qa'. This parameter is ignored for Landsat products.
+        # maskShadows : Whether to mask cloud shadows. For more info see 'Braaten, J. 2020. Sentinel-2 Cloud Masking with s2cloudless. Google Earth Engine, Community Tutorials'.
+        # scaledImage : Whether the pixel values are scaled to the range [0,1] (reflectance values). This parameter is ignored for Landsat products.
 
-        masks = MaskedImage._get_image_masks(self, ee_image)  # get constant masks from base class
-        proj = get_projection(ee_image, min_scale=False)  # use maximum scale projection to save processing time
+        if method == 'cloud_prob':
+            cloud_mask = ee_image.select('CLOUD_PROB').gte(prob).rename('CLOUD_MASK')
+        else:
+            qa = ee_image.select('QA60')
+            cloud_mask = qa.bitwiseAnd(1 << 10).eq(0)
+            if mask_cirrus:
+                cloud_mask = cloud_mask.And(qa.bitwiseAnd(1 << 11).eq(0))
 
-        # threshold the added cloud probability to get the initial cloud mask
-        cloud_prob = ee_image.select("CLOUD_PROB")
-        cloud_mask = cloud_prob.gt(self._cloud_prob_thresh).rename("CLOUD_MASK")
+        if cdi is not None:
+            if s2_toa:
+                s2_toa_image = ee_image
+            else:
+                idx = ee_image.get("system:index")
+                s2_toa_image = (ee.ImageCollection("COPERNICUS/S2").
+                                filter(ee.Filter.eq("system:index", idx)).
+                                first())
+            cdi_image = ee.Algorithms.Sentinel2.CDI(s2_toa_image)
+            cloud_mask_cdi = cdi_image.lt(cdi).rename("CLOUD_MASK_CDI")
 
-        # TODO: dilate valid_mask by _buffer ?
-        # See https://en.wikipedia.org/wiki/Solar_azimuth_angle
-        # get solar azimuth
-        shadow_azimuth = ee.Number(-90).add(ee.Number(ee_image.get("MEAN_SOLAR_AZIMUTH_ANGLE")))
+        if mask_shadows:
+            dark_mask = ee_image.select("B8").lt(dark * 1e4)
+            if not s2_toa:
+                dark_mask = ee_image.select("SCL").neq(6).And(dark_mask)
 
-        # remove small clouds
-        cloud_mask_open = (
-            cloud_mask.focal_min(self._buffer, "circle", "meters").focal_max(self._buffer, "circle", "meters")
-        )
+            shadow_azimuth = ee.Number(90).subtract(ee.Number(ee_image.get("MEAN_SOLAR_AZIMUTH_ANGLE")))
+            proj_cloud_mask = (cloud_mask.directionalDistanceTransform(shadow_azimuth, int(cloud_dist / proj_scale))
+                               .reproject(crs=ee_image.select(0).projection(), scale=60)
+                               .select('distance')
+                               .mask())
+            shadow_mask = proj_cloud_mask.And(dark_mask).rename("SHADOW_MASK")
 
-        # project the opened cloud mask in the direction of sun's rays (i.e. shadows)
-        proj_dist_pix = ee.Number(self._cloud_proj_dist * 1000).divide(proj.nominalScale()).round()
-        proj_cloud_mask = (
-            cloud_mask_open.directionalDistanceTransform(shadow_azimuth, proj_dist_pix)
-                .select("distance")
-                .mask()
-                .rename("PROJ_CLOUD_MASK")
-                .reproject(crs=proj.crs(), scale=proj.nominalScale())  # force calculation at correct scale
-        )
+        cloud_shadow_mask = cloud_mask
 
-        # if this is an S2_SR image, use SCL to find the shadow_mask, else just use proj_cloud_mask.
-        # note that while GEE recommends against If statements, but the below does not seem to impact speed.
-        ee_coll_name = ee.String(ee_image.get('system:id')).split('/').slice(0, -1).join('/')
-        shadow_mask = ee.Image(
-            ee.Algorithms.If(
-                ee_coll_name.equals('COPERNICUS/S2_SR'),
-                proj_cloud_mask.And(
-                    ee_image.select("SCL").eq(3).
-                        Or(ee_image.select("SCL").eq(2)).
-                        focal_min(self._buffer, "circle", "meters").
-                        focal_max(2 * self._buffer, "circle", "meters")
-                ).rename("SHADOW_MASK"),
-                proj_cloud_mask.rename("SHADOW_MASK")
-            )).rename("SHADOW_MASK")
-        # shadow_mask = proj_cloud_mask.And(
-        #             ee_image.select("SCL").eq(3).
-        #                 Or(ee_image.select("SCL").eq(2)).
-        #                 focal_min(self._buffer, "circle", "meters").
-        #                 focal_max(2 * self._buffer, "circle", "meters")
-        #         ).rename("SHADOW_MASK")
+        if cdi:
+            cloud_shadow_mask = cloud_shadow_mask.And(cloud_mask_cdi)
+        if mask_shadows:
+            cloud_shadow_mask = cloud_shadow_mask.Or(shadow_mask)    # TODO: or?
+        cloud_shadow_mask = cloud_shadow_mask.focal_min(20, units="meters").focal_max(buffer * 2 / 10, units="meters")
 
-        # incorporate the existing mask (for zero SR pixels) into the shadow mask
-        fill_mask = ee_image.select('B..?').mask().reduce(ee.Reducer.allNonZero()).rename('FILL_MASK')
-        # clip the mask to the image footprint to work around memory limit errors on download
-        fill_mask = fill_mask.clip(fill_mask.geometry())
+        fill_mask = ee_image.select('B.*').mask().reduce(ee.Reducer.allNonZero()).rename('FILL_MASK')
+        fill_mask = fill_mask.clip(ee_image.geometry())
 
-        # combine cloud and shadow masks
-        valid_mask = ((cloud_mask.Or(shadow_mask)).Not()).And(fill_mask).rename("VALID_MASK")
-        masks.update(cloud_mask=cloud_mask, shadow_mask=shadow_mask, valid_mask=valid_mask, fill_mask=fill_mask)
-        return masks
+        valid_mask = (cloud_shadow_mask.Not()).And(fill_mask).rename('VALID_MASK')
+
+        return dict(fill_mask=fill_mask, valid_mask=valid_mask, cloud_mask=cloud_mask, shadow_mask=shadow_mask)
+
 
     @classmethod
     def ee_collection(cls, ee_coll_name):
@@ -589,6 +480,29 @@ class Sentinel2ClImage(MaskedImage):
         return inner_join.map(map)
 
 
+class Sentinel2SrClImage(Sentinel2ClImage):
+    """
+    Base class for cloud/shadow masking and quality scoring 'COPERNICUS/S2_SR' images.
+
+    (Uses cloud probability to improve cloud/shadow masking).
+    """
+    _supported_collection_ids = ['COPERNICUS/S2_SR']
+
+    def _get_image_masks(self, ee_image, s2_toa=False, **kwargs):
+        return super()._get_image_masks(ee_image, s2_toa=False, **kwargs)
+
+class Sentinel2ToaClImage(Sentinel2ClImage):
+    """
+    Base class for cloud/shadow masking and quality scoring 'COPERNICUS/S2' images.
+
+    (Uses cloud probability to improve cloud/shadow masking).
+    """
+    _supported_collection_ids = ['COPERNICUS/S2']
+
+    def _get_image_masks(self, ee_image, s2_toa=False, **kwargs):
+        return super()._get_image_masks(ee_image, s2_toa=True, **kwargs)
+
+
 class ModisNbarImage(MaskedImage):
     """
     Class for wrapping modis_nbar images.
@@ -612,8 +526,8 @@ def class_from_id(image_id: str) -> Union[BaseImage, MaskedImage]:
         'LANDSAT/LE07/C02/T1_L2': LandsatImage,
         'LANDSAT/LC08/C02/T1_L2': LandsatImage,
         'LANDSAT/LC09/C02/T1_L2': LandsatImage,
-        'COPERNICUS/S2': Sentinel2ClImage,
-        'COPERNICUS/S2_SR': Sentinel2ClImage,
+        'COPERNICUS/S2': Sentinel2ToaClImage,
+        'COPERNICUS/S2_SR': Sentinel2SrClImage,
         'MODIS/006/MCD43A4': ModisNbarImage
     }
     ee_coll_name, _ = split_id(image_id)
