@@ -296,7 +296,7 @@ class BaseImage:
         """
         Return the projection information corresponding to the min/max scale band, for an EE image info dictionary
         """
-        projection_info = dict(crs=None, transform=None, shape=None, scale=None, dtype=None)
+        projection_info = dict(crs=None, transform=None, shape=None, scale=None)
         if 'bands' in ee_info:
             # get scale & crs corresponding to min/max scale band (exclude 'EPSG:4326' (composite/constant) bands)
             band_df = pd.DataFrame(ee_info['bands'])

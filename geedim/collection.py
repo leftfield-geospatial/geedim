@@ -335,7 +335,8 @@ class MaskedCollection(BaseCollection):
         gd_collection._ee_collection = ee.ImageCollection(im_list)
         return gd_collection
 
-    def search(self, start_date, end_date, region, valid_portion=0, mask=MaskedImage._default_mask):
+    # TODO: we need to pass cloud masking kwargs somehow.  it may be better to do this in a sort of environment, or globally?
+    def search(self, start_date, end_date, region, valid_portion=0, **kwargs):
         """
         Search for images based on date, region etc criteria
 
@@ -349,8 +350,6 @@ class MaskedCollection(BaseCollection):
                  Polygon in WGS84 specifying a region that images should intersect.
         valid_portion: int, optional
                        Minimum portion (%) of image pixels that should be valid (not cloud/shadow).
-        mask : bool, optional
-               Apply a validity (cloud & shadow) mask to the returned images (default: False).
 
         Returns
         -------
@@ -362,14 +361,19 @@ class MaskedCollection(BaseCollection):
             end_date = start_date + timedelta(days=1)
         if end_date <= start_date:
             raise ValueError("`end_date` must be at least a day later than `start_date`")
+
+        def set_region_stats(ee_image):
+            gd_image = self._image_class(ee_image, **kwargs)
+            return gd_image.set_region_stats(region)
+
         try:
             # filter the image collection, finding cloud/shadow masks, and region stats
             self._ee_collection = (
                 self._ee_collection
                     .filterDate(start_date, end_date)
                     .filterBounds(region)
-                    .map(lambda ee_image: self._image_class.set_region_stats(ee_image, region, mask=mask))
-                    .filter(ee.Filter.gte("VALID_PORTION", valid_portion))
+                    .map(set_region_stats)
+                    .filter(ee.Filter.gte("CLOUDLESS_PORTION", valid_portion))
             )
         finally:
             # update summary_df with image metadata from the filtered collection
