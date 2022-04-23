@@ -41,6 +41,11 @@ def _setup_test():
         os.remove(f)
 
 
+def nan_equals(a, b):
+    """Compare two numpy objects a & b, returning true where elements of both a & b are nan"""
+    return (a == b) | (np.isnan(a) & np.isnan(b))
+
+
 def _test_search_results(test_case, res_df, start_date, end_date, valid_portion=0):
     """ Test the validity of a search results dataframe against the search parameters. """
 
@@ -58,9 +63,11 @@ def _test_search_results(test_case, res_df, start_date, end_date, valid_portion=
     test_case.assertTrue(all([ee_coll_name in im_id for im_id in res_df.ID.values]),
                          'Search results have correct EE ID')
     if ee_coll_name != 'MODIS/006/MCD43A4':
-        test_case.assertTrue(all(res_df.VALID >= valid_portion) and all(res_df.VALID <= 100),
+        test_case.assertTrue(all(res_df.CLOUDLESS >= valid_portion) and all(res_df.CLOUDLESS <= 100),
                              'Search results have correct validity range')
-        # test_case.assertTrue(all(res_df.SCORE >= 0), 'Search results have correct q score range')
+        test_case.assertTrue(all(res_df.FILL >= valid_portion) and all(res_df.FILL <= 100),
+                             'Search results have correct validity range')
+        # test_case.assertTrue(all(res_df.CLOUD_DIST >= 0), 'Search results have correct q score range')
 
 
 def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=None,
@@ -71,7 +78,9 @@ def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=Non
     # create objects to test against
     if isinstance(image_obj, str):  # create image.MaskedImage from ID
         ee_coll_name = split_id(image_obj)[0]
-        gd_image = image_from_id(image_obj, mask=mask, cloud_dist=cloud_dist)
+        gd_image = image_from_id(image_obj)
+        if mask:
+            gd_image.mask_clouds()
     elif isinstance(image_obj, BaseImage):
         gd_image = image_obj
         ee_coll_name = split_id(gd_image.id)[0]
@@ -101,16 +110,17 @@ def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=Non
         test_case.assertFalse(rio.coords.disjoint_bounds(region_bounds, im_bounds_wgs84),
                               msg='Search and image bounds match')
 
-        if mask:  # and not ('sentinel2' in gd_coll_name):  # check mask is same as VALID_MASK band
-            im_mask = im.read_masks(im.descriptions.index('VALID_MASK') + 1).astype(bool)
-            valid_mask = im.read(im.descriptions.index('VALID_MASK') + 1, masked=False) != im.nodata
-            test_case.assertTrue(np.all(im_mask == valid_mask), 'mask == VALID_MASK')
+        if mask:  # and not ('sentinel2' in gd_coll_name):  # check mask is same as CLOUDLESS_MASK band
+            im_mask = im.read_masks(2).astype(bool)
+            valid_mask = ~nan_equals(im.read(im.descriptions.index('CLOUDLESS_MASK') + 1, masked=False), im.nodata)
+            test_case.assertTrue(np.all(im_mask == valid_mask), 'mask == CLOUDLESS_MASK')
         else:
-            valid_mask = im.read(im.descriptions.index('VALID_MASK') + 1)
-            cloud_mask = im.read(im.descriptions.index('CLOUD_MASK') + 1)
-            shadow_mask = im.read(im.descriptions.index('SHADOW_MASK') + 1)
-            fill_mask = im.read(im.descriptions.index('FILL_MASK') + 1)
-            test_case.assertTrue(np.all((cloud_mask & shadow_mask & fill_mask) == valid_mask), 'mask == VALID_MASK')
+            valid_mask = im.read(im.descriptions.index('CLOUDLESS_MASK') + 1).astype(bool)
+            cloud_mask = im.read(im.descriptions.index('CLOUD_MASK') + 1).astype(bool)
+            shadow_mask = im.read(im.descriptions.index('SHADOW_MASK') + 1).astype(bool)
+            fill_mask = im.read(im.descriptions.index('FILL_MASK') + 1).astype(bool)
+            _cloudless_mask = ~(cloud_mask | shadow_mask) & fill_mask
+            test_case.assertTrue(np.all(_cloudless_mask[valid_mask]), 'mask contains CLOUDLESS_MASK')
             # pyplot.figure();pyplot.subplot(2,2,1);pyplot.imshow(im_mask);pyplot.subplot(2,2,2);pyplot.imshow(valid_mask);pyplot.subplot(2,2,3);pyplot.imshow(cloud_mask);pyplot.subplot(2,2,4);pyplot.imshow(shadow_mask)
 
         # do basic checks on image content
@@ -122,14 +132,14 @@ def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=Non
                 test_case.assertTrue(len(np.unique(sr_band)) > 100, f'Distinct {band_row.id} reflectance values > 100')
 
         # where search stats exist, check they match image content
-        if 'AVG_SCORE' in gd_info['properties'] and 'VALID_PORTION' in gd_info['properties']:
-            avg_score = gd_info['properties']['AVG_SCORE']
-            valid_portion = gd_info['properties']['VALID_PORTION']
-            valid_mask = im.read(im.descriptions.index('VALID_MASK') + 1, masked=False)
-            score = im.read(im.descriptions.index('SCORE') + 1, masked=False)
-            if mask:
-                valid_mask = (valid_mask != im.nodata)
-                score[~valid_mask] = 0
-            test_case.assertAlmostEqual(avg_score, score.mean(), delta=50, msg='EE and file avg scores match')
-            test_case.assertAlmostEqual(valid_portion, 100 * valid_mask.mean(), delta=5,
+        if 'FILL_PORTION' in gd_info['properties'] and 'CLOUDLESS_PORTION' in gd_info['properties']:
+            fill_portion = gd_info['properties']['FILL_PORTION']
+            cloudless_portion = gd_info['properties']['CLOUDLESS_PORTION']
+            fill_mask = im.read(im.descriptions.index('FILL_MASK') + 1, masked=False)
+            cloudless_mask = im.read(im.descriptions.index('CLOUDLESS_MASK') + 1, masked=False)
+            if mask:   #mask
+                cloudless_mask = ~nan_equals(cloudless_mask, im.nodata)
+            else:
+                test_case.assertAlmostEqual(fill_portion, 100 * fill_mask.mean(), delta=5, msg='EE and file avg scores match')
+            test_case.assertAlmostEqual(cloudless_portion, 100 * cloudless_mask.mean(), delta=5,
                                         msg='EE and file valid portions match')

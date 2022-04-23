@@ -329,7 +329,9 @@ class MaskedCollection(BaseCollection):
         # build and wrap an ee.ImageCollection of processed (masked and scored) images
         im_list = ee.List([])
         for im_id in image_ids:
-            gd_image = gd_collection._image_class.from_id(im_id, mask=mask, cloud_dist=cloud_dist)
+            gd_image = gd_collection._image_class.from_id(im_id)    # TODO: pass through cloud/shadow kwargs
+            if mask:
+                gd_image.mask_clouds()
             im_list = im_list.add(gd_image.ee_image)
 
         gd_collection._ee_collection = ee.ImageCollection(im_list)
@@ -364,7 +366,8 @@ class MaskedCollection(BaseCollection):
 
         def set_region_stats(ee_image):
             gd_image = self._image_class(ee_image, **kwargs)
-            return gd_image.set_region_stats(region)
+            gd_image.set_region_stats(region)
+            return gd_image.ee_image
 
         try:
             # filter the image collection, finding cloud/shadow masks, and region stats
@@ -408,13 +411,12 @@ class MaskedCollection(BaseCollection):
         method = str(method).lower()
 
         if method == "q_mosaic":
-            comp_image = self._ee_collection.qualityMosaic("SCORE")
+            comp_image = self._ee_collection.qualityMosaic("CLOUD_DIST")
         elif method == "mosaic":
             comp_image = self._ee_collection.mosaic()
         elif method == "median":
             comp_image = self._ee_collection.median()
             # median creates float images, so re-apply any type conversion
-            comp_image = self._image_class._im_transform(comp_image)
         elif method == "medoid":
             # limit medoid to surface reflectance bands
             sr_bands = [band_dict["id"] for band_dict in self._collection_info["bands"]]
@@ -435,7 +437,11 @@ class MaskedCollection(BaseCollection):
         # TODO: do the QA, mask and score bands mosaic correctly?
         #  would re-calculating the masks and score on the mosaics QA bands work?
         # TODO: leave out the median method entirely?
-        return BaseImage(comp_image) if method == 'median' else self._image_class.from_masked_image(comp_image)
+        if method == 'median':
+            gd_image = MaskedImage(comp_image, is_composite=True)
+        else:
+            gd_image = self._image_class(comp_image, is_composite=True)
+        return gd_image
 
 
 def image_from_mixed_list(image_list: List[Union[BaseImage, str],], **kwargs) -> List[BaseImage,]:

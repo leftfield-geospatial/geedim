@@ -32,9 +32,8 @@ collection_info = {
         "properties": [
             {"PROPERTY": "system:id", "ABBREV": "ID", "DESCRIPTION": "Earth Engine image id"},
             {"PROPERTY": "system:time_start", "ABBREV": "DATE", "DESCRIPTION": "Image capture date/time (UTC)"},
-            {"PROPERTY": "VALID_PORTION", "ABBREV": "VALID",
-             "DESCRIPTION": "Portion of cloud and shadow free pixels (%)"},
-            {"PROPERTY": "AVG_SCORE", "ABBREV": "SCORE", "DESCRIPTION": "Average distance to cloud/shadow (m)"},
+            {"PROPERTY": "FILL_PORTION", "ABBREV": "FILL", "DESCRIPTION": "Portion of pixels (%)"},
+            {"PROPERTY": "CLOUDLESS_PORTION", "ABBREV": "CLOUDLESS", "DESCRIPTION": "Portion of cloud and shadow free pixels (%)"},
             {"PROPERTY": "GEOMETRIC_RMSE_MODEL", "ABBREV": "GRMSE", "DESCRIPTION": "Orthorectification RMSE (m)"},
             {"PROPERTY": "SUN_AZIMUTH", "ABBREV": "SAA", "DESCRIPTION": "Solar azimuth angle (deg)"},
             {"PROPERTY": "SUN_ELEVATION", "ABBREV": "SEA", "DESCRIPTION": "Solar elevation angle (deg)"}
@@ -56,9 +55,8 @@ collection_info = {
         "properties": [
             {"PROPERTY": "system:id", "ABBREV": "ID", "DESCRIPTION": "Earth Engine image id"},
             {"PROPERTY": "system:time_start", "ABBREV": "DATE", "DESCRIPTION": "Image capture date/time (UTC)"},
-            {"PROPERTY": "VALID_PORTION", "ABBREV": "VALID",
-             "DESCRIPTION": "Portion of cloud and shadow free pixels (%)"},
-            {"PROPERTY": "AVG_SCORE", "ABBREV": "SCORE", "DESCRIPTION": "Average distance to cloud/shadow (m)"},
+            {"PROPERTY": "FILL_PORTION", "ABBREV": "FILL", "DESCRIPTION": "Portion of pixels (%)"},
+            {"PROPERTY": "CLOUDLESS_PORTION", "ABBREV": "CLOUDLESS", "DESCRIPTION": "Portion of cloud and shadow free pixels (%)"},
             {"PROPERTY": "GEOMETRIC_RMSE_MODEL", "ABBREV": "GRMSE", "DESCRIPTION": "Orthorectification RMSE (m)"},
             {"PROPERTY": "SUN_AZIMUTH", "ABBREV": "SAA", "DESCRIPTION": "Solar azimuth angle (deg)"},
             {"PROPERTY": "SUN_ELEVATION", "ABBREV": "SEA", "DESCRIPTION": "Solar elevation angle (deg)"}
@@ -82,9 +80,8 @@ collection_info = {
         "properties": [
             {"PROPERTY": "system:id", "ABBREV": "ID", "DESCRIPTION": "Earth Engine image id"},
             {"PROPERTY": "system:time_start", "ABBREV": "DATE", "DESCRIPTION": "Image capture date/time (UTC)"},
-            {"PROPERTY": "VALID_PORTION", "ABBREV": "VALID",
-             "DESCRIPTION": "Portion of cloud and shadow free pixels (%)"},
-            {"PROPERTY": "AVG_SCORE", "ABBREV": "SCORE", "DESCRIPTION": "Average distance to cloud/shadow (m)"},
+            {"PROPERTY": "FILL_PORTION", "ABBREV": "FILL", "DESCRIPTION": "Portion of pixels (%)"},
+            {"PROPERTY": "CLOUDLESS_PORTION", "ABBREV": "CLOUDLESS", "DESCRIPTION": "Portion of cloud and shadow free pixels (%)"},
             {"PROPERTY": "GEOMETRIC_RMSE_MODEL", "ABBREV": "GRMSE", "DESCRIPTION": "Orthorectification RMSE (m)"},
             {"PROPERTY": "SUN_AZIMUTH", "ABBREV": "SAA", "DESCRIPTION": "Solar azimuth angle (deg)"},
             {"PROPERTY": "SUN_ELEVATION", "ABBREV": "SEA", "DESCRIPTION": "Solar elevation angle (deg)"}
@@ -111,7 +108,6 @@ collection_info = {
             {"PROPERTY": "system:time_start", "ABBREV": "DATE", "DESCRIPTION": "Image capture date/time (UTC)"},
             {"PROPERTY": "FILL_PORTION", "ABBREV": "FILL", "DESCRIPTION": "Portion of pixels (%)"},
             {"PROPERTY": "CLOUDLESS_PORTION", "ABBREV": "CLOUDLESS", "DESCRIPTION": "Portion of cloud and shadow free pixels (%)"},
-            # {"PROPERTY": "AVG_SCORE", "ABBREV": "SCORE", "DESCRIPTION": "Average distance to cloud/shadow (m)"},
             {"PROPERTY": "GEOMETRIC_RMSE_MODEL", "ABBREV": "GRMSE", "DESCRIPTION": "Orthorectification RMSE (m)"},
             {"PROPERTY": "SUN_AZIMUTH", "ABBREV": "SAA", "DESCRIPTION": "Solar azimuth angle (deg)"},
             {"PROPERTY": "SUN_ELEVATION", "ABBREV": "SEA", "DESCRIPTION": "Solar elevation angle (deg)"}
@@ -136,9 +132,8 @@ collection_info = {
         "properties": [
             {"PROPERTY": "system:id", "ABBREV": "ID", "DESCRIPTION": "Earth Engine image id"},
             {"PROPERTY": "system:time_start", "ABBREV": "DATE", "DESCRIPTION": "Image capture date/time (UTC)"},
-            {"PROPERTY": "VALID_PORTION", "ABBREV": "VALID",
-             "DESCRIPTION": "Portion of cloud and shadow free pixels (%)"},
-            {"PROPERTY": "AVG_SCORE", "ABBREV": "SCORE", "DESCRIPTION": "Average distance to cloud/shadow (m)"},
+            {"PROPERTY": "FILL_PORTION", "ABBREV": "FILL", "DESCRIPTION": "Portion of pixels (%)"},
+            {"PROPERTY": "CLOUDLESS_PORTION", "ABBREV": "CLOUDLESS", "DESCRIPTION": "Portion of cloud and shadow free pixels (%)"},
             {"PROPERTY": "GEOMETRIC_RMSE_MODEL", "ABBREV": "GRMSE", "DESCRIPTION": "Orthorectification RMSE (m)"},
             {"PROPERTY": "SUN_AZIMUTH", "ABBREV": "SAA", "DESCRIPTION": "Solar azimuth angle (deg)"},
             {"PROPERTY": "SUN_ELEVATION", "ABBREV": "SEA", "DESCRIPTION": "Solar elevation angle (deg)"}
@@ -166,9 +161,8 @@ collection_info = {
         "properties": [
             {"PROPERTY": "system:id", "ABBREV": "ID", "DESCRIPTION": "Earth Engine image id"},
             {"PROPERTY": "system:time_start", "ABBREV": "DATE", "DESCRIPTION": "Image capture date/time (UTC)"},
-            {"PROPERTY": "VALID_PORTION", "ABBREV": "VALID",
-             "DESCRIPTION": "Portion of cloud and shadow free pixels (%)"},
-            {"PROPERTY": "AVG_SCORE", "ABBREV": "SCORE", "DESCRIPTION": "Average distance to cloud/shadow (m)"},
+            {"PROPERTY": "FILL_PORTION", "ABBREV": "FILL", "DESCRIPTION": "Portion of pixels (%)"},
+            {"PROPERTY": "CLOUDLESS_PORTION", "ABBREV": "CLOUDLESS", "DESCRIPTION": "Portion of cloud and shadow free pixels (%)"},
             {"PROPERTY": "RADIOMETRIC_QUALITY", "ABBREV": "RADQ", "DESCRIPTION": "Radiometric quality check"},
             {"PROPERTY": "GEOMETRIC_QUALITY", "ABBREV": "GEOMQ", "DESCRIPTION": "Geometric quality check"},
             {"PROPERTY": "MEAN_SOLAR_AZIMUTH_ANGLE", "ABBREV": "SAA", "DESCRIPTION": "Solar azimuth angle (deg)"},
@@ -203,7 +197,6 @@ collection_info = {
             {"PROPERTY": "system:time_start", "ABBREV": "DATE", "DESCRIPTION": "Image capture date/time (UTC)"},
             {"PROPERTY": "FILL_PORTION", "ABBREV": "FILL", "DESCRIPTION": "Portion of pixels (%)"},
             {"PROPERTY": "CLOUDLESS_PORTION", "ABBREV": "CLOUDLESS", "DESCRIPTION": "Portion of cloud and shadow free pixels (%)"},
-            # {"PROPERTY": "AVG_SCORE", "ABBREV": "SCORE", "DESCRIPTION": "Average distance to cloud/shadow (m)"},
             {"PROPERTY": "RADIOMETRIC_QUALITY", "ABBREV": "RADQ", "DESCRIPTION": "Radiometric quality check"},
             {"PROPERTY": "GEOMETRIC_QUALITY", "ABBREV": "GEOMQ", "DESCRIPTION": "Geometric quality check"},
             {"PROPERTY": "MEAN_SOLAR_AZIMUTH_ANGLE", "ABBREV": "SAA", "DESCRIPTION": "Solar azimuth angle (deg)"},
@@ -246,6 +239,7 @@ collection_info = {
         "properties": [
             {"PROPERTY": "system:id", "ABBREV": "ID", "DESCRIPTION": "Earth Engine image id"},
             {"PROPERTY": "system:time_start", "ABBREV": "DATE", "DESCRIPTION": "Image capture date/time (UTC)"},
+            {"PROPERTY": "FILL_PORTION", "ABBREV": "FILL", "DESCRIPTION": "Portion of pixels (%)"},
         ]}
 }
 

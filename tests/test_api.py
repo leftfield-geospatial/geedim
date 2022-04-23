@@ -38,7 +38,9 @@ class TestApi(unittest.TestCase):
         """ Test the validity of a geedim.image.MaskedImage by checking metadata.  """
 
         ee_coll_name = geedim.image.split_id(image_id)[0]
-        gd_image = image_from_id(image_id, mask=mask, cloud_dist=cloud_dist)
+        gd_image = image_from_id(image_id)
+        if mask:
+            gd_image.mask_clouds()
         self.assertTrue(gd_image.id == image_id, 'IDs match')
 
         sr_band_df = pd.DataFrame.from_dict(info.collection_info[ee_coll_name]['bands'])
@@ -52,7 +54,7 @@ class TestApi(unittest.TestCase):
         im_band_df = pd.DataFrame.from_dict(gd_image.info['bands'])
 
         self.assertTrue(im_band_df.shape[0] >= sr_band_df.shape[0], 'Enough bands')
-        for id in ['VALID_MASK', 'CLOUD_MASK', 'SHADOW_MASK', 'FILL_MASK', 'SCORE']:
+        for id in ['CLOUDLESS_MASK', 'CLOUD_MASK', 'SHADOW_MASK', 'FILL_MASK', 'CLOUD_DIST']:
             self.assertTrue(id in im_band_df.id.values, msg='Image has auxiliary bands')
         for id in sr_band_df.id.values:
             self.assertTrue(id in im_band_df.id.values, msg='Image has SR bands')
@@ -66,16 +68,16 @@ class TestApi(unittest.TestCase):
         self.assertTrue(all(np.array(list(std_refl.values())) > 100), 'Std(SR) > 100')
 
         # test quality score for a specific region
-        sr_image = gd_image.ee_image.select('SCORE')
+        sr_image = gd_image.ee_image.select('CLOUD_DIST')
         max_score = sr_image.reduceRegion(reducer='max', geometry=region, scale=2 * gd_image.scale).getInfo()
-        self.assertTrue(max_score['SCORE'] < cloud_dist * 1.1, 'Max(SCORE) < 1.1*CLOUD_DIST')
+        self.assertTrue(max_score['CLOUD_DIST'] < cloud_dist * 1.1, 'Max(CLOUD_DIST) < 1.1*CLOUD_DIST')
 
     def test_image(self):
         """ Test geedim.image.MaskedImage sub-classes. """
         im_param_list = [
-            {'image_id': 'COPERNICUS/S2_SR/20190321T075619_20190321T081839_T35HKC', 'mask': False, 'cloud_dist': 200},
-            {'image_id': 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190301', 'mask': True, 'cloud_dist': 2000},
-            {'image_id': 'MODIS/006/MCD43A4/2019_01_01', 'mask': True, 'cloud_dist': 5000},
+            {'image_id': 'COPERNICUS/S2_SR/20190321T075619_20190321T081839_T35HKC', 'mask': False, 'cloud_dist': 5000},
+            {'image_id': 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190301', 'mask': True, 'cloud_dist': 5000},
+            # {'image_id': 'MODIS/006/MCD43A4/2019_01_01', 'mask': True, 'cloud_dist': 5000},
         ]
 
         for im_param_dict in im_param_list:
@@ -110,16 +112,17 @@ class TestApi(unittest.TestCase):
              'scale': 30, 'resampling': 'bilinear', 'cloud_dist': 5500},
             {'image_id': 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190301', 'mask': True, 'crs': None, 'scale': None,
              'resampling': 'bicubic'},
-            {'image_id': 'MODIS/006/MCD43A4/2019_01_01', 'mask': True, 'crs': 'EPSG:3857', 'scale': 500,
-             'resampling': 'near'},
+            # {'image_id': 'MODIS/006/MCD43A4/2019_01_01', 'mask': True, 'crs': 'EPSG:3857', 'scale': 500,
+            #  'resampling': 'near'},
         ]
 
         for impdict in im_param_list:
             ee_coll_name = geedim.image.split_id(impdict['image_id'])[0]
             with self.subTest('Download', **impdict):
                 # create image.MaskedImage
-                gd_image = class_from_id(ee_coll_name)._from_id(impdict["image_id"], mask=impdict['mask'],
-                                                                region=region)
+                gd_image = class_from_id(ee_coll_name)._from_id(impdict["image_id"], region=region)
+                if impdict['mask']:
+                    gd_image.mask_clouds()
                 # create a filename for these parameters
                 name = impdict["image_id"].replace('/', '-')
                 crs_str = impdict["crs"].replace(':', '_') if impdict["crs"] else 'None'
@@ -153,7 +156,7 @@ class TestApi(unittest.TestCase):
         im_band_df = pd.DataFrame.from_dict(gd_image.info['bands'])
 
         self.assertTrue(im_band_df.shape[0] >= sr_band_df.shape[0], 'Enough bands')
-        for id in ['VALID_MASK', 'CLOUD_MASK', 'SHADOW_MASK', 'FILL_MASK', 'SCORE']:
+        for id in ['CLOUDLESS_MASK', 'CLOUD_MASK', 'SHADOW_MASK', 'FILL_MASK', 'CLOUD_DIST']:
             self.assertTrue(id in im_band_df.id.values, msg='Image has auxiliary bands')
         for id in sr_band_df.id.values:
             self.assertTrue(id in im_band_df.id.values, msg='Image has SR bands')
