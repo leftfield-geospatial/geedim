@@ -153,12 +153,12 @@ def _region_cb(ctx, param, value):
     return value
 
 # TODO: pass cloud/shadow mask kwargs
-def _validate_image_list(obj: SimpleNamespace):
+def _validate_image_list(obj: SimpleNamespace, mask=False):
     """Validate and prepare the obj.image_list for export/download."""
     if len(obj.image_list) == 0:
         raise click.BadOptionUsage('image_id',
                                    'Either pass --id, or chain this command with a successful `search` or `composite`')
-    image_list = image_from_mixed_list(obj.image_list)
+    image_list = image_from_mixed_list(obj.image_list, mask=mask)
     if obj.region is None and any([not im.has_fixed_projection for im in image_list]):
         raise click.BadOptionUsage('region', 'One of --region or --box is required for a composite image.')
     return image_list
@@ -389,7 +389,7 @@ cli.add_command(search)
 def download(obj, image_id, bbox, region, download_dir, mask, cloud_dist, overwrite, **kwargs):
     """Download image(s)."""
     logger.info('\nDownloading:\n')
-    image_list = _validate_image_list(obj)
+    image_list = _validate_image_list(obj, mask=mask)
     for im in image_list:
         if mask:
             im.mask_clouds()
@@ -430,7 +430,7 @@ cli.add_command(download)
 def export(obj, image_id, bbox, region, drive_folder, mask, cloud_dist, wait, **kwargs):
     """Export image(s) to Google Drive."""
     logger.info('\nExporting:\n')
-    image_list = _validate_image_list(obj)  # TODO pass cloud/shadow masking kwargs
+    image_list = _validate_image_list(obj, mask=mask)  # TODO pass cloud/shadow masking kwargs
     export_tasks = []
     for im in image_list:
         if mask:
@@ -476,7 +476,7 @@ def composite(obj, image_id, mask, method, resampling, cloud_dist):
     if len(obj.image_list) == 0:
         raise click.BadOptionUsage('image_id', 'Either pass --id, or chain this command with a successful `search`')
 
-    gd_collection = collection_from_mixed_list(obj.image_list)  # TODO mask before composititng
+    gd_collection = collection_from_mixed_list(obj.image_list, mask=True)  # TODO mask before composititng
     obj.image_list = [gd_collection.composite(method=method, resampling=resampling)]
 
 

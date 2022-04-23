@@ -384,7 +384,8 @@ class MaskedCollection(BaseCollection):
 
         return self._summary_df
 
-    def composite(self, method=_default_comp_method, resampling=BaseImage._default_resampling):
+    # TODO: expose region and date to CLI
+    def composite(self, method=_default_comp_method, resampling=BaseImage._default_resampling, region=None, date=None):
         """
         Create a cloud/shadow free composite.
 
@@ -405,22 +406,47 @@ class MaskedCollection(BaseCollection):
         comp_image: MaskedImage
           The composite image, composite image ID
         """
-        if resampling != BaseImage._default_resampling:
-            self._ee_collection = self._ee_collection.map(lambda image: image.resample(resampling))
-
         method = str(method).lower()
+        if date:
+            date = ee.Date(date)
+
+        def set_region_stats(ee_image):
+            # set region stats for sorting
+            # TODO we need to get cloud/shadow params here too
+            gd_image = self._image_class(ee_image, has_aux_bands=True)
+            gd_image.set_region_stats(region=region)
+            ee_image = gd_image.ee_image
+            return ee_image
+
+        def set_date_dist(ee_image):
+            date_dist = ee.Number(ee_image.get("system:time_start")).subtract(date.millis()).abs()
+            return ee_image.set('DATE_DIST', date_dist)
+
+        ee_collection = self._ee_collection
+        if resampling != BaseImage._default_resampling:
+            ee_collection = ee_collection.map(lambda image: image.resample(resampling))
+
+        if method in ['mosaic', 'q_mosaic']:
+            if date:
+                # sort the collection by time difference to `date`, so that *mosaic uses the closest in time pixels
+                ee_collection = ee_collection.map(set_date_dist).sort('DATE_DIST', opt_ascending=False)
+            else:
+                # sort the collection by cloud/shadow free portion, so that *mosaic favours pixels from the least
+                # cloudy image
+                ee_collection = ee_collection.map(set_region_stats).sort('CLOUDLESS_PORTION')
 
         if method == "q_mosaic":
-            comp_image = self._ee_collection.qualityMosaic("CLOUD_DIST")
+            comp_image = ee_collection.qualityMosaic("CLOUD_DIST")
         elif method == "mosaic":
-            comp_image = self._ee_collection.mosaic()
+            comp_image = ee_collection.mosaic()
         elif method == "median":
-            comp_image = self._ee_collection.median()
+            comp_image = ee_collection.median()
             # median creates float images, so re-apply any type conversion
         elif method == "medoid":
             # limit medoid to surface reflectance bands
+            # TODO: as we are losing collection_info, we will need another way to get sr_bands
             sr_bands = [band_dict["id"] for band_dict in self._collection_info["bands"]]
-            comp_image = medoid.medoid(self._ee_collection, bands=sr_bands)
+            comp_image = medoid.medoid(ee_collection, bands=sr_bands)
         else:
             raise ValueError(f"Unsupported composite method: {method}")
 
@@ -428,6 +454,8 @@ class MaskedCollection(BaseCollection):
         comp_image = comp_image.set("COMPONENT_IMAGES", '\n' + self.summary)
 
         # construct an ID for the composite
+        # TODO: get summary_df for ee_collection, not self._ee_collection.  We want to leave collection unchanged,
+        #  in case there are repeat composites/searches.  Which should also be tested.
         start_date = self.summary_df.DATE.iloc[0].strftime("%Y_%m_%d")
         end_date = self.summary_df.DATE.iloc[-1].strftime("%Y_%m_%d")
 
@@ -438,36 +466,35 @@ class MaskedCollection(BaseCollection):
         #  would re-calculating the masks and score on the mosaics QA bands work?
         # TODO: leave out the median method entirely?
         if method == 'median':
-            gd_image = MaskedImage(comp_image, is_composite=True)
+            gd_image = MaskedImage(comp_image, has_aux_bands=True)
         else:
-            gd_image = self._image_class(comp_image, is_composite=True)
+            gd_image = self._image_class(comp_image, has_aux_bands=True)
         return gd_image
 
 
-def image_from_mixed_list(image_list: List[Union[BaseImage, str],], **kwargs) -> List[BaseImage,]:
+def image_from_mixed_list(image_list: List[Union[MaskedImage, str],], mask=False, **kwargs) -> List[MaskedImage,]:
     """Return a list of Base/MaskedImage objects, given a list of image ID's and/or Base/MaskedImage objects."""
     image_obj_list = []
 
     for im_obj in image_list:
         if isinstance(im_obj, str):
-            image_obj_list.append(image_from_id(im_obj, **kwargs))
-        elif isinstance(im_obj, BaseImage):
-            image_obj_list.append(im_obj)
-        else:
-            raise ValueError(f'Unknown image object type: {type(im_obj)}')
+            im_obj = image_from_id(im_obj, mask=mask, **kwargs)
+        elif not isinstance(im_obj, MaskedImage):
+            raise ValueError(f'Unsupported image object type: {type(im_obj)}')
+        image_obj_list.append(im_obj)
     return image_obj_list
 
 
-def collection_from_mixed_list(image_list: List[Union[BaseImage, str],], **kwargs):
+def collection_from_mixed_list(image_list: List[Union[MaskedImage, str],], mask=False, **kwargs):
     """Return a Base/MaskedCollection from a list of image ID's and/or Base/MaskedImage objects."""
-    image_obj_list = image_from_mixed_list(image_list, **kwargs)
+    image_obj_list = image_from_mixed_list(image_list, mask=mask, **kwargs)
     ee_image_list = []
-    masked = []
+    cloud_masked = []   # TODO: we should be able to remove this logic when we get rid of BaseCollection, maybe get rid of this factory entirely and just use MaskedCollection.from_list()
     for image_obj in image_obj_list:
-        if isinstance(image_obj, BaseImage):
+        if isinstance(image_obj, MaskedImage):
             ee_image_list.append(image_obj.ee_image)
-            masked.append(type(image_obj) != BaseImage)  # i.e. it is derived from BaseImage, but not BaseImage itself
+            cloud_masked.append(type(image_obj) != MaskedImage)  # i.e. it is derived from BaseImage, but not BaseImage itself
         else:
-            raise TypeError(f'Unknown image object type: {type(image_obj)}')
-
-    return MaskedCollection.from_ee_list(ee_image_list) if all(masked) else BaseCollection.from_ee_list(ee_image_list)
+            raise TypeError(f'Unsupported image object type: {type(image_obj)}')
+    # return MaskedCollection.from_ee_list(ee_image_list) if all(cloud_masked) else BaseCollection.from_ee_list(ee_image_list)
+    return MaskedCollection.from_ee_list(ee_image_list)

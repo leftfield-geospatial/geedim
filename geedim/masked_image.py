@@ -36,7 +36,8 @@ class MaskedImage(BaseImage):
     _supported_collection_ids = []
 
     # TODO: all the cloud mask params need to passed, but do they belong in __init__?  how will this combine with e.g. masking for search and masking for download
-    def __init__(self, ee_image, is_composite=False, **kwargs):
+    # TODO: rename has_aux_bands to something like
+    def __init__(self, ee_image, has_aux_bands=False, **kwargs):
         """
         Class to cloud/shadow mask and quality score Earth engine images from supported collections.
 
@@ -47,7 +48,7 @@ class MaskedImage(BaseImage):
         """
         # construct the cloud/shadow masks and cloudless score
         BaseImage.__init__(self, ee_image)
-        if not is_composite:
+        if not has_aux_bands:
             self._add_aux_bands(**kwargs)
 
     @classmethod
@@ -79,7 +80,7 @@ class MaskedImage(BaseImage):
         fill_mask = self.ee_image.mask().reduce(ee.Reducer.allNonZero()).rename('FILL_MASK')
         self.ee_image = self.ee_image.addBands(fill_mask, overwrite=True)
 
-    def set_region_stats(self, region):
+    def set_region_stats(self, region=None):
         """
         Set VALID_PORTION and AVG_SCORE statistics for a specified region in an image object.
 
@@ -93,6 +94,9 @@ class MaskedImage(BaseImage):
          : ee.Image
             EE image with VALID_PORTION and AVG_SCORE properties set.
         """
+        if not region:
+            region = self.ee_image.geometry()
+
         proj = get_projection(self.ee_image, min_scale=False)
         stats_image = ee.Image([self.ee_image.select('FILL_MASK').rename('FILL_PORTION'),
                                 ee.Image(1).rename('REGION_SUM')])
@@ -157,6 +161,7 @@ class SrMaskedImage(MaskedImage):
         # non_sr_image = self.ee_image.select(non_sr_band_names)
         # self._ee_image = ee.Image.cat(sr_image, non_sr_image)
 
+    # TODO: this method is only/mainly used on ee.Image's from *Colleciton.  So make it static or something like before - that is cleaner.
     def set_region_stats(self, region):
         """
         Set VALID_PORTION and AVG_SCORE statistics for a specified region in an image object.
@@ -213,7 +218,7 @@ class LandsatImage(SrMaskedImage):
         # combine cloud, shadow and fill masks into cloudless mask
         cloudless_mask = (cloud_mask.Or(shadow_mask)).Not() if mask_shadows else cloud_mask.Not()
         cloudless_mask = cloudless_mask.And(fill_mask).rename("CLOUDLESS_MASK")
-        cloud_dist = self._cloud_dist()
+        cloud_dist = self._cloud_dist()     # TODO work around band naming so we don't need to re-add this
         self.ee_image = ee_image.addBands([fill_mask, cloud_mask, shadow_mask, cloudless_mask, cloud_dist],
                                           overwrite=True)
 
@@ -444,9 +449,12 @@ def class_from_id(image_id: str) -> MaskedImage:
         return MaskedImage
 
 
-def image_from_id(image_id: str, **kwargs) -> BaseImage:
+def image_from_id(image_id: str, mask=False, **kwargs) -> MaskedImage:
     """Return a *Image instance for a given EE image ID."""
-    return class_from_id(image_id).from_id(image_id, **kwargs)
+    gd_image = class_from_id(image_id).from_id(image_id, **kwargs)
+    if mask:
+        gd_image.mask_clouds()
+    return gd_image
 
 
 def get_projection(image, min_scale=True):
