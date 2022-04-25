@@ -467,9 +467,17 @@ cli.add_command(export)
     required=False,
 )
 @resampling_option
-@cloud_dist_option
+@bbox_option
+@region_option
+@click.option(
+    "-d",
+    "--date",
+    type=click.DateTime(),
+    help="Give preference to images closest to this date (UTC).  [Supported by `mosaic` and `q_mosaic` methods.]",
+    required=False,
+)
 @click.pass_obj
-def composite(obj, image_id, mask, method, resampling, cloud_dist):
+def composite(obj, image_id, mask, method, resampling, bbox, region, date):
     """Create a cloud-free composite image."""
 
     # get image ids from command line or chained search command
@@ -477,7 +485,7 @@ def composite(obj, image_id, mask, method, resampling, cloud_dist):
         raise click.BadOptionUsage('image_id', 'Either pass --id, or chain this command with a successful `search`')
 
     gd_collection = collection_from_mixed_list(obj.image_list, mask=True)  # TODO mask before composititng
-    obj.image_list = [gd_collection.composite(method=method, resampling=resampling)]
+    obj.image_list = [gd_collection.composite(method=method, resampling=resampling, region=obj.region, date=date)]
 
 
 cli.add_command(composite)
