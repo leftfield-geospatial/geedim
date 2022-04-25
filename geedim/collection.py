@@ -133,13 +133,17 @@ class BaseCollection:
     @property
     def summary(self):
         """str : Formatted string of MaskedCollection.summary_df"""
-        return self.summary_df.to_string(
+        return self._get_summary_str(self._summary_df)
+
+    def _get_summary_str(self, summary_df):
+        return summary_df.to_string(
             float_format="{:.2f}".format,
             formatters={"DATE": lambda x: datetime.strftime(x, "%Y-%m-%d %H:%M")},
             columns=self._summary_key_df.ABBREV,
             index=False,
             justify="center",
         )
+
 
     def _get_summary_df(self, ee_collection):
         """
@@ -186,7 +190,8 @@ class BaseCollection:
 
         # convert property list to DataFrame
         im_prop_df = pd.DataFrame(im_prop_list, columns=im_prop_list[0].keys())
-        im_prop_df = im_prop_df.sort_values(by=start_time_key).reset_index(drop=True)  # sort by acquisition time
+        # im_prop_df = im_prop_df.sort_values(by=start_time_key).reset_index(drop=True)  # sort by acquisition time
+        im_prop_df = im_prop_df.reset_index(drop=True)
         im_prop_df = im_prop_df.rename(
             columns=dict(zip(self._summary_key_df.PROPERTY, self._summary_key_df.ABBREV))
         )  # abbreviate column names
@@ -407,8 +412,6 @@ class MaskedCollection(BaseCollection):
           The composite image, composite image ID
         """
         method = str(method).lower()
-        if date:
-            date = ee.Date(date)
 
         def set_region_stats(ee_image):
             # set region stats for sorting
@@ -419,7 +422,7 @@ class MaskedCollection(BaseCollection):
             return ee_image
 
         def set_date_dist(ee_image):
-            date_dist = ee.Number(ee_image.get("system:time_start")).subtract(date.millis()).abs()
+            date_dist = ee.Number(ee_image.get("system:time_start")).subtract(ee.Date(date).millis()).abs()
             return ee_image.set('DATE_DIST', date_dist)
 
         ee_collection = self._ee_collection
@@ -451,15 +454,21 @@ class MaskedCollection(BaseCollection):
             raise ValueError(f"Unsupported composite method: {method}")
 
         # populate image metadata with info on component images
-        comp_image = comp_image.set("COMPONENT_IMAGES", '\n' + self.summary)
+        summary_df = self._get_summary_df(ee_collection)
+        summary_str = self._get_summary_str(summary_df)
+        comp_image = comp_image.set("COMPONENT_IMAGES", '\n' + summary_str)
 
         # construct an ID for the composite
         # TODO: get summary_df for ee_collection, not self._ee_collection.  We want to leave collection unchanged,
         #  in case there are repeat composites/searches.  Which should also be tested.
-        start_date = self.summary_df.DATE.iloc[0].strftime("%Y_%m_%d")
-        end_date = self.summary_df.DATE.iloc[-1].strftime("%Y_%m_%d")
+        start_date = summary_df.DATE.min().strftime("%Y_%m_%d")
+        end_date = summary_df.DATE.max().strftime("%Y_%m_%d")
 
-        comp_id = f"{self._ee_coll_name}/{start_date}-{end_date}-{method.upper()}_COMP"
+        method_str = method.upper()
+        if method in ['mosaic', 'q_mosaic'] and date:
+            method_str += '-' + date.strftime("%Y_%m_%d")
+
+        comp_id = f"{self._ee_coll_name}/{start_date}-{end_date}-{method_str}-COMP"
         comp_image = comp_image.set("system:id", comp_id)
         comp_image = comp_image.set("system:time_start", self.summary_df.DATE.iloc[0].timestamp() * 1000)
         # TODO: do the QA, mask and score bands mosaic correctly?
