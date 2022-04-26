@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 class MaskedImage(BaseImage):
     _default_mask = False
     _default_cloud_dist = 5000
-    _supported_collection_ids = []
+    _supported_collection_ids = ['*']
 
     # TODO: all the cloud mask params need to passed, but do they belong in __init__?  how will this combine with e.g. masking for search and masking for download
     # TODO: rename has_aux_bands to something like
@@ -69,9 +69,9 @@ class MaskedImage(BaseImage):
         ee.ImageCollection
         """
         # TODO: lose the ee_coll_name parameter being passed?  or this method entirely?
-        if not ee_coll_name in cls._supported_collection_ids:
-            raise ValueError(f"Unsupported collection: {ee_coll_name}.  {cls.__name__} supports images from "
-                             "{cls._supported_collection_ids}")
+        if ('*' not in cls._supported_collection_ids) and (ee_coll_name not in cls._supported_collection_ids):
+            raise ValueError(f"Unsupported collection: {ee_coll_name}.  "
+                             f"{cls.__name__} supports images from {cls._supported_collection_ids}")
         return ee.ImageCollection(ee_coll_name)
 
     def _add_aux_bands(self, **kwargs):
@@ -136,6 +136,7 @@ class MaskedImage(BaseImage):
 
 
 class CloudMaskedImage(MaskedImage):
+    _supported_collection_ids = []      # abstract base class
     def _cloud_dist(self, max_cloud_dist=5000):
         """
         Get the cloud/shadow distance quality score for this image.
@@ -169,7 +170,7 @@ class CloudMaskedImage(MaskedImage):
                       where(cloud_dist.gt(ee.Image(max_cloud_dist)), max_cloud_dist).
                       where(ee_image.select('FILL_MASK').Not(),
                             0))  # TODO: I don't think this where is necessary when we don't unmask to start with
-        return cloud_dist.rename('CLOUD_DIST')
+        return cloud_dist.toUint32().rename('CLOUD_DIST')
 
     def mask_clouds(self):
         if True:
@@ -506,13 +507,8 @@ def get_projection(image, min_scale=True):
 
     bands = image.bandNames()
 
-    transform = np.array([1, 0, 0, 0, 1, 0])
-    if min_scale:
-        compare = ee.Number.lte
-        init_proj = ee.Projection('EPSG:4326', list(1e100 * transform))
-    else:
-        compare = ee.Number.gte
-        init_proj = ee.Projection('EPSG:4326', list(1e-100 * transform))
+    compare = ee.Number.lte if min_scale else ee.Number.gte
+    init_proj = image.select(0).projection()
 
     def compare_scale(name, prev_proj):
         """ Server side comparison of band scales"""
@@ -524,52 +520,10 @@ def get_projection(image, min_scale=True):
 
         # compare scales, excluding WGS84 bands (constant or composite bands)
         condition = (
-            compare(curr_scale, prev_scale).And(curr_proj.crs().compareTo(ee.String("EPSG:4326"))).neq(ee.Number(0))
+            # compare(curr_scale, prev_scale).And(curr_proj.crs().compareTo(ee.String("EPSG:4326"))).neq(ee.Number(0))
+            compare(curr_scale, prev_scale)
         )
         comp_proj = ee.Algorithms.If(condition, curr_proj, prev_proj)
         return ee.Projection(comp_proj)
 
     return ee.Projection(bands.iterate(compare_scale, init_proj))
-
-
-def _get_projection(image, min_scale=True):
-    """
-    Get the min/max scale projection of image bands.  Server side - no calls to getInfo().
-
-    Parameters
-    ----------
-    image : ee.Image, geedim.image.BaseImage
-            The image whose min/max projection to retrieve.
-    min: bool, optional
-         Retrieve the projection corresponding to the band with the minimum (True) or maximum (False) scale.
-         (default: True)
-
-    Returns
-    -------
-    ee.Projection
-        The requested projection.
-    """
-    if isinstance(image, BaseImage):
-        image = image.ee_image
-
-    bands = image.bandNames()
-
-    def band_crs_scale(band_name):
-        band = image.select([band_name])
-        projection = band.projection()
-        crs = projection.crs()
-        scale = projection.nominalScale()
-        return ee.Feature(None, dict(scale=scale, crs=crs, projection=projection))
-
-    crs_scale_fc = ee.FeatureCollection(bands.map(band_crs_scale))
-    # crs_scale_fc.getInfo()
-    crs_scale_fc = crs_scale_fc.filter(ee.Filter.neq('crs', 'EPSG:4326'))
-
-    def gather_scale_list(feature, _scale_list):
-        return ee.List(_scale_list).add(ee.Number(feature.get('scale')))
-
-    scale_array = ee.Array(crs_scale_fc.iterate(gather_scale_list, ee.List([])))
-    # scale_list.getInfo()
-    feat_idx = scale_array.multiply(-1).argmax() if min_scale else scale_array.argmax()
-    feature = ee.Feature(crs_scale_fc.toList(bands.size()).get(feat_idx.get(0)))
-    return ee.Projection(feature.get('projection'))
