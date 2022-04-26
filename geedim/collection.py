@@ -31,9 +31,9 @@ logger = logging.getLogger(__name__)
 
 
 ##
-class BaseCollection:
-    _composite_methods = ["mosaic", "median", "medoid"]  # supported composite methods
-    _default_comp_method = 'mosaic'
+class MaskedCollection:
+    _composite_methods = ["q_mosaic", "mosaic", "median", "medoid"]  # supported composite methods
+    _default_comp_method = 'q_mosaic'
 
     def __init__(self, ee_coll_name):
         """
@@ -54,8 +54,12 @@ class BaseCollection:
         self._summary_key_df = pd.DataFrame(self._collection_info["properties"])  # key to metadata summary
         self._summary_df = None  # summary of the image metadata
 
+        self._image_class = class_from_id(ee_coll_name)  # geedim.masked_image.*Image class for this collection
+        self._ee_collection = self._image_class.ee_collection(self._ee_coll_name)  # the wrapped ee.ImageCollection
+
     @classmethod
-    def from_ids(cls, image_ids):
+    def from_ids(cls, image_ids, mask=masked_image.MaskedImage._default_mask,
+                 cloud_dist=masked_image.MaskedImage._default_cloud_dist):
         """
         Create collection from image IDs
 
@@ -63,13 +67,20 @@ class BaseCollection:
         ----------
         image_ids : list(str)
                     A list of the EE image IDs (should all be from same collection)
+        mask : bool, optional
+               Apply a validity (cloud & shadow) mask to the image (default: False)
+        cloud_dist : int, optional
+            The radius (m) to search for cloud/shadow for quality scoring (default: 5000).
 
         Returns
         -------
-        geedim.collection.BaseCollection
+        geedim.collection.MaskedCollection
         """
         # check image IDs are valid
         ee_coll_name = split_id(image_ids[0])[0]
+        if ee_coll_name not in info.ee_to_gd:
+            raise ValueError(f"Unsupported collection: {ee_coll_name}")
+
         id_check = [split_id(im_id)[0] == ee_coll_name for im_id in image_ids[1:]]
         if not all(id_check):
             raise ValueError("All images must belong to the same collection")
@@ -77,8 +88,14 @@ class BaseCollection:
         # create the collection object
         gd_collection = cls(ee_coll_name)
 
-        # build and wrap an ee.ImageCollection of ee.Image's
-        im_list = ee.List([ee.Image(im_id) for im_id in image_ids])
+        # build and wrap an ee.ImageCollection of processed (masked and scored) images
+        im_list = ee.List([])
+        for im_id in image_ids:
+            gd_image = gd_collection._image_class.from_id(im_id)  # TODO: pass through cloud/shadow kwargs
+            if mask:
+                gd_image.mask_clouds()
+            im_list = im_list.add(gd_image.ee_image)
+
         gd_collection._ee_collection = ee.ImageCollection(im_list)
         return gd_collection
 
@@ -144,7 +161,6 @@ class BaseCollection:
             justify="center",
         )
 
-
     def _get_summary_df(self, ee_collection):
         """
         Retrieve a summary of collection image metadata.
@@ -190,7 +206,7 @@ class BaseCollection:
 
         # convert property list to DataFrame
         im_prop_df = pd.DataFrame(im_prop_list, columns=im_prop_list[0].keys())
-        # im_prop_df = im_prop_df.sort_values(by=start_time_key).reset_index(drop=True)  # sort by acquisition time
+        im_prop_df = im_prop_df.sort_values(by=start_time_key).reset_index(drop=True)  # sort by acquisition time
         im_prop_df = im_prop_df.reset_index(drop=True)
         im_prop_df = im_prop_df.rename(
             columns=dict(zip(self._summary_key_df.PROPERTY, self._summary_key_df.ABBREV))
@@ -198,149 +214,6 @@ class BaseCollection:
         im_prop_df = im_prop_df[self._summary_key_df.ABBREV.to_list()]  # reorder columns
 
         return im_prop_df
-
-    def search(self, start_date, end_date, region):
-        """
-        Search for images based on date, region etc criteria
-
-        Parameters
-        ----------
-        start_date : datetime.datetime
-                     Start image capture date.
-        end_date : datetime.datetime
-                   End image capture date (if None, then set to start_date + 1 day).
-        region : dict, geojson, ee.Geometry
-                 Polygon in WGS84 specifying a region that images should intersect.
-
-        Returns
-        -------
-        pandas.DataFrame
-            Dataframe specifying image properties that match the search criteria
-        """
-        # Initialise
-        if end_date is None:
-            end_date = start_date + timedelta(days=1)
-        if end_date <= start_date:
-            raise ValueError("`end_date` must be at least a day later than `start_date`")
-        try:
-            # filter the image collection, finding cloud/shadow masks, and region stats
-            self._ee_collection = (self._ee_collection
-                                   .filterDate(start_date, end_date)
-                                   .filterBounds(region)
-                                   )
-        finally:
-            # update summary_df with image metadata from the filtered collection
-            self._summary_df = self._get_summary_df(self._ee_collection)
-
-        return self._summary_df
-
-    def composite(self, method=_default_comp_method, resampling=BaseImage._default_resampling):
-        """
-        Create a composite image.
-
-        Note: composite() can be called on a filtered collection created by search(..), or on a collection created
-        with fromIds(...)
-
-        Parameters
-        ----------
-        method : str, optional
-                 Compositing method to use (q_mosaic|mosaic|median|medoid).  (Default: q_mosaic).
-        resampling : str, optional
-               Resampling method for compositing and re-projecting: ("near"|"bilinear"|"bicubic") (default: "near")
-
-        Returns
-        -------
-        comp_image: BaseImage
-          The composite image
-        """
-        if resampling != BaseImage._default_resampling:
-            self._ee_collection = self._ee_collection.map(lambda image: image.resample(resampling))
-
-        method = str(method).lower()
-
-        if method == "mosaic":
-            comp_image = self._ee_collection.mosaic()
-        elif method == "median":
-            comp_image = self._ee_collection.median()
-        elif method == "medoid":
-            comp_image = medoid.medoid(self._ee_collection)
-        else:
-            raise ValueError(f"Unsupported composite method: {method}")
-
-        # populate image metadata with info on component images
-        comp_image = comp_image.set("COMPONENT_IMAGES", self.summary)
-
-        # construct an ID for the composite
-        start_date = self.summary_df.DATE.iloc[0].strftime("%Y_%m_%d")
-        end_date = self.summary_df.DATE.iloc[-1].strftime("%Y_%m_%d")
-
-        comp_id = f"{self._ee_coll_name}/{start_date}-{end_date}-{method.upper()}_COMP"
-        comp_image = comp_image.set("system:time_start", self.summary_df.DATE.iloc[0].timestamp() * 1000)
-        comp_image = comp_image.set("system:id", comp_id)
-
-        return image.BaseImage(comp_image)
-
-
-class MaskedCollection(BaseCollection):
-    _composite_methods = ["q_mosaic", "mosaic", "median", "medoid"]  # supported composite methods
-    _default_comp_method = 'q_mosaic'
-
-    def __init__(self, ee_coll_name):
-        """
-        Class for searching and compositing an EE image collection
-
-        Parameters
-        ----------
-        ee_coll_name : str
-                       EE image collection ID
-        """
-        if ee_coll_name not in info.collection_info:
-            raise ValueError(f"Unsupported collection: {ee_coll_name}")
-        BaseCollection.__init__(self, ee_coll_name)
-        self._image_class = class_from_id(ee_coll_name)  # geedim.masked_image.*Image class for this collection
-        self._ee_collection = self._image_class.ee_collection(self._ee_coll_name)  # the wrapped ee.ImageCollection
-
-    @classmethod
-    def from_ids(cls, image_ids, mask=masked_image.MaskedImage._default_mask,
-                 cloud_dist=masked_image.MaskedImage._default_cloud_dist):
-        """
-        Create collection from image IDs
-
-        Parameters
-        ----------
-        image_ids : list(str)
-                    A list of the EE image IDs (should all be from same collection)
-        mask : bool, optional
-               Apply a validity (cloud & shadow) mask to the image (default: False)
-        cloud_dist : int, optional
-            The radius (m) to search for cloud/shadow for quality scoring (default: 5000).
-
-        Returns
-        -------
-        geedim.collection.MaskedCollection
-        """
-        # check image IDs are valid
-        ee_coll_name = split_id(image_ids[0])[0]
-        if ee_coll_name not in info.ee_to_gd:
-            raise ValueError(f"Unsupported collection: {ee_coll_name}")
-
-        id_check = [split_id(im_id)[0] == ee_coll_name for im_id in image_ids[1:]]
-        if not all(id_check):
-            raise ValueError("All images must belong to the same collection")
-
-        # create the collection object
-        gd_collection = cls(ee_coll_name)
-
-        # build and wrap an ee.ImageCollection of processed (masked and scored) images
-        im_list = ee.List([])
-        for im_id in image_ids:
-            gd_image = gd_collection._image_class.from_id(im_id)    # TODO: pass through cloud/shadow kwargs
-            if mask:
-                gd_image.mask_clouds()
-            im_list = im_list.add(gd_image.ee_image)
-
-        gd_collection._ee_collection = ee.ImageCollection(im_list)
-        return gd_collection
 
     # TODO: we need to pass cloud masking kwargs somehow.  it may be better to do this in a sort of environment, or globally?
     def search(self, start_date, end_date, region, valid_portion=0, **kwargs):
@@ -363,6 +236,7 @@ class MaskedCollection(BaseCollection):
         pandas.DataFrame
             Dataframe specifying image properties that match the search criteria
         """
+        # TODO: error message for q_mosaic with generic collection...  Or allow to spec a band?
         # Initialise
         if end_date is None:
             end_date = start_date + timedelta(days=1)
@@ -498,12 +372,12 @@ def collection_from_mixed_list(image_list: List[Union[MaskedImage, str],], mask=
     """Return a Base/MaskedCollection from a list of image ID's and/or Base/MaskedImage objects."""
     image_obj_list = image_from_mixed_list(image_list, mask=mask, **kwargs)
     ee_image_list = []
-    cloud_masked = []   # TODO: we should be able to remove this logic when we get rid of BaseCollection, maybe get rid of this factory entirely and just use MaskedCollection.from_list()
+    cloud_masked = []  # TODO: we should be able to remove this logic when we get rid of BaseCollection, maybe get rid of this factory entirely and just use MaskedCollection.from_list()
     for image_obj in image_obj_list:
         if isinstance(image_obj, MaskedImage):
             ee_image_list.append(image_obj.ee_image)
-            cloud_masked.append(type(image_obj) != MaskedImage)  # i.e. it is derived from BaseImage, but not BaseImage itself
+            cloud_masked.append(
+                type(image_obj) != MaskedImage)  # i.e. it is derived from BaseImage, but not BaseImage itself
         else:
             raise TypeError(f'Unsupported image object type: {type(image_obj)}')
-    # return MaskedCollection.from_ee_list(ee_image_list) if all(cloud_masked) else BaseCollection.from_ee_list(ee_image_list)
     return MaskedCollection.from_ee_list(ee_image_list)
