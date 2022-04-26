@@ -18,7 +18,6 @@
 import logging
 
 import ee
-import numpy as np
 
 from geedim.image import BaseImage, split_id
 
@@ -125,18 +124,13 @@ class MaskedImage(BaseImage):
         self.ee_image = self.ee_image.set('CLOUDLESS_PORTION', means.get('FILL_PORTION'))
 
     def mask_clouds(self):
-        logger.warning(f'Cloud/shadow masking is not supported for this image')
-        if True:
-            self.ee_image = self.ee_image.updateMask(self.ee_image.select('FILL_MASK'))
-        else:
-            non_mask_bands = self.ee_image.bandNames().remove('FILL_MASK')
-            ee_image = self.ee_image.select(non_mask_bands)
-            ee_image = ee_image.updateMask(self.ee_image.select('FILL_MASK'))
-            self.ee_image = ee_image.addBands(self.ee_image.select('FILL_MASK'))
+        # logger.warning(f'Cloud/shadow masking is not supported for this image')
+        self.ee_image = self.ee_image.updateMask(self.ee_image.select('FILL_MASK'))
 
 
 class CloudMaskedImage(MaskedImage):
-    _supported_collection_ids = []      # abstract base class
+    _supported_collection_ids = []  # abstract base class
+
     def _cloud_dist(self, max_cloud_dist=5000):
         """
         Get the cloud/shadow distance quality score for this image.
@@ -173,18 +167,7 @@ class CloudMaskedImage(MaskedImage):
         return cloud_dist.toUint32().rename('CLOUD_DIST')
 
     def mask_clouds(self):
-        if True:
-            self.ee_image = self.ee_image.updateMask(self.ee_image.select('CLOUDLESS_MASK'))
-        else:
-            sr_image = self.ee_image.select('^(SR_B|B).*$')
-            sr_image = sr_image.updateMask(self.ee_image.select('CLOUDLESS_MASK'))
-
-            if False:  # google doesn't support
-                non_sr_image = self.ee_image.select('(?!(SR_B|B)).*')
-            else:
-                non_sr_band_names = self.ee_image.bandNames().removeAll(sr_image.bandNames())
-                non_sr_image = self.ee_image.select(non_sr_band_names)
-            self._ee_image = ee.Image.cat(sr_image, non_sr_image)
+        self.ee_image = self.ee_image.updateMask(self.ee_image.select('CLOUDLESS_MASK'))
 
     # TODO: this method is only/mainly used on ee.Image's from *Colleciton.  So make it static or something like before - that is cleaner.
     def set_region_stats(self, region):
