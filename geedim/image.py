@@ -142,7 +142,6 @@ class BaseImage:
         self._min_projection = None
         self._min_dtype = None
         # TODO: some collections e.g. LANDSAT/LC08/C01/T1_8DAY_EVI, won't allow get('system:id')
-        self._ee_coll_name = ee.String(ee_image.get('system:id')).split('/').slice(0, -1).join('/')
         self._out_lock = threading.Lock()
         self._max_threads = num_threads or min(32, (os.cpu_count() or 1) + 4)
 
@@ -185,17 +184,6 @@ class BaseImage:
         self._ee_image = value
 
     @property
-    def ee_info(self) -> Dict:
-        """The EE image metadata in a dict."""
-        if self._ee_info is None:
-            self._ee_info = self._ee_image.getInfo()
-        return self._ee_info
-
-    @property
-    def properties(self) -> Dict:
-        return self.ee_info['properties'] if 'properties' in self.ee_info else None
-
-    @property
     def id(self) -> str:
         """The EE image ID."""
         return self._id or self.ee_info["id"]  # avoid a call to getInfo() if _id is set
@@ -206,9 +194,15 @@ class BaseImage:
         return self.id.replace('/', '-')
 
     @property
-    def collection_id(self) -> str:
-        """The EE collection ID for this image."""
-        return split_id(self.id)[0]
+    def ee_info(self) -> Dict:
+        """The EE image metadata in a dict."""
+        if self._ee_info is None:
+            self._ee_info = self._ee_image.getInfo()
+        return self._ee_info
+
+    @property
+    def properties(self) -> Dict:
+        return self.ee_info['properties'] if 'properties' in self.ee_info else None
 
     @property
     def min_projection(self) -> Dict:
@@ -268,28 +262,22 @@ class BaseImage:
     @property
     def footprint(self) -> Dict:
         """A geojson polygon of the image extent."""
-        if 'system:footprint' not in self.ee_info['properties']:
+        if self._footprint_key not in self.ee_info['properties']:
             return None
         return self.ee_info['properties'][self._footprint_key]
 
     @property
     def band_metadata(self) -> List:
+        # TODO: replace with STAC
         """A list of dicts describing the image bands."""
         return self._get_band_metadata(self.ee_info)
 
     @property
     def info(self) -> Dict:
+        # TODO can be removed after rewrite of tests?
         """All the BasicImage properties packed into a dictionary"""
         return dict(id=self.id, properties=self.properties, footprint=self.footprint, bands=self.band_metadata,
                     **self.min_projection)
-
-    @staticmethod
-    def human_size(bytes, units=['bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB']):
-        """
-        Returns a human readable string representation of bytes -
-        see https://stackoverflow.com/questions/1094841/get-human-readable-version-of-file-size
-        """
-        return f'{bytes:.2f} {units[0]}' if bytes < 1024 else BaseImage.human_size(bytes / 1000, units[1:])
 
     @staticmethod
     def _get_projection(ee_info: Dict, min=True) -> Dict:
@@ -339,6 +327,14 @@ class BaseImage:
         return dtype
 
     @staticmethod
+    def _str_format_size(bytes, units=['bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB']):
+        """
+        Returns a human readable string representation of bytes -
+        see https://stackoverflow.com/questions/1094841/get-human-readable-version-of-file-size
+        """
+        return f'{bytes:.2f} {units[0]}' if bytes < 1024 else BaseImage._str_format_size(bytes / 1000, units[1:])
+
+    @staticmethod
     def _get_band_metadata(ee_info) -> List[Dict,]:
         """Return band metadata given an EE image info dict."""
         ee_coll_name, _ = split_id(ee_info['id'])
@@ -351,6 +347,11 @@ class BaseImage:
         else:  # just use the image band IDs
             band_metadata = band_df[["id"]].to_dict("records")
         return band_metadata
+
+    @staticmethod
+    def _get_image_size(exp_image: 'BaseImage'):
+        dtype_size = np.dtype(exp_image.dtype).itemsize
+        return exp_image.shape[0] * exp_image.shape[1] * exp_image.count * dtype_size
 
     def _convert_dtype(self, ee_image, dtype):
         """
@@ -416,7 +417,7 @@ class BaseImage:
             # One or more of region, crs and scale were not provided, so get the image values to use instead
             if not self.scale:
                 # Raise an error if this image is a composite (or similar)
-                raise ValueError(f'This image does not have a fixed projection, you need to specify a region, '
+                raise ValueError(f'This image does not have a fixed projection, you need to specify all of region, '
                                  f'crs and scale.')
 
         if not region and not self.footprint:
@@ -464,18 +465,11 @@ class BaseImage:
         )
         nodata = nodata_dict[exp_image.dtype] if set_nodata else None
         profile = dict(driver='GTiff', dtype=exp_image.dtype, nodata=nodata, width=exp_image.shape[1],
-                       height=exp_image.shape[0],
-                       count=exp_image.count, crs=CRS.from_string(exp_image.crs), transform=exp_image.transform,
-                       compress='deflate', interleave='band', tiled=True)
+                       height=exp_image.shape[0], count=exp_image.count, crs=CRS.from_string(exp_image.crs),
+                       transform=exp_image.transform, compress='deflate', interleave='band', tiled=True)
         return exp_image, profile
 
-    @staticmethod
-    def _get_image_size(exp_image: 'BaseImage'):
-        dtype_size = np.dtype(exp_image.dtype).itemsize
-        return exp_image.shape[0] * exp_image.shape[1] * exp_image.count * dtype_size
-
-
-    def _get_tile_shape(self, exp_image: 'BaseImage', max_download_size=32<<20,
+    def _get_tile_shape(self, exp_image: 'BaseImage', max_download_size=32 << 20,
                         max_grid_dimension=10000) -> (Tuple[int, int], int):
         """Return a tile shape for provided BaseImage that satisfies GEE download limits, and is 'square-ish'."""
 
@@ -491,7 +485,7 @@ class BaseImage:
 
         # TODO: the below is an approx and there is still the chance of tile size > max_download_size in unusual cases
         init_num_tiles = max(1, np.floor(image_size / max_download_size))
-        ceil_size = ceil_size / np.sqrt(init_num_tiles)    # adjust worst case for this approx case
+        ceil_size = ceil_size / np.sqrt(init_num_tiles)  # adjust worst case for this approx case
         #  the total tile download size (tds) should be <= max_download_size, and
         #   tds <= image_size/num_tiles + ceil_size, which gives us:
         num_tiles = np.ceil(image_size / (max_download_size - ceil_size))
@@ -661,7 +655,7 @@ class BaseImage:
         raw_download_size = self._get_image_size(exp_image)
 
         if logger.getEffectiveLevel() <= logging.DEBUG:
-            logger.debug(f'Uncompressed size: {self.human_size(raw_download_size)}')
+            logger.debug(f'Uncompressed size: {self._str_format_size(raw_download_size)}')
 
         # create export task and start
         task = ee.batch.Export.image.toDrive(image=exp_image.ee_image, description=filename[:100], folder=folder,
@@ -721,15 +715,15 @@ class BaseImage:
             dtype_size = np.dtype(exp_image.dtype).itemsize
             raw_tile_size = tile_shape[0] * tile_shape[1] * exp_image.count * dtype_size
             logger.debug(f'{filename.name}:')
-            logger.debug(f'Uncompressed size: {self.human_size(raw_download_size)}')
+            logger.debug(f'Uncompressed size: {self._str_format_size(raw_download_size)}')
             logger.debug(f'Num. tiles: {num_tiles}')
             logger.debug(f'Tile shape: {tile_shape}')
-            logger.debug(f'Tile size: {self.human_size(int(raw_tile_size))}')
+            logger.debug(f'Tile size: {self._str_format_size(int(raw_tile_size))}')
 
         if raw_download_size > 1e9:
             # warn if the download is large (>1GB)
             logger.warning(f'Consider adjusting `region`, `scale` and/or `dtype` to reduce the {filename.name}'
-                           f' download size (raw: {self.human_size(raw_download_size)}).')
+                           f' download size (raw: {self._str_format_size(raw_download_size)}).')
 
         # configure the progress bar to monitor raw/uncompressed download size
         desc = filename.name if (len(filename.name) < self._desc_width) else f'*{filename.name[-self._desc_width:]}'
