@@ -23,7 +23,7 @@ from click.testing import CliRunner
 
 import geedim.image
 from geedim import root_path, cli, collection
-from geedim.masked_image import class_from_id
+from geedim.masked_image import class_from_id, image_from_id
 from tests.util import _test_image_file, _test_search_results, _setup_test
 
 
@@ -87,8 +87,7 @@ class TestCli(unittest.TestCase):
                     region = json.load(f)
 
                 filename = download_dir.joinpath(image_id.replace('/', '-') + '.tif')
-                ee_coll_name = geedim.image.split_id(image_id)[0]
-                gd_image = class_from_id(ee_coll_name)._from_id(image_id, mask=True, region=region)
+                gd_image = image_from_id(image_id, mask=True, region=region)
                 _test_image_file(self, image_obj=gd_image, filename=filename, region=region, crs=crs, scale=scale,
                                  mask=True)
 

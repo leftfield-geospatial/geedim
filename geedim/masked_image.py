@@ -48,31 +48,6 @@ class MaskedImage(BaseImage):
         if not has_aux_bands:
             self._add_aux_bands(**kwargs)
 
-    @classmethod
-    def _from_id(cls, image_id, mask=_default_mask, cloud_dist=_default_cloud_dist, region=None):
-        """ Internal method for creating an image with region statistics. """
-        gd_image = cls.from_id(image_id)  # TODO pass cloud/shadow kwargs
-        if region is not None:
-            gd_image.set_region_stats(region)
-        if mask:
-            gd_image.mask_clouds()
-        return gd_image
-
-    @classmethod
-    def ee_collection(cls, ee_coll_name):
-        """
-        Returns the ee.ImageCollection corresponding to this image.
-
-        Returns
-        -------
-        ee.ImageCollection
-        """
-        # TODO: lose the ee_coll_name parameter being passed?  or this method entirely?
-        if ('*' not in cls._supported_collection_ids) and (ee_coll_name not in cls._supported_collection_ids):
-            raise ValueError(f"Unsupported collection: {ee_coll_name}.  "
-                             f"{cls.__name__} supports images from {cls._supported_collection_ids}")
-        return ee.ImageCollection(ee_coll_name)
-
     def _add_aux_bands(self, **kwargs):
         fill_mask = self.ee_image.mask().reduce(ee.Reducer.allNonZero()).rename('FILL_MASK')
         self.ee_image = self.ee_image.addBands(fill_mask, overwrite=True)
@@ -244,7 +219,7 @@ class Sentinel2ClImage(CloudMaskedImage):
     _supported_collection_ids = []
 
     # TODO: provide CLI access to these kwargs, and document them here
-    def __init__(self, ee_image, **kwargs):
+    def __init__(self, ee_image, has_aux_bands=False, **kwargs):
         """
         Class to cloud/shadow mask and quality score GEE Sentinel-2 images.
 
@@ -254,24 +229,22 @@ class Sentinel2ClImage(CloudMaskedImage):
             Earth engine Sentinel-2 image to wrap.  This image must have a `CLOUD_PROB` band containing the
             corresponding image from the `COPERNICUS/S2_CLOUD_PROBABILITY` collection.
         """
-        CloudMaskedImage.__init__(self, ee_image, **kwargs)
+        if not has_aux_bands:
+            s2_sr_toa_col = ee.ImageCollection(ee_image)
+            s2_cloudless_col = ee.ImageCollection("COPERNICUS/S2_CLOUD_PROBABILITY")
 
-    @classmethod
-    def from_id(cls, image_id, **kwargs):
-        # check image_id
-        ee_coll_name = split_id(image_id)[0]
-        if ee_coll_name not in cls._supported_collection_ids:
-            raise ValueError(f"Unsupported collection: {ee_coll_name}.  "
-                             f"{cls.__name__} only supports images from {cls._supported_collection_ids}")
+            # create a collection of index-matched images from the SR/TOA and cloud probability collections
+            filt = ee.Filter.equals(leftField="system:index", rightField="system:index")
+            inner_join = ee.ImageCollection(ee.Join.inner().apply(s2_sr_toa_col, s2_cloudless_col, filt))
 
-        ee_image = ee.Image(image_id)
+            # re-configure the collection so that cloud probability is added as a band to the SR/TOA image
+            def add_cloud_prob_band(feature):
+                """ Server-side function to concatenate images """
+                return ee.Image.cat(feature.get("primary"), ee.Image(feature.get("secondary")).rename('CLOUD_PROB'))
 
-        # get cloud probability for ee_image and add as a band
-        cloud_prob = ee.Image(f"COPERNICUS/S2_CLOUD_PROBABILITY/{split_id(image_id)[1]}").rename('CLOUD_PROB')
-        ee_image = ee_image.addBands(cloud_prob, overwrite=True)
-        gd_image = cls(ee_image, **kwargs)
-        gd_image._id = image_id
-        return gd_image
+            ee_image = inner_join.map(add_cloud_prob_band).first()
+
+        CloudMaskedImage.__init__(self, ee_image, has_aux_bands=has_aux_bands, **kwargs)
 
     def _add_aux_bands(self, s2_toa=False, method='cloud_prob', mask_cirrus=True, mask_shadows=True, prob=60,
                        dark=0.15, shadow_dist=1000, buffer=250, cdi_thresh=None, max_cloud_dist=5000):
@@ -376,32 +349,6 @@ class Sentinel2ClImage(CloudMaskedImage):
         cloud_dist = self._cloud_dist(max_cloud_dist=max_cloud_dist)
         self.ee_image = self.ee_image.addBands(cloud_dist, overwrite=True)
 
-    @classmethod
-    def ee_collection(cls, ee_coll_name):
-        """
-        Returns an augmented ee.ImageCollection with cloud probability bands added to multi-spectral images.
-
-        Returns
-        -------
-        ee.ImageCollection
-        """
-        if not ee_coll_name in cls._supported_collection_ids:
-            raise ValueError(f"Unsupported collection: {ee_coll_name}.  {cls.__name__} supports images from "
-                             f"{cls._supported_collection_ids}")
-        s2_sr_toa_col = ee.ImageCollection(ee_coll_name)
-        s2_cloudless_col = ee.ImageCollection("COPERNICUS/S2_CLOUD_PROBABILITY")
-
-        # create a collection of index-matched images from the SR/TOA and cloud probability collections
-        filt = ee.Filter.equals(leftField="system:index", rightField="system:index")
-        inner_join = ee.ImageCollection(ee.Join.inner().apply(s2_sr_toa_col, s2_cloudless_col, filt))
-
-        # re-configure the collection so that cloud probability is added as a band to the SR/TOA image
-        def map(feature):
-            """ Server-side function to concatenate images """
-            return ee.Image.cat(feature.get("primary"), ee.Image(feature.get("secondary")).rename('CLOUD_PROB'))
-
-        return inner_join.map(map)
-
 
 class Sentinel2SrClImage(Sentinel2ClImage):
     """
@@ -459,9 +406,11 @@ def class_from_id(image_id: str) -> MaskedImage:
         return MaskedImage
 
 
-def image_from_id(image_id: str, mask=False, **kwargs) -> MaskedImage:
+def image_from_id(image_id: str, mask=False, region=None, **kwargs) -> MaskedImage:
     """Return a *Image instance for a given EE image ID."""
     gd_image = class_from_id(image_id).from_id(image_id, **kwargs)
+    if region:
+        gd_image.set_region_stats(region)
     if mask:
         gd_image.mask_clouds()
     return gd_image

@@ -55,7 +55,7 @@ class MaskedCollection:
         self._summary_df = None  # summary of the image metadata
 
         self._image_class = class_from_id(ee_coll_name)  # geedim.masked_image.*Image class for this collection
-        self._ee_collection = self._image_class.ee_collection(self._ee_coll_name)  # the wrapped ee.ImageCollection
+        self._ee_collection = ee.ImageCollection(ee_coll_name)      #self._image_class.ee_collection(self._ee_coll_name)  # the wrapped ee.ImageCollection
 
     @classmethod
     def from_ids(cls, image_ids, mask=masked_image.MaskedImage._default_mask,
