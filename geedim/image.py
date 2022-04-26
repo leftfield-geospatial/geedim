@@ -164,7 +164,7 @@ class BaseImage:
             The image object.
         """
         ee_coll_name = split_id(image_id)[0]
-        if (cls._supported_collection_ids != ['*']) and (ee_coll_name not in cls._supported_collection_ids):
+        if ('*' not in cls._supported_collection_ids) and (ee_coll_name not in cls._supported_collection_ids):
             raise ValueError(f"Unsupported collection: {ee_coll_name}.  "
                              f"{cls.__name__} supports images from {cls._supported_collection_ids}")
         ee_image = ee.Image(image_id)
@@ -418,8 +418,14 @@ class BaseImage:
                 # Raise an error if this image is a composite (or similar)
                 raise ValueError(f'This image does not have a fixed projection, you need to specify a region, '
                                  f'crs and scale.')
+
         if not region and not self.footprint:
             raise ValueError(f'This image does not have a footprint, you need to specify a region.')
+
+        if self.crs == 'EPSG:4326' and not scale:
+            # ee.Image.prepare_for_export() expects a scale in meters, but if the image is EPSG:4326, the default scale
+            # is in degrees
+            raise ValueError(f'This image is in EPSG:4326, you need to specify a scale in meters.')
 
         region = region or self.footprint  # TODO: test if this region is not in the download crs
         crs = crs or self.crs
@@ -474,14 +480,18 @@ class BaseImage:
         """Return a tile shape for provided BaseImage that satisfies GEE download limits, and is 'square-ish'."""
 
         # find the total number of tiles we must divide the image into to satisfy max_download_size
-        image_shape = np.int64(exp_image.shape)
+        image_shape = exp_image.shape
         dtype_size = np.dtype(exp_image.dtype).itemsize
         if exp_image.dtype.endswith('int8'):
             dtype_size *= 2  # workaround for GEE overestimate of *int8 dtype download sizes
 
         image_size = self._get_image_size(exp_image)
-        # ceil_size is the worst case extra tile size due to np.ceil(image_shape / shape_num_tiles).astype('int')
+        # here ceil_size is the worst case extra tile size due to np.ceil(image_shape / shape_num_tiles).astype('int')
         ceil_size = (image_shape[0] + image_shape[1]) * exp_image.count * dtype_size
+
+        # TODO: the below is an approx and there is still the chance of tile size > max_download_size in unusual cases
+        init_num_tiles = max(1, np.floor(image_size / max_download_size))
+        ceil_size = ceil_size / np.sqrt(init_num_tiles)    # adjust worst case for this approx case
         #  the total tile download size (tds) should be <= max_download_size, and
         #   tds <= image_size/num_tiles + ceil_size, which gives us:
         num_tiles = np.ceil(image_size / (max_download_size - ceil_size))
