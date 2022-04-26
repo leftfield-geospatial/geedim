@@ -101,6 +101,10 @@ class MaskedImage(BaseImage):
         #   we can unmask the stats image below before finding region stats.  This means that unfilled areas will no
         #   longer be masked.  Which is probably what we actually want for FILL_PORTION.  For CLOUDLESS_PORTION, I think
         #   it is also ok, unfilled pixels will then be 0, which is really what we want.
+        #
+        #   But, unmasked MASK bands will be problematic for mosaic compositing i.e. the composited MASK bands will not
+        #   consistt of the same mix of images as the SR (masked) bands i.e. the MASK bands will not apply to these
+        #   bands.
         if not region:
             region = self.ee_image.geometry()
 
@@ -122,10 +126,13 @@ class MaskedImage(BaseImage):
 
     def mask_clouds(self):
         logger.warning(f'Cloud/shadow masking is not supported for this image')
-        non_mask_bands = self.ee_image.bandNames().remove('FILL_MASK')
-        ee_image = self.ee_image.select(non_mask_bands)
-        ee_image = ee_image.updateMask(self.ee_image.select('FILL_MASK'))
-        self.ee_image = ee_image.addBands(self.ee_image.select('FILL_MASK'))
+        if True:
+            self.ee_image = self.ee_image.updateMask(self.ee_image.select('FILL_MASK'))
+        else:
+            non_mask_bands = self.ee_image.bandNames().remove('FILL_MASK')
+            ee_image = self.ee_image.select(non_mask_bands)
+            ee_image = ee_image.updateMask(self.ee_image.select('FILL_MASK'))
+            self.ee_image = ee_image.addBands(self.ee_image.select('FILL_MASK'))
 
 
 class CloudMaskedImage(MaskedImage):
@@ -165,7 +172,7 @@ class CloudMaskedImage(MaskedImage):
         return cloud_dist.rename('CLOUD_DIST')
 
     def mask_clouds(self):
-        if False:
+        if True:
             self.ee_image = self.ee_image.updateMask(self.ee_image.select('CLOUDLESS_MASK'))
         else:
             sr_image = self.ee_image.select('^(SR_B|B).*$')

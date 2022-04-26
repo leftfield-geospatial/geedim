@@ -109,9 +109,9 @@ class TestApi(unittest.TestCase):
                   "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
         im_param_list = [
             {'image_id': 'COPERNICUS/S2_SR/20190321T075619_20190321T081839_T35HKC', 'mask': True, 'crs': None,
-             'scale': 30, 'resampling': 'bilinear', 'cloud_dist': 5500},
+             'scale': 30, 'resampling': 'near'},
             {'image_id': 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190301', 'mask': True, 'crs': None, 'scale': None,
-             'resampling': 'bicubic'},
+             'resampling': 'near'},
             # {'image_id': 'MODIS/006/MCD43A4/2019_01_01', 'mask': True, 'crs': 'EPSG:3857', 'scale': 500,
             #  'resampling': 'near'},
         ]

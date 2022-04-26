@@ -116,7 +116,7 @@ class TestCli(unittest.TestCase):
         pdict = dict(mask=True, crs='EPSG:3857', scale=60)
 
         cli_params = ['composite', *pref_ids, '-cm', method, '-m' if pdict['mask'] else '-nm',
-                      '--resampling', 'bilinear', 'download', '-r', str(region_filename), '-dd', str(download_dir),
+                      '--resampling', 'near', 'download', '-r', str(region_filename), '-dd', str(download_dir),
                       '--crs', pdict['crs'], '--scale', pdict['scale'], '-o']
         result = CliRunner().invoke(cli.cli, cli_params, terminal_width=100)
 

@@ -111,9 +111,10 @@ def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=Non
                               msg='Search and image bounds match')
 
         if mask:  # and not ('sentinel2' in gd_coll_name):  # check mask is same as CLOUDLESS_MASK band
-            im_mask = im.read_masks(2).astype(bool)
-            valid_mask = ~nan_equals(im.read(im.descriptions.index('CLOUDLESS_MASK') + 1, masked=False), im.nodata)
-            test_case.assertTrue(np.all(im_mask == valid_mask), 'mask == CLOUDLESS_MASK')
+            im_mask = ~nan_equals(im.read(1), im.nodata)
+            cloudless_mask = im.read(im.descriptions.index('CLOUDLESS_MASK') + 1)
+            cloudless_mask[nan_equals(cloudless_mask, im.nodata)] = 0
+            test_case.assertTrue(np.all(cloudless_mask.astype('bool') == im_mask), 'mask == CLOUDLESS_MASK')
         else:
             valid_mask = im.read(im.descriptions.index('CLOUDLESS_MASK') + 1).astype(bool)
             cloud_mask = im.read(im.descriptions.index('CLOUD_MASK') + 1).astype(bool)
@@ -135,11 +136,11 @@ def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=Non
         if 'FILL_PORTION' in gd_info['properties'] and 'CLOUDLESS_PORTION' in gd_info['properties']:
             fill_portion = gd_info['properties']['FILL_PORTION']
             cloudless_portion = gd_info['properties']['CLOUDLESS_PORTION']
-            fill_mask = im.read(im.descriptions.index('FILL_MASK') + 1, masked=False)
-            cloudless_mask = im.read(im.descriptions.index('CLOUDLESS_MASK') + 1, masked=False)
-            if mask:   #mask
-                cloudless_mask = ~nan_equals(cloudless_mask, im.nodata)
-            else:
-                test_case.assertAlmostEqual(fill_portion, 100 * fill_mask.mean(), delta=5, msg='EE and file avg scores match')
+            fill_mask = im.read(im.descriptions.index('FILL_MASK') + 1)
+            fill_mask[nan_equals(fill_mask, im.nodata)] = 0
+            cloudless_mask = im.read(im.descriptions.index('CLOUDLESS_MASK') + 1)
+            cloudless_mask[nan_equals(cloudless_mask, im.nodata)] = 0
+            test_case.assertAlmostEqual(cloudless_portion if mask else fill_portion, 100 * fill_mask.mean(), delta=5,
+                                        msg='EE and file fill portion match')
             test_case.assertAlmostEqual(cloudless_portion, 100 * cloudless_mask.mean(), delta=5,
-                                        msg='EE and file valid portions match')
+                                        msg='EE and file cloudless portions match')
