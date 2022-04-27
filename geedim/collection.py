@@ -344,6 +344,7 @@ class MaskedCollection:
 
         comp_id = f"{self._ee_coll_name}/{start_date}-{end_date}-{method_str}-COMP"
         comp_image = comp_image.set("system:id", comp_id)
+        comp_image = comp_image.set("system:index", comp_id)
         comp_image = comp_image.set("system:time_start", self.summary_df.DATE.iloc[0].timestamp() * 1000)
         # TODO: do the QA, mask and score bands mosaic correctly?
         #  would re-calculating the masks and score on the mosaics QA bands work?
