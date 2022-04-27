@@ -387,8 +387,6 @@ def download(obj, image_id, bbox, region, download_dir, mask, cloud_dist, overwr
     logger.info('\nDownloading:\n')
     image_list = _validate_image_list(obj, mask=mask)
     for im in image_list:
-        if mask:
-            im.mask_clouds()
         filename = pathlib.Path(download_dir).joinpath(im.name + '.tif')
         im.download(filename, overwrite=overwrite, region=obj.region, **kwargs)
 
@@ -429,8 +427,6 @@ def export(obj, image_id, bbox, region, drive_folder, mask, cloud_dist, wait, **
     image_list = _validate_image_list(obj, mask=mask)  # TODO pass cloud/shadow masking kwargs
     export_tasks = []
     for im in image_list:
-        if mask:
-            im.mask_clouds()
         task = im.export(im.name, folder=drive_folder, wait=False, region=obj.region, **kwargs)
         export_tasks.append(task)
         logger.info(f'Started {im.name}') if not wait else None
@@ -480,8 +476,9 @@ def composite(obj, image_id, mask, method, resampling, bbox, region, date):
     if len(obj.image_list) == 0:
         raise click.BadOptionUsage('image_id', 'Either pass --id, or chain this command with a successful `search`')
 
-    gd_collection = collection_from_mixed_list(obj.image_list, mask=True)  # TODO mask before composititng
-    obj.image_list = [gd_collection.composite(method=method, resampling=resampling, region=obj.region, date=date)]
+    gd_collection = collection_from_mixed_list(obj.image_list)  # TODO mask before composititng
+    obj.image_list = [gd_collection.composite(method=method, mask=mask, resampling=resampling, region=obj.region,
+                                              date=date)]
 
 
 cli.add_command(composite)

@@ -91,10 +91,13 @@ class MaskedCollection:
         # build and wrap an ee.ImageCollection of processed (masked and scored) images
         im_list = ee.List([])
         for im_id in image_ids:
-            gd_image = gd_collection._image_class.from_id(im_id)  # TODO: pass through cloud/shadow kwargs
-            if mask:
-                gd_image.mask_clouds()
-            im_list = im_list.add(gd_image.ee_image)
+            if False:
+                gd_image = gd_collection._image_class.from_id(im_id)  # TODO: pass through cloud/shadow kwargs
+                if mask:
+                    gd_image.mask_clouds()
+                im_list = im_list.add(gd_image.ee_image)
+            else:
+                im_list = im_list.add(ee.Image(im_id))
 
         gd_collection._ee_collection = ee.ImageCollection(im_list)
         return gd_collection
@@ -264,7 +267,8 @@ class MaskedCollection:
         return self._summary_df
 
     # TODO: expose region and date to CLI
-    def composite(self, method=_default_comp_method, resampling=BaseImage._default_resampling, region=None, date=None):
+    def composite(self, method=_default_comp_method, mask=True, resampling=BaseImage._default_resampling,
+                  region=None, date=None):
         """
         Create a cloud/shadow free composite.
 
@@ -287,30 +291,32 @@ class MaskedCollection:
         """
         method = str(method).lower()
 
-        def set_region_stats(ee_image):
-            # set region stats for sorting
-            # TODO we need to get cloud/shadow params here too
+        def prepare_image(ee_image):
             gd_image = self._image_class(ee_image)
-            gd_image.set_region_stats(region=region)
-            ee_image = gd_image.ee_image
-            return ee_image
+            if method in ['mosaic', 'q_mosaic']:
+                if date:
+                    date_dist = ee.Number(gd_image.ee_image.get("system:time_start")).subtract(
+                        ee.Date(date).millis()).abs()
+                    gd_image.ee_image = gd_image.ee_image.set('DATE_DIST', date_dist)
+                else:
+                    gd_image.set_region_stats(region)
+            if mask:
+                gd_image.mask_clouds()
+            if resampling != BaseImage._default_resampling:
+                # TODO: what does resampling do to non SR bands - should they be excluded?  should we not do this after masking?
+                gd_image.ee_image = gd_image.ee_image.resample(resampling)
+            return gd_image.ee_image
 
-        def set_date_dist(ee_image):
-            date_dist = ee.Number(ee_image.get("system:time_start")).subtract(ee.Date(date).millis()).abs()
-            return ee_image.set('DATE_DIST', date_dist)
-
-        ee_collection = self._ee_collection
-        if resampling != BaseImage._default_resampling:
-            ee_collection = ee_collection.map(lambda image: image.resample(resampling))
+        ee_collection = self._ee_collection.map(prepare_image)
 
         if method in ['mosaic', 'q_mosaic']:
             if date:
                 # sort the collection by time difference to `date`, so that *mosaic uses the closest in time pixels
-                ee_collection = ee_collection.map(set_date_dist).sort('DATE_DIST', opt_ascending=False)
+                ee_collection = ee_collection.sort('DATE_DIST', opt_ascending=False)
             else:
                 # sort the collection by cloud/shadow free portion, so that *mosaic favours pixels from the least
                 # cloudy image
-                ee_collection = ee_collection.map(set_region_stats).sort('CLOUDLESS_PORTION')
+                ee_collection = ee_collection.sort('CLOUDLESS_PORTION')
 
         if method == "q_mosaic":
             comp_image = ee_collection.qualityMosaic("CLOUD_DIST")
@@ -369,16 +375,20 @@ def image_from_mixed_list(image_list: List[Union[MaskedImage, str],], mask=False
     return image_obj_list
 
 
-def collection_from_mixed_list(image_list: List[Union[MaskedImage, str],], mask=False, **kwargs):
+def collection_from_mixed_list(image_list: List[Union[MaskedImage, str],], **kwargs):
     """Return a Base/MaskedCollection from a list of image ID's and/or Base/MaskedImage objects."""
-    image_obj_list = image_from_mixed_list(image_list, mask=mask, **kwargs)
+    # image_obj_list = image_from_mixed_list(image_list, mask=mask, **kwargs)
     ee_image_list = []
-    cloud_masked = []  # TODO: we should be able to remove this logic when we get rid of BaseCollection, maybe get rid of this factory entirely and just use MaskedCollection.from_list()
-    for image_obj in image_obj_list:
-        if isinstance(image_obj, MaskedImage):
+    # cloud_masked = []  # TODO: we should be able to remove this logic when we get rid of BaseCollection, maybe get rid of this factory entirely and just use MaskedCollection.from_list()
+    for image_obj in image_list:
+        if isinstance(image_obj, str):
+            ee_image_list.append(ee.Image(image_obj))
+        elif isinstance(image_obj, ee.Image):
+            ee_image_list.append(image_obj)
+        elif isinstance(image_obj, BaseImage):
             ee_image_list.append(image_obj.ee_image)
-            cloud_masked.append(
-                type(image_obj) != MaskedImage)  # i.e. it is derived from BaseImage, but not BaseImage itself
+            # cloud_masked.append(
+            #     type(image_obj) != MaskedImage)  # i.e. it is derived from BaseImage, but not BaseImage itself
         else:
             raise TypeError(f'Unsupported image object type: {type(image_obj)}')
     return MaskedCollection.from_ee_list(ee_image_list)
