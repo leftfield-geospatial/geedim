@@ -48,9 +48,12 @@ class MaskedImage(BaseImage):
         if not has_aux_bands:
             self._add_aux_bands(**kwargs)
 
+    def _aux_image(self, **kwargs):
+        return self.ee_image.mask().reduce(ee.Reducer.allNonZero()).rename('FILL_MASK')
+
     def _add_aux_bands(self, **kwargs):
-        fill_mask = self.ee_image.mask().reduce(ee.Reducer.allNonZero()).rename('FILL_MASK')
-        self.ee_image = self.ee_image.addBands(fill_mask, overwrite=True)
+        aux_image = self._aux_image(**kwargs)
+        self.ee_image = self.ee_image.addBands(aux_image, overwrite=True)
 
     def set_region_stats(self, region=None):
         """
@@ -106,7 +109,7 @@ class MaskedImage(BaseImage):
 class CloudMaskedImage(MaskedImage):
     _supported_collection_ids = []  # abstract base class
 
-    def _cloud_dist(self, max_cloud_dist=5000):
+    def _cloud_dist_orig(self, ee_image=None, max_cloud_dist=5000):
         """
         Get the cloud/shadow distance quality score for this image.
 
@@ -115,8 +118,9 @@ class CloudMaskedImage(MaskedImage):
         ee.Image
             The cloud/shadow distance score (m) as a single band image.
         """
+        if not ee_image:
+            ee_image = self.ee_image
         radius = 1.5  # morphological pixel radius
-        ee_image = self.ee_image
         proj = get_projection(ee_image, min_scale=False)  # use maximum scale projection to save processing time
 
         # combine cloud and shadow masks and morphologically open to remove small isolated patches
@@ -140,6 +144,41 @@ class CloudMaskedImage(MaskedImage):
                       where(ee_image.select('FILL_MASK').Not(),
                             0))  # TODO: I don't think this where is necessary when we don't unmask to start with
         return cloud_dist.toUint32().rename('CLOUD_DIST')
+
+    def _cloud_dist(self, cloudless_mask=None, max_cloud_dist=5000):
+        """
+        Get the cloud/shadow distance quality score for this image.
+
+        Returns
+        -------
+        ee.Image
+            The cloud/shadow distance score (m) as a single band image.
+        """
+        if not cloudless_mask:
+            cloudless_mask = self.ee_image.select('CLOUDLESS_MASK')
+        radius = 1.5  # morphological pixel radius
+        proj = get_projection(self.ee_image, min_scale=False)  # use maximum scale projection to save processing time
+
+        # the mask of cloud and shadows (and unfilled pixels which are often cloud shadow, or other deep shadow)
+        # note that initial *MASK bands are not themselves masked with fill mask
+        cloud_shadow_mask = cloudless_mask.Not()
+        # cloud_shadow_mask = cloud_shadow_mask.focal_min(radius=radius).focal_max(radius=radius)  # TODO necessary?  CLOUDLESS_MASK has already been opened
+        cloud_pix = ee.Number(max_cloud_dist).divide(proj.nominalScale()).round()  # cloud_dist in pixels
+
+        # distance to nearest cloud/shadow (m)
+        cloud_dist = (
+            cloud_shadow_mask.fastDistanceTransform(neighborhood=cloud_pix, units="pixels", metric="squared_euclidean")
+                .sqrt()
+                .multiply(proj.nominalScale())
+                .rename("CLOUD_DIST")
+                .reproject(crs=proj.crs(), scale=proj.nominalScale())  # reproject to force calculation at correct scale
+        )
+
+        # clip score to max_cloud_dist and set to 0 in unfilled areas
+        cloud_dist = (cloud_dist.
+                      where(cloud_dist.gt(ee.Image(max_cloud_dist)), max_cloud_dist))  # TODO: I don't think this where is necessary when we don't unmask to start with
+        return cloud_dist.toUint32().rename('CLOUD_DIST')
+
 
     def mask_clouds(self):
         self.ee_image = self.ee_image.updateMask(self.ee_image.select('CLOUDLESS_MASK'))
@@ -183,7 +222,7 @@ class LandsatImage(CloudMaskedImage):
     _supported_collection_ids = ['LANDSAT/LT04/C02/T1_L2', 'LANDSAT/LT05/C02/T1_L2', 'LANDSAT/LE07/C02/T1_L2',
                                  'LANDSAT/LC08/C02/T1_L2', 'LANDSAT/LC09/C02/T1_L2']
 
-    def _add_aux_bands(self, mask_shadows=True, mask_cirrus=True, **kwargs):
+    def _aux_image(self, mask_shadows=True, mask_cirrus=True, **kwargs):
         # TODO: add warning for unsupported args?
         ee_image = self._ee_image
         # get cloud, shadow and fill masks from QA_PIXEL
@@ -203,8 +242,9 @@ class LandsatImage(CloudMaskedImage):
         cloudless_mask = (cloud_mask.Or(shadow_mask)).Not() if mask_shadows else cloud_mask.Not()
         cloudless_mask = cloudless_mask.And(fill_mask).rename("CLOUDLESS_MASK")
         cloud_dist = self._cloud_dist()  # TODO work around band naming so we don't need to re-add this
-        self.ee_image = ee_image.addBands([fill_mask, cloud_mask, shadow_mask, cloudless_mask, cloud_dist],
-                                          overwrite=True)
+        # self.ee_image = ee_image.addBands([fill_mask, cloud_mask, shadow_mask, cloudless_mask, cloud_dist],
+        #                                   overwrite=True)
+        return ee.Image([fill_mask, cloud_mask, shadow_mask, cloudless_mask, cloud_dist])
 
     def _cloud_dist(self, max_cloud_dist=5000):
         return self._ee_image.select('ST_CDIST').rename('CLOUD_DIST')
@@ -246,7 +286,7 @@ class Sentinel2ClImage(CloudMaskedImage):
 
         CloudMaskedImage.__init__(self, ee_image, has_aux_bands=has_aux_bands, **kwargs)
 
-    def _add_aux_bands(self, s2_toa=False, method='cloud_prob', mask_cirrus=True, mask_shadows=True, prob=60,
+    def _aux_image(self, s2_toa=False, method='cloud_prob', mask_cirrus=True, mask_shadows=True, prob=60,
                        dark=0.15, shadow_dist=1000, buffer=250, cdi_thresh=None, max_cloud_dist=5000):
         """
         Derive cloud, shadow and validity masks for an image, using the additional cloud probability band.
@@ -287,56 +327,56 @@ class Sentinel2ClImage(CloudMaskedImage):
             A dictionary of ee.Image objects for each of the fill, cloud, shadow and validity masks.
         """
         proj_scale = 60
-
         # maskCirrus : Whether to mask cirrus clouds. Valid just for method = 'qa'. This parameter is ignored for Landsat products.
         # maskShadows : Whether to mask cloud shadows. For more info see 'Braaten, J. 2020. Sentinel-2 Cloud Masking with s2cloudless. Google Earth Engine, Community Tutorials'.
         # scaledImage : Whether the pixel values are scaled to the range [0,1] (reflectance values). This parameter is ignored for Landsat products.
 
-        def get_cloud_mask(ee_image):
+        def get_cloud_mask(ee_im):
             if method == 'cloud_prob':
-                cloud_mask = ee_image.select('CLOUD_PROB').gte(prob).rename('CLOUD_MASK')
+                cloud_mask = ee_im.select('CLOUD_PROB').gte(prob).rename('CLOUD_MASK')
             else:
-                qa = ee_image.select('QA60')
+                qa = ee_im.select('QA60')
                 cloud_mask = qa.bitwiseAnd(1 << 10).eq(0)
                 if mask_cirrus:
                     cloud_mask = cloud_mask.And(qa.bitwiseAnd(1 << 11).eq(0))
             return cloud_mask
 
-        def get_cdi_cloud_mask(ee_image):
+        def get_cdi_cloud_mask(ee_im):
             if s2_toa:
-                s2_toa_image = ee_image
+                s2_toa_image = ee_im
             else:
-                idx = ee_image.get("system:index")
+                idx = ee_im.get("system:index")
                 s2_toa_image = (ee.ImageCollection("COPERNICUS/S2").
                                 filter(ee.Filter.eq("system:index", idx)).
                                 first())
             cdi_image = ee.Algorithms.Sentinel2.CDI(s2_toa_image)
             return cdi_image.lt(cdi_thresh).rename("CDI_CLOUD_MASK")
 
-        def get_shadow_mask(ee_image, cloud_mask):
-            dark_mask = ee_image.select("B8").lt(dark * 1e4)
+        def get_shadow_mask(ee_im, cloud_mask):
+            dark_mask = ee_im.select("B8").lt(dark * 1e4)
             if not s2_toa:
-                dark_mask = ee_image.select("SCL").neq(6).And(dark_mask)
+                dark_mask = ee_im.select("SCL").neq(6).And(dark_mask)
 
-            shadow_azimuth = ee.Number(90).subtract(ee.Number(ee_image.get("MEAN_SOLAR_AZIMUTH_ANGLE")))
+            shadow_azimuth = ee.Number(90).subtract(ee.Number(ee_im.get("MEAN_SOLAR_AZIMUTH_ANGLE")))
             proj_cloud_mask = (cloud_mask.directionalDistanceTransform(shadow_azimuth, int(shadow_dist / proj_scale))
-                               .reproject(crs=ee_image.select(0).projection(), scale=60)
+                               .reproject(crs=ee_im.select(0).projection(), scale=60)
                                .select('distance')
                                .mask())
             return proj_cloud_mask.And(dark_mask).rename("SHADOW_MASK")
 
-        cloud_mask = get_cloud_mask(self.ee_image)
+        ee_image = self.ee_image
+        cloud_mask = get_cloud_mask(ee_image)
         cloud_shadow_mask = cloud_mask
         if cdi_thresh is not None:
-            cloud_shadow_mask = cloud_shadow_mask.And(get_cdi_cloud_mask(self.ee_image))
+            cloud_shadow_mask = cloud_shadow_mask.And(get_cdi_cloud_mask(ee_image))
         if mask_shadows:
-            shadow_mask = get_shadow_mask(self.ee_image, cloud_mask)
+            shadow_mask = get_shadow_mask(ee_image, cloud_mask)
             cloud_shadow_mask = cloud_shadow_mask.Or(shadow_mask)  # TODO: or / add
 
         cloud_shadow_mask = cloud_shadow_mask.focal_min(20, units="meters").focal_max(buffer * 2 / 10, units="meters")
 
-        fill_mask = self.ee_image.select('B.*').mask().reduce(ee.Reducer.allNonZero())
-        fill_mask = fill_mask.clip(self.ee_image.geometry()).rename('FILL_MASK')
+        fill_mask = ee_image.select('B.*').mask().reduce(ee.Reducer.allNonZero())
+        fill_mask = fill_mask.clip(ee_image.geometry()).rename('FILL_MASK')
 
         cloudless_mask = (cloud_shadow_mask.Not()).And(fill_mask).rename('CLOUDLESS_MASK')
 
@@ -344,10 +384,10 @@ class Sentinel2ClImage(CloudMaskedImage):
         if mask_shadows:
             aux_bands.append(shadow_mask)
 
-        self.ee_image = self.ee_image.addBands(aux_bands, overwrite=True)  # add mask bands before getting cloud_dist
-
-        cloud_dist = self._cloud_dist(max_cloud_dist=max_cloud_dist)
-        self.ee_image = self.ee_image.addBands(cloud_dist, overwrite=True)
+        # ee_image = ee_image.addBands(aux_bands, overwrite=True)  # add mask bands before getting cloud_dist
+        cloud_dist = self._cloud_dist(cloudless_mask=cloudless_mask, max_cloud_dist=max_cloud_dist)
+        # ee_image = self.ee_image.addBands(cloud_dist, overwrite=True)
+        return ee.Image(aux_bands + [cloud_dist])
 
 
 class Sentinel2SrClImage(Sentinel2ClImage):
@@ -358,8 +398,8 @@ class Sentinel2SrClImage(Sentinel2ClImage):
     """
     _supported_collection_ids = ['COPERNICUS/S2_SR']
 
-    def _add_aux_bands(self, s2_toa=False, **kwargs):
-        return Sentinel2ClImage._add_aux_bands(self, s2_toa=False, **kwargs)
+    def _aux_image(self, s2_toa=False, **kwargs):
+        return Sentinel2ClImage._aux_image(self, s2_toa=False, **kwargs)
 
 
 class Sentinel2ToaClImage(Sentinel2ClImage):
@@ -370,8 +410,8 @@ class Sentinel2ToaClImage(Sentinel2ClImage):
     """
     _supported_collection_ids = ['COPERNICUS/S2']
 
-    def _add_aux_bands(self, s2_toa=False, **kwargs):
-        return Sentinel2ClImage._add_aux_bands(self, s2_toa=True, **kwargs)
+    def _aux_image(self, s2_toa=False, **kwargs):
+        return Sentinel2ClImage._aux_image(self, s2_toa=True, **kwargs)
 
 
 class ModisNbarImage(MaskedImage):
