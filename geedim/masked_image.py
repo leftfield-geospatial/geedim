@@ -34,7 +34,7 @@ class MaskedImage(BaseImage):
 
     # TODO: all the cloud mask params need to passed, but do they belong in __init__?  how will this combine with e.g. masking for search and masking for download
     # TODO: rename has_aux_bands to something like
-    def __init__(self, ee_image, has_aux_bands=False, **kwargs):
+    def __init__(self, ee_image, **kwargs):
         """
         Class to cloud/shadow mask and quality score Earth engine images from supported collections.
 
@@ -53,11 +53,9 @@ class MaskedImage(BaseImage):
 
     def _add_aux_bands(self, **kwargs):
         aux_image = self._aux_image(**kwargs)
-        if False:
-            self.ee_image = self.ee_image.addBands(aux_image, overwrite=True)
-        else:
-            cond = ee.Number(self.ee_image.bandNames().contains('FILL_MASK'))
-            self.ee_image = ee.Image(ee.Algorithms.If(cond, self.ee_image, self.ee_image.addBands(aux_image)))
+        # add aux bands if they are not already there
+        cond = ee.Number(self.ee_image.bandNames().contains('FILL_MASK'))
+        self.ee_image = ee.Image(ee.Algorithms.If(cond, self.ee_image, self.ee_image.addBands(aux_image)))
 
     def set_region_stats(self, region=None):
         """
@@ -225,7 +223,7 @@ class Sentinel2ClImage(CloudMaskedImage):
     _supported_collection_ids = []
 
     # TODO: provide CLI access to these kwargs, and document them here
-    def __init__(self, ee_image, has_aux_bands=False, **kwargs):
+    def __init__(self, ee_image, **kwargs):
         """
         Class to cloud/shadow mask and quality score GEE Sentinel-2 images.
 
@@ -235,24 +233,8 @@ class Sentinel2ClImage(CloudMaskedImage):
             Earth engine Sentinel-2 image to wrap.  This image must have a `CLOUD_PROB` band containing the
             corresponding image from the `COPERNICUS/S2_CLOUD_PROBABILITY` collection.
         """
-        if False:   #not has_aux_bands:
-            s2_sr_toa_col = ee.ImageCollection(ee_image)
-            s2_cloudless_col = ee.ImageCollection("COPERNICUS/S2_CLOUD_PROBABILITY")
 
-            # create a collection of index-matched images from the SR/TOA and cloud probability collections
-            filt = ee.Filter.equals(leftField="system:index", rightField="system:index")
-            inner_join = ee.ImageCollection(ee.Join.inner().apply(s2_sr_toa_col, s2_cloudless_col, filt))
-
-            # re-configure the collection so that cloud probability is added as a band to the SR/TOA image
-            def add_cloud_prob_band(feature):
-                """ Server-side function to concatenate images """
-                s2_sr_toa_image = ee.Image(feature.get("primary"))
-                cloud_prob_image = ee.Image(feature.get("secondary")).rename('CLOUD_PROB')
-                return s2_sr_toa_image.addBands(cloud_prob_image)
-
-            ee_image = inner_join.map(add_cloud_prob_band).first()
-
-        CloudMaskedImage.__init__(self, ee_image, has_aux_bands=has_aux_bands, **kwargs)
+        CloudMaskedImage.__init__(self, ee_image, **kwargs)
 
     def _aux_image(self, s2_toa=False, method='cloud_prob', mask_cirrus=True, mask_shadows=True, prob=60,
                    dark=0.15, shadow_dist=1000, buffer=250, cdi_thresh=None, max_cloud_dist=5000):
@@ -307,19 +289,12 @@ class Sentinel2ClImage(CloudMaskedImage):
             # create a collection of index-matched images from the SR/TOA and cloud probability collections
             filt = ee.Filter.equals(leftField="system:index", rightField="system:index")
             inner_join = ee.ImageCollection(ee.Join.inner().apply(s2_sr_toa_col, s2_cloudless_col, filt))
-
-            # re-configure the collection so that cloud probability is added as a band to the SR/TOA image
-            def add_cloud_prob_band(feature):
-                """ Server-side function to concatenate images """
-                s2_sr_toa_image = ee.Image(feature.get("primary"))
-                cloud_prob_image = ee.Image(feature.get("secondary")).rename('CLOUD_PROB')
-                return s2_sr_toa_image.addBands(cloud_prob_image)
-
             return ee.Image(inner_join.first().get('secondary')).rename('CLOUD_PROB')
 
-        def get_cloud_mask(ee_im):
+        def get_cloud_mask(ee_im, cloud_prob=None):
             if method == 'cloud_prob':
-                cloud_prob = get_cloud_prob(ee_im)
+                if not cloud_prob:
+                    cloud_prob = get_cloud_prob(ee_im)
                 cloud_mask = cloud_prob.gte(prob).rename('CLOUD_MASK')
             else:
                 qa = ee_im.select('QA60')
@@ -352,8 +327,8 @@ class Sentinel2ClImage(CloudMaskedImage):
             return proj_cloud_mask.And(dark_mask).rename("SHADOW_MASK")
 
         ee_image = self.ee_image
-
-        cloud_mask = get_cloud_mask(ee_image)
+        cloud_prob = get_cloud_prob(ee_image)
+        cloud_mask = get_cloud_mask(ee_image, cloud_prob=cloud_prob)
         cloud_shadow_mask = cloud_mask
         if cdi_thresh is not None:
             cloud_shadow_mask = cloud_shadow_mask.And(get_cdi_cloud_mask(ee_image))
@@ -368,13 +343,11 @@ class Sentinel2ClImage(CloudMaskedImage):
 
         cloudless_mask = (cloud_shadow_mask.Not()).And(fill_mask).rename('CLOUDLESS_MASK')
 
-        aux_bands = [fill_mask, cloud_mask, cloudless_mask]
+        aux_bands = [cloud_prob, fill_mask, cloud_mask, cloudless_mask]
         if mask_shadows:
             aux_bands.append(shadow_mask)
 
-        # ee_image = ee_image.addBands(aux_bands, overwrite=True)  # add mask bands before getting cloud_dist
         cloud_dist = self._cloud_dist(cloudless_mask=cloudless_mask, max_cloud_dist=max_cloud_dist)
-        # ee_image = self.ee_image.addBands(cloud_dist, overwrite=True)
         return ee.Image(aux_bands + [cloud_dist])
 
 

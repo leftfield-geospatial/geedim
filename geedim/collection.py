@@ -290,7 +290,7 @@ class MaskedCollection:
         def set_region_stats(ee_image):
             # set region stats for sorting
             # TODO we need to get cloud/shadow params here too
-            gd_image = self._image_class(ee_image, has_aux_bands=True)
+            gd_image = self._image_class(ee_image)
             gd_image.set_region_stats(region=region)
             ee_image = gd_image.ee_image
             return ee_image
@@ -350,9 +350,9 @@ class MaskedCollection:
         #  would re-calculating the masks and score on the mosaics QA bands work?
         # TODO: leave out the median method entirely?
         if method == 'median':
-            gd_image = MaskedImage(comp_image, has_aux_bands=True)
+            gd_image = MaskedImage(comp_image)
         else:
-            gd_image = self._image_class(comp_image, has_aux_bands=True)
+            gd_image = self._image_class(comp_image)
         return gd_image
 
 
