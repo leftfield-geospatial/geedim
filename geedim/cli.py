@@ -19,6 +19,7 @@ import os
 import pathlib
 import sys
 from types import SimpleNamespace
+from typing import List, Union
 
 import click
 import rasterio.crs as rio_crs
@@ -27,7 +28,7 @@ from rasterio.errors import CRSError
 
 from geedim import collection as coll_api
 from geedim import info, _ee_init, version
-from geedim.collection import MaskedCollection, image_from_mixed_list
+from geedim.collection import MaskedCollection
 from geedim.image import BaseImage, get_bounds
 from geedim.masked_image import MaskedImage
 
@@ -50,7 +51,6 @@ class ChainedCommand(click.Command):
     click Command class for managing parameters shared between chained commands,
     and formatting single newlines in help strings as single newlines.
     """
-
 
     def get_help(self, ctx):
         """Format help strings with single newlines as single newlines."""
@@ -152,13 +152,27 @@ def _region_cb(ctx, param, value):
         raise click.BadParameter(f'Invalid region: {value}.', param=param)
     return value
 
+
+def _image_from_mixed_list(image_list: List[Union[MaskedImage, str],], mask=False, **kwargs) -> List[MaskedImage,]:
+    """Return a list of Base/MaskedImage objects, given a list of image ID's and/or Base/MaskedImage objects."""
+    image_obj_list = []
+
+    for im_obj in image_list:
+        if isinstance(im_obj, str):
+            im_obj = MaskedImage.from_id(im_obj, mask=mask, **kwargs)
+        elif not isinstance(im_obj, MaskedImage):
+            raise ValueError(f'Unsupported image object type: {type(im_obj)}')
+        image_obj_list.append(im_obj)
+    return image_obj_list
+
+
 # TODO: pass cloud/shadow mask kwargs
 def _validate_image_list(obj: SimpleNamespace, mask=False):
     """Validate and prepare the obj.image_list for export/download."""
     if len(obj.image_list) == 0:
         raise click.BadOptionUsage('image_id',
                                    'Either pass --id, or chain this command with a successful `search` or `composite`')
-    image_list = image_from_mixed_list(obj.image_list, mask=mask)
+    image_list = _image_from_mixed_list(obj.image_list, mask=mask)
     if obj.region is None and any([not im.has_fixed_projection for im in image_list]):
         raise click.BadOptionUsage('region', 'One of --region or --box is required for a composite image.')
     return image_list

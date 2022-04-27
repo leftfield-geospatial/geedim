@@ -34,7 +34,7 @@ class MaskedImage(BaseImage):
 
     # TODO: all the cloud mask params need to passed, but do they belong in __init__?  how will this combine with e.g. masking for search and masking for download
     # TODO: rename has_aux_bands to something like
-    def __init__(self, ee_image, **kwargs):
+    def __init__(self, ee_image, mask=_default_mask, region=None, **kwargs):
         """
         Class to cloud/shadow mask and quality score Earth engine images from supported collections.
 
@@ -47,6 +47,19 @@ class MaskedImage(BaseImage):
         BaseImage.__init__(self, ee_image)
         # if not has_aux_bands:
         self._add_aux_bands(**kwargs)
+        if region:
+            self.set_region_stats(region)
+        if mask:
+            self.mask_clouds()
+
+    @staticmethod
+    def from_id(image_id: str, **kwargs) -> 'MaskedImage':
+        """Return a *Image instance for a given EE image ID."""
+        cls = class_from_id(image_id)  # .from_id(image_id, **kwargs)
+        ee_image = ee.Image(image_id)
+        gd_image = cls(ee_image, **kwargs)
+        gd_image._id = image_id  # set the id attribute from image_id (avoids a call to getInfo() for .id property)
+        return gd_image
 
     def _aux_image(self, **kwargs):
         return self.ee_image.mask().reduce(ee.Reducer.allNonZero()).rename('FILL_MASK')
@@ -223,19 +236,6 @@ class Sentinel2ClImage(CloudMaskedImage):
     _supported_collection_ids = []
 
     # TODO: provide CLI access to these kwargs, and document them here
-    def __init__(self, ee_image, **kwargs):
-        """
-        Class to cloud/shadow mask and quality score GEE Sentinel-2 images.
-
-        Parameters
-        ----------
-        ee_image : ee.Image
-            Earth engine Sentinel-2 image to wrap.  This image must have a `CLOUD_PROB` band containing the
-            corresponding image from the `COPERNICUS/S2_CLOUD_PROBABILITY` collection.
-        """
-
-        CloudMaskedImage.__init__(self, ee_image, **kwargs)
-
     def _aux_image(self, s2_toa=False, method='cloud_prob', mask_cirrus=True, mask_shadows=True, prob=60,
                    dark=0.15, shadow_dist=1000, buffer=250, cdi_thresh=None, max_cloud_dist=5000):
         """
@@ -405,16 +405,6 @@ def class_from_id(image_id: str) -> MaskedImage:
         return masked_image_dict[ee_coll_name]
     else:
         return MaskedImage
-
-
-def image_from_id(image_id: str, mask=False, region=None, **kwargs) -> MaskedImage:
-    """Return a *Image instance for a given EE image ID."""
-    gd_image = class_from_id(image_id).from_id(image_id, **kwargs)
-    if region:
-        gd_image.set_region_stats(region)
-    if mask:
-        gd_image.mask_clouds()
-    return gd_image
 
 
 def get_projection(image, min_scale=True):

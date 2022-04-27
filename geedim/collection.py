@@ -18,14 +18,13 @@ import logging
 ##
 # Functionality for searching and compositing EE image collections
 from datetime import datetime, timedelta
-from typing import List, Union
 
 import ee
 import pandas as pd
 
-from geedim import masked_image, info, medoid, image
+from geedim import info, medoid
 from geedim.image import BaseImage, split_id
-from geedim.masked_image import MaskedImage, class_from_id, image_from_id
+from geedim.masked_image import MaskedImage, class_from_id
 
 logger = logging.getLogger(__name__)
 
@@ -55,8 +54,8 @@ class MaskedCollection:
         self._summary_df = None  # summary of the image metadata
 
         self._image_class = class_from_id(ee_coll_name)  # geedim.masked_image.*Image class for this collection
-        self._ee_collection = ee.ImageCollection(ee_coll_name)      #self._image_class.ee_collection(self._ee_coll_name)  # the wrapped ee.ImageCollection
-
+        self._ee_collection = ee.ImageCollection(
+            ee_coll_name)  # self._image_class.ee_collection(self._ee_coll_name)  # the wrapped ee.ImageCollection
 
     @classmethod
     def from_list(cls, image_list):
@@ -90,7 +89,7 @@ class MaskedCollection:
         ee_coll_name = split_id(ee_id_list[0])[0]
         id_check = [split_id(im_id)[0] == ee_coll_name for im_id in ee_id_list[1:]]
         if not all(id_check):
-            # TODO: allow images from different landsat collections
+            # TODO: allow images from compatible landsat collections
             raise ValueError("All images must belong to the same collection")
 
         # create the collection object
@@ -331,17 +330,3 @@ class MaskedCollection:
         else:
             gd_image = self._image_class(comp_image)
         return gd_image
-
-
-def image_from_mixed_list(image_list: List[Union[MaskedImage, str],], mask=False, **kwargs) -> List[MaskedImage,]:
-    """Return a list of Base/MaskedImage objects, given a list of image ID's and/or Base/MaskedImage objects."""
-    image_obj_list = []
-
-    for im_obj in image_list:
-        if isinstance(im_obj, str):
-            im_obj = image_from_id(im_obj, mask=mask, **kwargs)
-        elif not isinstance(im_obj, MaskedImage):
-            raise ValueError(f'Unsupported image object type: {type(im_obj)}')
-        image_obj_list.append(im_obj)
-    return image_obj_list
-

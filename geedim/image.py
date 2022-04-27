@@ -162,6 +162,7 @@ class BaseImage:
         gd_image: BaseImage
             The image object.
         """
+        # TODO: remove this method?  it is overridden by MaskedImage.from_id
         ee_coll_name = split_id(image_id)[0]
         if ('*' not in cls._supported_collection_ids) and (ee_coll_name not in cls._supported_collection_ids):
             raise ValueError(f"Unsupported collection: {ee_coll_name}.  "

@@ -21,9 +21,8 @@ from datetime import datetime, timedelta
 import pandas as pd
 from click.testing import CliRunner
 
-import geedim.image
 from geedim import root_path, cli, collection
-from geedim.masked_image import class_from_id, image_from_id
+from geedim.masked_image import MaskedImage
 from tests.util import _test_image_file, _test_search_results, _setup_test
 
 
@@ -87,7 +86,7 @@ class TestCli(unittest.TestCase):
                     region = json.load(f)
 
                 filename = download_dir.joinpath(image_id.replace('/', '-') + '.tif')
-                gd_image = image_from_id(image_id, mask=True, region=region)
+                gd_image = MaskedImage.from_id(image_id, mask=True, region=region)
                 _test_image_file(self, image_obj=gd_image, filename=filename, region=region, crs=crs, scale=scale,
                                  mask=True)
 

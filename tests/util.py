@@ -26,7 +26,7 @@ from rasterio.warp import transform_bounds
 
 from geedim import info, root_path, _ee_init
 from geedim.image import split_id, BaseImage
-from geedim.masked_image import image_from_id, MaskedImage
+from geedim.masked_image import MaskedImage
 
 
 def _setup_test():
@@ -78,9 +78,7 @@ def _test_image_file(test_case, image_obj, filename, region, crs=None, scale=Non
     # create objects to test against
     if isinstance(image_obj, str):  # create image.MaskedImage from ID
         ee_coll_name = split_id(image_obj)[0]
-        gd_image = image_from_id(image_obj)
-        if mask:
-            gd_image.mask_clouds()
+        gd_image = MaskedImage.from_id(image_obj, mask=mask)
     elif isinstance(image_obj, BaseImage):
         gd_image = image_obj
         ee_coll_name = split_id(gd_image.id)[0]

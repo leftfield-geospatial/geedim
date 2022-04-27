@@ -19,6 +19,9 @@ import pathlib
 
 import ee
 
+from .collection import MaskedCollection
+from .masked_image import MaskedImage
+
 if '__file__' in globals():
     root_path = pathlib.Path(__file__).absolute().parents[1]
 else:

@@ -21,7 +21,7 @@ import pandas as pd
 
 import geedim.image
 from geedim import image, collection, root_path, info
-from geedim.masked_image import image_from_id, MaskedImage
+from geedim.masked_image import MaskedImage
 from tests.util import _test_image_file, _test_search_results, _setup_test
 
 
@@ -38,7 +38,7 @@ class TestApi(unittest.TestCase):
         """ Test the validity of a geedim.image.MaskedImage by checking metadata.  """
 
         ee_coll_name = geedim.image.split_id(image_id)[0]
-        gd_image = image_from_id(image_id, mask=mask)
+        gd_image = MaskedImage.from_id(image_id, mask=mask)
         self.assertTrue(gd_image.id == image_id, 'IDs match')
 
         sr_band_df = pd.DataFrame.from_dict(info.collection_info[ee_coll_name]['bands'])
@@ -118,7 +118,7 @@ class TestApi(unittest.TestCase):
             ee_coll_name = geedim.image.split_id(impdict['image_id'])[0]
             with self.subTest('Download', **impdict):
                 # create image.MaskedImage
-                gd_image = image_from_id(impdict["image_id"], mask=impdict['mask'], region=region)
+                gd_image = MaskedImage.from_id(impdict["image_id"], mask=impdict['mask'], region=region)
                 # create a filename for these parameters
                 name = impdict["image_id"].replace('/', '-')
                 crs_str = impdict["crs"].replace(':', '_') if impdict["crs"] else 'None'
