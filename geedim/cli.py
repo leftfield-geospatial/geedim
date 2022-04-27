@@ -27,7 +27,7 @@ from rasterio.errors import CRSError
 
 from geedim import collection as coll_api
 from geedim import info, _ee_init, version
-from geedim.collection import MaskedCollection, image_from_mixed_list, collection_from_mixed_list
+from geedim.collection import MaskedCollection, image_from_mixed_list
 from geedim.image import BaseImage, get_bounds
 from geedim.masked_image import MaskedImage
 
@@ -476,7 +476,7 @@ def composite(obj, image_id, mask, method, resampling, bbox, region, date):
     if len(obj.image_list) == 0:
         raise click.BadOptionUsage('image_id', 'Either pass --id, or chain this command with a successful `search`')
 
-    gd_collection = collection_from_mixed_list(obj.image_list)  # TODO mask before composititng
+    gd_collection = MaskedCollection.from_list(obj.image_list)  # TODO mask before composititng
     obj.image_list = [gd_collection.composite(method=method, mask=mask, resampling=resampling, region=obj.region,
                                               date=date)]
 

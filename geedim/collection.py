@@ -57,74 +57,45 @@ class MaskedCollection:
         self._image_class = class_from_id(ee_coll_name)  # geedim.masked_image.*Image class for this collection
         self._ee_collection = ee.ImageCollection(ee_coll_name)      #self._image_class.ee_collection(self._ee_coll_name)  # the wrapped ee.ImageCollection
 
+
     @classmethod
-    def from_ids(cls, image_ids, mask=masked_image.MaskedImage._default_mask,
-                 cloud_dist=masked_image.MaskedImage._default_cloud_dist):
+    def from_list(cls, image_list):
         """
-        Create collection from image IDs
+        Create collection from a list of image IDs, ee.Image's and MaskedImage's
 
         Parameters
         ----------
-        image_ids : list(str)
-                    A list of the EE image IDs (should all be from same collection)
-        mask : bool, optional
-               Apply a validity (cloud & shadow) mask to the image (default: False)
-        cloud_dist : int, optional
-            The radius (m) to search for cloud/shadow for quality scoring (default: 5000).
-
-        Returns
-        -------
-        geedim.collection.MaskedCollection
-        """
-        # check image IDs are valid
-        ee_coll_name = split_id(image_ids[0])[0]
-        if ee_coll_name not in info.ee_to_gd:
-            raise ValueError(f"Unsupported collection: {ee_coll_name}")
-
-        id_check = [split_id(im_id)[0] == ee_coll_name for im_id in image_ids[1:]]
-        if not all(id_check):
-            raise ValueError("All images must belong to the same collection")
-
-        # create the collection object
-        gd_collection = cls(ee_coll_name)
-
-        # build and wrap an ee.ImageCollection of processed (masked and scored) images
-        im_list = ee.List([])
-        for im_id in image_ids:
-            if False:
-                gd_image = gd_collection._image_class.from_id(im_id)  # TODO: pass through cloud/shadow kwargs
-                if mask:
-                    gd_image.mask_clouds()
-                im_list = im_list.add(gd_image.ee_image)
-            else:
-                im_list = im_list.add(ee.Image(im_id))
-
-        gd_collection._ee_collection = ee.ImageCollection(im_list)
-        return gd_collection
-
-    @classmethod
-    def from_ee_list(cls, image_list, ee_coll_name=None):
-        """
-        Create collection from image IDs
-
-        Parameters
-        ----------
-        image_list : list(ee.Image)
-                    A list of the ee.Image's (must all be from the same collection)
-        ee_coll_name: str, optional
-            The EE collection ID to which the images belong.
+        image_list : list(Union[str, ee.Image, MaskedImage])
+                    A list of images (must all be from the same collection)
 
         Returns
         -------
         collection: cls
         """
-        if ee_coll_name is None:
-            id = image_list[0].getInfo()['id']
-            ee_coll_name, _ = split_id(id)
+        ee_image_list = []
+        ee_id_list = []
+        # cloud_masked = []  # TODO: we should be able to remove this logic when we get rid of BaseCollection, maybe get rid of this factory entirely and just use MaskedCollection.from_list()
+        for image_obj in image_list:
+            if isinstance(image_obj, str):
+                ee_image_list.append(ee.Image(image_obj))
+                ee_id_list.append(image_obj)
+            elif isinstance(image_obj, ee.Image):
+                ee_image_list.append(image_obj)
+                ee_id_list.append(image_obj.getInfo()['id'])
+            elif isinstance(image_obj, BaseImage):
+                ee_image_list.append(image_obj.ee_image)
+                ee_id_list.append(image_obj.id)
+            else:
+                raise TypeError(f'Unsupported image object type: {type(image_obj)}')
+        ee_coll_name = split_id(ee_id_list[0])[0]
+        id_check = [split_id(im_id)[0] == ee_coll_name for im_id in ee_id_list[1:]]
+        if not all(id_check):
+            # TODO: allow images from different landsat collections
+            raise ValueError("All images must belong to the same collection")
 
         # create the collection object
         gd_collection = cls(ee_coll_name)
-        gd_collection._ee_collection = ee.ImageCollection(ee.List(image_list))
+        gd_collection._ee_collection = ee.ImageCollection(ee.List(ee_image_list))
         return gd_collection
 
     @property
@@ -374,21 +345,3 @@ def image_from_mixed_list(image_list: List[Union[MaskedImage, str],], mask=False
         image_obj_list.append(im_obj)
     return image_obj_list
 
-
-def collection_from_mixed_list(image_list: List[Union[MaskedImage, str],], **kwargs):
-    """Return a Base/MaskedCollection from a list of image ID's and/or Base/MaskedImage objects."""
-    # image_obj_list = image_from_mixed_list(image_list, mask=mask, **kwargs)
-    ee_image_list = []
-    # cloud_masked = []  # TODO: we should be able to remove this logic when we get rid of BaseCollection, maybe get rid of this factory entirely and just use MaskedCollection.from_list()
-    for image_obj in image_list:
-        if isinstance(image_obj, str):
-            ee_image_list.append(ee.Image(image_obj))
-        elif isinstance(image_obj, ee.Image):
-            ee_image_list.append(image_obj)
-        elif isinstance(image_obj, BaseImage):
-            ee_image_list.append(image_obj.ee_image)
-            # cloud_masked.append(
-            #     type(image_obj) != MaskedImage)  # i.e. it is derived from BaseImage, but not BaseImage itself
-        else:
-            raise TypeError(f'Unsupported image object type: {type(image_obj)}')
-    return MaskedCollection.from_ee_list(ee_image_list)

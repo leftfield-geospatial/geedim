@@ -173,17 +173,17 @@ class TestApi(unittest.TestCase):
         methods = collection.MaskedCollection._composite_methods
         param_list = [
             {'image_ids': ['LANDSAT/LE07/C02/T1_L2/LE07_171083_20190129', 'LANDSAT/LE07/C02/T1_L2/LE07_171083_20190214',
-                           'LANDSAT/LE07/C02/T1_L2/LE07_171083_20190302'], 'mask': True, 'cloud_dist': 5000},
+                           'LANDSAT/LE07/C02/T1_L2/LE07_171083_20190302'], 'mask': True},
             {'image_ids': ['COPERNICUS/S2_SR/20190311T075729_20190311T082820_T35HKC',
                            'COPERNICUS/S2_SR/20190316T075651_20190316T082220_T35HKC',
-                           'COPERNICUS/S2_SR/20190321T075619_20190321T081839_T35HKC'], 'mask': True, 'cloud_dist': 500},
+                           'COPERNICUS/S2_SR/20190321T075619_20190321T081839_T35HKC'], 'mask': True},
         ]
 
         for param_dict in param_list:
             for method in methods:
                 with self.subTest('Composite', method=method, **param_dict):
-                    gd_collection = collection.MaskedCollection.from_ids(**param_dict)
-                    comp_im = gd_collection.composite(method=method, resampling='bilinear')
+                    gd_collection = collection.MaskedCollection.from_list(param_dict['image_ids'])
+                    comp_im = gd_collection.composite(method=method, resampling='bilinear', mask=param_dict['mask'])
                     self._test_composite(comp_im)
 
 ##
