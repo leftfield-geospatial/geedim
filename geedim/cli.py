@@ -166,15 +166,24 @@ def _image_from_mixed_list(image_list: List[Union[MaskedImage, str],], mask=Fals
     return image_obj_list
 
 
-# TODO: pass cloud/shadow mask kwargs
-def _validate_image_list(obj: SimpleNamespace, mask=False):
+def _prepare_image_list(obj: SimpleNamespace, mask=False):
     """Validate and prepare the obj.image_list for export/download."""
     if len(obj.image_list) == 0:
         raise click.BadOptionUsage('image_id',
                                    'Either pass --id, or chain this command with a successful `search` or `composite`')
-    image_list = _image_from_mixed_list(obj.image_list, mask=mask)
+    image_list = []
+    for im_obj in obj.image_list:
+        if isinstance(im_obj, str):
+            im_obj = MaskedImage.from_id(im_obj, mask=mask, **obj.cloud_kwargs)
+        elif isinstance(im_obj, MaskedImage):
+            if mask:
+                im_obj.mask_clouds()
+        else:
+            raise ValueError(f'Unsupported image object type: {type(im_obj)}')
+        image_list.append(im_obj)
+
     if obj.region is None and any([not im.has_fixed_projection for im in image_list]):
-        raise click.BadOptionUsage('region', 'One of --region or --box is required for a composite image.')
+        raise click.BadOptionUsage('region', 'One of --region or --bbox is required for a composite image.')
     return image_list
 
 
@@ -247,15 +256,6 @@ resampling_option = click.option(
     default=BaseImage._default_resampling,
     show_default=True,
 )
-cloud_dist_option = click.option(
-    "-cd",
-    "--cloud-dist",
-    type=click.FLOAT,
-    default=MaskedImage._default_cloud_dist,
-    help="Search for cloud/shadow inside this radius (m) to determine compositing quality score.",
-    show_default=True,
-    required=False,
-)
 
 
 # Define the geedim CLI and chained command group
@@ -271,9 +271,40 @@ cloud_dist_option = click.option(
 @click.version_option(version=version.__version__, message="%(version)s")
 @click.pass_context
 def cli(ctx, verbose, quiet):
-    ctx.obj = SimpleNamespace(image_list=[], region=None)
+    ctx.obj = SimpleNamespace(image_list=[], region=None, cloud_kwargs={})
     verbosity = verbose - quiet
     _configure_logging(verbosity)
+
+@click.command(cls=ChainedCommand)
+@click.option("-mc/-nmc", "--mask-cirrus/--no-mask-cirrus", default=True,
+    help="Whether to mask cirrus clouds. For sentinel2 collections this is valid just for method = 'qa'.  "
+         "[default: --mask-cirrus]")
+@click.option("-ms/-nms", "--mask-shadows/--no-mask-shadows", default=True,
+    help="Whether to mask cloud shadows. "
+         "[default: --mask-shadows]")
+@click.option("-m", "--method", type=click.Choice(["cloud_prob", "qa"], case_sensitive=True),
+    help="Method used to cloud mask Sentinel-2 images.", default='cloud_prob', show_default=True)
+@click.option("-p", "--prob", type=click.FloatRange(min=0, max=100), default=60, show_default=True,
+    help="Cloud probability threshold. Valid just for method = 'cloud_prob'. (%).")
+@click.option("-d", "--dark", type=click.FloatRange(min=0, max=1), default=.15, show_default=True,
+    help="NIR reflectance threshold [0-1] for shadow masking Sentinel-2 images. NIR values below this threshold are "
+         "potential cloud shadows.")
+@click.option("-sd", "--shadow-dist", type=click.INT, default=1000, show_default=True,
+    help="Maximum distance in meters (m) to look for cloud shadows from cloud edges.  Valid for Sentinel-2 images.")
+@click.option("-b", "--buffer", type=click.INT, default=250, show_default=True,
+    help="Distance in meters (m) to dilate cloud and cloud shadows objects.  Valid for Sentinel-2 images.")
+@click.option("-cdi", "--cdi-thresh", type=click.FloatRange(min=-1, max=1), default=None, show_default=True,
+    help="Cloud Displacement Index threshold. Values below this threshold are considered potential clouds.  "
+         "A cdi-thresh = None means that the index is not used.  Valid for Sentinel-2 images.  [default: None]")
+@click.option("-mcd", "--max-cloud-dist", type=click.INT, default=5000, show_default=True,
+    help="Maximum distance in meters (m) to look for clouds.  Used to form the `CLOUD_DIST` band for `q_mosaic` "
+         "compositing. Valid for Sentinel-2 images.")
+@click.pass_context
+def config(ctx, mask_cirrus, mask_shadows, method, prob, dark, shadow_dist, buffer, cdi_thresh, max_cloud_dist):
+    """Configure cloud/shadow masking."""
+    ctx.obj.cloud_kwargs = ctx.params
+
+cli.add_command(config)
 
 
 # Define search command options
@@ -343,7 +374,7 @@ def search(obj, collection, start_date, end_date, bbox, region, valid_portion, o
 
     # create collection wrapper and search
     gd_collection = coll_api.MaskedCollection(collection)
-    im_df = gd_collection.search(start_date, end_date, obj.region, valid_portion=valid_portion)
+    im_df = gd_collection.search(start_date, end_date, obj.region, valid_portion=valid_portion, **obj.cloud_kwargs)
 
     if im_df.shape[0] == 0:
         logger.info('No images found\n')
@@ -385,7 +416,6 @@ cli.add_command(search)
 @dtype_option
 @mask_option
 @resampling_option
-@cloud_dist_option  # TODO: move cloud_dist to composite only, where it is relevant.  Omit score from search/download?
 @click.option(
     "-o",
     "--overwrite",
@@ -396,10 +426,10 @@ cli.add_command(search)
     show_default=False,
 )
 @click.pass_obj
-def download(obj, image_id, bbox, region, download_dir, mask, cloud_dist, overwrite, **kwargs):
+def download(obj, image_id, bbox, region, download_dir, mask, overwrite, **kwargs):
     """Download image(s)."""
     logger.info('\nDownloading:\n')
-    image_list = _validate_image_list(obj, mask=mask)
+    image_list = _prepare_image_list(obj, mask=mask)
     for im in image_list:
         filename = pathlib.Path(download_dir).joinpath(im.name + '.tif')
         im.download(filename, overwrite=overwrite, region=obj.region, **kwargs)
@@ -426,7 +456,6 @@ cli.add_command(download)
 @dtype_option
 @mask_option
 @resampling_option
-@cloud_dist_option
 @click.option(
     "-w/-nw",
     "--wait/--no-wait",
@@ -435,10 +464,10 @@ cli.add_command(download)
     required=False,
 )
 @click.pass_obj
-def export(obj, image_id, bbox, region, drive_folder, mask, cloud_dist, wait, **kwargs):
+def export(obj, image_id, bbox, region, drive_folder, mask, wait, **kwargs):
     """Export image(s) to Google Drive."""
     logger.info('\nExporting:\n')
-    image_list = _validate_image_list(obj, mask=mask)  # TODO pass cloud/shadow masking kwargs
+    image_list = _prepare_image_list(obj, mask=mask)  # TODO pass cloud/shadow masking kwargs
     export_tasks = []
     for im in image_list:
         task = im.export(im.name, folder=drive_folder, wait=False, region=obj.region, **kwargs)
@@ -492,7 +521,7 @@ def composite(obj, image_id, mask, method, resampling, bbox, region, date):
 
     gd_collection = MaskedCollection.from_list(obj.image_list)  # TODO mask before composititng
     obj.image_list = [gd_collection.composite(method=method, mask=mask, resampling=resampling, region=obj.region,
-                                              date=date)]
+                                              date=date, **obj.cloud_kwargs)]
 
 
 cli.add_command(composite)

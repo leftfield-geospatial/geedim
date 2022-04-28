@@ -33,8 +33,7 @@ class TestApi(unittest.TestCase):
         """ Initialise Earth Engine once for all the tests here. """
         _setup_test()
 
-    def _test_image(self, image_id, mask=MaskedImage._default_mask,
-                    cloud_dist=MaskedImage._default_cloud_dist):
+    def _test_image(self, image_id, mask=MaskedImage._default_mask):
         """ Test the validity of a geedim.image.MaskedImage by checking metadata.  """
 
         ee_coll_name = geedim.image.split_id(image_id)[0]
@@ -68,13 +67,13 @@ class TestApi(unittest.TestCase):
         # test quality score for a specific region
         sr_image = gd_image.ee_image.select('CLOUD_DIST')
         max_score = sr_image.reduceRegion(reducer='max', geometry=region, scale=2 * gd_image.scale).getInfo()
-        self.assertTrue(max_score['CLOUD_DIST'] < cloud_dist * 1.1, 'Max(CLOUD_DIST) < 1.1*CLOUD_DIST')
+        self.assertTrue(max_score['CLOUD_DIST'] < 5000 * 1.1, 'Max(CLOUD_DIST) < 1.1*CLOUD_DIST')
 
     def test_image(self):
         """ Test geedim.image.MaskedImage sub-classes. """
         im_param_list = [
-            {'image_id': 'COPERNICUS/S2_SR/20190321T075619_20190321T081839_T35HKC', 'mask': False, 'cloud_dist': 5000},
-            {'image_id': 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190301', 'mask': True, 'cloud_dist': 5000},
+            {'image_id': 'COPERNICUS/S2_SR/20190321T075619_20190321T081839_T35HKC', 'mask': False},
+            {'image_id': 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190301', 'mask': True},
             # {'image_id': 'MODIS/006/MCD43A4/2019_01_01', 'mask': True, 'cloud_dist': 5000},
         ]
 

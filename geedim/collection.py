@@ -240,7 +240,7 @@ class MaskedCollection:
 
     # TODO: expose region and date to CLI
     def composite(self, method=_default_comp_method, mask=True, resampling=BaseImage._default_resampling,
-                  region=None, date=None):
+                  region=None, date=None, **kwargs):
         """
         Create a cloud/shadow free composite.
 
@@ -264,7 +264,7 @@ class MaskedCollection:
         method = str(method).lower()
 
         def prepare_image(ee_image):
-            gd_image = self._image_class(ee_image)
+            gd_image = self._image_class(ee_image, **kwargs)
             if method in ['mosaic', 'q_mosaic']:
                 if date:
                     date_dist = ee.Number(gd_image.ee_image.get("system:time_start")).subtract(

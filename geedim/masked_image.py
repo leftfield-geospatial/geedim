@@ -29,7 +29,6 @@ logger = logging.getLogger(__name__)
 
 class MaskedImage(BaseImage):
     _default_mask = False
-    _default_cloud_dist = 5000
     _supported_collection_ids = ['*']
     _proj_scale = None  # TODO: might we get this from STAC?
 
