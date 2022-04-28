@@ -275,14 +275,14 @@ def cli(ctx, verbose, quiet):
     verbosity = verbose - quiet
     _configure_logging(verbosity)
 
-@click.command(cls=ChainedCommand)
+@click.command(cls=ChainedCommand, context_settings=dict(auto_envvar_prefix='GEEDIM'))
 @click.option("-mc/-nmc", "--mask-cirrus/--no-mask-cirrus", default=True,
     help="Whether to mask cirrus clouds. For sentinel2 collections this is valid just for method = 'qa'.  "
          "[default: --mask-cirrus]")
 @click.option("-ms/-nms", "--mask-shadows/--no-mask-shadows", default=True,
     help="Whether to mask cloud shadows. "
          "[default: --mask-shadows]")
-@click.option("-m", "--method", type=click.Choice(["cloud_prob", "qa"], case_sensitive=True),
+@click.option("-mm", "--mask-method", type=click.Choice(["cloud_prob", "qa"], case_sensitive=True),
     help="Method used to cloud mask Sentinel-2 images.", default='cloud_prob', show_default=True)
 @click.option("-p", "--prob", type=click.FloatRange(min=0, max=100), default=60, show_default=True,
     help="Cloud probability threshold. Valid just for method = 'cloud_prob'. (%).")
@@ -300,7 +300,7 @@ def cli(ctx, verbose, quiet):
     help="Maximum distance in meters (m) to look for clouds.  Used to form the `CLOUD_DIST` band for `q_mosaic` "
          "compositing. Valid for Sentinel-2 images.")
 @click.pass_context
-def config(ctx, mask_cirrus, mask_shadows, method, prob, dark, shadow_dist, buffer, cdi_thresh, max_cloud_dist):
+def config(ctx, mask_cirrus, mask_shadows, mask_method, prob, dark, shadow_dist, buffer, cdi_thresh, max_cloud_dist):
     """Configure cloud/shadow masking."""
     ctx.obj.cloud_kwargs = ctx.params
 

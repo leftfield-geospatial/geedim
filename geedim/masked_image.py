@@ -242,7 +242,7 @@ class Sentinel2ClImage(CloudMaskedImage):
     _proj_scale = 60
 
     # TODO: provide CLI access to these kwargs, and document them here
-    def _aux_image(self, s2_toa=False, method='cloud_prob', mask_cirrus=True, mask_shadows=True, prob=60,
+    def _aux_image(self, s2_toa=False, mask_method='cloud_prob', mask_cirrus=True, mask_shadows=True, prob=60,
                    dark=0.15, shadow_dist=1000, buffer=250, cdi_thresh=None, max_cloud_dist=5000):
         """
         Derive cloud, shadow and validity masks for an image, using the additional cloud probability band.
@@ -256,7 +256,7 @@ class Sentinel2ClImage(CloudMaskedImage):
         s2_toa : bool, optional
             S2 TOA/SR collection.  Set to True if this image is from COPERNICUS/S2, or False if it is from
             COPERNICUS/S2_SR.
-        method : str, optional
+        mask_method : str, optional
             Method used to mask clouds.
             Available options:
                 - 'cloud_prob' : Use cloud probability.
@@ -297,7 +297,7 @@ class Sentinel2ClImage(CloudMaskedImage):
             return ee.Image(inner_join.first().get('secondary')).rename('CLOUD_PROB')
 
         def get_cloud_mask(ee_im, cloud_prob=None):
-            if method == 'cloud_prob':
+            if mask_method == 'cloud_prob':
                 if not cloud_prob:
                     cloud_prob = get_cloud_prob(ee_im)
                 cloud_mask = cloud_prob.gte(prob).rename('CLOUD_MASK')
