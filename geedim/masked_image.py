@@ -31,6 +31,7 @@ class MaskedImage(BaseImage):
     _default_mask = False
     _default_cloud_dist = 5000
     _supported_collection_ids = ['*']
+    _proj_scale = None  # TODO: might we get this from STAC?
 
     # TODO: all the cloud mask params need to passed, but do they belong in __init__?  how will this combine with e.g. masking for search and masking for download
     # TODO: rename has_aux_bands to something like
@@ -100,12 +101,14 @@ class MaskedImage(BaseImage):
         if not region:
             region = self.ee_image.geometry()
 
+
         proj = get_projection(self.ee_image, min_scale=False)
+        scale = self._proj_scale or proj.nominalScale()
         stats_image = ee.Image([self.ee_image.select('FILL_MASK').rename('FILL_PORTION').unmask(),
                                 ee.Image(1).rename('REGION_SUM')])
 
         # sum stats_image bands over region
-        sums_dict = stats_image.reduceRegion(reducer="sum", geometry=region, crs=proj.crs(), scale=proj.nominalScale(),
+        sums_dict = stats_image.reduceRegion(reducer="sum", geometry=region, crs=proj.crs(), scale=scale,
                                              bestEffort=True, maxPixels=1e6)
 
         # find average VALID_MASK and SCORE over region (not the same as image if image does not cover region)
@@ -175,14 +178,16 @@ class CloudMaskedImage(MaskedImage):
          : ee.Image
             EE image with VALID_PORTION and AVG_SCORE properties set.
         """
+        # TODO: get_projection does not work if the wrapped image is composite
         proj = get_projection(self.ee_image, min_scale=False)
+        scale = self._proj_scale or proj.nominalScale()
         stats_image = ee.Image([self.ee_image.select(['FILL_MASK', 'CLOUDLESS_MASK']).unmask(),
                                 ee.Image(1).rename('REGION_SUM')])
 
         # sum stats_image bands over region
         sums = (
-            stats_image.reduceRegion(reducer="sum", geometry=region, crs=proj.crs(), scale=proj.nominalScale(),
-                                     bestEffort=True, maxPixels=1e6).
+            stats_image.reduceRegion(reducer="sum", geometry=region, crs=proj.crs(), scale=scale, bestEffort=True,
+                                     maxPixels=1e6).
                 rename(['FILL_MASK', 'CLOUDLESS_MASK'], ['FILL_PORTION', 'CLOUDLESS_PORTION'])
         )
 
@@ -198,6 +203,7 @@ class LandsatImage(CloudMaskedImage):
     """ Base class for cloud/shadow masking and quality scoring landsat images """
     _supported_collection_ids = ['LANDSAT/LT04/C02/T1_L2', 'LANDSAT/LT05/C02/T1_L2', 'LANDSAT/LE07/C02/T1_L2',
                                  'LANDSAT/LC08/C02/T1_L2', 'LANDSAT/LC09/C02/T1_L2']
+    _proj_scale = 30
 
     def _aux_image(self, mask_shadows=True, mask_cirrus=True, **kwargs):
         # TODO: add warning for unsupported args?
@@ -234,6 +240,7 @@ class Sentinel2ClImage(CloudMaskedImage):
     (Uses cloud probability to improve cloud/shadow masking).
     """
     _supported_collection_ids = []
+    _proj_scale = 60
 
     # TODO: provide CLI access to these kwargs, and document them here
     def _aux_image(self, s2_toa=False, method='cloud_prob', mask_cirrus=True, mask_shadows=True, prob=60,
@@ -276,7 +283,6 @@ class Sentinel2ClImage(CloudMaskedImage):
         dict
             A dictionary of ee.Image objects for each of the fill, cloud, shadow and validity masks.
         """
-        proj_scale = 60
 
         # maskCirrus : Whether to mask cirrus clouds. Valid just for method = 'qa'. This parameter is ignored for Landsat products.
         # maskShadows : Whether to mask cloud shadows. For more info see 'Braaten, J. 2020. Sentinel-2 Cloud Masking with s2cloudless. Google Earth Engine, Community Tutorials'.
@@ -320,7 +326,8 @@ class Sentinel2ClImage(CloudMaskedImage):
                 dark_mask = ee_im.select("SCL").neq(6).And(dark_mask)
 
             shadow_azimuth = ee.Number(90).subtract(ee.Number(ee_im.get("MEAN_SOLAR_AZIMUTH_ANGLE")))
-            proj_cloud_mask = (cloud_mask.directionalDistanceTransform(shadow_azimuth, int(shadow_dist / proj_scale))
+            proj_cloud_mask = (cloud_mask.directionalDistanceTransform(shadow_azimuth,
+                                                                       int(shadow_dist / self._proj_scale))
                                .reproject(crs=ee_im.select(0).projection(), scale=60)
                                .select('distance')
                                .mask())

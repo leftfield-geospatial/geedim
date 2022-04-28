@@ -123,6 +123,7 @@ class MaskedCollection:
     @property
     def summary(self):
         """str : Formatted string of MaskedCollection.summary_df"""
+        # TODO: allow this to be called before search, refactor all these methods somehow to make better sense
         return self._get_summary_str(self._summary_df)
 
     def _get_summary_str(self, summary_df):
@@ -210,6 +211,7 @@ class MaskedCollection:
             Dataframe specifying image properties that match the search criteria
         """
         # TODO: error message for q_mosaic with generic collection...  Or allow to spec a band?
+        # TODO: make a reset method to unfilter the collection
         # Initialise
         if end_date is None:
             end_date = start_date + timedelta(days=1)
