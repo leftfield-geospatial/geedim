@@ -17,16 +17,15 @@
 import logging
 ##
 from datetime import datetime, timedelta
-from typing import List, Union
 
 import ee
 import pandas
 import pandas as pd
 
 from geedim import info, medoid
+from geedim.enums import ResamplingMethod, CompositeMethod
 from geedim.image import BaseImage, split_id
 from geedim.masked_image import MaskedImage, class_from_id
-from geedim.enums import ResamplingMethod, CompositeMethod
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +67,7 @@ class MaskedCollection:
 
         Parameters
         ----------
-        image_list : List[Union[str, ee.Image, MaskedImage]]
+        image_list : List[Union[str, ee.Image, MaskedImage], ]
             A list of images to include in the collection (must all be from the same EE collection).
 
         Returns
@@ -105,12 +104,12 @@ class MaskedCollection:
         return gd_collection
 
     @property
-    def ee_collection(self)->ee.ImageCollection:
+    def ee_collection(self) -> ee.ImageCollection:
         """The encapsulated ee.ImageCollection."""
         return self._ee_collection
 
     @property
-    def summary_key_df(self)->pandas.DataFrame:
+    def summary_key_df(self) -> pandas.DataFrame:
         """
         A key to MaskedCollection.summary_df (pandas.DataFrame with ABBREV and DESCRIPTION columns, and rows
         corresponding to columns in summary_df).
@@ -125,24 +124,24 @@ class MaskedCollection:
         return self._summary_df
 
     @property
-    def summary_key(self)->str:
+    def summary_key(self) -> str:
         """Formatted string of MaskedCollection.summary_key_df."""
         return self._summary_key_df[['ABBREV', 'DESCRIPTION']].to_string(index=False, justify='right')
 
     @property
-    def summary(self)->str:
+    def summary(self) -> str:
         """Formatted string of MaskedCollection.summary_df."""
         # TODO: allow this to be called before search & refactor all these methods
         return self._get_summary_str(self._summary_df)
 
-    def _get_summary_str(self, summary_df)->str:
+    def _get_summary_str(self, summary_df) -> str:
         """Get a formatted/printable string for a given summary DataFrame."""
         return summary_df.to_string(
             float_format='{:.2f}'.format, formatters={'DATE': lambda x: datetime.strftime(x, '%Y-%m-%d %H:%M')},
             columns=self._summary_key_df.ABBREV, index=False, justify='center'
         )
 
-    def _get_summary_df(self, ee_collection)->pandas.DataFrame:
+    def _get_summary_df(self, ee_collection) -> pandas.DataFrame:
         """Retrieve a summary of the collection image metadata."""
 
         if ee_collection is None:
@@ -153,14 +152,14 @@ class MaskedCollection:
 
         def aggregrate_props(ee_image, prop_list):
             all_props = ee_image.propertyNames()
-            prop_dict = ee.Dictionary()
+            _prop_dict = ee.Dictionary()
             for prop_key in self._summary_key_df.PROPERTY.values:
-                prop_dict = prop_dict.set(
+                _prop_dict = _prop_dict.set(
                     prop_key, ee.Algorithms.If(
                         all_props.contains(prop_key), ee_image.get(prop_key), ee.String('None')
                     )
                 )
-            return ee.List(prop_list).add(prop_dict)
+            return ee.List(prop_list).add(_prop_dict)
 
         # retrieve list of dicts of collection image properties (the only call to getInfo() in MaskedCollection)
         im_prop_list = ee.List(ee_collection.iterate(aggregrate_props, init_list)).getInfo()
@@ -223,8 +222,10 @@ class MaskedCollection:
         try:
             # filter the image collection, finding cloud/shadow masks, and region stats
             self._ee_collection = (
-                self._ee_collection.filterDate(start_date, end_date).filterBounds(region).
-                    map(set_region_stats).filter(ee.Filter.gte('CLOUDLESS_PORTION', cloudless_portion))
+                self._ee_collection.filterDate(start_date, end_date).
+                    filterBounds(region).
+                    map(set_region_stats).
+                    filter(ee.Filter.gte('CLOUDLESS_PORTION', cloudless_portion))
             )
         finally:
             # update summary_df with image metadata from the filtered collection
@@ -257,7 +258,7 @@ class MaskedCollection:
         resampling: ResamplingMethod, optional
             The resampling method to use on collection images prior to compositing.  If 'near', no resampling is done
             [default: 'near'].
-        date: datetime.datetime, str, optional
+        date: datetime.datetime, optional
             Sort collection images by their absolute difference in time from this date.  Useful for
             prioritising pixels from images closest to this date.  Valid for the `q-mosaic`
             and `mosaic` methods only.  If None, time difference sorting is not done. [default: None].
@@ -350,7 +351,7 @@ class MaskedCollection:
         #  would re-calculating the masks and score on the mosaics QA bands work?
         # TODO: leave out the median method entirely?
         if method == CompositeMethod.median:
-            gd_image = MaskedImage(comp_image)
+            gd_comp_image = MaskedImage(comp_image)
         else:
-            gd_image = self._image_class(comp_image)
-        return gd_image
+            gd_comp_image = self._image_class(comp_image)
+        return gd_comp_image
