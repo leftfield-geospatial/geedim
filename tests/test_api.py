@@ -22,6 +22,7 @@ import pandas as pd
 import geedim.image
 from geedim import image, collection, root_path, info
 from geedim.masked_image import MaskedImage
+from geedim.enums import CompositeMethod, CloudMaskMethod, ResamplingMethod
 from tests.util import _test_image_file, _test_search_results, _setup_test
 
 
@@ -96,7 +97,7 @@ class TestApi(unittest.TestCase):
             # find search start / end dates based on collection start / end
             with self.subTest('Search', ee_coll_name=ee_coll_name):
                 gd_collection = collection.MaskedCollection(ee_coll_name)
-                res_df = gd_collection.search(search_dates[0], search_dates[1], region, valid_portion=valid_portion)
+                res_df = gd_collection.search(search_dates[0], search_dates[1], region, cloudless_portion=valid_portion)
                 _test_search_results(self, res_df, search_dates[0], search_dates[1], valid_portion=valid_portion)
 
     def test_download(self):
@@ -106,11 +107,11 @@ class TestApi(unittest.TestCase):
                   "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
         im_param_list = [
             {'image_id': 'COPERNICUS/S2_SR/20190321T075619_20190321T081839_T35HKC', 'mask': True, 'crs': None,
-             'scale': 30, 'resampling': 'near'},
+             'scale': 30, 'resampling': ResamplingMethod.near},
             {'image_id': 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190301', 'mask': True, 'crs': None, 'scale': None,
-             'resampling': 'near'},
+             'resampling': ResamplingMethod.near},
             # {'image_id': 'MODIS/006/MCD43A4/2019_01_01', 'mask': True, 'crs': 'EPSG:3857', 'scale': 500,
-            #  'resampling': 'near'},
+            #  'resampling': ResamplingMethod.near},
         ]
 
         for impdict in im_param_list:
@@ -169,7 +170,6 @@ class TestApi(unittest.TestCase):
     def test_composite(self):
         """ Test each composite method on different collections. """
 
-        methods = collection.MaskedCollection._composite_methods
         param_list = [
             {'image_ids': ['LANDSAT/LE07/C02/T1_L2/LE07_171083_20190129', 'LANDSAT/LE07/C02/T1_L2/LE07_171083_20190214',
                            'LANDSAT/LE07/C02/T1_L2/LE07_171083_20190302'], 'mask': True},
@@ -179,10 +179,12 @@ class TestApi(unittest.TestCase):
         ]
 
         for param_dict in param_list:
-            for method in methods:
+            for method in CompositeMethod:
                 with self.subTest('Composite', method=method, **param_dict):
                     gd_collection = collection.MaskedCollection.from_list(param_dict['image_ids'])
-                    comp_im = gd_collection.composite(method=method, resampling='bilinear', mask=param_dict['mask'])
+                    comp_im = gd_collection.composite(
+                        method=method, resampling=ResamplingMethod.bilinear, mask=param_dict['mask']
+                    )
                     self._test_composite(comp_im)
 
 ##

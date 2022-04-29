@@ -110,7 +110,7 @@ class TestCli(unittest.TestCase):
         comp_ids = ['LANDSAT/LE07/C02/T1_L2/LE07_171083_20190129', 'LANDSAT/LE07/C02/T1_L2/LE07_171083_20190214',
                     'LANDSAT/LE07/C02/T1_L2/LE07_171083_20190302']
         pref_ids = [item for tup in zip(['-i'] * len(comp_ids), comp_ids) for item in tup]
-        method = 'q_mosaic'
+        method = 'q-mosaic'
         pdict = dict(mask=True, crs='EPSG:3857', scale=60)
 
         cli_params = ['composite', *pref_ids, '-cm', method, '-m' if pdict['mask'] else '-nm',
@@ -136,7 +136,7 @@ class TestCli(unittest.TestCase):
         download_dir = root_path.joinpath('data/outputs/tests')
         start_date = datetime.strptime('2019-03-11', '%Y-%m-%d')
         end_date = start_date + timedelta(days=6)
-        method = 'q_mosaic'
+        method = 'q-mosaic'
         pdict = dict(mask=True, crs='EPSG:3857', scale=50)
 
         cli_params = ['search', '-c', 'sentinel2_sr', '-r', str(region_filename), '-s',

@@ -19,7 +19,7 @@ from io import BytesIO
 
 import numpy as np
 import requests
-from affine import Affine
+from rasterio import Affine
 from rasterio import MemoryFile
 from rasterio.windows import Window
 from requests.adapters import HTTPAdapter
@@ -28,10 +28,12 @@ from tqdm import tqdm
 
 
 def _requests_retry_session(retries=3, backoff_factor=0.3, status_forcelist=(500, 502, 504), session=None):
-    """A persistent requests session configured for retries"""
+    """A persistent requests session configured for retries."""
     session = session or requests.Session()
-    retry = Retry(total=retries, read=retries, connect=retries, backoff_factor=backoff_factor,
-                  status_forcelist=status_forcelist)
+    retry = Retry(
+        total=retries, read=retries, connect=retries, backoff_factor=backoff_factor,
+        status_forcelist=status_forcelist
+    )
     adapter = HTTPAdapter(max_retries=retry)
     session.mount('http://', adapter)
     session.mount('https://', adapter)
@@ -39,18 +41,20 @@ def _requests_retry_session(retries=3, backoff_factor=0.3, status_forcelist=(500
 
 
 class Tile:
-    """Class for encapsulating and downloading a GEE image tile (i.e. a rectangular region of interest in the image)"""
+    """
+    Class for encapsulating and downloading an Earth Engine image tile (a rectangular region of interest in the image).
+    """
 
     def __init__(self, exp_image, window: Window):
         """
-        Create an instance of Tile.
+        Create a Tile instance.
 
         Parameters
         ----------
         exp_image: BaseImage
             A BaseImage instance to derive the tile from.
         window: Window
-            A rasterio window into `image`, specifying the region of interest for this tile.
+            A rasterio window into `exp_image`, specifying the region of interest for this tile.
         """
         self._exp_image = exp_image
         self._window = window
@@ -60,31 +64,37 @@ class Tile:
 
     @property
     def window(self) -> Window:
-        """The rasterio window into the source image."""
+        """rasterio tile window into the source image."""
         return self._window
 
     def _get_download_url_response(self, session=None):
         """Get tile download url and response."""
         session = session if session else requests
         url = self._exp_image.ee_image.getDownloadURL(
-            dict(crs=self._exp_image.crs, crs_transform=tuple(self._transform)[:6], dimensions=self._shape[::-1],
-                 filePerBand=False, fileFormat='GeoTIFF'))
+            dict(
+                crs=self._exp_image.crs, crs_transform=tuple(self._transform)[:6], dimensions=self._shape[::-1],
+                filePerBand=False, fileFormat='GeoTIFF'
+            )
+        )
         return session.get(url, stream=True), url
 
     def download(self, session=None, response=None, bar: tqdm = None):
         """
+        Download the image tile into a numpy array.
 
         Parameters
         ----------
         session: requests.Session, optional
-            Session to use for downloading.
+            A requests session to use for downloading
+        response: requests.Response, optional
+            A response to a get request on the tile download url.
         bar: tqdm, optional
-            A tqdm progress bar to update with the download progress.
+            A tqdm propgress bar instance to update with incremental (0-1) download progress.
 
         Returns
         -------
         array: numpy.ndarray
-            The tile pixel data in a 3D array (bands down the first dimension).
+            A 3D numpy array of the tile pixel data with bands down the first dimension.
         """
 
         # get image download url and response
@@ -104,7 +114,7 @@ class Tile:
         for data in response.iter_content(chunk_size=10240):
             zip_buffer.write(data)
             if bar is not None:
-                # update with raw download progress
+                # update with raw download progress (0-1)
                 bar.update(raw_download_size * (len(data) / download_size))
         zip_buffer.flush()
 
@@ -117,8 +127,8 @@ class Tile:
             with mem_file.open() as ds:
                 array = ds.read()
                 if (array.dtype == np.dtype('float32')) or (array.dtype == np.dtype('float64')):
-                    # GEE sets nodata to -inf for float data types, (but does not populate the nodata field)
-                    # rasterio won't allow nodata=-inf, so this is a workaround to change nodata to nan at source
+                    # GEE sets nodata to -inf for float data types, (but does not populate the nodata field).
+                    # rasterio won't allow nodata=-inf, so this is a workaround to change nodata to nan at source.
                     array[np.isinf(array)] = np.nan
 
         return array
