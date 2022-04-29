@@ -19,7 +19,7 @@ import os
 import pathlib
 import sys
 from types import SimpleNamespace
-from typing import List, Union
+from typing import List
 
 import click
 import rasterio.crs as rio_crs
@@ -153,21 +153,8 @@ def _region_cb(ctx, param, value):
     return value
 
 
-def _image_from_mixed_list(image_list: List[Union[MaskedImage, str],], mask=False, **kwargs) -> List[MaskedImage,]:
-    """Return a list of Base/MaskedImage objects, given a list of image ID's and/or Base/MaskedImage objects."""
-    image_obj_list = []
-
-    for im_obj in image_list:
-        if isinstance(im_obj, str):
-            im_obj = MaskedImage.from_id(im_obj, mask=mask, **kwargs)
-        elif not isinstance(im_obj, MaskedImage):
-            raise ValueError(f'Unsupported image object type: {type(im_obj)}')
-        image_obj_list.append(im_obj)
-    return image_obj_list
-
-
-def _prepare_image_list(obj: SimpleNamespace, mask=False):
-    """Validate and prepare the obj.image_list for export/download."""
+def _prepare_image_list(obj: SimpleNamespace, mask=False) -> List[MaskedImage,]:
+    """Validate and prepare the obj.image_list for export/download.  Returns a list of MaskedImage objects."""
     if len(obj.image_list) == 0:
         raise click.BadOptionUsage('image_id',
                                    'Either pass --id, or chain this command with a successful `search` or `composite`')
@@ -187,87 +174,43 @@ def _prepare_image_list(obj: SimpleNamespace, mask=False):
     return image_list
 
 
-""" Define click options that are common to more than one command """
+# Define click options that are common to more than one command
 bbox_option = click.option(
-    "-b",
-    "--bbox",
-    type=click.FLOAT,
-    nargs=4,
+    "-b", "--bbox", type=click.FLOAT, nargs=4, default=None, callback=_bbox_cb,
     help="Region defined by bounding box co-ordinates in WGS84 (xmin, ymin, xmax, ymax).",
-    required=False,
-    default=None,
-    callback=_bbox_cb,
 )
 region_option = click.option(
-    "-r",
-    "--region",
-    type=click.Path(exists=True, dir_okay=False),
+    "-r", "--region", type=click.Path(exists=True, dir_okay=False), default=None, callback=_region_cb,
     help="Region defined by geojson or raster file.",
-    required=False,
-    default=None,
-    callback=_region_cb,
 )
 image_id_option = click.option(
-    "-i",
-    "--id",
-    "image_id",
-    type=click.STRING,
-    help="Earth engine image ID(s).",
-    required=False,
-    multiple=True,
+    "-i", "--id", "image_id", type=click.STRING, multiple=True, help="Earth engine image ID(s).",
 )
 crs_option = click.option(
-    "-c",
-    "--crs",
-    type=click.STRING,
-    default=None,
+    "-c", "--crs", type=click.STRING, default=None, callback=_crs_cb,
     help="Reproject image(s) to this CRS (EPSG string or path to text file containing WKT). \n[default: source CRS]",
-    required=False,
-    callback=_crs_cb,
 )
-scale_option = click.option(
-    "-s",
-    "--scale",
-    type=click.FLOAT,
-    default=None,
-    help="Resample image bands to this pixel resolution (m). \n[default: minimum of the source band resolutions]",
-    required=False,
-)
+scale_option = click.option("-s", "--scale", type=click.FLOAT, default=None,
+                            help="Resample image bands to this pixel resolution (m). \n[default: minimum of the source band resolutions]",
+                            )
 dtype_option = click.option(
-    "-dt",
-    "--dtype",
-    type=click.Choice(list(dtype_ranges.keys()), case_sensitive=False),
-    default=None,
+    "-dt", "--dtype", type=click.Choice(list(dtype_ranges.keys()), case_sensitive=False), default=None,
     help="Convert image(s) to this data type.",
-    required=False,
 )
 mask_option = click.option(
-    "-m/-nm",
-    "--mask/--no-mask",
-    default=MaskedImage._default_mask,
+    "-m/-nm", "--mask/--no-mask", default=MaskedImage._default_mask,
     help="Do/don't apply (cloud and shadow) nodata mask(s).  [default: --no-mask]",
-    required=False,
 )
 resampling_option = click.option(
-    "-rs",
-    "--resampling",
-    type=click.Choice(["near", "bilinear", "bicubic"], case_sensitive=True),
-    help="Resampling method.",
-    default=BaseImage._default_resampling,
-    show_default=True,
+    "-rs", "--resampling", type=click.Choice(["near", "bilinear", "bicubic"], case_sensitive=True),
+    default=BaseImage._default_resampling, show_default=True, help="Resampling method.",
 )
 
 
-# Define the geedim CLI and chained command group
+# geedim CLI and chained command group
 @click.group(chain=True)
-@click.option(
-    '--verbose', '-v',
-    count=True,
-    help="Increase verbosity.")
-@click.option(
-    '--quiet', '-q',
-    count=True,
-    help="Decrease verbosity.")
+@click.option('--verbose', '-v', count=True, help="Increase verbosity.")
+@click.option('--quiet', '-q', count=True, help="Decrease verbosity.")
 @click.version_option(version=version.__version__, message="%(version)s")
 @click.pass_context
 def cli(ctx, verbose, quiet):
@@ -275,89 +218,84 @@ def cli(ctx, verbose, quiet):
     verbosity = verbose - quiet
     _configure_logging(verbosity)
 
+
+# config command
 @click.command(cls=ChainedCommand, context_settings=dict(auto_envvar_prefix='GEEDIM'))
-@click.option("-mc/-nmc", "--mask-cirrus/--no-mask-cirrus", default=True,
+@click.option(
+    "-mc/-nmc", "--mask-cirrus/--no-mask-cirrus", default=True,
     help="Whether to mask cirrus clouds. For sentinel2 collections this is valid just for method = 'qa'.  "
-         "[default: --mask-cirrus]")
-@click.option("-ms/-nms", "--mask-shadows/--no-mask-shadows", default=True,
-    help="Whether to mask cloud shadows. "
-         "[default: --mask-shadows]")
-@click.option("-mm", "--mask-method", type=click.Choice(["cloud_prob", "qa"], case_sensitive=True),
-    help="Method used to cloud mask Sentinel-2 images.", default='cloud_prob', show_default=True)
-@click.option("-p", "--prob", type=click.FloatRange(min=0, max=100), default=60, show_default=True,
-    help="Cloud probability threshold. Valid just for method = 'cloud_prob'. (%).")
-@click.option("-d", "--dark", type=click.FloatRange(min=0, max=1), default=.15, show_default=True,
+         "[default: --mask-cirrus]"
+)
+@click.option(
+    "-ms/-nms", "--mask-shadows/--no-mask-shadows", default=True,
+    help="Whether to mask cloud shadows. [default: --mask-shadows]"
+)
+@click.option(
+    "-mm", "--mask-method", type=click.Choice(["cloud_prob", "qa"], case_sensitive=True),
+    default='cloud_prob', show_default=True, help="Method used to cloud mask Sentinel-2 images."
+)
+@click.option(
+    "-p", "--prob", type=click.FloatRange(min=0, max=100), default=60, show_default=True,
+    help="Cloud probability threshold. Valid just for method = 'cloud_prob'. (%)."
+)
+@click.option(
+    "-d", "--dark", type=click.FloatRange(min=0, max=1), default=.15, show_default=True,
     help="NIR reflectance threshold [0-1] for shadow masking Sentinel-2 images. NIR values below this threshold are "
-         "potential cloud shadows.")
-@click.option("-sd", "--shadow-dist", type=click.INT, default=1000, show_default=True,
-    help="Maximum distance in meters (m) to look for cloud shadows from cloud edges.  Valid for Sentinel-2 images.")
-@click.option("-b", "--buffer", type=click.INT, default=250, show_default=True,
-    help="Distance in meters (m) to dilate cloud and cloud shadows objects.  Valid for Sentinel-2 images.")
-@click.option("-cdi", "--cdi-thresh", type=click.FloatRange(min=-1, max=1), default=None, show_default=True,
-    help="Cloud Displacement Index threshold. Values below this threshold are considered potential clouds.  "
-         "A cdi-thresh = None means that the index is not used.  Valid for Sentinel-2 images.  [default: None]")
-@click.option("-mcd", "--max-cloud-dist", type=click.INT, default=5000, show_default=True,
-    help="Maximum distance in meters (m) to look for clouds.  Used to form the `CLOUD_DIST` band for `q_mosaic` "
-         "compositing. Valid for Sentinel-2 images.")
+         "potential cloud shadows."
+)
+@click.option(
+    "-sd", "--shadow-dist", type=click.INT, default=1000, show_default=True,
+    help="Maximum distance in meters (m) to look for cloud shadows from cloud edges.  Valid for Sentinel-2 images."
+)
+@click.option(
+    "-b", "--buffer", type=click.INT, default=250, show_default=True,
+    help="Distance in meters (m) to dilate cloud and cloud shadows objects.  Valid for Sentinel-2 images."
+)
+@click.option(
+    "-cdi", "--cdi-thresh", type=click.FloatRange(min=-1, max=1), default=None,
+    help="Cloud Displacement Index threshold. Values below this threshold are considered potential clouds.  A "
+         "cdi-thresh = None means that the index is not used.  Valid for Sentinel-2 images.  [default: None]"
+)
+@click.option(
+    "-mcd", "--max-cloud-dist", type=click.INT, default=5000, show_default=True,
+    help="Maximum distance in meters (m) to look for clouds.  Used to form the cloud distance band for `q_mosaic` "
+         "compositing. Valid for Sentinel-2 images."
+)
 @click.pass_context
 def config(ctx, mask_cirrus, mask_shadows, mask_method, prob, dark, shadow_dist, buffer, cdi_thresh, max_cloud_dist):
     """Configure cloud/shadow masking."""
+    # store configuration in the context object for use by other commands
     ctx.obj.cloud_kwargs = ctx.params
+
 
 cli.add_command(config)
 
 
-# Define search command options
+# search command
 @click.command(cls=ChainedCommand)
 @click.option(
-    "-c",
-    "--collection",
-    type=click.STRING,  # click.Choice(list(info.gd_to_ee.keys())[:-1], case_sensitive=False),
+    "-c", "--collection", type=click.STRING, default="landsat8_c2_l2", show_default=True, callback=_collection_cb,
     help=f"Earth Engine image collection to search.  [{'|'.join(list(info.gd_to_ee.keys())[:-1])}], or "
          f"any valid Earth Engine image collection ID.",
-    default="landsat8_c2_l2",
-    show_default=True,
-    callback=_collection_cb,
 )
 @click.option(
-    "-s",
-    "--start-date",
-    type=click.DateTime(),
-    help="Start date (UTC).",
-    required=True,
+    "-s", "--start-date", type=click.DateTime(), required=True, help="Start date (UTC).",
 )
 @click.option(
-    "-e",
-    "--end-date",
-    type=click.DateTime(),
-    help="End date (UTC).  \n[default: start_date + 1 day]",
-    required=False,
+    "-e", "--end-date", type=click.DateTime(), required=False, help="End date (UTC).  \n[default: start_date + 1 day]",
 )
 @bbox_option
 @click.option(
-    "-r",
-    "--region",
-    type=click.Path(exists=True, dir_okay=False),
+    "-r", "--region", type=click.Path(exists=True, dir_okay=False), callback=_region_cb,
     help="Region defined by geojson or raster file. [One of --bbox or --region is required]",
-    required=False,
-    callback=_region_cb,
 )
 @click.option(
-    "-vp",
-    "--valid-portion",
-    type=click.FloatRange(min=0, max=100),
-    default=0,
+    "-vp", "--valid-portion", type=click.FloatRange(min=0, max=100), default=0, show_default=True,
     help="Lower limit of the portion of valid (cloud and shadow free) pixels (%).",
-    required=False,
-    show_default=True,
 )
 @click.option(
-    "-o",
-    "--output",
-    type=click.Path(exists=False, dir_okay=False, writable=True),
-    default=None,
+    "-o", "--output", type=click.Path(exists=False, dir_okay=False, writable=True), default=None,
     help="Write results to this filename, file type inferred from extension: [.csv|.json]",
-    required=False,
 )
 @click.pass_obj
 def search(obj, collection, start_date, end_date, bbox, region, valid_portion, output):
@@ -379,7 +317,7 @@ def search(obj, collection, start_date, end_date, bbox, region, valid_portion, o
     if im_df.shape[0] == 0:
         logger.info('No images found\n')
     else:
-        obj.image_list += im_df.ID.values.tolist()  # store ids for chaining
+        obj.image_list += im_df.ID.values.tolist()  # store ids for chained commands
         logger.info(f'{im_df.shape[0]} images found\n')
         logger.info(f'Image property descriptions:\n\n{gd_collection.summary_key}\n')
         logger.info(f'Search Results:\n\n{gd_collection.summary}')
@@ -398,18 +336,14 @@ def search(obj, collection, start_date, end_date, bbox, region, valid_portion, o
 cli.add_command(search)
 
 
-# Define download command options
+# download command
 @click.command(cls=ChainedCommand)
 @image_id_option
 @bbox_option
 @region_option
 @click.option(
-    "-dd",
-    "--download-dir",
-    type=click.Path(exists=True, file_okay=False, dir_okay=True, writable=True),
-    default=os.getcwd(),
-    help="Download image file(s) to this directory.  [default: cwd]",
-    required=False,
+    "-dd", "--download-dir", type=click.Path(exists=True, file_okay=False, dir_okay=True, writable=True),
+    default=os.getcwd(), help="Download image file(s) to this directory.  [default: cwd]",
 )
 @crs_option
 @scale_option
@@ -417,13 +351,8 @@ cli.add_command(search)
 @mask_option
 @resampling_option
 @click.option(
-    "-o",
-    "--overwrite",
-    is_flag=True,
-    default=False,
-    help="Overwrite the destination file if it exists.  [default: prompt the user for confirmation]",
-    required=False,
-    show_default=False,
+    "-o", "--overwrite", is_flag=True, default=False,
+    help="Overwrite the destination file if it exists.  [default: don't overwrite]",
 )
 @click.pass_obj
 def download(obj, image_id, bbox, region, download_dir, mask, overwrite, **kwargs):
@@ -438,18 +367,14 @@ def download(obj, image_id, bbox, region, download_dir, mask, overwrite, **kwarg
 cli.add_command(download)
 
 
-# Define export command options
+# export command
 @click.command(cls=ChainedCommand)
 @image_id_option
 @bbox_option
 @region_option
 @click.option(
-    "-df",
-    "--drive-folder",
-    type=click.STRING,
-    default='',
+    "-df", "--drive-folder", type=click.STRING, default='',
     help="Export image(s) to this Google Drive folder. [default: root]",
-    required=False,
 )
 @crs_option
 @scale_option
@@ -457,11 +382,7 @@ cli.add_command(download)
 @mask_option
 @resampling_option
 @click.option(
-    "-w/-nw",
-    "--wait/--no-wait",
-    default=True,
-    help="Wait / don't wait for export to complete.  [default: --wait]",
-    required=False,
+    "-w/-nw", "--wait/--no-wait", default=True, help="Wait / don't wait for export to complete.  [default: --wait]",
 )
 @click.pass_obj
 def export(obj, image_id, bbox, region, drive_folder, mask, wait, **kwargs):
@@ -482,34 +403,23 @@ def export(obj, image_id, bbox, region, drive_folder, mask, wait, **kwargs):
 cli.add_command(export)
 
 
-# Define composite command options
+# composite command
 @click.command(cls=ChainedCommand)
 @image_id_option
 @click.option(
-    "-cm",
-    "--method",
-    type=click.Choice(coll_api.MaskedCollection._composite_methods, case_sensitive=False),
-    help="Compositing method to use.",
-    default=MaskedCollection._default_comp_method,
-    show_default=True,
-    required=False,
+    "-cm", "--method", type=click.Choice(coll_api.MaskedCollection._composite_methods, case_sensitive=False),
+    default=MaskedCollection._default_comp_method, show_default=True, help="Compositing method to use."
 )
 @click.option(
-    "-m/-nm",
-    "--mask/--no-mask",
-    default=True,
+    "-m/-nm", "--mask/--no-mask", default=True,
     help="Do/don't apply (cloud and shadow) nodata mask(s) before compositing.  [default: --mask]",
-    required=False,
 )
 @resampling_option
 @bbox_option
 @region_option
 @click.option(
-    "-d",
-    "--date",
-    type=click.DateTime(),
+    "-d", "--date", type=click.DateTime(),
     help="Give preference to images closest to this date (UTC).  [Supported by `mosaic` and `q_mosaic` methods.]",
-    required=False,
 )
 @click.pass_obj
 def composite(obj, image_id, mask, method, resampling, bbox, region, date):
@@ -519,7 +429,7 @@ def composite(obj, image_id, mask, method, resampling, bbox, region, date):
     if len(obj.image_list) == 0:
         raise click.BadOptionUsage('image_id', 'Either pass --id, or chain this command with a successful `search`')
 
-    gd_collection = MaskedCollection.from_list(obj.image_list)  # TODO mask before composititng
+    gd_collection = MaskedCollection.from_list(obj.image_list)
     obj.image_list = [gd_collection.composite(method=method, mask=mask, resampling=resampling, region=obj.region,
                                               date=date, **obj.cloud_kwargs)]
 
