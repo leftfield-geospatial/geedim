@@ -22,6 +22,8 @@ class CompositeMethod(str, Enum):
     mosaic = 'mosaic'
     medoid = 'medoid'
     median = 'median'
+    mode = 'mode'
+    mean = 'mean'
 
 
 class CloudMaskMethod(str, Enum):

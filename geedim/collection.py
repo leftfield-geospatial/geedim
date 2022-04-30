@@ -253,6 +253,8 @@ class MaskedCollection:
                     bands) from the median of all collection images.  Maintains the original relationship between
                     bands.  See https://www.mdpi.com/2072-4292/5/12/6481 for detail.
                 `median`: Median of the collection images.
+                `mode`: Mode of the collection images.
+                `mean`: Mean of the collection images.
         mask: bool, optional
             Whether to cloud/shadow mask images before compositing  [default: True].
         resampling: ResamplingMethod, optional
@@ -276,10 +278,11 @@ class MaskedCollection:
             The composite image.
         """
         # TODO: test composite of resampled images and resampled composite
-        # TODO: raise exception for qa_mosaic with unsupported collection
-
         method = CompositeMethod(method)
         resampling = ResamplingMethod(resampling)
+        if (method == CompositeMethod.q_mosaic) and (self._image_class == MaskedImage):
+            # TODO get a list of supported collections, report this in CLI help too
+            raise ValueError(f'The `q-mosaic` method is not supported for the {self._ee_coll_name} collection.')
 
         def prepare_image(ee_image):
             gd_image = self._image_class(ee_image, **kwargs)
@@ -318,13 +321,17 @@ class MaskedCollection:
         elif method == CompositeMethod.mosaic:
             comp_image = ee_collection.mosaic()
         elif method == CompositeMethod.median:
+            # TODO: S2 median gives 'Output of image computation is too large' on download dtype=uint16
             comp_image = ee_collection.median()
-            # median creates float images, so re-apply any type conversion
         elif method == CompositeMethod.medoid:
             # limit medoid to surface reflectance bands
-            # TODO: as we are losing collection_info, we will need another way to get sr_bands
+            # TODO: we need another way to get sr_bands if we are removing collection_info
             sr_bands = [band_dict['id'] for band_dict in self._collection_info['bands']]
             comp_image = medoid.medoid(ee_collection, bands=sr_bands)
+        elif method == CompositeMethod.mode:
+            comp_image = ee_collection.mode()
+        elif method == CompositeMethod.mean:
+            comp_image = ee_collection.mean()
         else:
             raise ValueError(f'Unsupported composite method: {method}')
 
@@ -346,12 +353,7 @@ class MaskedCollection:
         comp_id = f'{self._ee_coll_name}/{start_date}-{end_date}-{method_str}-COMP'
         comp_image = comp_image.set('system:id', comp_id)
         comp_image = comp_image.set('system:index', comp_id)
-        comp_image = comp_image.set('system:time_start', self.summary_df.DATE.iloc[0].timestamp() * 1000)
-        # TODO: do the QA, mask and score bands mosaic correctly?
-        #  would re-calculating the masks and score on the mosaics QA bands work?
-        # TODO: leave out the median method entirely?
-        if method == CompositeMethod.median:
-            gd_comp_image = MaskedImage(comp_image)
-        else:
-            gd_comp_image = self._image_class(comp_image)
+        comp_image = comp_image.set('system:time_start', summary_df.DATE.iloc[0].timestamp() * 1000)
+        gd_comp_image = self._image_class(comp_image)
+
         return gd_comp_image

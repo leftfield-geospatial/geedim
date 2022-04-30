@@ -433,7 +433,7 @@ cli.add_command(export)
     help='Do/don\'t apply (cloud and shadow) nodata mask(s) before compositing.  [default: --mask]'
 )
 @resampling_option
-@bbox_option    # TODO: the implications of these options here needs to be explained.
+@bbox_option    # TODO: the implications of these options here needs to be explained.  Likewise for method.
 @region_option
 @click.option(
     '-d', '--date', type=click.DateTime(),

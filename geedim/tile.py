@@ -103,7 +103,7 @@ class Tile:
 
         # find raw and actual download sizes
         dtype_size = np.dtype(self._exp_image.dtype).itemsize
-        raw_download_size = float(self._shape[0] * self._shape[1] * self._exp_image.count * dtype_size)
+        raw_download_size = self._shape[0] * self._shape[1] * self._exp_image.count * dtype_size
         download_size = int(response.headers.get('content-length', 0))
 
         if download_size == 0 or not response.ok:
