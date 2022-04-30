@@ -30,17 +30,17 @@ import ee
 import numpy as np
 import pandas as pd
 import rasterio as rio
-from rasterio.enums import Resampling as RioResampling
 from pip._vendor.progress.spinner import Spinner
 from rasterio.crs import CRS
+from rasterio.enums import Resampling as RioResampling
 from rasterio.warp import transform_geom
 from rasterio.windows import Window
 from tqdm import TqdmWarning, tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 from geedim import info
-from geedim.tile import Tile, _requests_retry_session
 from geedim.enums import ResamplingMethod
+from geedim.tile import Tile, _requests_retry_session
 
 logger = logging.getLogger(__name__)
 
@@ -245,6 +245,12 @@ class BaseImage:
         return self._min_dtype
 
     @property
+    def byte_size(self) -> int:
+        """The size in bytes of this image."""
+        dtype_size = np.dtype(self.dtype).itemsize
+        return self.shape[0] * self.shape[1] * self.count * dtype_size
+
+    @property
     def footprint(self) -> Union[Dict, None]:
         """A geojson polygon of the image extent."""
         if 'system:footprint' not in self.ee_info['properties']:
@@ -340,11 +346,6 @@ class BaseImage:
         else:  # just use the image band IDs
             band_metadata = band_df[["id"]].to_dict("records")
         return band_metadata
-
-    @staticmethod
-    def _get_image_size(exp_image: 'BaseImage') -> int:
-        dtype_size = np.dtype(exp_image.dtype).itemsize
-        return exp_image.shape[0] * exp_image.shape[1] * exp_image.count * dtype_size
 
     @staticmethod
     def _convert_dtype(ee_image: ee.Image, dtype: str) -> ee.Image:
@@ -457,7 +458,7 @@ class BaseImage:
         return exp_image, profile
 
     def _get_tile_shape(
-            self, exp_image: 'BaseImage', max_download_size=32 << 20, max_grid_dimension=10000
+        self, exp_image: 'BaseImage', max_download_size=32 << 20, max_grid_dimension=10000
     ) -> (Tuple[int, int], int):
         """
         Return a tile shape and number of tiles for a given BaseImage, such that the tile shape satisfies GEE
@@ -467,10 +468,12 @@ class BaseImage:
         # find the total number of tiles we must divide the image into to satisfy max_download_size
         image_shape = exp_image.shape
         dtype_size = np.dtype(exp_image.dtype).itemsize
+        image_size = exp_image.byte_size
         if exp_image.dtype.endswith('int8'):
-            dtype_size *= 2  # workaround for GEE overestimate of *int8 dtype download sizes
+            # workaround for GEE overestimate of *int8 dtype download sizes
+            dtype_size *= 2
+            image_size *= 2
 
-        image_size = self._get_image_size(exp_image)
         # here ceil_size is the worst case extra tile size due to np.ceil(image_shape / shape_num_tiles).astype('int')
         ceil_size = (image_shape[0] + image_shape[1]) * exp_image.count * dtype_size
 
@@ -658,10 +661,9 @@ class BaseImage:
         """
 
         exp_image = self._prepare_for_export(**kwargs)
-        raw_download_size = self._get_image_size(exp_image)
 
         if logger.getEffectiveLevel() <= logging.DEBUG:
-            logger.debug(f'Uncompressed size: {self._str_format_size(raw_download_size)}')
+            logger.debug(f'Uncompressed size: {self._str_format_size(exp_image.byte_size)}')
 
         # create export task and start
         task = ee.batch.Export.image.toDrive(
@@ -722,7 +724,7 @@ class BaseImage:
 
         # find raw size of the download data (less than the actual download size as the image data is zipped in a
         # compressed geotiff)
-        raw_download_size = self._get_image_size(exp_image)
+        raw_download_size = exp_image.byte_size
         if logger.getEffectiveLevel() <= logging.DEBUG:
             dtype_size = np.dtype(exp_image.dtype).itemsize
             raw_tile_size = tile_shape[0] * tile_shape[1] * exp_image.count * dtype_size
