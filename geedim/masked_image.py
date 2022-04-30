@@ -17,8 +17,8 @@ import logging
 
 import ee
 
-from geedim.image import BaseImage, split_id
 from geedim.enums import CloudMaskMethod
+from geedim.image import BaseImage, split_id
 
 logger = logging.getLogger(__name__)
 
@@ -297,8 +297,8 @@ class Sentinel2ClImage(CloudMaskedImage):
     _proj_scale = 60
 
     def _aux_image(
-            self, s2_toa=False, mask_method=CloudMaskMethod.cloud_prob, mask_cirrus=True, mask_shadows=True, prob=60,
-            dark=0.15, shadow_dist=1000, buffer=250, cdi_thresh=None, max_cloud_dist=5000
+        self, s2_toa=False, mask_method=CloudMaskMethod.cloud_prob, mask_cirrus=True, mask_shadows=True, prob=60,
+        dark=0.15, shadow_dist=1000, buffer=250, cdi_thresh=None, max_cloud_dist=5000
     ):
         """
         Derive cloud, shadow and validity masks for the encapsulated image.

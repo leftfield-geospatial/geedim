@@ -423,6 +423,11 @@ class BaseImage:
         resampling = ResamplingMethod(resampling)
         ee_image = self._ee_image
         if resampling != self._default_resampling:
+            if not self.has_fixed_projection:
+                raise ValueError(
+                    'This image has no fixed projection and cannot be resampled.  If this image is a composite, '
+                    'you can resample the images used to create the composite.'
+                )
             ee_image = ee_image.resample(resampling.value)
 
         ee_image = self._convert_dtype(ee_image, dtype=dtype or self.dtype)
