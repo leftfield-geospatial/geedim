@@ -148,21 +148,19 @@ class MaskedCollection:
             return pd.DataFrame([], columns=self._summary_key_df.ABBREV)  # return empty dataframe
 
         # server side aggregation of relevant properties of ee_collection images
-        init_list = ee.List([])
-
         def aggregrate_props(ee_image, prop_list):
             all_props = ee_image.propertyNames()
-            _prop_dict = ee.Dictionary()
+            prop_dict = ee.Dictionary()
             for prop_key in self._summary_key_df.PROPERTY.values:
-                _prop_dict = _prop_dict.set(
+                prop_dict = prop_dict.set(
                     prop_key, ee.Algorithms.If(
                         all_props.contains(prop_key), ee_image.get(prop_key), ee.String('None')
                     )
                 )
-            return ee.List(prop_list).add(_prop_dict)
+            return ee.List(prop_list).add(prop_dict)
 
         # retrieve list of dicts of collection image properties (the only call to getInfo() in MaskedCollection)
-        im_prop_list = ee.List(ee_collection.iterate(aggregrate_props, init_list)).getInfo()
+        im_prop_list = ee.List(ee_collection.iterate(aggregrate_props, ee.List([]))).getInfo()
 
         if len(im_prop_list) == 0:
             return pd.DataFrame([], columns=self._summary_key_df.ABBREV)  # return empty dataframe
@@ -284,37 +282,39 @@ class MaskedCollection:
             # TODO get a list of supported collections, report this in CLI help too
             raise ValueError(f'The `q-mosaic` method is not supported for the {self._ee_coll_name} collection.')
 
-        def prepare_image(ee_image):
-            gd_image = self._image_class(ee_image, **kwargs)
-            if method in ['mosaic', 'q_mosaic']:
-                if date:
-                    date_dist = ee.Number(gd_image.ee_image.get('system:time_start')).subtract(
-                        ee.Date(date).millis()
-                    ).abs()
-                    gd_image.ee_image = gd_image.ee_image.set('DATE_DIST', date_dist)
-                elif region:
-                    gd_image.set_region_stats(region)
-            if mask:
-                gd_image.mask_clouds()
-            if resampling != BaseImage._default_resampling:
-                # TODO: what does resampling do to non SR bands - should they be excluded?  should we not do this
-                #  after masking?
-                gd_image.ee_image = gd_image.ee_image.resample(resampling.value)
-            return gd_image.ee_image
-
-        ee_collection = self._ee_collection.map(prepare_image)
-
+        ee_collection = self._ee_collection
         if method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic]:
             if date:
                 # sort the collection by time difference to `date`, so that *mosaic uses the closest in time pixels
-                ee_collection = ee_collection.sort('DATE_DIST', opt_ascending=False)
+                def set_date_dist(ee_image):
+                    date_dist = ee.Number(ee_image.get('system:time_start')).subtract(ee.Date(date).millis()).abs()
+                    return ee_image.set('DATE_DIST', date_dist)
+                ee_collection = ee_collection.map(set_date_dist).sort('DATE_DIST', opt_ascending=False)
             elif region:
                 # sort the collection by cloud/shadow free portion, so that *mosaic favours pixels from the least
                 # cloudy image
-                ee_collection = ee_collection.sort('CLOUDLESS_PORTION')
+                def set_cloudless_portion(ee_image):
+                    gd_image = self._image_class(ee_image, **kwargs)
+                    gd_image.set_region_stats(region)
+                    return gd_image.ee_image
+                ee_collection = ee_collection.map(set_cloudless_portion).sort('CLOUDLESS_PORTION')
             else:
-                # sort the collection by capture date
+                # sort the collection by capture date.  *mosaic will favour the most recent pixels.
                 ee_collection = ee_collection.sort('system:time_start')
+
+        if mask:
+            def mask_clouds(ee_image):
+                gd_image = self._image_class(ee_image, **kwargs)
+                gd_image.mask_clouds()
+                return gd_image.ee_image
+            ee_collection = ee_collection.map(mask_clouds)
+
+        if resampling != BaseImage._default_resampling:
+            def resample(ee_image):
+                gd_image = self._image_class(ee_image, **kwargs)
+                gd_image.resample(resampling)
+                return gd_image.ee_image
+            ee_collection = ee_collection.map(resample)
 
         if method == CompositeMethod.q_mosaic:
             comp_image = ee_collection.qualityMosaic('CLOUD_DIST')
