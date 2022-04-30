@@ -311,9 +311,7 @@ class MaskedCollection:
 
         if resampling != BaseImage._default_resampling:
             def resample(ee_image):
-                gd_image = self._image_class(ee_image, **kwargs)
-                gd_image.resample(resampling)
-                return gd_image.ee_image
+                return ee_image.resample(resampling.value)
             ee_collection = ee_collection.map(resample)
 
         if method == CompositeMethod.q_mosaic:
