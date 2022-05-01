@@ -56,9 +56,7 @@ class MaskedCollection:
 
         self._summary_key_df = pd.DataFrame(self._collection_info['properties'])  # key to metadata summary
         self._summary_df = None  # summary of the image metadata
-
         self._image_class = class_from_id(ee_coll_name)
-        self._ee_collection = ee.ImageCollection(ee_coll_name)
 
     @classmethod
     def from_list(cls, image_list):
@@ -138,8 +136,20 @@ class MaskedCollection:
         """Get a formatted/printable string for a given summary DataFrame."""
         return summary_df.to_string(
             float_format='{:.2f}'.format, formatters={'DATE': lambda x: datetime.strftime(x, '%Y-%m-%d %H:%M')},
-            columns=self._summary_key_df.ABBREV, index=False, justify='center'
-        )
+            index=False, justify='center'
+        )#columns=self._summary_key_df.ABBREV,
+
+    def _aggregate_props(self, ee_collection, prop_list=None):
+        if not prop_list:
+            prop_list = list(self._summary_key_df.PROPERTY.values)
+        prop_list = ee.List(prop_list)
+        def _aggregate_props(ee_image, aggr_list):
+            return ee.List(aggr_list).add(ee_image.toDictionary(prop_list))
+        aggr_list = ee.List(ee_collection.iterate(_aggregate_props, ee.List([]))).getInfo()
+        for i, prop_dict in enumerate(aggr_list):
+            if 'system:time_start' in prop_dict:
+                prop_dict['system:time_start'] = datetime.utcfromtimestamp(prop_dict['system:time_start'] / 1000)
+        return aggr_list
 
     def _get_summary_df(self, ee_collection) -> pandas.DataFrame:
         """Retrieve a summary of the collection image metadata."""
@@ -148,15 +158,19 @@ class MaskedCollection:
             return pd.DataFrame([], columns=self._summary_key_df.ABBREV)  # return empty dataframe
 
         # server side aggregation of relevant properties of ee_collection images
+        prop_key_list = ee.List(list(self._summary_key_df.PROPERTY.values))
         def aggregrate_props(ee_image, prop_list):
-            all_props = ee_image.propertyNames()
-            prop_dict = ee.Dictionary()
-            for prop_key in self._summary_key_df.PROPERTY.values:
-                prop_dict = prop_dict.set(
-                    prop_key, ee.Algorithms.If(
-                        all_props.contains(prop_key), ee_image.get(prop_key), ee.String('None')
+            if False:
+                all_props = ee_image.propertyNames()
+                prop_dict = ee.Dictionary()
+                for prop_key in self._summary_key_df.PROPERTY.values:
+                    prop_dict = prop_dict.set(
+                        prop_key, ee.Algorithms.If(
+                            all_props.contains(prop_key), ee_image.get(prop_key), ee.String('None')
+                        )
                     )
-                )
+            else:
+                prop_dict = ee_image.toDictionary(prop_key_list)
             return ee.List(prop_list).add(prop_dict)
 
         # retrieve list of dicts of collection image properties (the only call to getInfo() in MaskedCollection)
@@ -179,7 +193,8 @@ class MaskedCollection:
         im_prop_df = im_prop_df.rename(
             columns=dict(zip(self._summary_key_df.PROPERTY, self._summary_key_df.ABBREV))
         )
-        im_prop_df = im_prop_df[self._summary_key_df.ABBREV.to_list()]  # reorder columns
+        ordered_cols = [key for key in self._summary_key_df.ABBREV if key in im_prop_df.columns]
+        im_prop_df = im_prop_df[ordered_cols]  # reorder columns
 
         return im_prop_df
 
