@@ -92,13 +92,17 @@ class TestApi(unittest.TestCase):
                             'COPERNICUS/S2': ['2019-01-01', '2019-02-01'],
                             'COPERNICUS/S2_SR': ['2019-01-01', '2019-02-01'],
                             'MODIS/006/MCD43A4': ['2019-01-01', '2019-02-01']}
-        valid_portion = 10
+        cloudless_portion = 10
         for ee_coll_name, search_dates in search_date_dict.items():
             # find search start / end dates based on collection start / end
             with self.subTest('Search', ee_coll_name=ee_coll_name):
                 gd_collection = collection.MaskedCollection(ee_coll_name)
-                res_df = gd_collection.search(search_dates[0], search_dates[1], region, cloudless_portion=valid_portion)
-                _test_search_results(self, res_df, search_dates[0], search_dates[1], valid_portion=valid_portion)
+                res_df = gd_collection.search(
+                    search_dates[0], search_dates[1], region, cloudless_portion=cloudless_portion
+                )
+                _test_search_results(
+                    self, res_df, search_dates[0], search_dates[1], cloudless_portion=cloudless_portion
+                )
 
     def test_download(self):
         """ Test download of images from different collections, and with different crs, and scale params. """

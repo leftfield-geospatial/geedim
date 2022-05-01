@@ -305,15 +305,15 @@ cli.add_command(config)
     help='Region defined by geojson or raster file. [One of --bbox or --region is required]'
 )
 @click.option(
-    '-vp', '--valid-portion', type=click.FloatRange(min=0, max=100), default=0, show_default=True,
-    help='Lower limit of the portion of valid (cloud and shadow free) pixels (%).'
+    '-cp', '--cloudless-portion', type=click.FloatRange(min=0, max=100), default=0, show_default=True,
+    help='Lower limit on the cloud/shadow free portion of the region (%).'
 )
 @click.option(
     '-o', '--output', type=click.Path(exists=False, dir_okay=False, writable=True), default=None,
     help='Write results to this filename, file type inferred from extension: [.csv|.json]'
 )
 @click.pass_obj
-def search(obj, collection, start_date, end_date, bbox, region, valid_portion, output):
+def search(obj, collection, start_date, end_date, bbox, region, cloudless_portion, output):
     """Search for images."""
     # TODO: what about chaining search with search, or after composite.  Unlikely use case, but if possible
     #  would be neat to structure the sw in this way e.g. if the image_list is not empty, then make the collection
@@ -329,7 +329,9 @@ def search(obj, collection, start_date, end_date, bbox, region, valid_portion, o
 
     # create collection wrapper and search
     gd_collection = coll_api.MaskedCollection(collection)
-    im_df = gd_collection.search(start_date, end_date, obj.region, cloudless_portion=valid_portion, **obj.cloud_kwargs)
+    im_df = gd_collection.search(
+        start_date, end_date, obj.region, cloudless_portion=cloudless_portion, **obj.cloud_kwargs
+    )
 
     if im_df.shape[0] == 0:
         logger.info('No images found\n')

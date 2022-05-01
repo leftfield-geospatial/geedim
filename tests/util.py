@@ -46,7 +46,7 @@ def nan_equals(a, b):
     return (a == b) | (np.isnan(a) & np.isnan(b))
 
 
-def _test_search_results(test_case, res_df, start_date, end_date, valid_portion=0):
+def _test_search_results(test_case, res_df, start_date, end_date, cloudless_portion=0):
     """ Test the validity of a search results dataframe against the search parameters. """
 
     test_case.assertGreater(res_df.shape[0], 0, 'Search returned one or more results')
@@ -63,9 +63,9 @@ def _test_search_results(test_case, res_df, start_date, end_date, valid_portion=
     test_case.assertTrue(all([ee_coll_name in im_id for im_id in res_df.ID.values]),
                          'Search results have correct EE ID')
     if ee_coll_name != 'MODIS/006/MCD43A4':
-        test_case.assertTrue(all(res_df.CLOUDLESS >= valid_portion) and all(res_df.CLOUDLESS <= 100),
+        test_case.assertTrue(all(res_df.CLOUDLESS >= cloudless_portion) and all(res_df.CLOUDLESS <= 100),
                              'Search results have correct validity range')
-        test_case.assertTrue(all(res_df.FILL >= valid_portion) and all(res_df.FILL <= 100),
+        test_case.assertTrue(all(res_df.FILL >= cloudless_portion) and all(res_df.FILL <= 100),
                              'Search results have correct validity range')
         # test_case.assertTrue(all(res_df.CLOUD_DIST >= 0), 'Search results have correct q score range')
 

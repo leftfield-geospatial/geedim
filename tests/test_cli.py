@@ -47,7 +47,7 @@ class TestCli(unittest.TestCase):
              '-o', f'{results_filename}'],
             ['search', '-c', 'sentinel2_toa', '-r', str(region_filename), '-s', start_date.strftime("%Y-%m-%d"), '-e',
              end_date.strftime("%Y-%m-%d"),
-             '-vp', 30, '-o', str(results_filename)]
+             '-cp', 30, '-o', str(results_filename)]
         ]
 
         for search_params in search_param_list:
