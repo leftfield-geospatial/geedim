@@ -169,7 +169,7 @@ class MaskedCollection:
         """ Properties for each image in the collection. """
         if not self._filtered:
             raise UnfilteredError(
-                '`properties` can only be retrieved for collections returned from `search()` and `from_list()`'
+                '`properties` can only be retrieved for collections returned by `search()` and `from_list()`'
             )
         if not self._properties:
             self._properties = self._get_properties(self._ee_collection)
@@ -226,6 +226,71 @@ class MaskedCollection:
                         im_odict[prop_dict['ABBREV']] = im_dict[prop_key]
             abbrev_props.append(im_odict)
         return tabulate.tabulate(abbrev_props, headers='keys', floatfmt='.2f', tablefmt=_table_fmt)
+
+    def _prepare_for_composite(
+            self, method=_default_comp_method, mask=True, resampling=BaseImage._default_resampling, date=None,
+            region=None, **kwargs
+        ):
+            """
+            Prepare the Earth Engine collection for compositing. See MaskedCollection.composite() for
+            parameter descriptions.
+            """
+
+            if not self._filtered:
+                raise UnfilteredError(
+                    'Composites can only be created from collections returned by `search()` and `from_list()`'
+                )
+
+            if isinstance(date, str):
+                try:
+                    date = datetime.strptime(date, '%Y-%m-%d')
+                except ValueError:
+                    raise UnsupportedValueError(
+                        '`date` should be a datetime instance or a string with format: "%Y-%m-%d"'
+                    )
+
+            method = CompositeMethod(method)
+            resampling = ResamplingMethod(resampling)
+            if (method == CompositeMethod.q_mosaic) and (self.image_type == MaskedImage):
+                # TODO get a list of supported collections, report this in CLI help too
+                raise UnsupportedValueError(f'The `q-mosaic` method is not supported for the {self.name} collection.')
+
+            ee_collection = self._ee_collection
+            if method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic]:
+                if date:
+                    # sort the collection by time difference to `date`, so that *mosaic uses the closest in time pixels
+                    def set_date_dist(ee_image):
+                        date_dist = ee.Number(ee_image.get('system:time_start')).subtract(ee.Date(date).millis()).abs()
+                        return ee_image.set('DATE_DIST', date_dist)
+
+                    ee_collection = ee_collection.map(set_date_dist).sort('DATE_DIST', opt_ascending=False)
+                elif region:
+                    # sort the collection by cloud/shadow free portion, so that *mosaic favours pixels from the least
+                    # cloudy image
+                    def set_cloudless_portion(ee_image):
+                        gd_image = self.image_type(ee_image, **kwargs)
+                        gd_image.set_region_stats(region)
+                        return gd_image.ee_image
+
+                    ee_collection = ee_collection.map(set_cloudless_portion).sort('CLOUDLESS_PORTION')
+                else:
+                    # sort the collection by capture date.  *mosaic will favour the most recent pixels.
+                    ee_collection = ee_collection.sort('system:time_start')
+
+            if mask:
+                def mask_clouds(ee_image):
+                    gd_image = self.image_type(ee_image, **kwargs)
+                    gd_image.mask_clouds()
+                    return gd_image.ee_image
+
+                ee_collection = ee_collection.map(mask_clouds)
+
+            if resampling != BaseImage._default_resampling:
+                def resample(ee_image):
+                    return ee_image.resample(resampling.value)
+
+                ee_collection = ee_collection.map(resample)
+            return ee_collection
 
     def search(self, start_date, end_date, region, cloudless_portion=0, **kwargs):
         """
@@ -317,58 +382,12 @@ class MaskedCollection:
         comp_image: MaskedImage
             The composite image.
         """
-        if not self._filtered:
-            raise UnfilteredError(
-                'Composites can only be created from collections returned from `search()` and `from_list()`'
-            )
 
-        if isinstance(date, str):
-            try:
-                date = datetime.strptime(date, '%Y-%m-%d')
-            except ValueError:
-                raise UnsupportedValueError('`date` should be a datetime instance or a string with format: "%Y-%m-%d"')
-
+        # mask, sort & resample the EE collection
         method = CompositeMethod(method)
-        resampling = ResamplingMethod(resampling)
-        if (method == CompositeMethod.q_mosaic) and (self.image_type == MaskedImage):
-            # TODO get a list of supported collections, report this in CLI help too
-            raise UnsupportedValueError(f'The `q-mosaic` method is not supported for the {self.name} collection.')
-
-        ee_collection = self._ee_collection
-        if method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic]:
-            if date:
-                # sort the collection by time difference to `date`, so that *mosaic uses the closest in time pixels
-                def set_date_dist(ee_image):
-                    date_dist = ee.Number(ee_image.get('system:time_start')).subtract(ee.Date(date).millis()).abs()
-                    return ee_image.set('DATE_DIST', date_dist)
-
-                ee_collection = ee_collection.map(set_date_dist).sort('DATE_DIST', opt_ascending=False)
-            elif region:
-                # sort the collection by cloud/shadow free portion, so that *mosaic favours pixels from the least
-                # cloudy image
-                def set_cloudless_portion(ee_image):
-                    gd_image = self.image_type(ee_image, **kwargs)
-                    gd_image.set_region_stats(region)
-                    return gd_image.ee_image
-
-                ee_collection = ee_collection.map(set_cloudless_portion).sort('CLOUDLESS_PORTION')
-            else:
-                # sort the collection by capture date.  *mosaic will favour the most recent pixels.
-                ee_collection = ee_collection.sort('system:time_start')
-
-        if mask:
-            def mask_clouds(ee_image):
-                gd_image = self.image_type(ee_image, **kwargs)
-                gd_image.mask_clouds()
-                return gd_image.ee_image
-
-            ee_collection = ee_collection.map(mask_clouds)
-
-        if resampling != BaseImage._default_resampling:
-            def resample(ee_image):
-                return ee_image.resample(resampling.value)
-
-            ee_collection = ee_collection.map(resample)
+        ee_collection = self._prepare_for_composite(
+            method=method, mask=mask, resampling=resampling, date=date, region=region, **kwargs
+        )
 
         if method == CompositeMethod.q_mosaic:
             comp_image = ee_collection.qualityMosaic('CLOUD_DIST')
