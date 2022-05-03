@@ -261,13 +261,15 @@ from geedim import collection, image_from_id
 ee.Initialize()  # initialise earth engine
 
 # geojson region to search / download
-region = {"type": "Polygon",
-          "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
+region = {
+    "type": "Polygon",
+    "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]
+}
 
 # make collection and search
 gd_collection = collection.MaskedCollection('COPERNICUS/S2_SR')
 res_df = gd_collection.search('2019-01-10', '2019-01-21', region)
-print(gd_collection.summary_key)
+print(gd_collection.properties_key)
 print(gd_collection.summary)
 
 # create and download an image

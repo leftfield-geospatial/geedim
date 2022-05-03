@@ -72,6 +72,7 @@ class MaskedImage(BaseImage):
                 Maximum distance in meters (m) to look for clouds when forming the `cloud distance` band.  Valid for
                 Sentinel-2 images.
         """
+        # TODO: combine __init__ and from_id into an _init_ that checks type
         BaseImage.__init__(self, ee_image)
         self._add_aux_bands(**kwargs)  # add any mask and cloud distance bands
         if region:

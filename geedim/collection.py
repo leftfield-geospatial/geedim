@@ -15,12 +15,15 @@
 """
 
 import logging
+from collections import OrderedDict
 ##
 from datetime import datetime, timedelta
+from typing import Dict
 
 import ee
 import pandas
-import pandas as pd
+import tabulate
+from tabulate import TableFormat, Line, DataRow
 
 from geedim import info, medoid
 from geedim.enums import ResamplingMethod, CompositeMethod
@@ -28,9 +31,21 @@ from geedim.image import BaseImage, split_id
 from geedim.masked_image import MaskedImage, class_from_id
 
 logger = logging.getLogger(__name__)
-
+tabulate.MIN_PADDING = 0
 
 ##
+_table_fmt = TableFormat(
+    lineabove=Line("", "-", " ", ""),
+    linebelowheader=Line("", "-", " ", ""),
+    linebetweenrows=None,
+    linebelow=Line("", "-", " ", ""),
+    headerrow=DataRow("", " ", ""),
+    datarow=DataRow("", " ", ""),
+    padding=0,
+    with_header_hide=["lineabove", "linebelow"],
+)
+
+
 class MaskedCollection:
     """
     Class for encapsulating, searching and compositing an Earth Engine image collection, with support for
@@ -54,9 +69,11 @@ class MaskedCollection:
             self._collection_info = info.collection_info['*']
         self._ee_collection = ee.ImageCollection(ee_coll_name)
 
-        self._summary_key_df = pd.DataFrame(self._collection_info['properties'])  # key to metadata summary
+        # self._summary_key_df = pd.DataFrame(self._collection_info['properties'])  # key to metadata summary
         self._summary_df = None  # summary of the image metadata
         self._image_class = class_from_id(ee_coll_name)
+        self._properties = None
+
 
     @classmethod
     def from_list(cls, image_list):
@@ -107,96 +124,64 @@ class MaskedCollection:
         return self._ee_collection
 
     @property
-    def summary_key_df(self) -> pandas.DataFrame:
-        """
-        A key to MaskedCollection.summary_df (pandas.DataFrame with ABBREV and DESCRIPTION columns, and rows
-        corresponding to columns in summary_df).
-        """
-        return self._summary_key_df
+    def properties(self) -> Dict:
+        """ A dictionary of the properties for each image in the collection. """
+        if not self._properties:
+            self._properties = self._get_properties(self._ee_collection)
+        return self._properties
 
     @property
-    def summary_df(self) -> pandas.DataFrame:
-        """Summary of collection image properties with a row for each image."""
-        if self._summary_df is None:
-            self._summary_df = self._get_summary_df(self._ee_collection)
-        return self._summary_df
+    def properties_table(self) -> str:
+        """ `properties` formatted as a printable table. """
+        return self._get_properties_table(self.properties)
 
     @property
-    def summary_key(self) -> str:
-        """Formatted string of MaskedCollection.summary_key_df."""
-        return self._summary_key_df[['ABBREV', 'DESCRIPTION']].to_string(index=False, justify='right')
+    def properties_key(self) -> Dict:
+        """ A dictionary of abbreviations and descriptions for `properties`. """
+        properties_key = OrderedDict()
+        for prop_dict in self._collection_info['properties']:
+            properties_key[prop_dict['PROPERTY']] = prop_dict
+        return properties_key
 
     @property
-    def summary(self) -> str:
-        """Formatted string of MaskedCollection.summary_df."""
-        # TODO: allow this to be called before search & refactor all these methods
-        return self._get_summary_str(self._summary_df)
+    def key_table(self) -> str:
+        """ `properties_key` formatted as a printable table. """
+        key_dict = [dict(ABBREV=v['ABBREV'], DESCRIPTION=v['DESCRIPTION']) for v in self.properties_key.values()]
+        return tabulate.tabulate(key_dict, headers='keys', floatfmt='.2f', tablefmt=_table_fmt)
 
-    def _get_summary_str(self, summary_df) -> str:
-        """Get a formatted/printable string for a given summary DataFrame."""
-        return summary_df.to_string(
-            float_format='{:.2f}'.format, formatters={'DATE': lambda x: datetime.strftime(x, '%Y-%m-%d %H:%M')},
-            index=False, justify='center'
-        )#columns=self._summary_key_df.ABBREV,
-
-    def _aggregate_props(self, ee_collection, prop_list=None):
-        if not prop_list:
-            prop_list = list(self._summary_key_df.PROPERTY.values)
-        prop_list = ee.List(prop_list)
-        def _aggregate_props(ee_image, aggr_list):
-            return ee.List(aggr_list).add(ee_image.toDictionary(prop_list))
-        aggr_list = ee.List(ee_collection.iterate(_aggregate_props, ee.List([]))).getInfo()
-        for i, prop_dict in enumerate(aggr_list):
-            if 'system:time_start' in prop_dict:
-                prop_dict['system:time_start'] = datetime.utcfromtimestamp(prop_dict['system:time_start'] / 1000)
-        return aggr_list
-
-    def _get_summary_df(self, ee_collection) -> pandas.DataFrame:
+    def _get_properties(self, ee_collection) -> pandas.DataFrame:
         """Retrieve a summary of the collection image metadata."""
 
-        if ee_collection is None:
-            return pd.DataFrame([], columns=self._summary_key_df.ABBREV)  # return empty dataframe
-
         # server side aggregation of relevant properties of ee_collection images
-        prop_key_list = ee.List(list(self._summary_key_df.PROPERTY.values))
-        def aggregrate_props(ee_image, prop_list):
-            if False:
-                all_props = ee_image.propertyNames()
-                prop_dict = ee.Dictionary()
-                for prop_key in self._summary_key_df.PROPERTY.values:
-                    prop_dict = prop_dict.set(
-                        prop_key, ee.Algorithms.If(
-                            all_props.contains(prop_key), ee_image.get(prop_key), ee.String('None')
-                        )
-                    )
-            else:
-                prop_dict = ee_image.toDictionary(prop_key_list)
-            return ee.List(prop_list).add(prop_dict)
+        prop_key_list = ee.List([item['PROPERTY'] for item in self._collection_info['properties']] )
+        def aggregrate_props(ee_image, coll_dict):
+            im_dict = ee_image.toDictionary(prop_key_list)
+            return ee.Dictionary(coll_dict).set(ee_image.get('system:id'), im_dict)
 
         # retrieve list of dicts of collection image properties (the only call to getInfo() in MaskedCollection)
-        im_prop_list = ee.List(ee_collection.iterate(aggregrate_props, ee.List([]))).getInfo()
+        properties = ee.Dictionary(ee_collection.iterate(aggregrate_props, ee.Dictionary({}))).getInfo()
+        # sort
+        # coll_dict = OrderedDict(sorted(coll_dict.items(), key=lambda item: item[1][time_key]))
+        # TODO: make the collection_info itself a dict with property name as key
+        # TODO: py >=3.7 has ordered dicts by default, use these and make it a requirement
+        return properties
 
-        if len(im_prop_list) == 0:
-            return pd.DataFrame([], columns=self._summary_key_df.ABBREV)  # return empty dataframe
+    def _get_properties_table(self, properties: Dict, properties_key: Dict=None):
+        if not properties_key:
+            properties_key = self.properties_key
+        abbrev_props = OrderedDict()
+        for im_id, im_dict in properties.items():
+            im_odict = OrderedDict()
+            for prop_key, prop_dict in properties_key.items():
+                if prop_key in im_dict:
+                    if prop_key == 'system:time_start':
+                        dt = datetime.utcfromtimestamp(im_dict[prop_key] / 1000)
+                        im_odict[prop_dict['ABBREV']] = datetime.strftime(dt, '%Y-%m-%d %H:%M')
+                    else:
+                        im_odict[prop_dict['ABBREV']] = im_dict[prop_key]
+            abbrev_props[im_id] = im_odict
+        return tabulate.tabulate(abbrev_props.values(), headers='keys', floatfmt='.2f', tablefmt=_table_fmt)
 
-        # Convert ee.Date to python datetime
-        start_time_key = 'system:time_start'
-        for i, prop_dict in enumerate(im_prop_list):
-            if start_time_key in prop_dict:
-                prop_dict[start_time_key] = datetime.utcfromtimestamp(prop_dict[start_time_key] / 1000)
-
-        # convert property list to DataFrame
-        im_prop_df = pd.DataFrame(im_prop_list, columns=im_prop_list[0].keys())
-        im_prop_df = im_prop_df.sort_values(by=start_time_key).reset_index(drop=True)  # sort by acquisition time
-        im_prop_df = im_prop_df.reset_index(drop=True)
-        # abbreviate column names
-        im_prop_df = im_prop_df.rename(
-            columns=dict(zip(self._summary_key_df.PROPERTY, self._summary_key_df.ABBREV))
-        )
-        ordered_cols = [key for key in self._summary_key_df.ABBREV if key in im_prop_df.columns]
-        im_prop_df = im_prop_df[ordered_cols]  # reorder columns
-
-        return im_prop_df
 
     def search(self, start_date, end_date, region, cloudless_portion=0, **kwargs):
         """
@@ -232,19 +217,14 @@ class MaskedCollection:
             gd_image.set_region_stats(region)
             return gd_image.ee_image
 
-        try:
-            # filter the image collection, finding cloud/shadow masks, and region stats
-            self._ee_collection = (
-                self._ee_collection.filterDate(start_date, end_date).
-                    filterBounds(region).
-                    map(set_region_stats).
-                    filter(ee.Filter.gte('CLOUDLESS_PORTION', cloudless_portion))
-            )
-        finally:
-            # update summary_df with image metadata from the filtered collection
-            self._summary_df = self._get_summary_df(self._ee_collection)
-
-        return self._summary_df
+        # filter the image collection, finding cloud/shadow masks, and region stats
+        self._ee_collection = (
+            self._ee_collection.filterDate(start_date, end_date).
+                filterBounds(region).
+                map(set_region_stats).
+                filter(ee.Filter.gte('CLOUDLESS_PORTION', cloudless_portion))
+        )
+        return self.properties
 
     def composite(
             self, method=_default_comp_method, mask=True, resampling=BaseImage._default_resampling, date=None,
@@ -290,7 +270,6 @@ class MaskedCollection:
         comp_image: MaskedImage
             The composite image.
         """
-        # TODO: test composite of resampled images and resampled composite
         method = CompositeMethod(method)
         resampling = ResamplingMethod(resampling)
         if (method == CompositeMethod.q_mosaic) and (self._image_class == MaskedImage):
@@ -349,15 +328,14 @@ class MaskedCollection:
             raise ValueError(f'Unsupported composite method: {method}')
 
         # populate image metadata with info on component images
-        summary_df = self._get_summary_df(ee_collection)
-        summary_str = self._get_summary_str(summary_df)
-        comp_image = comp_image.set('COMPONENT_IMAGES', '\n' + summary_str)
+        props = self._get_properties(ee_collection)
+        props_str = self._get_properties_table(props)
+        comp_image = comp_image.set('COMPONENT_IMAGES', '\n' + props_str)
 
         # construct an ID for the composite
-        # TODO: get summary_df for ee_collection, not self._ee_collection.  We want to leave collection unchanged,
-        #  in case there are repeat composites/searches.  Which should also be tested.
-        start_date = summary_df.DATE.min().strftime('%Y_%m_%d')
-        end_date = summary_df.DATE.max().strftime('%Y_%m_%d')
+        dates = [datetime.utcfromtimestamp(v['system:time_start'] / 1000) for v in props.values()]
+        start_date = min(dates).strftime('%Y_%m_%d')
+        end_date = max(dates).strftime('%Y_%m_%d')
 
         method_str = method.value.upper()
         if method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic] and date:
@@ -366,7 +344,7 @@ class MaskedCollection:
         comp_id = f'{self._ee_coll_name}/{start_date}-{end_date}-{method_str}-COMP'
         comp_image = comp_image.set('system:id', comp_id)
         comp_image = comp_image.set('system:index', comp_id)
-        comp_image = comp_image.set('system:time_start', summary_df.DATE.iloc[0].timestamp() * 1000)
+        comp_image = comp_image.set('system:time_start', min(dates).timestamp() * 1000)
         gd_comp_image = self._image_class(comp_image)
 
         return gd_comp_image

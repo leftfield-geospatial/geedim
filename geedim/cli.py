@@ -322,6 +322,7 @@ def search(obj, collection, start_date, end_date, bbox, region, cloudless_portio
     if not obj.region:
         raise click.BadOptionUsage('region', 'Either pass --region or --bbox')
 
+    # TODO: add spinner
     logger.info(
         f'\nSearching for {collection} images between {start_date.strftime("%Y-%m-%d")} and '
         f'{end_date.strftime("%Y-%m-%d")}...'
@@ -329,27 +330,30 @@ def search(obj, collection, start_date, end_date, bbox, region, cloudless_portio
 
     # create collection wrapper and search
     gd_collection = coll_api.MaskedCollection(collection)
-    im_df = gd_collection.search(
+    results = gd_collection.search(
         start_date, end_date, obj.region, cloudless_portion=cloudless_portion, **obj.cloud_kwargs
     )
 
-    if im_df.shape[0] == 0:
+    if len(results) == 0:
         logger.info('No images found\n')
     else:
-        obj.image_list += im_df.ID.values.tolist()  # store ids for chained commands
-        logger.info(f'{im_df.shape[0]} images found\n')
-        logger.info(f'Image property descriptions:\n\n{gd_collection.summary_key}\n')
-        logger.info(f'Search Results:\n\n{gd_collection.summary}')
+        obj.image_list += list(results.keys())  # store ids for chained commands
+        logger.info(f'{len(results)} images found\n')
+        logger.info(f'Image property descriptions:\n\n{gd_collection.key_table}\n')
+        logger.info(f'Search Results:\n\n{gd_collection.properties_table}')
 
     # write results to file
     if output is not None:
+        # TODO: add csv here, or remove from -o option
         output = pathlib.Path(output)
-        if output.suffix == '.csv':
-            im_df.to_csv(output, index=False)
-        elif output.suffix == '.json':
-            im_df.to_json(output, orient='index')
-        else:
-            raise ValueError(f'Unknown output file extension: {output.suffix}')
+        with open(output, 'w') as f:
+            json.dump(results, f)
+        # if output.suffix == '.csv':
+        #     im_df.to_csv(output, index=False)
+        # elif output.suffix == '.json':
+        #     im_df.to_json(output, orient='index')
+        # else:
+        #     raise ValueError(f'Unknown output file extension: {output.suffix}')
 
 
 cli.add_command(search)

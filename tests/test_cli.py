@@ -59,10 +59,8 @@ class TestCli(unittest.TestCase):
 
                 # read json search results into a pandas dataframe
                 with open(results_filename) as f:
-                    res_dict = json.load(f)
-                res_df = pd.DataFrame.from_dict(res_dict, orient='index')
-                res_df.DATE = [datetime.utcfromtimestamp(ts / 1000) for ts in res_df.DATE.values]
-                _test_search_results(self, res_df, start_date, end_date)  # test search results
+                    results = json.load(f)
+                _test_search_results(self, results, start_date, end_date)  # test search results
 
     def test_download(self):
         """ Test download command on one image """
@@ -151,12 +149,10 @@ class TestCli(unittest.TestCase):
 
         # recreate search results and composite image, and check against file
         with open(results_filename) as f:
-            res_dict = json.load(f)
-        res_df = pd.DataFrame.from_dict(res_dict, orient='index')
-        res_df.DATE = [datetime.utcfromtimestamp(ts / 1000) for ts in res_df.DATE.values]
-        _test_search_results(self, res_df, start_date, end_date)  # check results
+            results = json.load(f)
+        _test_search_results(self, results, start_date, end_date)  # check results
 
-        gd_collection = collection.MaskedCollection.from_list(res_df.ID.values)
+        gd_collection = collection.MaskedCollection.from_list(list(results.keys()))
         comp_im = gd_collection.composite(method, mask=pdict['mask'])
         comp_fn = download_dir.joinpath(comp_im.name + '.tif')
         with open(region_filename) as f:
