@@ -21,8 +21,8 @@ import pandas as pd
 
 import geedim.image
 from geedim import image, collection, root_path, info
+from geedim.enums import CompositeMethod, ResamplingMethod
 from geedim.masked_image import MaskedImage
-from geedim.enums import CompositeMethod, CloudMaskMethod, ResamplingMethod
 from tests.util import _test_image_file, _test_search_results, _setup_test
 
 
@@ -58,8 +58,10 @@ class TestApi(unittest.TestCase):
             self.assertTrue(id in im_band_df.id.values, msg='Image has SR bands')
 
         # test reflectance statistics for a specific region
-        region = {"type": "Polygon",
-                  "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
+        region = {
+            "type": "Polygon",
+            "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]
+        }
         sr_band_ids = sr_band_df.id.tolist()
         sr_image = gd_image.ee_image.select(sr_band_ids)
         std_refl = sr_image.reduceRegion(reducer='stdDev', geometry=region, scale=2 * gd_image.scale).getInfo()
@@ -84,14 +86,18 @@ class TestApi(unittest.TestCase):
 
     def test_search(self):
         """ Test search on supported image collections.  """
-        region = {"type": "Polygon",
-                  "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
-        search_date_dict = {'LANDSAT/LT05/C02/T1_L2': ['2005-01-01', '2005-06-01'],
-                            'LANDSAT/LE07/C02/T1_L2': ['2019-01-01', '2019-02-01'],
-                            'LANDSAT/LC08/C02/T1_L2': ['2019-01-01', '2019-02-01'],
-                            'COPERNICUS/S2': ['2019-01-01', '2019-02-01'],
-                            'COPERNICUS/S2_SR': ['2019-01-01', '2019-02-01'],
-                            'MODIS/006/MCD43A4': ['2019-01-01', '2019-02-01']}
+        region = {
+            "type": "Polygon",
+            "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]
+        }
+        search_date_dict = {
+            'LANDSAT/LT05/C02/T1_L2': ['2005-01-01', '2005-06-01'],
+            'LANDSAT/LE07/C02/T1_L2': ['2019-01-01', '2019-02-01'],
+            'LANDSAT/LC08/C02/T1_L2': ['2019-01-01', '2019-02-01'],
+            'COPERNICUS/S2': ['2019-01-01', '2019-02-01'],
+            'COPERNICUS/S2_SR': ['2019-01-01', '2019-02-01'],
+            'MODIS/006/MCD43A4': ['2019-01-01', '2019-02-01']
+        }
         cloudless_portion = 10
         for ee_coll_name, search_dates in search_date_dict.items():
             # find search start / end dates based on collection start / end
@@ -107,13 +113,19 @@ class TestApi(unittest.TestCase):
     def test_download(self):
         """ Test download of images from different collections, and with different crs, and scale params. """
 
-        region = {"type": "Polygon",
-                  "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
+        region = {
+            "type": "Polygon",
+            "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]
+        }
         im_param_list = [
-            {'image_id': 'COPERNICUS/S2_SR/20190321T075619_20190321T081839_T35HKC', 'mask': True, 'crs': None,
-             'scale': 30, 'resampling': ResamplingMethod.near},
-            {'image_id': 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190301', 'mask': True, 'crs': None, 'scale': None,
-             'resampling': ResamplingMethod.near},
+            {
+                'image_id': 'COPERNICUS/S2_SR/20190321T075619_20190321T081839_T35HKC', 'mask': True, 'crs': None,
+                'scale': 30, 'resampling': ResamplingMethod.near
+            },
+            {
+                'image_id': 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190301', 'mask': True, 'crs': None, 'scale': None,
+                'resampling': ResamplingMethod.near
+            },
             # {'image_id': 'MODIS/006/MCD43A4/2019_01_01', 'mask': True, 'crs': 'EPSG:3857', 'scale': 500,
             #  'resampling': ResamplingMethod.near},
         ]
@@ -127,16 +139,20 @@ class TestApi(unittest.TestCase):
                 name = impdict["image_id"].replace('/', '-')
                 crs_str = impdict["crs"].replace(':', '_') if impdict["crs"] else 'None'
                 filename = root_path.joinpath(f'data/outputs/tests/{name}_{crs_str}_{impdict["scale"]}m.tif')
-                gd_image.download(filename, region=region, crs=impdict["crs"], scale=impdict["scale"],
-                                  resampling=impdict["resampling"], overwrite=True)
+                gd_image.download(
+                    filename, region=region, crs=impdict["crs"], scale=impdict["scale"],
+                    resampling=impdict["resampling"], overwrite=True
+                )
                 impdict.pop('image_id')
                 _test_image_file(self, image_obj=gd_image, filename=filename, region=region, **impdict)
 
     def test_export(self):
         """ Test export of an image, without waiting for completion. """
 
-        region = {"type": "Polygon",
-                  "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
+        region = {
+            "type": "Polygon",
+            "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]
+        }
         image_id = 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190128'
         ee_image = ee.Image(image_id)
         image.BaseImage(ee_image).export(image_id.replace('/', '-'), folder='geedim_test', region=region, wait=False)
@@ -162,8 +178,10 @@ class TestApi(unittest.TestCase):
             self.assertTrue(id in im_band_df.id.values, msg='Image has SR bands')
 
         # test image content for a specific region
-        region = {"type": "Polygon",
-                  "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]}
+        region = {
+            "type": "Polygon",
+            "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]
+        }
         sr_band_ids = sr_band_df[~sr_band_df.abbrev.str.startswith('BT')].id.tolist()
         sr_image = gd_image.ee_image.select(sr_band_ids)
         mean_refl = sr_image.reduceRegion(reducer='mean', geometry=region, scale=100).getInfo()
@@ -175,11 +193,16 @@ class TestApi(unittest.TestCase):
         """ Test each composite method on different collections. """
 
         param_list = [
-            {'image_ids': ['LANDSAT/LE07/C02/T1_L2/LE07_171083_20190129', 'LANDSAT/LE07/C02/T1_L2/LE07_171083_20190214',
-                           'LANDSAT/LE07/C02/T1_L2/LE07_171083_20190302'], 'mask': True},
-            {'image_ids': ['COPERNICUS/S2_SR/20190311T075729_20190311T082820_T35HKC',
-                           'COPERNICUS/S2_SR/20190316T075651_20190316T082220_T35HKC',
-                           'COPERNICUS/S2_SR/20190321T075619_20190321T081839_T35HKC'], 'mask': True},
+            {
+                'image_ids': ['LANDSAT/LE07/C02/T1_L2/LE07_171083_20190129',
+                              'LANDSAT/LE07/C02/T1_L2/LE07_171083_20190214',
+                              'LANDSAT/LE07/C02/T1_L2/LE07_171083_20190302'], 'mask': True
+            },
+            {
+                'image_ids': ['COPERNICUS/S2_SR/20190311T075729_20190311T082820_T35HKC',
+                              'COPERNICUS/S2_SR/20190316T075651_20190316T082220_T35HKC',
+                              'COPERNICUS/S2_SR/20190321T075619_20190321T081839_T35HKC'], 'mask': True
+            },
         ]
 
         for param_dict in param_list:

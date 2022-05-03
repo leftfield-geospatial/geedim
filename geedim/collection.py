@@ -53,7 +53,7 @@ class MaskedCollection:
     """
     _default_comp_method = CompositeMethod.q_mosaic
 
-    def __init__(self, ee_coll_name):
+    def __init__(self, ee_collection):
         """
         Create a MaskedCollection instance.
 
@@ -62,17 +62,16 @@ class MaskedCollection:
         ee_coll_name : str
             The ID of EE image collection encapsulate.
         """
-        self._ee_coll_name = ee_coll_name
-        if ee_coll_name in info.collection_info:
-            self._collection_info = info.collection_info[ee_coll_name]
-        else:
-            self._collection_info = info.collection_info['*']
-        self._ee_collection = ee.ImageCollection(ee_coll_name)
-
-        # self._summary_key_df = pd.DataFrame(self._collection_info['properties'])  # key to metadata summary
-        self._summary_df = None  # summary of the image metadata
-        self._image_class = class_from_id(ee_coll_name)
+        self._name = None
+        self._info = None
         self._properties = None
+        if isinstance(ee_collection, str):
+            self._ee_collection = ee.ImageCollection(ee_collection)
+            self._name = ee_collection
+        elif isinstance(ee_collection, ee.ImageCollection):
+            self._ee_collection = ee.ImageCollection(ee_collection)
+        else:
+            raise TypeError(f'Unsupported `ee_collection` type: {type(ee_collection)}')
 
 
     @classmethod
@@ -116,12 +115,35 @@ class MaskedCollection:
         # create the collection object
         gd_collection = cls(ee_coll_name)
         gd_collection._ee_collection = ee.ImageCollection(ee.List(ee_image_list))
+        gd_collection._name = ee_coll_name
         return gd_collection
 
     @property
     def ee_collection(self) -> ee.ImageCollection:
         """The encapsulated ee.ImageCollection."""
         return self._ee_collection
+
+    @property
+    def name(self)->str:
+        """ Name of the encapsulated Earth Engine collection. """
+        if not self._name:
+            image_id = self._ee_collection.first().getInfo()['id']
+            self._name = split_id(image_id)[0]
+        return self._name
+
+    @property
+    def info(self)->Dict:
+        if not self._info:
+            if self.name in info.collection_info:
+                self._info = info.collection_info[self.name]
+            else:
+                self._info = info.collection_info['*']
+        return self._info
+
+    @property
+    def image_type(self)->MaskedImage:
+        """ The geedim class for the images in the encapsulated collection. """
+        return class_from_id(self.name)
 
     @property
     def properties(self) -> Dict:
@@ -132,28 +154,28 @@ class MaskedCollection:
 
     @property
     def properties_table(self) -> str:
-        """ `properties` formatted as a printable table. """
+        """ `properties` formatted as a table. """
         return self._get_properties_table(self.properties)
 
     @property
     def properties_key(self) -> Dict:
         """ A dictionary of abbreviations and descriptions for `properties`. """
         properties_key = OrderedDict()
-        for prop_dict in self._collection_info['properties']:
+        for prop_dict in self.info['properties']:
             properties_key[prop_dict['PROPERTY']] = prop_dict
         return properties_key
 
     @property
     def key_table(self) -> str:
-        """ `properties_key` formatted as a printable table. """
+        """ `properties_key` formatted as a table. """
         key_dict = [dict(ABBREV=v['ABBREV'], DESCRIPTION=v['DESCRIPTION']) for v in self.properties_key.values()]
         return tabulate.tabulate(key_dict, headers='keys', floatfmt='.2f', tablefmt=_table_fmt)
 
-    def _get_properties(self, ee_collection) -> pandas.DataFrame:
+    def _get_properties(self, ee_collection) -> Dict:
         """Retrieve a summary of the collection image metadata."""
 
         # server side aggregation of relevant properties of ee_collection images
-        prop_key_list = ee.List([item['PROPERTY'] for item in self._collection_info['properties']] )
+        prop_key_list = ee.List([item['PROPERTY'] for item in self.info['properties']])
         def aggregrate_props(ee_image, coll_dict):
             im_dict = ee_image.toDictionary(prop_key_list)
             return ee.Dictionary(coll_dict).set(ee_image.get('system:id'), im_dict)
@@ -166,7 +188,7 @@ class MaskedCollection:
         # TODO: py >=3.7 has ordered dicts by default, use these and make it a requirement
         return properties
 
-    def _get_properties_table(self, properties: Dict, properties_key: Dict=None):
+    def _get_properties_table(self, properties: Dict, properties_key: Dict=None)->str:
         if not properties_key:
             properties_key = self.properties_key
         abbrev_props = OrderedDict()
@@ -213,7 +235,7 @@ class MaskedCollection:
             raise ValueError('`end_date` must be at least a day later than `start_date`')
 
         def set_region_stats(ee_image):
-            gd_image = self._image_class(ee_image, **kwargs)
+            gd_image = self.image_type(ee_image, **kwargs)
             gd_image.set_region_stats(region)
             return gd_image.ee_image
 
@@ -272,9 +294,9 @@ class MaskedCollection:
         """
         method = CompositeMethod(method)
         resampling = ResamplingMethod(resampling)
-        if (method == CompositeMethod.q_mosaic) and (self._image_class == MaskedImage):
+        if (method == CompositeMethod.q_mosaic) and (self.image_type == MaskedImage):
             # TODO get a list of supported collections, report this in CLI help too
-            raise ValueError(f'The `q-mosaic` method is not supported for the {self._ee_coll_name} collection.')
+            raise ValueError(f'The `q-mosaic` method is not supported for the {self.name} collection.')
 
         ee_collection = self._ee_collection
         if method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic]:
@@ -288,7 +310,7 @@ class MaskedCollection:
                 # sort the collection by cloud/shadow free portion, so that *mosaic favours pixels from the least
                 # cloudy image
                 def set_cloudless_portion(ee_image):
-                    gd_image = self._image_class(ee_image, **kwargs)
+                    gd_image = self.image_type(ee_image, **kwargs)
                     gd_image.set_region_stats(region)
                     return gd_image.ee_image
                 ee_collection = ee_collection.map(set_cloudless_portion).sort('CLOUDLESS_PORTION')
@@ -298,7 +320,7 @@ class MaskedCollection:
 
         if mask:
             def mask_clouds(ee_image):
-                gd_image = self._image_class(ee_image, **kwargs)
+                gd_image = self.image_type(ee_image, **kwargs)
                 gd_image.mask_clouds()
                 return gd_image.ee_image
             ee_collection = ee_collection.map(mask_clouds)
@@ -318,7 +340,7 @@ class MaskedCollection:
         elif method == CompositeMethod.medoid:
             # limit medoid to surface reflectance bands
             # TODO: we need another way to get sr_bands if we are removing collection_info
-            sr_bands = [band_dict['id'] for band_dict in self._collection_info['bands']]
+            sr_bands = [band_dict['id'] for band_dict in self.info['bands']]
             comp_image = medoid.medoid(ee_collection, bands=sr_bands)
         elif method == CompositeMethod.mode:
             comp_image = ee_collection.mode()
@@ -341,10 +363,10 @@ class MaskedCollection:
         if method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic] and date:
             method_str += '-' + date.strftime('%Y_%m_%d')
 
-        comp_id = f'{self._ee_coll_name}/{start_date}-{end_date}-{method_str}-COMP'
+        comp_id = f'{self.name}/{start_date}-{end_date}-{method_str}-COMP'
         comp_image = comp_image.set('system:id', comp_id)
         comp_image = comp_image.set('system:index', comp_id)
         comp_image = comp_image.set('system:time_start', min(dates).timestamp() * 1000)
-        gd_comp_image = self._image_class(comp_image)
+        gd_comp_image = self.image_type(comp_image)
 
         return gd_comp_image
