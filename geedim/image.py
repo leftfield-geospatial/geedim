@@ -40,6 +40,7 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 
 from geedim import info
 from geedim.enums import ResamplingMethod
+from geedim.errors import UnsupportedValueError, UnsupportedTypeError, IoError
 from geedim.tile import Tile, _requests_retry_session
 
 logger = logging.getLogger(__name__)
@@ -129,7 +130,7 @@ class BaseImage:
             The Earth Engine image to encapsulate.
         """
         if not isinstance(ee_image, ee.Image):
-            raise TypeError('ee_image must be an instance of ee.Image')
+            raise UnsupportedTypeError('`ee_image` must be an instance of ee.Image.')
         self._ee_image = ee_image
         self._ee_info = None
         self._id = None
@@ -361,7 +362,7 @@ class BaseImage:
             int32=ee.Image.toInt32,
         )
         if dtype not in conv_dict:
-            raise ValueError(f'Unsupported dtype: {dtype}')
+            raise UnsupportedTypeError(f'Unsupported dtype: {dtype}')
 
         return conv_dict[dtype](ee_image)
 
@@ -397,25 +398,25 @@ class BaseImage:
             # One or more of region, crs and scale were not provided, so get the image values to use instead
             if not self.has_fixed_projection:
                 # Raise an error if this image has no fixed projection
-                raise ValueError(
+                raise UnsupportedValueError(
                     f'This image does not have a fixed projection, you need to specify a region, '
                     f'crs and scale.'
                 )
 
         if not region and not self.footprint:
-            raise ValueError(f'This image does not have a footprint, you need to specify a region.')
+            raise UnsupportedValueError(f'This image does not have a footprint, you need to specify a region.')
 
         if self.crs == 'EPSG:4326' and not scale:
             # ee.Image.prepare_for_export() expects a scale in meters, but if the image is EPSG:4326, the default scale
             # is in degrees.
-            raise ValueError(f'This image is in EPSG:4326, you need to specify a scale in meters.')
+            raise UnsupportedValueError(f'This image is in EPSG:4326, you need to specify a scale in meters.')
 
         region = region or self.footprint  # TODO: test if this region is not in the download crs
         crs = crs or self.crs
         scale = scale or self.scale
 
         if crs == 'SR-ORG:6974':
-            raise ValueError(
+            raise UnsupportedValueError(
                 'There is an earth engine bug exporting in SR-ORG:6974, specify another CRS: '
                 'https://issuetracker.google.com/issues/194561313'
             )
@@ -424,7 +425,7 @@ class BaseImage:
         ee_image = self._ee_image
         if resampling != self._default_resampling:
             if not self.has_fixed_projection:
-                raise ValueError(
+                raise UnsupportedValueError(
                     'This image has no fixed projection and cannot be resampled.  If this image is a composite, '
                     'you can resample the images used to create the composite.'
                 )
@@ -528,7 +529,7 @@ class BaseImage:
     def _build_overviews(dataset: rio.io.DatasetWriter, max_num_levels=8, min_ovw_pixels=256):
         """Build internal overviews, downsampled by successive powers of 2, for an open rasterio dataset."""
         if dataset.closed:
-            raise IOError('Image dataset is closed')
+            raise IoError('Image dataset is closed')
 
         # limit overviews so that the highest level has at least 2**8=256 pixels along the shortest dimension,
         # and so there are no more than 8 levels.
@@ -541,7 +542,7 @@ class BaseImage:
     def _write_metadata(self, dataset: rio.io.DatasetWriter):
         """Write EE and geedim image metadata to an open rasterio dataset."""
         if dataset.closed:
-            raise IOError('Image dataset is closed')
+            raise IoError('Image dataset is closed')
 
         dataset.update_tags(**self.properties)
         # populate band metadata
@@ -633,7 +634,7 @@ class BaseImage:
                 bar.update(status['metadata']['progress'] - bar.n)
 
         if status['metadata']['state'] != 'SUCCEEDED':
-            raise IOError(f"Export failed \n{status}")
+            raise IoError(f"Export failed \n{status}")
 
     def export(self, filename, folder='', wait=True, **kwargs):
         """

@@ -14,6 +14,7 @@
     limitations under the License.
 """
 import json
+import csv
 import logging
 import os
 import pathlib
@@ -29,6 +30,7 @@ from rasterio.errors import CRSError
 from geedim import collection as coll_api, info, _ee_init, version
 from geedim.collection import MaskedCollection
 from geedim.enums import CloudMaskMethod, CompositeMethod, ResamplingMethod
+from geedim.errors import UnsupportedValueError
 from geedim.image import BaseImage, get_bounds
 from geedim.masked_image import MaskedImage
 
@@ -178,7 +180,7 @@ def _prepare_image_list(obj: SimpleNamespace, mask=False) -> List[MaskedImage,]:
             if mask:
                 im_obj.mask_clouds()
         else:
-            raise ValueError(f'Unsupported image object type: {type(im_obj)}')
+            raise UnsupportedValueError(f'Unsupported image object type: {type(im_obj)}')
         image_list.append(im_obj)
 
     if obj.region is None and any([not im.has_fixed_projection for im in image_list]):
@@ -344,16 +346,16 @@ def search(obj, collection, start_date, end_date, bbox, region, cloudless_portio
 
     # write results to file
     if output is not None:
-        # TODO: add csv here, or remove from -o option
         output = pathlib.Path(output)
-        with open(output, 'w') as f:
-            json.dump(gd_collection.properties, f)
-        # if output.suffix == '.csv':
-        #     im_df.to_csv(output, index=False)
-        # elif output.suffix == '.json':
-        #     im_df.to_json(output, orient='index')
-        # else:
-        #     raise ValueError(f'Unknown output file extension: {output.suffix}')
+        with open(output, 'w', encoding='utf8', newline='') as f:
+            if output.suffix == '.csv':
+                csv_writer = csv.DictWriter(f, fieldnames=gd_collection.properties[0].keys())
+                csv_writer.writeheader()
+                csv_writer.writerows(gd_collection.properties)
+            elif output.suffix == '.json':
+                json.dump(gd_collection.properties, f)
+            else:
+                raise click.BadOptionUsage('output', f'Unsupported output file extension: {output.suffix}')
 
 
 cli.add_command(search)
@@ -439,7 +441,7 @@ cli.add_command(export)
     help='Do/don\'t apply (cloud and shadow) nodata mask(s) before compositing.  [default: --mask]'
 )
 @resampling_option
-@bbox_option    # TODO: the implications of these options here needs to be explained.  Likewise for method.
+@bbox_option  # TODO: the implications of these options here needs to be explained.  Likewise for method.
 @region_option
 @click.option(
     '-d', '--date', type=click.DateTime(),

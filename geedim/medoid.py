@@ -111,8 +111,10 @@ def empty(value=0, names=None, from_dict=None):
     return image
 
 
-def euclideanDistance(image1, image2, bands=None, discard_zeros=False,
-                      name='distance'):
+def euclideanDistance(
+    image1, image2, bands=None, discard_zeros=False,
+    name='distance'
+):
     """ Compute the Euclidean distance between two images. The image's bands
     is the dimension of the arrays.
     :param image1:
@@ -156,8 +158,10 @@ def euclideanDistance(image1, image2, bands=None, discard_zeros=False,
     return d.rename(name)
 
 
-def sumDistance(image, collection, bands=None, discard_zeros=False,
-                name='sumdist'):
+def sumDistance(
+    image, collection, bands=None, discard_zeros=False,
+    name='sumdist'
+):
     """ Compute de sum of all distances between the given image and the
     collection passed
 
@@ -229,8 +233,10 @@ def intersection(eelist, intersect):
     def wrap(element, first):
         first = ee.List(first)
 
-        return ee.Algorithms.If(intersect.contains(element),
-                                first.add(element), first)
+        return ee.Algorithms.If(
+            intersect.contains(element),
+            first.add(element), first
+        )
 
     return ee.List(eelist.iterate(wrap, newlist))
 
@@ -264,8 +270,10 @@ def replace(image, to_replace, to_add):
     return img_final
 
 
-def medoidScore(collection, bands=None, discard_zeros=False,
-                bandname='sumdist', normalize=False):
+def medoidScore(
+    collection, bands=None, discard_zeros=False,
+    bandname='sumdist', normalize=False
+):
     """ Compute a score to reflect 'how far' is from the medoid. Same params
      as medoid() """
     first_image = ee.Image(collection.first())
@@ -296,7 +304,8 @@ def medoidScore(collection, bands=None, discard_zeros=False,
         dist = sumDistance(
             to_process, filtered,
             name=bandname,
-            discard_zeros=discard_zeros)
+            discard_zeros=discard_zeros
+        )
 
         # Mask zero values
         if not normalize:
@@ -320,9 +329,11 @@ def medoidScore(collection, bands=None, discard_zeros=False,
             sumdist = img.select(bandname)
             newband = ee.Image().expression(
                 '1-((val-min)/(max-min))',
-                {'val': sumdist,
-                 'min': min_sumdist,
-                 'max': max_sumdist}
+                {
+                    'val': sumdist,
+                    'min': min_sumdist,
+                    'max': max_sumdist
+                }
             ).rename(bandname)
             return replace(img, bandname, newband)
 

@@ -21,12 +21,12 @@ from datetime import datetime, timedelta
 from typing import Dict, List
 
 import ee
-import pandas
 import tabulate
 from tabulate import TableFormat, Line, DataRow
 
 from geedim import info, medoid
 from geedim.enums import ResamplingMethod, CompositeMethod
+from geedim.errors import UnfilteredError, UnsupportedValueError, UnsupportedTypeError, OutOfRangeError
 from geedim.image import BaseImage, split_id
 from geedim.masked_image import MaskedImage, class_from_id
 
@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 tabulate.MIN_PADDING = 0
 
 ##
+# tabulate format for collection properties
 _table_fmt = TableFormat(
     lineabove=Line("", "-", " ", ""),
     linebelowheader=Line("", "-", " ", ""),
@@ -59,11 +60,11 @@ class MaskedCollection:
 
         Parameters
         ----------
-        ee_coll_name : str
-            The ID of EE image collection encapsulate.
+        ee_collection : ee.ImageCollection
+            The Earth Engine image collection to encapsulate.
         """
         if not isinstance(ee_collection, ee.ImageCollection):
-            raise TypeError(f'`ee_collection` must be an instance of ee.ImageCollection')
+            raise UnsupportedTypeError(f'`ee_collection` must be an instance of ee.ImageCollection')
         self._name = None
         self._info = None
         self._properties = None
@@ -85,7 +86,7 @@ class MaskedCollection:
         gd_collection: MaskedCollection
             The MaskedCollection instance.
         """
-        # this could be incorporated into __init__ but keeping it separate for consistency with MaskedImage.from_id()
+        # this is separate from __inti__ for consistency with MaskedImage.from_id()
         gd_collection = cls(ee.ImageCollection(name))
         gd_collection._name = name
         return gd_collection
@@ -93,11 +94,11 @@ class MaskedCollection:
     @classmethod
     def from_list(cls, image_list):
         """
-        Create a MaskedCollection instance from a list of EE image IDs, ee.Image's and/or MaskedImage's
+        Create a MaskedCollection instance from a list of EE image IDs, ee.Image's and/or MaskedImage's.
 
         Parameters
         ----------
-        image_list : List[Union[str, ee.Image, MaskedImage], ]
+        image_list : List[Union[str, ee.Image, MaskedImage], ...]
             A list of images to include in the collection (must all be from the same EE collection).
 
         Returns
@@ -119,14 +120,14 @@ class MaskedCollection:
                 ee_image_list.append(image_obj.ee_image)
                 ee_id_list.append(image_obj.id)
             else:
-                raise TypeError(f'Unsupported image object type: {type(image_obj)}')
+                raise UnsupportedTypeError(f'Unsupported image object type: {type(image_obj)}')
 
         # check the images all come from the same collection
         ee_coll_name = split_id(ee_id_list[0])[0]
         id_check = [split_id(im_id)[0] == ee_coll_name for im_id in ee_id_list[1:]]
         if not all(id_check):
             # TODO: allow images from compatible landsat collections
-            raise ValueError('All images must belong to the same collection')
+            raise UnsupportedValueError('All images must belong to the same collection')
 
         # create the collection object
         gd_collection = cls.from_name(ee_coll_name)
@@ -137,12 +138,12 @@ class MaskedCollection:
 
     @property
     def ee_collection(self) -> ee.ImageCollection:
-        """The encapsulated ee.ImageCollection."""
+        """ The encapsulated Earth Engine image collection. """
         return self._ee_collection
 
     @property
     def name(self) -> str:
-        """ Name of the encapsulated Earth Engine collection. """
+        """ Name of the encapsulated Earth Engine image collection. """
         if not self._name:
             image_id = self._ee_collection.first().getInfo()['id']
             self._name = split_id(image_id)[0]
@@ -150,6 +151,7 @@ class MaskedCollection:
 
     @property
     def info(self) -> Dict:
+        """ Search properties and band metadata. """
         if not self._info:
             if self.name in info.collection_info:
                 self._info = info.collection_info[self.name]
@@ -158,17 +160,16 @@ class MaskedCollection:
         return self._info
 
     @property
-    def image_type(self) -> MaskedImage:
-        """ The geedim class for the images in the encapsulated collection. """
+    def image_type(self) -> type:
+        """ geedim class to encapsulate images from `ee_collection`. """
         return class_from_id(self.name)
 
     @property
     def properties(self) -> List:
-        """ A list of the properties for each image in the collection. """
+        """ Properties for each image in the collection. """
         if not self._filtered:
-            raise Exception(
-                '`properties` cannot be retrieved for unfiltered collections.  Call `properties` on '
-                'collections returned from `search(...)` and `from_list(...)`'
+            raise UnfilteredError(
+                '`properties` can only be retrieved for collections returned from `search()` and `from_list()`'
             )
         if not self._properties:
             self._properties = self._get_properties(self._ee_collection)
@@ -181,7 +182,7 @@ class MaskedCollection:
 
     @property
     def properties_key(self) -> Dict:
-        """ A dictionary of abbreviations and descriptions for `properties`. """
+        """ Abbreviations and descriptions for `properties`. """
         return self.info['properties']
 
     @property
@@ -190,52 +191,35 @@ class MaskedCollection:
         key_dict = [dict(ABBREV=v['ABBREV'], DESCRIPTION=v['DESCRIPTION']) for v in self.properties_key]
         return tabulate.tabulate(key_dict, headers='keys', floatfmt='.2f', tablefmt=_table_fmt)
 
-    def __get_properties(self, ee_collection) -> Dict:
-        """Retrieve a summary of the collection image metadata."""
+    def _get_properties(self, ee_collection: ee.ImageCollection) -> List:
+        """ Retrieve properties of images in a given Earth Engine image collection. """
 
-        # server side aggregation of relevant properties of ee_collection images
-        prop_key_list = ee.List([item['PROPERTY'] for item in self.info['properties']])
-
-        def aggregrate_props(ee_image, coll_dict):
-            im_dict = ee_image.toDictionary(prop_key_list)
-            return ee.Dictionary(coll_dict).set(ee_image.get('system:id'), im_dict)
-
-        # retrieve list of dicts of collection image properties (the only call to getInfo() in MaskedCollection)
-        properties = ee.Dictionary(ee_collection.iterate(aggregrate_props, ee.Dictionary({}))).getInfo()
-        # sort
-        # coll_dict = OrderedDict(sorted(coll_dict.items(), key=lambda item: item[1][time_key]))
-        # TODO: make the collection_info itself a dict with property name as key
-        # TODO: py >=3.7 has ordered dicts by default, use these and make it a requirement
-        return properties
-
-    def _get_properties(self, ee_collection) -> List:
-        """Retrieve a summary of the collection image metadata."""
-
-        # server side aggregation of relevant properties of ee_collection images
+        # the properties to retrieve
         prop_key_list = ee.List([item['PROPERTY'] for item in self.info['properties']])
 
         def aggregrate_props(ee_image, coll_list):
             im_dict = ee_image.toDictionary(prop_key_list)
             return ee.List(coll_list).add(im_dict)
 
-        # retrieve list of dicts of collection image properties (the only call to getInfo() in MaskedCollection)
-        properties = ee.List(ee_collection.iterate(aggregrate_props, ee.List([]))).getInfo()
-        # sort
-        # coll_dict = OrderedDict(sorted(coll_dict.items(), key=lambda item: item[1][time_key]))
-        # TODO: make the collection_info itself a dict with property name as key
-        # TODO: py >=3.7 has ordered dicts by default, use these and make it a requirement
-        return properties
+        # retrieve list of dicts of properties of images in ee_collection
+        return ee.List(ee_collection.iterate(aggregrate_props, ee.List([]))).getInfo()
 
-    def _get_properties_table(self, properties: Dict, properties_key: Dict = None) -> str:
+    def _get_properties_table(self, properties: List, properties_key: List = None) -> str:
+        """
+        Format the given properties into a table.  Orders properties (columns) according `properties_key` and replaces
+        long form property names with abbreviations.
+        """
         if not properties_key:
             properties_key = self.properties_key
+
         abbrev_props = []
         for im_dict in properties:
             im_odict = OrderedDict()
             for prop_dict in properties_key:
+                # re-order and abbreviate
                 prop_key = prop_dict['PROPERTY']
                 if prop_key in im_dict:
-                    if prop_key == 'system:time_start':
+                    if prop_key == 'system:time_start':  # convert timestamp to date string
                         dt = datetime.utcfromtimestamp(im_dict[prop_key] / 1000)
                         im_odict[prop_dict['ABBREV']] = datetime.strftime(dt, '%Y-%m-%d %H:%M')
                     else:
@@ -245,7 +229,7 @@ class MaskedCollection:
 
     def search(self, start_date, end_date, region, cloudless_portion=0, **kwargs):
         """
-        Search for images based on date, region etc criteria
+        Search for images based on date, region and cloudless portion criteria.
 
         Parameters
         ----------
@@ -253,36 +237,38 @@ class MaskedCollection:
             Start image capture date.
         end_date : datetime.datetime
             End image capture date (if None, then set to start_date + 1 day).
-        region : dict, geojson, ee.Geometry
+        region : dict, ee.Geometry
             Polygon in WGS84 specifying a region that images should intersect.
         cloudless_portion: int, optional
             Minimum portion (%) of image pixels that should be cloud/shadow free.
         kwargs: optional
-            Cloud/shadow masking parameters - see geedim.MaskedImage.__init__() for details.
+            Cloud/shadow masking parameters - see MaskedImage.__init__() for details.
 
         Returns
         -------
-        results_df: pandas.DataFrame
-            Dataframe specifying image properties that match the search criteria.
+        gd_collection: MaskedCollection
+            A new MaskedCollection instance containing the search filtered images.
         """
-        # Initialise
         if end_date is None:
             end_date = start_date + timedelta(days=1)
         if end_date <= start_date:
-            raise ValueError('`end_date` must be at least a day later than `start_date`')
+            raise OutOfRangeError('`end_date` must be at least a day later than `start_date`')
 
-        def set_region_stats(ee_image):
+        def set_region_stats(ee_image: ee.Image):
+            """ Find filled and cloud/shadow free portions inside the search region for a given image.  """
             gd_image = self.image_type(ee_image, **kwargs)
             gd_image.set_region_stats(region)
             return gd_image.ee_image
 
-        # filter the image collection, finding cloud/shadow masks, and region stats
+        # filter the image collection, finding cloud/shadow masks and region stats
         ee_collection = (
             self._ee_collection.filterDate(start_date, end_date).
                 filterBounds(region).
                 map(set_region_stats).
                 filter(ee.Filter.gte('CLOUDLESS_PORTION', cloudless_portion))
         )
+        # return a new MaskedCollection containing the filtered EE collection (the EE collection
+        # wrapped by MaskedCollection remains fixed)
         gd_collection = MaskedCollection(ee_collection)
         gd_collection._filtered = True
         return gd_collection
@@ -292,16 +278,16 @@ class MaskedCollection:
         region=None, **kwargs
     ):
         """
-        Create a composite image from the encapsulated collection.
+        Create a composite image from the encapsulated image collection.
 
         Parameters
         ----------
         method: CompositeMethod, optional
-            The comppositing method to use.  One of:
-                `q_mosiac`: Select each composite pixel from the collection image with the highest quality (cloud
-                    distance). When more than one image shares the highest quality value, the first of the competing
-                    images is used. Valid for cloud/shadow maskable image collections only (Sentinel-2 TOA and SR, and
-                    Landsat4-9 level 2 collection 2).
+            The compositing method to use.  One of:
+                `q_mosiac`: Select each composite pixel from the collection image with the highest quality (i.e.
+                    distance to nearest cloud). When more than one image shares the highest quality value,
+                    the first of the competing images is used. Valid for cloud/shadow maskable image collections only
+                    (Sentinel-2 TOA and SR, and Landsat4-9 level 2 collection 2).
                 `mosaic`: Select each composite pixel from the first unmasked collection image.
                 `medoid`: Select each composite pixel as the the image pixel having the minimum summed diff (across
                     bands) from the median of all collection images.  Maintains the original relationship between
@@ -310,21 +296,21 @@ class MaskedCollection:
                 `mode`: Mode of the collection images.
                 `mean`: Mean of the collection images.
         mask: bool, optional
-            Whether to cloud/shadow mask images before compositing  [default: True].
+            Mask cloud/shadow before compositing  [default: True].
         resampling: ResamplingMethod, optional
             The resampling method to use on collection images prior to compositing.  If 'near', no resampling is done
             [default: 'near'].
         date: datetime.datetime, optional
             Sort collection images by their absolute difference in time from this date.  Useful for
             prioritising pixels from images closest to this date.  Valid for the `q-mosaic`
-            and `mosaic` methods only.  If None, time difference sorting is not done. [default: None].
+            and `mosaic` methods only.  If None, no time difference sorting is done. [default: None].
         region: dict, geojson, optional
             Sort collection images by their cloudless portion inside this region (only if `date` is not
-            specified).  This is useful to prioritise pixels from the least cloudy image(s).  If `date` and `region`
-            are not specified, collection images are sorted by their capture date.  Valid for the `q-mosaic` and
-            `mosaic` methods.
+            specified).  This is useful to prioritise pixels from the least cloudy image(s).  Valid for the `q-mosaic`
+            and `mosaic` methods.  If `date` and `region` are not specified, collection images are sorted by their
+            capture date.
         kwargs: optional
-            Cloud/shadow masking parameters - see geedim.MaskedImage.__init__() for details.
+            Cloud/shadow masking parameters - see MaskedImage.__init__() for details.
 
         Returns
         -------
@@ -332,22 +318,21 @@ class MaskedCollection:
             The composite image.
         """
         if not self._filtered:
-            raise Exception(
-                'Composites cannot be created from unfiltered collections.  `composite` can be called on '
-                'collections returned from `search(...)`, and `from_list(...)`'
+            raise UnfilteredError(
+                'Composites can only be created from collections returned from `search()` and `from_list()`'
             )
 
         if isinstance(date, str):
             try:
                 date = datetime.strptime(date, '%Y-%m-%d')
             except ValueError:
-                raise ValueError('`date` should be a datetime instance or a string with format: "%Y-%m-%d"')
+                raise UnsupportedValueError('`date` should be a datetime instance or a string with format: "%Y-%m-%d"')
 
         method = CompositeMethod(method)
         resampling = ResamplingMethod(resampling)
         if (method == CompositeMethod.q_mosaic) and (self.image_type == MaskedImage):
             # TODO get a list of supported collections, report this in CLI help too
-            raise ValueError(f'The `q-mosaic` method is not supported for the {self.name} collection.')
+            raise UnsupportedValueError(f'The `q-mosaic` method is not supported for the {self.name} collection.')
 
         ee_collection = self._ee_collection
         if method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic]:
@@ -402,9 +387,9 @@ class MaskedCollection:
         elif method == CompositeMethod.mean:
             comp_image = ee_collection.mean()
         else:
-            raise ValueError(f'Unsupported composite method: {method}')
+            raise UnsupportedValueError(f'Unsupported composite method: {method}')
 
-        # populate image metadata with info on component images
+        # populate composite image metadata with info on component images
         props = self._get_properties(ee_collection)
         props_str = self._get_properties_table(props)
         comp_image = comp_image.set('COMPONENT_IMAGES', 'TABLE:\n' + props_str)
@@ -421,7 +406,8 @@ class MaskedCollection:
         comp_id = f'{self.name}/{start_date}-{end_date}-{method_str}-COMP'
         comp_image = comp_image.set('system:id', comp_id)
         comp_image = comp_image.set('system:index', comp_id)
-        comp_image = comp_image.set('system:time_start', min(dates).timestamp() * 1000)
-        gd_comp_image = self.image_type(comp_image)
 
-        return gd_comp_image
+        # set the composite capture time to the capture time of the first component image
+        comp_image = comp_image.set('system:time_start', min(dates).timestamp() * 1000)
+
+        return self.image_type(comp_image)
