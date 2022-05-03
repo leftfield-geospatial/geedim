@@ -337,7 +337,7 @@ def search(obj, collection, start_date, end_date, bbox, region, cloudless_portio
     if len(gd_collection.properties) == 0:
         logger.info('No images found\n')
     else:
-        obj.image_list += list(gd_collection.properties.keys())  # store ids for chained commands
+        obj.image_list += [item['system:id'] for item in gd_collection.properties]  # store ids for chained commands
         logger.info(f'{len(gd_collection.properties)} images found\n')
         logger.info(f'Image property descriptions:\n\n{gd_collection.key_table}\n')
         logger.info(f'Search Results:\n\n{gd_collection.properties_table}')

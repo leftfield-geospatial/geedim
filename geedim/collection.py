@@ -18,7 +18,7 @@ import logging
 from collections import OrderedDict
 ##
 from datetime import datetime, timedelta
-from typing import Dict
+from typing import Dict, List
 
 import ee
 import pandas
@@ -141,7 +141,7 @@ class MaskedCollection:
         return self._ee_collection
 
     @property
-    def name(self)->str:
+    def name(self) -> str:
         """ Name of the encapsulated Earth Engine collection. """
         if not self._name:
             image_id = self._ee_collection.first().getInfo()['id']
@@ -149,7 +149,7 @@ class MaskedCollection:
         return self._name
 
     @property
-    def info(self)->Dict:
+    def info(self) -> Dict:
         if not self._info:
             if self.name in info.collection_info:
                 self._info = info.collection_info[self.name]
@@ -158,16 +158,16 @@ class MaskedCollection:
         return self._info
 
     @property
-    def image_type(self)->MaskedImage:
+    def image_type(self) -> MaskedImage:
         """ The geedim class for the images in the encapsulated collection. """
         return class_from_id(self.name)
 
     @property
-    def properties(self) -> Dict:
-        """ A dictionary of the properties for each image in the collection. """
+    def properties(self) -> List:
+        """ A list of the properties for each image in the collection. """
         if not self._filtered:
             raise Exception(
-                '`properties` cannot be retrieved for unfiltered collections.  You can call `properties` on '
+                '`properties` cannot be retrieved for unfiltered collections.  Call `properties` on '
                 'collections returned from `search(...)` and `from_list(...)`'
             )
         if not self._properties:
@@ -182,22 +182,20 @@ class MaskedCollection:
     @property
     def properties_key(self) -> Dict:
         """ A dictionary of abbreviations and descriptions for `properties`. """
-        properties_key = OrderedDict()
-        for prop_dict in self.info['properties']:
-            properties_key[prop_dict['PROPERTY']] = prop_dict
-        return properties_key
+        return self.info['properties']
 
     @property
     def key_table(self) -> str:
         """ `properties_key` formatted as a table. """
-        key_dict = [dict(ABBREV=v['ABBREV'], DESCRIPTION=v['DESCRIPTION']) for v in self.properties_key.values()]
+        key_dict = [dict(ABBREV=v['ABBREV'], DESCRIPTION=v['DESCRIPTION']) for v in self.properties_key]
         return tabulate.tabulate(key_dict, headers='keys', floatfmt='.2f', tablefmt=_table_fmt)
 
-    def _get_properties(self, ee_collection) -> Dict:
+    def __get_properties(self, ee_collection) -> Dict:
         """Retrieve a summary of the collection image metadata."""
 
         # server side aggregation of relevant properties of ee_collection images
         prop_key_list = ee.List([item['PROPERTY'] for item in self.info['properties']])
+
         def aggregrate_props(ee_image, coll_dict):
             im_dict = ee_image.toDictionary(prop_key_list)
             return ee.Dictionary(coll_dict).set(ee_image.get('system:id'), im_dict)
@@ -210,22 +208,40 @@ class MaskedCollection:
         # TODO: py >=3.7 has ordered dicts by default, use these and make it a requirement
         return properties
 
-    def _get_properties_table(self, properties: Dict, properties_key: Dict=None)->str:
+    def _get_properties(self, ee_collection) -> List:
+        """Retrieve a summary of the collection image metadata."""
+
+        # server side aggregation of relevant properties of ee_collection images
+        prop_key_list = ee.List([item['PROPERTY'] for item in self.info['properties']])
+
+        def aggregrate_props(ee_image, coll_list):
+            im_dict = ee_image.toDictionary(prop_key_list)
+            return ee.List(coll_list).add(im_dict)
+
+        # retrieve list of dicts of collection image properties (the only call to getInfo() in MaskedCollection)
+        properties = ee.List(ee_collection.iterate(aggregrate_props, ee.List([]))).getInfo()
+        # sort
+        # coll_dict = OrderedDict(sorted(coll_dict.items(), key=lambda item: item[1][time_key]))
+        # TODO: make the collection_info itself a dict with property name as key
+        # TODO: py >=3.7 has ordered dicts by default, use these and make it a requirement
+        return properties
+
+    def _get_properties_table(self, properties: Dict, properties_key: Dict = None) -> str:
         if not properties_key:
             properties_key = self.properties_key
-        abbrev_props = OrderedDict()
-        for im_id, im_dict in properties.items():
+        abbrev_props = []
+        for im_dict in properties:
             im_odict = OrderedDict()
-            for prop_key, prop_dict in properties_key.items():
+            for prop_dict in properties_key:
+                prop_key = prop_dict['PROPERTY']
                 if prop_key in im_dict:
                     if prop_key == 'system:time_start':
                         dt = datetime.utcfromtimestamp(im_dict[prop_key] / 1000)
                         im_odict[prop_dict['ABBREV']] = datetime.strftime(dt, '%Y-%m-%d %H:%M')
                     else:
                         im_odict[prop_dict['ABBREV']] = im_dict[prop_key]
-            abbrev_props[im_id] = im_odict
-        return tabulate.tabulate(abbrev_props.values(), headers='keys', floatfmt='.2f', tablefmt=_table_fmt)
-
+            abbrev_props.append(im_odict)
+        return tabulate.tabulate(abbrev_props, headers='keys', floatfmt='.2f', tablefmt=_table_fmt)
 
     def search(self, start_date, end_date, region, cloudless_portion=0, **kwargs):
         """
@@ -249,7 +265,6 @@ class MaskedCollection:
         results_df: pandas.DataFrame
             Dataframe specifying image properties that match the search criteria.
         """
-        # TODO: make a reset method to unfilter the collection
         # Initialise
         if end_date is None:
             end_date = start_date + timedelta(days=1)
@@ -273,8 +288,8 @@ class MaskedCollection:
         return gd_collection
 
     def composite(
-            self, method=_default_comp_method, mask=True, resampling=BaseImage._default_resampling, date=None,
-            region=None, **kwargs
+        self, method=_default_comp_method, mask=True, resampling=BaseImage._default_resampling, date=None,
+        region=None, **kwargs
     ):
         """
         Create a composite image from the encapsulated collection.
@@ -322,6 +337,12 @@ class MaskedCollection:
                 'collections returned from `search(...)`, and `from_list(...)`'
             )
 
+        if isinstance(date, str):
+            try:
+                date = datetime.strptime(date, '%Y-%m-%d')
+            except ValueError:
+                raise ValueError('`date` should be a datetime instance or a string with format: "%Y-%m-%d"')
+
         method = CompositeMethod(method)
         resampling = ResamplingMethod(resampling)
         if (method == CompositeMethod.q_mosaic) and (self.image_type == MaskedImage):
@@ -335,6 +356,7 @@ class MaskedCollection:
                 def set_date_dist(ee_image):
                     date_dist = ee.Number(ee_image.get('system:time_start')).subtract(ee.Date(date).millis()).abs()
                     return ee_image.set('DATE_DIST', date_dist)
+
                 ee_collection = ee_collection.map(set_date_dist).sort('DATE_DIST', opt_ascending=False)
             elif region:
                 # sort the collection by cloud/shadow free portion, so that *mosaic favours pixels from the least
@@ -343,6 +365,7 @@ class MaskedCollection:
                     gd_image = self.image_type(ee_image, **kwargs)
                     gd_image.set_region_stats(region)
                     return gd_image.ee_image
+
                 ee_collection = ee_collection.map(set_cloudless_portion).sort('CLOUDLESS_PORTION')
             else:
                 # sort the collection by capture date.  *mosaic will favour the most recent pixels.
@@ -353,11 +376,13 @@ class MaskedCollection:
                 gd_image = self.image_type(ee_image, **kwargs)
                 gd_image.mask_clouds()
                 return gd_image.ee_image
+
             ee_collection = ee_collection.map(mask_clouds)
 
         if resampling != BaseImage._default_resampling:
             def resample(ee_image):
                 return ee_image.resample(resampling.value)
+
             ee_collection = ee_collection.map(resample)
 
         if method == CompositeMethod.q_mosaic:
@@ -382,10 +407,10 @@ class MaskedCollection:
         # populate image metadata with info on component images
         props = self._get_properties(ee_collection)
         props_str = self._get_properties_table(props)
-        comp_image = comp_image.set('COMPONENT_IMAGES', '\n' + props_str)
+        comp_image = comp_image.set('COMPONENT_IMAGES', 'TABLE:\n' + props_str)
 
         # construct an ID for the composite
-        dates = [datetime.utcfromtimestamp(v['system:time_start'] / 1000) for v in props.values()]
+        dates = [datetime.utcfromtimestamp(item['system:time_start'] / 1000) for item in props]
         start_date = min(dates).strftime('%Y_%m_%d')
         end_date = max(dates).strftime('%Y_%m_%d')
 
