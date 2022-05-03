@@ -102,7 +102,7 @@ class TestApi(unittest.TestCase):
         for ee_coll_name, search_dates in search_date_dict.items():
             # find search start / end dates based on collection start / end
             with self.subTest('Search', ee_coll_name=ee_coll_name):
-                gd_collection = collection.MaskedCollection(ee_coll_name)
+                gd_collection = collection.MaskedCollection.from_name(ee_coll_name)
                 gd_collection = gd_collection.search(
                     search_dates[0], search_dates[1], region, cloudless_portion=cloudless_portion
                 )

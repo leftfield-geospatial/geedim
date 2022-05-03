@@ -329,7 +329,7 @@ def search(obj, collection, start_date, end_date, bbox, region, cloudless_portio
     )
 
     # create collection wrapper and search
-    gd_collection = coll_api.MaskedCollection(collection)
+    gd_collection = coll_api.MaskedCollection.from_name(collection)
     gd_collection = gd_collection.search(
         start_date, end_date, obj.region, cloudless_portion=cloudless_portion, **obj.cloud_kwargs
     )

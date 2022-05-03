@@ -62,18 +62,33 @@ class MaskedCollection:
         ee_coll_name : str
             The ID of EE image collection encapsulate.
         """
+        if not isinstance(ee_collection, ee.ImageCollection):
+            raise TypeError(f'`ee_collection` must be an instance of ee.ImageCollection')
         self._name = None
         self._info = None
         self._properties = None
         self._filtered = False
-        if isinstance(ee_collection, str):
-            self._ee_collection = ee.ImageCollection(ee_collection)
-            self._name = ee_collection
-        elif isinstance(ee_collection, ee.ImageCollection):
-            self._ee_collection = ee.ImageCollection(ee_collection)
-        else:
-            raise TypeError(f'Unsupported `ee_collection` type: {type(ee_collection)}')
+        self._ee_collection = ee_collection
 
+    @classmethod
+    def from_name(cls, name):
+        """
+        Create a MaskedCollection instance from an Earth Engine image collection name.
+
+        Parameters
+        ----------
+        name: str
+            The name of the Earth Engine image collection to create.
+
+        Returns
+        -------
+        gd_collection: MaskedCollection
+            The MaskedCollection instance.
+        """
+        # this could be incorporated into __init__ but keeping it separate for consistency with MaskedImage.from_id()
+        gd_collection = cls(ee.ImageCollection(name))
+        gd_collection._name = name
+        return gd_collection
 
     @classmethod
     def from_list(cls, image_list):
@@ -87,7 +102,7 @@ class MaskedCollection:
 
         Returns
         -------
-        collection: MaskedCollection
+        gd_collection: MaskedCollection
             The MaskedCollection instance.
         """
         # build lists of EE images and IDs from image_list
@@ -114,7 +129,7 @@ class MaskedCollection:
             raise ValueError('All images must belong to the same collection')
 
         # create the collection object
-        gd_collection = cls(ee_coll_name)
+        gd_collection = cls.from_name(ee_coll_name)
         gd_collection._ee_collection = ee.ImageCollection(ee.List(ee_image_list))
         gd_collection._name = ee_coll_name
         gd_collection._filtered = True
@@ -303,8 +318,8 @@ class MaskedCollection:
         """
         if not self._filtered:
             raise Exception(
-                'Composites cannot be created from unfiltered collections.  You can call `composite` on '
-                'collections returned from `search(...)` and `from_list(...)`'
+                'Composites cannot be created from unfiltered collections.  `composite` can be called on '
+                'collections returned from `search(...)`, and `from_list(...)`'
             )
 
         method = CompositeMethod(method)
