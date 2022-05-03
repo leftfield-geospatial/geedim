@@ -330,15 +330,15 @@ def search(obj, collection, start_date, end_date, bbox, region, cloudless_portio
 
     # create collection wrapper and search
     gd_collection = coll_api.MaskedCollection(collection)
-    results = gd_collection.search(
+    gd_collection = gd_collection.search(
         start_date, end_date, obj.region, cloudless_portion=cloudless_portion, **obj.cloud_kwargs
     )
 
-    if len(results) == 0:
+    if len(gd_collection.properties) == 0:
         logger.info('No images found\n')
     else:
-        obj.image_list += list(results.keys())  # store ids for chained commands
-        logger.info(f'{len(results)} images found\n')
+        obj.image_list += list(gd_collection.properties.keys())  # store ids for chained commands
+        logger.info(f'{len(gd_collection.properties)} images found\n')
         logger.info(f'Image property descriptions:\n\n{gd_collection.key_table}\n')
         logger.info(f'Search Results:\n\n{gd_collection.properties_table}')
 
@@ -347,7 +347,7 @@ def search(obj, collection, start_date, end_date, bbox, region, cloudless_portio
         # TODO: add csv here, or remove from -o option
         output = pathlib.Path(output)
         with open(output, 'w') as f:
-            json.dump(results, f)
+            json.dump(gd_collection.properties, f)
         # if output.suffix == '.csv':
         #     im_df.to_csv(output, index=False)
         # elif output.suffix == '.json':

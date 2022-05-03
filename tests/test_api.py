@@ -103,11 +103,12 @@ class TestApi(unittest.TestCase):
             # find search start / end dates based on collection start / end
             with self.subTest('Search', ee_coll_name=ee_coll_name):
                 gd_collection = collection.MaskedCollection(ee_coll_name)
-                results = gd_collection.search(
+                gd_collection = gd_collection.search(
                     search_dates[0], search_dates[1], region, cloudless_portion=cloudless_portion
                 )
                 _test_search_results(
-                    self, results, search_dates[0], search_dates[1], cloudless_portion=cloudless_portion
+                    self, gd_collection.properties, search_dates[0], search_dates[1],
+                    cloudless_portion=cloudless_portion
                 )
 
     def test_download(self):

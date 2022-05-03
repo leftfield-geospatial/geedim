@@ -65,6 +65,7 @@ class MaskedCollection:
         self._name = None
         self._info = None
         self._properties = None
+        self._filtered = False
         if isinstance(ee_collection, str):
             self._ee_collection = ee.ImageCollection(ee_collection)
             self._name = ee_collection
@@ -116,6 +117,7 @@ class MaskedCollection:
         gd_collection = cls(ee_coll_name)
         gd_collection._ee_collection = ee.ImageCollection(ee.List(ee_image_list))
         gd_collection._name = ee_coll_name
+        gd_collection._filtered = True
         return gd_collection
 
     @property
@@ -148,6 +150,11 @@ class MaskedCollection:
     @property
     def properties(self) -> Dict:
         """ A dictionary of the properties for each image in the collection. """
+        if not self._filtered:
+            raise Exception(
+                '`properties` cannot be retrieved for unfiltered collections.  You can call `properties` on '
+                'collections returned from `search(...)` and `from_list(...)`'
+            )
         if not self._properties:
             self._properties = self._get_properties(self._ee_collection)
         return self._properties
@@ -240,13 +247,15 @@ class MaskedCollection:
             return gd_image.ee_image
 
         # filter the image collection, finding cloud/shadow masks, and region stats
-        self._ee_collection = (
+        ee_collection = (
             self._ee_collection.filterDate(start_date, end_date).
                 filterBounds(region).
                 map(set_region_stats).
                 filter(ee.Filter.gte('CLOUDLESS_PORTION', cloudless_portion))
         )
-        return self.properties
+        gd_collection = MaskedCollection(ee_collection)
+        gd_collection._filtered = True
+        return gd_collection
 
     def composite(
             self, method=_default_comp_method, mask=True, resampling=BaseImage._default_resampling, date=None,
@@ -292,6 +301,12 @@ class MaskedCollection:
         comp_image: MaskedImage
             The composite image.
         """
+        if not self._filtered:
+            raise Exception(
+                'Composites cannot be created from unfiltered collections.  You can call `composite` on '
+                'collections returned from `search(...)` and `from_list(...)`'
+            )
+
         method = CompositeMethod(method)
         resampling = ResamplingMethod(resampling)
         if (method == CompositeMethod.q_mosaic) and (self.image_type == MaskedImage):
