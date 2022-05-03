@@ -18,7 +18,6 @@ import json
 import unittest
 from datetime import datetime, timedelta
 
-import pandas as pd
 from click.testing import CliRunner
 
 from geedim import root_path, cli, collection
@@ -85,8 +84,10 @@ class TestCli(unittest.TestCase):
 
                 filename = download_dir.joinpath(image_id.replace('/', '-') + '.tif')
                 gd_image = MaskedImage.from_id(image_id, mask=True, region=region)
-                _test_image_file(self, image_obj=gd_image, filename=filename, region=region, crs=crs, scale=scale,
-                                 mask=True)
+                _test_image_file(
+                    self, image_obj=gd_image, filename=filename, region=region, crs=crs, scale=scale,
+                    mask=True
+                )
 
     def test_export(self):
         """ Test export command on one image, without waiting for completion """
@@ -95,9 +96,11 @@ class TestCli(unittest.TestCase):
         crs = 'EPSG:3857'
         scale = 1000
 
-        result = CliRunner().invoke(cli.cli, ['export', '-i', image_id, '-b', *bbox, '-df', 'geedim_test', '-nw',
-                                              '--crs', crs, '--scale', scale, '-m', '-rs', 'bilinear'],
-                                    terminal_width=80)
+        result = CliRunner().invoke(
+            cli.cli, ['export', '-i', image_id, '-b', *bbox, '-df', 'geedim_test', '-nw',
+                      '--crs', crs, '--scale', scale, '-m', '-rs', 'bilinear'],
+            terminal_width=80
+        )
         self.assertTrue(result.exit_code == 0, result.exception)
 
     def test_composite_download(self):
