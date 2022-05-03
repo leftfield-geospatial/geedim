@@ -49,8 +49,8 @@ setup(
     url="https://github.com/dugalh/geedim",
     license="Apache-2.0",
     packages=find_packages(exclude=['tests', 'data'], include=['geedim']),
-    install_requires=["numpy>=1.19", "rasterio>=1.1", "click>=8", "tqdm>=4.6", "pandas>=1.1", "earthengine-api>=0.1.2",
-                      "requests>=2.2"],
+    install_requires=["numpy>=1.19", "rasterio>=1.1", "click>=8", "tqdm>=4.6", "earthengine-api>=0.1.2",
+                      "requests>=2.2", "tabulate>=0.8"],
     python_requires=">=3.6",
     classifiers=[
         "Programming Language :: Python :: 3",

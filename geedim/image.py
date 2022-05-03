@@ -28,7 +28,6 @@ from typing import Tuple, Dict, List, Union
 
 import ee
 import numpy as np
-import pandas as pd
 import rasterio as rio
 from pip._vendor.progress.spinner import Spinner
 from rasterio.crs import CRS
@@ -282,21 +281,18 @@ class BaseImage:
         projection_info = dict(crs=None, transform=None, shape=None, scale=None)
         if 'bands' in ee_info:
             # get scale & crs corresponding to min/max scale band
-            band_df = pd.DataFrame(ee_info['bands'])
-            scales = pd.DataFrame(band_df['crs_transform'].tolist())[0].abs().astype(float)
-            band_df['scale'] = scales
-            # exclude crs='EPSG:4326' & scale=1 bands i.e. bands without a fixed projection
-            filt_band_df = band_df[~((band_df.crs == 'EPSG:4326') & (band_df.scale == 1))]
-
-            if filt_band_df.shape[0] > 0:
-                idx = filt_band_df.scale.idxmin() if min_scale else filt_band_df.scale.idxmax()
-                sel_band_df = filt_band_df.loc[idx]
-                projection_info['crs'], projection_info['scale'] = sel_band_df[['crs', 'scale']]
-                if 'dimensions' in sel_band_df:
-                    projection_info['shape'] = sel_band_df['dimensions'][::-1]
-                projection_info['transform'] = rio.Affine(*sel_band_df['crs_transform'])
-                if ('origin' in sel_band_df) and not np.any(np.isnan(sel_band_df['origin'])):
-                    projection_info['transform'] *= rio.Affine.translation(*sel_band_df['origin'])
+            scales = np.array([abs(bd['crs_transform'][0]) for bd in ee_info['bands']])
+            crss = np.array([bd['crs'] for bd in ee_info['bands']])
+            fixed_idx = (crss != 'EPSG:4326') & (scales != 1)
+            if sum(fixed_idx) > 0:
+                idx = np.argmin(scales[fixed_idx]) if min_scale else np.argmax(scales[fixed_idx])
+                band_info = np.array(ee_info['bands'])[fixed_idx][idx]
+                projection_info['scale'] = abs(band_info['crs_transform'][0])
+                projection_info['crs'] = band_info['crs']
+                projection_info['shape'] = band_info['dimensions'][::-1]
+                projection_info['transform'] = rio.Affine(*band_info['crs_transform'])
+                if ('origin' in band_info) and not np.any(np.isnan(band_info['origin'])):
+                    projection_info['transform'] *= rio.Affine.translation(*band_info['origin'])
         return projection_info
 
     @staticmethod
@@ -304,11 +300,13 @@ class BaseImage:
         """Return the minimal size data type corresponding to a given EE image info dictionary."""
         dtype = None
         if 'bands' in ee_info:
-            band_df = pd.DataFrame(ee_info['bands'])
-            dtype_df = pd.DataFrame(band_df.data_type.tolist(), index=band_df.id)
-            if all(dtype_df.precision == 'int'):
-                dtype_min = dtype_df['min'].min()  # minimum image pixel value
-                dtype_max = dtype_df['max'].max()  # maximum image pixel value
+            precisions = np.array([bd['data_type']['precision'] for bd in ee_info['bands']])
+            if all(precisions == 'int'):
+                dtype_minmax = np.array(
+                    [(bd['data_type']['min'], bd['data_type']['max']) for bd in ee_info['bands']], dtype=np.int64
+                )
+                dtype_min = int(dtype_minmax[:, 0].min())  # minimum image pixel value
+                dtype_max = int(dtype_minmax[:, 1].max())  # maximum image pixel value
 
                 # determine the number of integer bits required to represent the value range
                 bits = 0
@@ -317,7 +315,7 @@ class BaseImage:
                     bits += bound_bits
                 bits = min(max(bits, 8), 32)  # clamp bits to allowed values
                 dtype = f'{"u" if dtype_min >= 0 else ""}int{int(bits)}'
-            elif any(dtype_df.precision == 'double'):
+            elif any(precisions == 'double'):
                 dtype = 'float64'
             else:
                 dtype = 'float32'
@@ -335,17 +333,17 @@ class BaseImage:
             return BaseImage._str_format_size(byte_size / 1000, units[1:])
 
     @staticmethod
-    def _get_band_metadata(ee_info) -> List[Dict,]:
+    def _get_band_metadata(ee_info: Dict) -> List[Dict]:
         """Return band metadata given an EE image info dict."""
         ee_coll_name, _ = split_id(ee_info['id'])
-        band_df = pd.DataFrame(ee_info['bands'])
+        band_ids = [bd['id'] for bd in ee_info['bands']]
         if ee_coll_name in info.collection_info:  # include SR band metadata if it exists
             # use DataFrame to concat SR band metadata from collection_info with band IDs from the image
             sr_band_list = info.collection_info[ee_coll_name]["bands"].copy()
             sr_band_dict = {bdict['id']: bdict for bdict in sr_band_list}
-            band_metadata = [sr_band_dict[bid] if bid in sr_band_dict else dict(id=bid) for bid in band_df.id]
+            band_metadata = [sr_band_dict[bid] if bid in sr_band_dict else dict(id=bid) for bid in band_ids]
         else:  # just use the image band IDs
-            band_metadata = band_df[["id"]].to_dict("records")
+            band_metadata = [dict(id=bid) for bid in band_ids]
         return band_metadata
 
     @staticmethod

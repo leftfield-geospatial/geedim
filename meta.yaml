@@ -20,15 +20,16 @@ requirements:
   host:
     - pip
     - python >=3.6
+    - pandas >= 1.1
   run:
     - python >=3.6
     - numpy >= 1.19
     - rasterio >= 1.1
     - click >= 8
     - tqdm >= 4.6
-    - pandas >= 1.1
     - earthengine-api >= 0.1.2
     - requests >= 2.2
+    - tabulate >= 0.8
 test:
   imports:
     - geedim
