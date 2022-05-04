@@ -173,7 +173,7 @@ class TestApi(unittest.TestCase):
         im_band_df = pd.DataFrame.from_dict(gd_image.info['bands'])
 
         self.assertTrue(im_band_df.shape[0] >= sr_band_df.shape[0], 'Enough bands')
-        for id in ['CLOUDLESS_MASK', 'CLOUD_MASK', 'SHADOW_MASK', 'FILL_MASK', 'CLOUD_DIST']:
+        for id in ['CLOUDLESS_MASK', 'CLOUD_MASK', 'SHADOW_MASK', 'FILL_MASK']:
             self.assertTrue(id in im_band_df.id.values, msg='Image has auxiliary bands')
         for id in sr_band_df.id.values:
             self.assertTrue(id in im_band_df.id.values, msg='Image has SR bands')

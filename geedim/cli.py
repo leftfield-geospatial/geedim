@@ -137,6 +137,7 @@ def _bbox_cb(ctx, param, value):
 
 def _region_cb(ctx, param, value):
     """click callback to validate and parse --region"""
+    # TODO: allow piping strings here like cligj
     if isinstance(value, str):  # read region file/string
         filename = pathlib.Path(value)
         if not filename.exists():
@@ -317,10 +318,6 @@ cli.add_command(config)
 @click.pass_obj
 def search(obj, collection, start_date, end_date, bbox, region, cloudless_portion, output):
     """Search for images."""
-    # TODO: what about chaining search with search, or after composite.  Unlikely use case, but if possible
-    #  would be neat to structure the sw in this way e.g. if the image_list is not empty, then make the collection
-    #  out of that.
-
     if not obj.region:
         raise click.BadOptionUsage('region', 'Either pass --region or --bbox')
 

@@ -172,7 +172,7 @@ class BaseImage:
     def id(self) -> str:
         """The EE image ID."""
         # TODO: some collections e.g. LANDSAT/LC08/C01/T1_8DAY_EVI, won't allow get('system:id')
-        return self._id or self.ee_info["id"]  # avoid a call to getInfo() if _id is set
+        return self._id or self.ee_info['id']  # avoid a call to getInfo() if _id is set
 
     @property
     def name(self) -> str:
@@ -751,8 +751,7 @@ class BaseImage:
             '{desc}: |{bar}| {n_fmt}/{total_fmt} (raw) [{percentage:5.1f}%] in {elapsed:>5s} (eta: {remaining:>5s})'
         )
         bar = tqdm(
-            desc=desc, total=raw_download_size, bar_format=bar_format, dynamic_ncols=True,
-            unit_scale=True, unit='B'
+            desc=desc, total=raw_download_size, bar_format=bar_format, dynamic_ncols=True, unit_scale=True, unit='B'
         )
 
         session = _requests_retry_session(5, status_forcelist=[500, 502, 503, 504])

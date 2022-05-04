@@ -389,7 +389,7 @@ class MaskedCollection:
         )
 
         if method == CompositeMethod.q_mosaic:
-            comp_image = ee_collection.qualityMosaic('CLOUD_DIST')
+            comp_image = ee_collection.qualityMosaic(self.image_type._cloud_dist_band)
         elif method == CompositeMethod.mosaic:
             comp_image = ee_collection.mosaic()
         elif method == CompositeMethod.median:
