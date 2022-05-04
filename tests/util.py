@@ -48,7 +48,7 @@ def nan_equals(a, b):
 
 def _test_search_results(test_case, results, start_date, end_date, cloudless_portion=0):
     """ Test the validity of a search results dataframe against the search parameters. """
-    res_df = pd.DataFrame(results)
+    res_df = pd.DataFrame(results.values())
     test_case.assertGreater(res_df.shape[0], 0, 'Search returned one or more results')
     test_case.assertGreater(res_df.shape[1], 1, 'Search results contain two or more columns')
 

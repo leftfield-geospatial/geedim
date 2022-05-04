@@ -155,7 +155,7 @@ class TestCli(unittest.TestCase):
             results = json.load(f)
         _test_search_results(self, results, start_date, end_date)  # check results
 
-        gd_collection = collection.MaskedCollection.from_list([item['system:id'] for item in results])
+        gd_collection = collection.MaskedCollection.from_list(results.keys())
         comp_im = gd_collection.composite(method, mask=pdict['mask'])
         comp_fn = download_dir.joinpath(comp_im.name + '.tif')
         with open(region_filename) as f:

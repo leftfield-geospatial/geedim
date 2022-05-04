@@ -165,7 +165,7 @@ class MaskedCollection:
         return class_from_id(self.name)
 
     @property
-    def properties(self) -> List:
+    def properties(self) -> Dict:
         """ Properties for each image in the collection. """
         if not self._filtered:
             raise UnfilteredError(
@@ -183,15 +183,15 @@ class MaskedCollection:
     @property
     def properties_key(self) -> Dict:
         """ Abbreviations and descriptions for `properties`. """
-        return self.info['properties']
+        return OrderedDict({key_dict['PROPERTY']: key_dict for key_dict in self.info['properties']})
 
     @property
     def key_table(self) -> str:
         """ `properties_key` formatted as a table. """
-        key_dict = [dict(ABBREV=v['ABBREV'], DESCRIPTION=v['DESCRIPTION']) for v in self.properties_key]
+        key_dict = [dict(ABBREV=v['ABBREV'], DESCRIPTION=v['DESCRIPTION']) for v in self.properties_key.values()]
         return tabulate.tabulate(key_dict, headers='keys', floatfmt='.2f', tablefmt=_table_fmt)
 
-    def _get_properties(self, ee_collection: ee.ImageCollection) -> List:
+    def _get_properties(self, ee_collection: ee.ImageCollection) -> Dict:
         """ Retrieve properties of images in a given Earth Engine image collection. """
 
         # the properties to retrieve
@@ -202,7 +202,8 @@ class MaskedCollection:
             return ee.List(coll_list).add(im_dict)
 
         # retrieve list of dicts of properties of images in ee_collection
-        return ee.List(ee_collection.iterate(aggregrate_props, ee.List([]))).getInfo()
+        props_list = ee.List(ee_collection.iterate(aggregrate_props, ee.List([]))).getInfo()
+        return OrderedDict({prop_dict['system:id']:prop_dict for prop_dict in props_list})
 
     def _get_properties_table(self, properties: List, properties_key: List = None) -> str:
         """
@@ -213,18 +214,16 @@ class MaskedCollection:
             properties_key = self.properties_key
 
         abbrev_props = []
-        for im_dict in properties:
-            im_odict = OrderedDict()
-            for prop_dict in properties_key:
-                # re-order and abbreviate
-                prop_key = prop_dict['PROPERTY']
-                if prop_key in im_dict:
-                    if prop_key == 'system:time_start':  # convert timestamp to date string
-                        dt = datetime.utcfromtimestamp(im_dict[prop_key] / 1000)
-                        im_odict[prop_dict['ABBREV']] = datetime.strftime(dt, '%Y-%m-%d %H:%M')
+        for im_id, im_prop_dict in properties.items():
+            abbrev_dict = OrderedDict()
+            for prop_name, key_dict in properties_key.items():
+                if prop_name in im_prop_dict:
+                    if prop_name == 'system:time_start':  # convert timestamp to date string
+                        dt = datetime.utcfromtimestamp(im_prop_dict[prop_name] / 1000)
+                        abbrev_dict[key_dict['ABBREV']] = datetime.strftime(dt, '%Y-%m-%d %H:%M')
                     else:
-                        im_odict[prop_dict['ABBREV']] = im_dict[prop_key]
-            abbrev_props.append(im_odict)
+                        abbrev_dict[key_dict['ABBREV']] = im_prop_dict[prop_name]
+            abbrev_props.append(abbrev_dict)
         return tabulate.tabulate(abbrev_props, headers='keys', floatfmt='.2f', tablefmt=_table_fmt)
 
     def _prepare_for_composite(
@@ -240,14 +239,6 @@ class MaskedCollection:
                 raise UnfilteredError(
                     'Composites can only be created from collections returned by `search()` and `from_list()`'
                 )
-
-            if isinstance(date, str):
-                try:
-                    date = datetime.strptime(date, '%Y-%m-%d')
-                except ValueError:
-                    raise UnsupportedValueError(
-                        '`date` should be a datetime instance or a string with format: "%Y-%m-%d"'
-                    )
 
             method = CompositeMethod(method)
             resampling = ResamplingMethod(resampling)
@@ -383,6 +374,14 @@ class MaskedCollection:
             The composite image.
         """
 
+        if isinstance(date, str):
+            try:
+                date = datetime.strptime(date, '%Y-%m-%d')
+            except ValueError:
+                raise UnsupportedValueError(
+                    '`date` should be a datetime instance or a string with format: "%Y-%m-%d"'
+                )
+
         # mask, sort & resample the EE collection
         method = CompositeMethod(method)
         ee_collection = self._prepare_for_composite(
@@ -414,7 +413,7 @@ class MaskedCollection:
         comp_image = comp_image.set('COMPONENT_IMAGES', 'TABLE:\n' + props_str)
 
         # construct an ID for the composite
-        dates = [datetime.utcfromtimestamp(item['system:time_start'] / 1000) for item in props]
+        dates = [datetime.utcfromtimestamp(item['system:time_start'] / 1000) for item in props.values()]
         start_date = min(dates).strftime('%Y_%m_%d')
         end_date = max(dates).strftime('%Y_%m_%d')
 

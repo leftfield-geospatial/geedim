@@ -312,7 +312,7 @@ cli.add_command(config)
 )
 @click.option(
     '-o', '--output', type=click.Path(exists=False, dir_okay=False, writable=True), default=None,
-    help='Write results to this filename, file type inferred from extension: [.csv|.json]'
+    help='Write search results to this json file'
 )
 @click.pass_obj
 def search(obj, collection, start_date, end_date, bbox, region, cloudless_portion, output):
@@ -339,7 +339,7 @@ def search(obj, collection, start_date, end_date, bbox, region, cloudless_portio
     if len(gd_collection.properties) == 0:
         logger.info('No images found\n')
     else:
-        obj.image_list += [item['system:id'] for item in gd_collection.properties]  # store ids for chained commands
+        obj.image_list += list(gd_collection.properties.keys())  # store image ids for chained commands
         logger.info(f'{len(gd_collection.properties)} images found\n')
         logger.info(f'Image property descriptions:\n\n{gd_collection.key_table}\n')
         logger.info(f'Search Results:\n\n{gd_collection.properties_table}')
@@ -348,14 +348,7 @@ def search(obj, collection, start_date, end_date, bbox, region, cloudless_portio
     if output is not None:
         output = pathlib.Path(output)
         with open(output, 'w', encoding='utf8', newline='') as f:
-            if output.suffix == '.csv':
-                csv_writer = csv.DictWriter(f, fieldnames=gd_collection.properties[0].keys())
-                csv_writer.writeheader()
-                csv_writer.writerows(gd_collection.properties)
-            elif output.suffix == '.json':
-                json.dump(gd_collection.properties, f)
-            else:
-                raise click.BadOptionUsage('output', f'Unsupported output file extension: {output.suffix}')
+            json.dump(gd_collection.properties, f)
 
 
 cli.add_command(search)
