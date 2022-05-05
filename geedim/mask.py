@@ -17,8 +17,8 @@ import logging
 
 import ee
 
+from geedim.download import BaseImage, split_id
 from geedim.enums import CloudMaskMethod
-from geedim.image import BaseImage, split_id
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +30,7 @@ class MaskedImage(BaseImage):
     _default_mask = False
     _supported_collection_ids = ['*']
     _proj_scale = None  # TODO: for images w/o fixed projections, nominalScale() is 1deg~100km.  Can we get this from
+
     #  STAC w/o overheads for e.g. mapping over collections
 
     def __init__(self, ee_image, mask=_default_mask, region=None, **kwargs):

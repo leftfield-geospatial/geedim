@@ -19,10 +19,10 @@ import ee
 import numpy as np
 import pandas as pd
 
-import geedim.image
-from geedim import image, collection, root_path, info
+import geedim.download
+from geedim import download, collection, root_path, info
 from geedim.enums import CompositeMethod, ResamplingMethod
-from geedim.masked_image import MaskedImage
+from geedim.mask import MaskedImage
 from tests.util import _test_image_file, _test_search_results, _setup_test
 
 
@@ -37,7 +37,7 @@ class TestApi(unittest.TestCase):
     def _test_image(self, image_id, mask=MaskedImage._default_mask):
         """ Test the validity of a geedim.image.MaskedImage by checking metadata.  """
 
-        ee_coll_name = geedim.image.split_id(image_id)[0]
+        ee_coll_name = geedim.download.split_id(image_id)[0]
         gd_image = MaskedImage.from_id(image_id, mask=mask)
         self.assertTrue(gd_image.id == image_id, 'IDs match')
 
@@ -132,7 +132,7 @@ class TestApi(unittest.TestCase):
         ]
 
         for impdict in im_param_list:
-            ee_coll_name = geedim.image.split_id(impdict['image_id'])[0]
+            ee_coll_name = geedim.download.split_id(impdict['image_id'])[0]
             with self.subTest('Download', **impdict):
                 # create image.MaskedImage
                 gd_image = MaskedImage.from_id(impdict["image_id"], mask=impdict['mask'], region=region)
@@ -156,12 +156,12 @@ class TestApi(unittest.TestCase):
         }
         image_id = 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20190128'
         ee_image = ee.Image(image_id)
-        image.BaseImage(ee_image).export(image_id.replace('/', '-'), folder='geedim_test', region=region, wait=False)
+        download.BaseImage(ee_image).export(image_id.replace('/', '-'), folder='geedim_test', region=region, wait=False)
 
     def _test_composite(self, gd_image):
         """ Test the metadata of a composite ee.Image for validity. """
 
-        ee_coll_name = geedim.image.split_id(gd_image.id)[0]
+        ee_coll_name = geedim.download.split_id(gd_image.id)[0]
         sr_band_df = pd.DataFrame.from_dict(info.collection_info[ee_coll_name]['bands'])
         for key in ['bands', 'properties', 'id']:
             self.assertTrue(key in gd_image.info.keys(), msg='Image gd_info complete')

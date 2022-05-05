@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from click.testing import CliRunner
 
 from geedim import root_path, cli, collection
-from geedim.masked_image import MaskedImage
+from geedim.mask import MaskedImage
 from tests.util import _test_image_file, _test_search_results, _setup_test
 
 

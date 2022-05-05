@@ -25,10 +25,10 @@ import tabulate
 from tabulate import TableFormat, Line, DataRow
 
 from geedim import info, medoid
+from geedim.download import BaseImage, split_id
 from geedim.enums import ResamplingMethod, CompositeMethod
 from geedim.errors import UnfilteredError, UnsupportedValueError, UnsupportedTypeError, OutOfRangeError
-from geedim.image import BaseImage, split_id
-from geedim.masked_image import MaskedImage, class_from_id
+from geedim.mask import MaskedImage, class_from_id
 
 logger = logging.getLogger(__name__)
 tabulate.MIN_PADDING = 0
@@ -121,7 +121,7 @@ class MaskedCollection:
 
         Parameters
         ----------
-        image_list : List[Union[str, ee.Image, MaskedImage], ...]
+        image_list : list
             A list of images to include in the collection (must all be from the same EE collection).
 
         Returns
@@ -233,7 +233,7 @@ class MaskedCollection:
             props_dict[prop_dict['system:id']] = prop_dict
         return props_dict
 
-    def _get_properties_table(self, properties: List, properties_key: List = None) -> str:
+    def _get_properties_table(self, properties: Dict, properties_key: Dict = None) -> str:
         """
         Format the given properties into a table.  Orders properties (columns) according `properties_key` and replaces
         long form property names with abbreviations.

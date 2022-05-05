@@ -25,8 +25,8 @@ from rasterio.crs import CRS
 from rasterio.warp import transform_bounds
 
 from geedim import info, root_path, _ee_init
-from geedim.image import split_id, BaseImage
-from geedim.masked_image import MaskedImage
+from geedim.download import split_id, BaseImage
+from geedim.mask import MaskedImage
 
 
 def _setup_test():

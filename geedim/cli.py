@@ -14,7 +14,6 @@
     limitations under the License.
 """
 import json
-import csv
 import logging
 import os
 import pathlib
@@ -29,10 +28,10 @@ from rasterio.errors import CRSError
 
 from geedim import collection as coll_api, info, _ee_init, version
 from geedim.collection import MaskedCollection
+from geedim.download import BaseImage, get_bounds
 from geedim.enums import CloudMaskMethod, CompositeMethod, ResamplingMethod
 from geedim.errors import UnsupportedValueError
-from geedim.image import BaseImage, get_bounds
-from geedim.masked_image import MaskedImage
+from geedim.mask import MaskedImage
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +138,7 @@ def _region_cb(ctx, param, value):
     """click callback to validate and parse --region"""
     filename = value
     if isinstance(value, str):  # read region file/string
-        if value =='-' or 'json' in value:
+        if value == '-' or 'json' in value:
             with click.open_file(value, encoding='utf-8') as f:
                 value = json.load(f)
         else:
@@ -421,7 +420,7 @@ cli.add_command(export)
 @image_id_option
 @click.option(
     '-cm', '--method', type=click.Choice([cm.value for cm in CompositeMethod], case_sensitive=False),
-    default=MaskedCollection._default_comp_method, show_default=True, callback=_method_cb,
+    default=MaskedCollection._default_comp_method.value, show_default=True, callback=_method_cb,
     help='Compositing method to use.'
 )
 @click.option(
