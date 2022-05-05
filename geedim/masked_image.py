@@ -31,7 +31,6 @@ class MaskedImage(BaseImage):
     _supported_collection_ids = ['*']
     _proj_scale = None  # TODO: for images w/o fixed projections, nominalScale() is 1deg~100km.  Can we get this from
     #  STAC w/o overheads for e.g. mapping over collections
-    _cloud_dist_band = None
 
     def __init__(self, ee_image, mask=_default_mask, region=None, **kwargs):
         """
@@ -172,7 +171,6 @@ class CloudMaskedImage(MaskedImage):
     Base class for encapsulating supported cloud/shadow masked images.
     """
     _supported_collection_ids = []  # abstract base class
-    _cloud_dist_band = 'CLOUD_DIST'
 
     def _cloud_dist(self, cloudless_mask=None, max_cloud_dist=5000) -> ee.Image:
         """Get the cloud/shadow distance for encapsulated image."""
@@ -249,7 +247,6 @@ class LandsatImage(CloudMaskedImage):
     _supported_collection_ids = ['LANDSAT/LT04/C02/T1_L2', 'LANDSAT/LT05/C02/T1_L2', 'LANDSAT/LE07/C02/T1_L2',
                                  'LANDSAT/LC08/C02/T1_L2', 'LANDSAT/LC09/C02/T1_L2']
     _proj_scale = 30
-    _cloud_dist_band = 'ST_CDIST'
 
     def _aux_image(self, mask_shadows=True, mask_cirrus=True, **kwargs) -> ee.Image:
         """
@@ -286,8 +283,9 @@ class LandsatImage(CloudMaskedImage):
         # combine cloud, shadow and fill masks into cloudless mask
         cloudless_mask = (cloud_mask.Or(shadow_mask)).Not() if mask_shadows else cloud_mask.Not()
         cloudless_mask = cloudless_mask.And(fill_mask).rename('CLOUDLESS_MASK')
-        # note that cloud distance already exists in ST_CDIST
-        return ee.Image([fill_mask, cloud_mask, shadow_mask, cloudless_mask])
+        # copy cloud distance from existing ST_CDIST band
+        cloud_dist = ee_image.select('ST_CDIST').rename('CLOUD_DIST')
+        return ee.Image([fill_mask, cloud_mask, shadow_mask, cloudless_mask, cloud_dist])
 
 
 class Sentinel2ClImage(CloudMaskedImage):
