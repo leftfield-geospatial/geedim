@@ -20,7 +20,6 @@ landsat8_c2_l2 | [LANDSAT/LC08/C02/T1_L2](https://developers.google.com/earth-en
 landsat9_c2_l2 | [LANDSAT/LC09/C02/T1_L2](https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC09_C02_T1_L2) | Landsat 9, collection 2, tier 1, level 2 surface reflectance 
 sentinel2_toa | [COPERNICUS/S2](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2) | Sentinel-2, level 1C, top of atmosphere reflectance 
 sentinel2_sr | [COPERNICUS/S2_SR](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR) | Sentinel-2, level 2A, surface reflectance
-modis_nbar | [MODIS/006/MCD43A4](https://developers.google.com/earth-engine/datasets/catalog/MODIS_006_MCD43A4) | MODIS nadir BRDF adjusted reflectance
 
 ## Requirements
 `geedim` is a python 3 library, and requires users to be registered with [Google Earth Engine](https://signup.earthengine.google.com).
@@ -77,10 +76,12 @@ Options:
 
 Commands:
   composite  Create a cloud-free composite image.
+  config     Configure cloud/shadow masking.
   download   Download image(s).
   export     Export image(s) to Google Drive.
   search     Search for images.
 ```
+
 ### Search
 Search for images with filtering by image collection, date, region and portion of cloud/shadow free pixels (in the specified region).  Image metadata of interest is included in the results. 
 ```shell
@@ -106,13 +107,12 @@ Options:
   -b, --bbox FLOAT...             Region defined by bounding box co-ordinates
                                   in WGS84 (xmin, ymin, xmax, ymax).
   -r, --region FILE               Region defined by geojson or raster file.
-                                  [One of --bbox or --region is required]
-  -vp, --valid-portion FLOAT RANGE
-                                  Lower limit of the portion of valid (cloud
-                                  and shadow free) pixels (%).  [default: 0;
-                                  0<=x<=100]
-  -o, --output FILE               Write results to this filename, file type
-                                  inferred from extension: [.csv|.json]
+                                  Use "-" to read geojson from stdin.  [One of
+                                  --bbox or --region is required]
+  -cp, --cloudless-portion FLOAT RANGE
+                                  Lower limit on the cloud/shadow free portion
+                                  of the region (%).  [default: 0; 0<=x<=100]
+  -o, --output FILE               Write search results to this json file
   --help                          Show this message and exit.
 ```
 #### Example
@@ -126,8 +126,8 @@ Download or export image(s) by specifying their ID(s).  Search result image(s) c
 - FILL_MASK: Filled / captured pixels 
 - CLOUD_MASK: Cloudy pixels 
 - SHADOW_MASK: Shadow pixels
-- VALID_MASK: Filled and cloud / shadow-free pixels
-- SCORE: Distance to nearest cloud or shadow (m) 
+- CLOUDLESS_MASK: Filled and cloud / shadow-free pixels
+- CLOUD_DIST: Distance to nearest cloud or shadow (m) 
 
 #### Download
 ```shell
@@ -136,14 +136,14 @@ geedim download --help
 ```
 Usage: geedim download [OPTIONS]
 
-  Download image(s), without size limits and including metadata, and with
-  optional cloud and shadow masking.
+  Download image(s).
 
 Options:
   -i, --id TEXT                   Earth engine image ID(s).
   -b, --bbox FLOAT...             Region defined by bounding box co-ordinates
                                   in WGS84 (xmin, ymin, xmax, ymax).
   -r, --region FILE               Region defined by geojson or raster file.
+                                  Use "-" to read geojson from stdin.
   -dd, --download-dir DIRECTORY   Download image file(s) to this directory.
                                   [default: cwd]
   -c, --crs TEXT                  Reproject image(s) to this CRS (EPSG string
@@ -159,11 +159,8 @@ Options:
                                   mask(s).  [default: --no-mask]
   -rs, --resampling [near|bilinear|bicubic]
                                   Resampling method.  [default: near]
-  -cd, --cloud-dist FLOAT         Search for cloud/shadow inside this radius
-                                  (m) to determine compositing quality score.
-                                  [default: 5000]
   -o, --overwrite                 Overwrite the destination file if it exists.
-                                  [default: prompt the user for confirmation]
+                                  [default: don't overwrite]
   --help                          Show this message and exit.
 ```
 
@@ -174,13 +171,14 @@ geedim export --help
 ```
 Usage: geedim export [OPTIONS]
 
-  Export image(s) to Google Drive, with optional cloud and shadow masking
+  Export image(s) to Google Drive.
 
 Options:
   -i, --id TEXT                   Earth engine image ID(s).
   -b, --bbox FLOAT...             Region defined by bounding box co-ordinates
                                   in WGS84 (xmin, ymin, xmax, ymax).
   -r, --region FILE               Region defined by geojson or raster file.
+                                  Use "-" to read geojson from stdin.
   -df, --drive-folder TEXT        Export image(s) to this Google Drive folder.
                                   [default: root]
   -c, --crs TEXT                  Reproject image(s) to this CRS (EPSG string
@@ -196,9 +194,6 @@ Options:
                                   mask(s).  [default: --no-mask]
   -rs, --resampling [near|bilinear|bicubic]
                                   Resampling method.  [default: near]
-  -cd, --cloud-dist FLOAT         Search for cloud/shadow inside this radius
-                                  (m) to determine compositing quality score.
-                                  [default: 5000]
   -w, --wait / -nw, --no-wait     Wait / don't wait for export to complete.
                                   [default: --wait]
   --help                          Show this message and exit.
@@ -229,34 +224,88 @@ geedim composite --help
 ```
 Usage: geedim composite [OPTIONS]
 
-  Create a cloud-free composite image
+  Create a cloud-free composite image.
 
 Options:
   -i, --id TEXT                   Earth engine image ID(s).
-  -cm, --method [q_mosaic|mosaic|median|medoid]
+  -cm, --method [q-mosaic|mosaic|medoid|median|mode|mean]
                                   Compositing method to use.  [default:
-                                  q_mosaic]
+                                  q-mosaic]
   -m, --mask / -nm, --no-mask     Do/don't apply (cloud and shadow) nodata
                                   mask(s) before compositing.  [default:
                                   --mask]
   -rs, --resampling [near|bilinear|bicubic]
                                   Resampling method.  [default: near]
-  -cd, --cloud-dist FLOAT         Search for cloud/shadow inside this radius
-                                  (m) to determine compositing quality score.
-                                  [default: 5000]
+  -b, --bbox FLOAT...             Region defined by bounding box co-ordinates
+                                  in WGS84 (xmin, ymin, xmax, ymax).
+  -r, --region FILE               Region defined by geojson or raster file.
+                                  Use "-" to read geojson from stdin.
+  -d, --date [%Y-%m-%d|%Y-%m-%dT%H:%M:%S|%Y-%m-%d %H:%M:%S]
+                                  Give preference to images closest to this
+                                  date (UTC).  [Supported by `mosaic` and
+                                  `q-mosaic` methods.]
   --help                          Show this message and exit.
 ```
 #### Example
 Composite the results of a search and download the result.
 ```shell
-geedim search -c landsat8_c2_l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 composite -cm q_mosaic --mask download --scale 30 --crs EPSG:3857
+geedim search -c landsat8_c2_l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 composite -cm q-mosaic --mask download --scale 30 --crs EPSG:3857
 ```
+
+### Config
+Configure cloud/shadow masking for [supported collections](#cloudshadow-masking-collections).  `config` can be chained with any of the above sub-commands to configure cloud/shadow masking for that, and subsequent sub-command(s).  
+
+```shell
+geedim config --help
+```
+```
+Usage: geedim config [OPTIONS]
+
+  Configure cloud/shadow masking.
+
+Options:
+  -mc, --mask-cirrus / -nmc, --no-mask-cirrus
+                                  Whether to mask cirrus clouds. For sentinel2
+                                  collections this is valid just for method =
+                                  `qa`.  [default: --mask-cirrus]
+  -ms, --mask-shadows / -nms, --no-mask-shadows
+                                  Whether to mask cloud shadows. [default:
+                                  --mask-shadows]
+  -mm, --mask-method [cloud-prob|qa]
+                                  Method used to cloud mask Sentinel-2 images.
+                                  [default: cloud-prob]
+  -p, --prob FLOAT RANGE          Cloud probability threshold. Valid just for
+                                  --mask-method `cloud-prob`. (%).  [default:
+                                  60; 0<=x<=100]
+  -d, --dark FLOAT RANGE          NIR reflectance threshold [0-1] for shadow
+                                  masking Sentinel-2 images. NIR values below
+                                  this threshold are potential cloud shadows.
+                                  [default: 0.15; 0<=x<=1]
+  -sd, --shadow-dist INTEGER      Maximum distance in meters (m) to look for
+                                  cloud shadows from cloud edges.  Valid for
+                                  Sentinel-2 images.  [default: 1000]
+  -b, --buffer INTEGER            Distance in meters (m) to dilate cloud and
+                                  cloud shadows objects.  Valid for Sentinel-2
+                                  images.  [default: 250]
+  -cdi, --cdi-thresh FLOAT RANGE  Cloud Displacement Index threshold. Values
+                                  below this threshold are considered
+                                  potential clouds.  A cdi-thresh = None means
+                                  that the index is not used.  Valid for
+                                  Sentinel-2 images.  [default: None]
+                                  [-1<=x<=1]
+  -mcd, --max-cloud-dist INTEGER  Maximum distance in meters (m) to look for
+                                  clouds.  Used to form the cloud distance
+                                  band for `q-mosaic` compositing. Valid for
+                                  Sentinel-2 images.  [default: 5000]
+  --help                          Show this message and exit.
+```
+
 ## API
 ### Example
 
 ```python
 import ee
-from geedim import collection, image_from_id
+from geedim import MaskedImage, MaskedCollection
 
 ee.Initialize()  # initialise earth engine
 
@@ -267,13 +316,13 @@ region = {
 }
 
 # make collection and search
-gd_collection = collection.MaskedCollection('COPERNICUS/S2_SR')
-res_df = gd_collection.search('2019-01-10', '2019-01-21', region)
-print(gd_collection.properties_key)
-print(gd_collection.summary)
+gd_collection = MaskedCollection.from_name('COPERNICUS/S2_SR')
+gd_collection = gd_collection.search('2019-01-10', '2019-01-21', region)
+print(gd_collection.key_table)
+print(gd_collection.properties_table)
 
 # create and download an image
-im = image_from_id('COPERNICUS/S2_SR/20190115T080251_20190115T082230_T35HKC')
+im = MaskedImage.from_id('COPERNICUS/S2_SR/20190115T080251_20190115T082230_T35HKC')
 im.download('s2_image.tif', region=region)
 
 # composite search results and download
@@ -292,6 +341,7 @@ Contributions are welcome.  Report bugs or contact me with questions [here](http
 
 ## Credits
 - Tiled downloading was inspired by and adapted from [GEES2Downloader](https://github.com/cordmaur/GEES2Downloader) under terms of the [MIT license](https://github.com/cordmaur/GEES2Downloader/blob/main/LICENSE). 
+- Sentinel-2 cloud/shadow masking was adapted from [ee_extra](https://github.com/r-earthengine/ee_extra) under terms of the [Apache-2.0 license](https://github.com/r-earthengine/ee_extra/blob/master/LICENSE)
 - Medoid compositing was adapted from [gee_tools](https://github.com/gee-community/gee_tools) under the terms of the [MIT license](https://github.com/gee-community/gee_tools/blob/master/LICENSE).
 - The CLI design was informed by [landsatxplore](https://github.com/yannforget/landsatxplore).
 
