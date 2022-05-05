@@ -137,18 +137,15 @@ def _bbox_cb(ctx, param, value):
 
 def _region_cb(ctx, param, value):
     """click callback to validate and parse --region"""
-    # TODO: allow piping strings here like cligj
+    filename = value
     if isinstance(value, str):  # read region file/string
-        filename = pathlib.Path(value)
-        if not filename.exists():
-            raise click.BadParameter(f'{filename} does not exist.', param=param)
-        if 'json' in filename.suffix:
-            with open(filename) as f:
+        if value =='-' or 'json' in value:
+            with click.open_file(value, encoding='utf-8') as f:
                 value = json.load(f)
         else:
-            value, _ = get_bounds(value, expand=10)
+            value = get_bounds(value, expand=10)
     elif value is not None and len(value) != 0:
-        raise click.BadParameter(f'Invalid region: {value}.', param=param)
+        raise click.BadParameter(f'Invalid region: {filename}.', param=param)
     return value
 
 
@@ -195,8 +192,8 @@ bbox_option = click.option(
     help='Region defined by bounding box co-ordinates in WGS84 (xmin, ymin, xmax, ymax).'
 )
 region_option = click.option(
-    '-r', '--region', type=click.Path(exists=True, dir_okay=False), default=None, callback=_region_cb,
-    help='Region defined by geojson or raster file.'
+    '-r', '--region', type=click.Path(exists=True, dir_okay=False, allow_dash=True), default=None, callback=_region_cb,
+    help='Region defined by geojson or raster file.  Use "-" to read geojson from stdin.'
 )
 image_id_option = click.option(
     '-i', '--id', 'image_id', type=click.STRING, multiple=True, help='Earth engine image ID(s).'
@@ -304,8 +301,9 @@ cli.add_command(config)
 )
 @bbox_option
 @click.option(
-    '-r', '--region', type=click.Path(exists=True, dir_okay=False), callback=_region_cb,
-    help='Region defined by geojson or raster file. [One of --bbox or --region is required]'
+    '-r', '--region', type=click.Path(exists=True, dir_okay=False, allow_dash=True), callback=_region_cb,
+    help='Region defined by geojson or raster file. Use "-" to read geojson from stdin.  [One of --bbox or --region is '
+         'required]'
 )
 @click.option(
     '-cp', '--cloudless-portion', type=click.FloatRange(min=0, max=100), default=0, show_default=True,

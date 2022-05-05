@@ -30,7 +30,7 @@ class MaskedImage(BaseImage):
     _default_mask = False
     _supported_collection_ids = ['*']
     _proj_scale = None  # TODO: for images w/o fixed projections, nominalScale() is 1deg~100km.  Can we get this from
-                        #  STAC w/o overheads for e.g. mapping over collections
+    #  STAC w/o overheads for e.g. mapping over collections
     _cloud_dist_band = None
 
     def __init__(self, ee_image, mask=_default_mask, region=None, **kwargs):
@@ -290,7 +290,6 @@ class LandsatImage(CloudMaskedImage):
         return ee.Image([fill_mask, cloud_mask, shadow_mask, cloudless_mask])
 
 
-
 class Sentinel2ClImage(CloudMaskedImage):
     """Base class for cloud/shadow masking of Sentinel-2 TOA and SR (surface reflectance) images."""
     _supported_collection_ids = []
@@ -435,16 +434,6 @@ class Sentinel2ToaClImage(Sentinel2ClImage):
         return Sentinel2ClImage._aux_image(self, s2_toa=True, **kwargs)
 
 
-class ModisNbarImage(MaskedImage):
-    """
-    Class for encapsulating MODIS NBAR images.
-
-    These images are already cloud/shadow free composites, so no further processing is done on them.
-    """
-    # TODO: remove?
-    _supported_collection_ids = ['MODIS/006/MCD43A4']
-
-
 def class_from_id(image_id: str) -> type:
     """Return the *Image class that corresponds to the provided EE image/collection ID."""
 
@@ -456,7 +445,6 @@ def class_from_id(image_id: str) -> type:
         'LANDSAT/LC09/C02/T1_L2': LandsatImage,
         'COPERNICUS/S2': Sentinel2ToaClImage,
         'COPERNICUS/S2_SR': Sentinel2SrClImage,
-        'MODIS/006/MCD43A4': ModisNbarImage
     }
     ee_coll_name, _ = split_id(image_id)
     if image_id in masked_image_dict:

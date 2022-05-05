@@ -70,17 +70,15 @@ def get_bounds(filename, expand=5):  # pragma coverage
 
     Parameters
     ----------
-    filename :  str, pathlib.Path
-                Path of the image file whose bounds to find.
-    expand :    int, optional
-                Percentage (0-100) by which to expand the bounds (default: 5).
+    filename: str, pathlib.Path
+        Path of the image file whose bounds to find.
+    expand : int, optional
+        Percentage (0-100) by which to expand the bounds (default: 5).
 
     Returns
     -------
-    bounds : dict
-             Geojson polygon.
-    crs : str
-          Image CRS as EPSG string.
+    dict
+        Geojson polygon.
     """
     try:
         # GEE sets tif colorinterp tags incorrectly, suppress rasterio warning relating to this:
@@ -107,9 +105,7 @@ def get_bounds(filename, expand=5):  # pragma coverage
             src_bbox_wgs84 = transform_geom(im.crs, "WGS84", bbox_expand_dict)  # convert to WGS84 geojson
     finally:
         logging.getLogger("rasterio").setLevel(logging.WARNING)
-
-    image_bounds = collections.namedtuple('ImageBounds', ['bounds', 'crs'])
-    return image_bounds(src_bbox_wgs84, im.crs.to_epsg())
+    return src_bbox_wgs84
 
 
 class BaseImage:
@@ -171,7 +167,6 @@ class BaseImage:
     @property
     def id(self) -> str:
         """The EE image ID."""
-        # TODO: some collections e.g. LANDSAT/LC08/C01/T1_8DAY_EVI, won't allow get('system:id')
         return self._id or self.ee_info['id']  # avoid a call to getInfo() if _id is set
 
     @property
