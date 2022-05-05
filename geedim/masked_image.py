@@ -338,6 +338,9 @@ class Sentinel2ClImage(CloudMaskedImage):
 
         def get_cloud_prob(ee_im):
             """Get the cloud probability image from COPERNICUS/S2_CLOUD_PROBABILITY that corresponds to `ee_im`."""
+            # TODO: there are cases where there is no corresponding cloud prob image for a S2/S2_SR image. E.g.
+            #  ID=20220305T075809_20220305T082125_T35HKD.  Might joining and filtering collections (from search) be a
+            #  way of filtering these cases out?
             idx = ee_im.get('system:index')
             return ee.ImageCollection('COPERNICUS/S2_CLOUD_PROBABILITY').filter(
                 ee.Filter.eq('system:index', idx)

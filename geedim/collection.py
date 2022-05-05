@@ -15,8 +15,8 @@
 """
 
 import logging
+import re
 from collections import OrderedDict
-##
 from datetime import datetime, timedelta
 from typing import Dict, List
 
@@ -47,6 +47,28 @@ _table_fmt = TableFormat(
 )
 
 
+def compatible_collections(names: List[str]) -> bool:
+    """
+    Test if all the collections in a list are spectrally compatible i.e. images from these collections can be
+    composited together.
+    """
+    names = list(set(names))  # reduce to unique values
+    start_name = names[0]
+    name_matches = [True]
+    landsat_regex = re.compile('(LANDSAT/\w{2})(\d{2})(/.*)')
+    start_landsat_match = landsat_regex.search(start_name)
+    for name in names[1:]:
+        name_match = False
+        if start_name == name:
+            name_match = True
+        elif start_landsat_match:
+            landsat_regex = re.compile(f'{start_landsat_match.groups()[0]}\d\d{start_landsat_match.groups()[-1]}')
+            if landsat_regex.search(name):
+                name_match = True
+        name_matches.append(name_match)
+    return all(name_matches)
+
+
 class MaskedCollection:
     """
     Class for encapsulating, searching and compositing an Earth Engine image collection, with support for
@@ -70,6 +92,7 @@ class MaskedCollection:
         self._properties = None
         self._filtered = False
         self._ee_collection = ee_collection
+        self._image_type = None
 
     @classmethod
     def from_name(cls, name):
@@ -123,16 +146,15 @@ class MaskedCollection:
                 raise UnsupportedTypeError(f'Unsupported image object type: {type(image_obj)}')
 
         # check the images all come from the same collection
-        ee_coll_name = split_id(ee_id_list[0])[0]
-        id_check = [split_id(im_id)[0] == ee_coll_name for im_id in ee_id_list[1:]]
-        if not all(id_check):
-            # TODO: allow images from compatible landsat collections
-            raise UnsupportedValueError('All images must belong to the same collection')
+        ee_coll_names = [split_id(im_id)[0] for im_id in ee_id_list]
+        if not compatible_collections(ee_coll_names):
+            raise UnsupportedValueError(
+                'All images must belong to the same, or spectrally compatible, collections.'
+            )
 
-        # create the collection object
-        gd_collection = cls.from_name(ee_coll_name)
+        # create the collection object, using the name of the first collection in ee_coll_names.
+        gd_collection = cls.from_name(ee_coll_names[0])
         gd_collection._ee_collection = ee.ImageCollection(ee.List(ee_image_list))
-        gd_collection._name = ee_coll_name
         gd_collection._filtered = True
         return gd_collection
 
@@ -145,8 +167,8 @@ class MaskedCollection:
     def name(self) -> str:
         """ Name of the encapsulated Earth Engine image collection. """
         if not self._name:
-            image_id = self._ee_collection.first().getInfo()['id']
-            self._name = split_id(image_id)[0]
+            ee_info = self._ee_collection.first().getInfo()
+            self._name = split_id(ee_info['id'])[0] if ee_info else None
         return self._name
 
     @property
@@ -162,7 +184,9 @@ class MaskedCollection:
     @property
     def image_type(self) -> type:
         """ geedim class to encapsulate images from `ee_collection`. """
-        return class_from_id(self.name)
+        if not self._image_type:
+            self._image_type = class_from_id(self.name)
+        return self._image_type
 
     @property
     def properties(self) -> Dict:
@@ -203,7 +227,11 @@ class MaskedCollection:
 
         # retrieve list of dicts of properties of images in ee_collection
         props_list = ee.List(ee_collection.iterate(aggregrate_props, ee.List([]))).getInfo()
-        return OrderedDict({prop_dict['system:id']:prop_dict for prop_dict in props_list})
+        # add image properties to the return dict in the same order as the underlying collection
+        props_dict = OrderedDict()
+        for prop_dict in props_list:
+            props_dict[prop_dict['system:id']] = prop_dict
+        return props_dict
 
     def _get_properties_table(self, properties: List, properties_key: List = None) -> str:
         """
@@ -227,61 +255,61 @@ class MaskedCollection:
         return tabulate.tabulate(abbrev_props, headers='keys', floatfmt='.2f', tablefmt=_table_fmt)
 
     def _prepare_for_composite(
-            self, method=_default_comp_method, mask=True, resampling=BaseImage._default_resampling, date=None,
-            region=None, **kwargs
-        ):
-            """
-            Prepare the Earth Engine collection for compositing. See MaskedCollection.composite() for
-            parameter descriptions.
-            """
+        self, method=_default_comp_method, mask=True, resampling=BaseImage._default_resampling, date=None,
+        region=None, **kwargs
+    ):
+        """
+        Prepare the Earth Engine collection for compositing. See MaskedCollection.composite() for
+        parameter descriptions.
+        """
 
-            if not self._filtered:
-                raise UnfilteredError(
-                    'Composites can only be created from collections returned by `search()` and `from_list()`'
-                )
+        if not self._filtered:
+            raise UnfilteredError(
+                'Composites can only be created from collections returned by `search()` and `from_list()`'
+            )
 
-            method = CompositeMethod(method)
-            resampling = ResamplingMethod(resampling)
-            if (method == CompositeMethod.q_mosaic) and (self.image_type == MaskedImage):
-                # TODO get a list of supported collections, report this in CLI help too
-                raise UnsupportedValueError(f'The `q-mosaic` method is not supported for the {self.name} collection.')
+        method = CompositeMethod(method)
+        resampling = ResamplingMethod(resampling)
+        if (method == CompositeMethod.q_mosaic) and (self.image_type == MaskedImage):
+            # TODO get a list of supported collections, report this in CLI help too
+            raise UnsupportedValueError(f'The `q-mosaic` method is not supported for the {self.name} collection.')
 
-            ee_collection = self._ee_collection
-            if method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic]:
-                if date:
-                    # sort the collection by time difference to `date`, so that *mosaic uses the closest in time pixels
-                    def set_date_dist(ee_image):
-                        date_dist = ee.Number(ee_image.get('system:time_start')).subtract(ee.Date(date).millis()).abs()
-                        return ee_image.set('DATE_DIST', date_dist)
+        ee_collection = self._ee_collection
+        if method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic]:
+            if date:
+                # sort the collection by time difference to `date`, so that *mosaic uses the closest in time pixels
+                def set_date_dist(ee_image):
+                    date_dist = ee.Number(ee_image.get('system:time_start')).subtract(ee.Date(date).millis()).abs()
+                    return ee_image.set('DATE_DIST', date_dist)
 
-                    ee_collection = ee_collection.map(set_date_dist).sort('DATE_DIST', opt_ascending=False)
-                elif region:
-                    # sort the collection by cloud/shadow free portion, so that *mosaic favours pixels from the least
-                    # cloudy image
-                    def set_cloudless_portion(ee_image):
-                        gd_image = self.image_type(ee_image, **kwargs)
-                        gd_image.set_region_stats(region)
-                        return gd_image.ee_image
-
-                    ee_collection = ee_collection.map(set_cloudless_portion).sort('CLOUDLESS_PORTION')
-                else:
-                    # sort the collection by capture date.  *mosaic will favour the most recent pixels.
-                    ee_collection = ee_collection.sort('system:time_start')
-
-            if mask:
-                def mask_clouds(ee_image):
+                ee_collection = ee_collection.map(set_date_dist).sort('DATE_DIST', opt_ascending=False)
+            elif region:
+                # sort the collection by cloud/shadow free portion, so that *mosaic favours pixels from the least
+                # cloudy image
+                def set_cloudless_portion(ee_image):
                     gd_image = self.image_type(ee_image, **kwargs)
-                    gd_image.mask_clouds()
+                    gd_image.set_region_stats(region)
                     return gd_image.ee_image
 
-                ee_collection = ee_collection.map(mask_clouds)
+                ee_collection = ee_collection.map(set_cloudless_portion).sort('CLOUDLESS_PORTION')
+            else:
+                # sort the collection by capture date.  *mosaic will favour the most recent pixels.
+                ee_collection = ee_collection.sort('system:time_start')
 
-            if resampling != BaseImage._default_resampling:
-                def resample(ee_image):
-                    return ee_image.resample(resampling.value)
+        if mask:
+            def mask_clouds(ee_image):
+                gd_image = self.image_type(ee_image, **kwargs)
+                gd_image.mask_clouds()
+                return gd_image.ee_image
 
-                ee_collection = ee_collection.map(resample)
-            return ee_collection
+            ee_collection = ee_collection.map(mask_clouds)
+
+        if resampling != BaseImage._default_resampling:
+            def resample(ee_image):
+                return ee_image.resample(resampling.value)
+
+            ee_collection = ee_collection.map(resample)
+        return ee_collection
 
     def search(self, start_date, end_date, region, cloudless_portion=0, **kwargs):
         """
@@ -321,11 +349,13 @@ class MaskedCollection:
             self._ee_collection.filterDate(start_date, end_date).
                 filterBounds(region).
                 map(set_region_stats).
-                filter(ee.Filter.gte('CLOUDLESS_PORTION', cloudless_portion))
+                filter(ee.Filter.gte('CLOUDLESS_PORTION', cloudless_portion)).
+                sort('system:time_start')
         )
         # return a new MaskedCollection containing the filtered EE collection (the EE collection
         # wrapped by MaskedCollection remains fixed)
         gd_collection = MaskedCollection(ee_collection)
+        gd_collection._name = self._name
         gd_collection._filtered = True
         return gd_collection
 
