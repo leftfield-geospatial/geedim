@@ -38,7 +38,6 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 
 from geedim import info
 from geedim.enums import ResamplingMethod
-from geedim.errors import UnsupportedValueError, UnsupportedTypeError, IoError
 from geedim.tile import Tile, _requests_retry_session
 
 logger = logging.getLogger(__name__)
@@ -51,13 +50,15 @@ def split_id(image_id):
     Parameters
     ----------
     image_id: str
-              Earth engine image ID.
+        Earth engine image ID.
 
     Returns
     -------
     : Tuple[str, str]
         A tuple of strings: (collection name, image index).
     """
+    if not image_id:
+        return None, None
     index = image_id.split("/")[-1]
     ee_coll_name = "/".join(image_id.split("/")[:-1])
     return ee_coll_name, index
@@ -124,7 +125,7 @@ class BaseImage:
             The Earth Engine image to encapsulate.
         """
         if not isinstance(ee_image, ee.Image):
-            raise UnsupportedTypeError('`ee_image` must be an instance of ee.Image.')
+            raise TypeError('`ee_image` must be an instance of ee.Image.')
         self._ee_image = ee_image
         self._ee_info = None
         self._id = None
@@ -164,14 +165,17 @@ class BaseImage:
         self._ee_image = value
 
     @property
-    def id(self) -> str:
+    def id(self) -> Union[str, None]:
         """The EE image ID."""
-        return self._id or self.ee_info['id']  # avoid a call to getInfo() if _id is set
+        if self._id:  # avoid a call to getInfo() if _id is set
+            return self._id
+        else:
+            return self.ee_info['id'] if 'id' in self.ee_info else None
 
     @property
-    def name(self) -> str:
+    def name(self) -> Union[str, None]:
         """The image name (the ID with slashes replaces by dashes)."""
-        return self.id.replace('/', '-')
+        return self.id.replace('/', '-') if self.id else None
 
     @property
     def ee_info(self) -> Union[Dict, None]:
@@ -181,9 +185,9 @@ class BaseImage:
         return self._ee_info
 
     @property
-    def properties(self) -> Union[Dict, None]:
+    def properties(self) -> Dict:
         """The EE image properties in a dict."""
-        return self.ee_info['properties'] if 'properties' in self.ee_info else None
+        return self.ee_info['properties'] if 'properties' in self.ee_info else {}
 
     @property
     def min_projection(self) -> Union[Dict, None]:
@@ -193,7 +197,7 @@ class BaseImage:
         return self._min_projection
 
     @property
-    def crs(self) -> str:
+    def crs(self) -> Union[str, None]:
         """
         The image CRS corresponding to minimum scale band, as an EPSG string.
         Will return None if the image has no fixed projection.
@@ -201,12 +205,12 @@ class BaseImage:
         return self.min_projection['crs']
 
     @property
-    def scale(self) -> float:
+    def scale(self) -> Union[float, None]:
         """The scale (m) corresponding to minimum scale band. Will return None if the image has no fixed projection."""
         return self.min_projection['scale']
 
     @property
-    def shape(self) -> Tuple[int, int]:
+    def shape(self) -> Union[Tuple[int, int], None]:
         """
         The (row, column) dimensions of the minimum scale band.
         Will return None if the image has no fixed projection.
@@ -214,7 +218,7 @@ class BaseImage:
         return self.min_projection['shape']
 
     @property
-    def count(self) -> int:
+    def count(self) -> Union[int, None]:
         """The number of image bands."""
         return len(self.ee_info['bands']) if 'bands' in self.ee_info else None
 
@@ -239,7 +243,7 @@ class BaseImage:
         return self._min_dtype
 
     @property
-    def byte_size(self) -> int:
+    def size_in_bytes(self) -> int:
         """The size in bytes of this image."""
         dtype_size = np.dtype(self.dtype).itemsize
         return self.shape[0] * self.shape[1] * self.count * dtype_size
@@ -255,7 +259,7 @@ class BaseImage:
     def band_metadata(self) -> List:
         # TODO: replace with STAC
         """A list of dicts describing the image bands."""
-        return self._get_band_metadata(self.ee_info)
+        return self._get_band_metadata()
 
     @property
     def info(self) -> Dict:
@@ -327,20 +331,6 @@ class BaseImage:
             return BaseImage._str_format_size(byte_size / 1000, units[1:])
 
     @staticmethod
-    def _get_band_metadata(ee_info: Dict) -> List[Dict]:
-        """Return band metadata given an EE image info dict."""
-        ee_coll_name, _ = split_id(ee_info['id'])
-        band_ids = [bd['id'] for bd in ee_info['bands']]
-        if ee_coll_name in info.collection_info:  # include SR band metadata if it exists
-            # use DataFrame to concat SR band metadata from collection_info with band IDs from the image
-            sr_band_list = info.collection_info[ee_coll_name]["bands"].copy()
-            sr_band_dict = {bdict['id']: bdict for bdict in sr_band_list}
-            band_metadata = [sr_band_dict[bid] if bid in sr_band_dict else dict(id=bid) for bid in band_ids]
-        else:  # just use the image band IDs
-            band_metadata = [dict(id=bid) for bid in band_ids]
-        return band_metadata
-
-    @staticmethod
     def _convert_dtype(ee_image: ee.Image, dtype: str) -> ee.Image:
         """ Convert the data type of an EE image to a specified type. """
         conv_dict = dict(
@@ -354,9 +344,22 @@ class BaseImage:
             int32=ee.Image.toInt32,
         )
         if dtype not in conv_dict:
-            raise UnsupportedTypeError(f'Unsupported dtype: {dtype}')
+            raise TypeError(f'Unsupported dtype: {dtype}')
 
         return conv_dict[dtype](ee_image)
+
+    def _get_band_metadata(self) -> List[Dict]:
+        """Return band metadata for this image."""
+        ee_coll_name, _ = split_id(self.id)
+        band_ids = [bd['id'] for bd in self.ee_info['bands']]
+        if ee_coll_name in info.collection_info:  # include SR band metadata if it exists
+            # use DataFrame to concat SR band metadata from collection_info with band IDs from the image
+            sr_band_list = info.collection_info[ee_coll_name]["bands"].copy()
+            sr_band_dict = {bdict['id']: bdict for bdict in sr_band_list}
+            band_metadata = [sr_band_dict[bid] if bid in sr_band_dict else dict(id=bid) for bid in band_ids]
+        else:  # just use the image band IDs
+            band_metadata = [dict(id=bid) for bid in band_ids]
+        return band_metadata
 
     def _prepare_for_export(self, region=None, crs=None, scale=None, resampling=_default_resampling, dtype=None):
         """
@@ -390,25 +393,25 @@ class BaseImage:
             # One or more of region, crs and scale were not provided, so get the image values to use instead
             if not self.has_fixed_projection:
                 # Raise an error if this image has no fixed projection
-                raise UnsupportedValueError(
+                raise ValueError(
                     f'This image does not have a fixed projection, you need to specify a region, '
                     f'crs and scale.'
                 )
 
         if not region and not self.footprint:
-            raise UnsupportedValueError(f'This image does not have a footprint, you need to specify a region.')
+            raise ValueError(f'This image does not have a footprint, you need to specify a region.')
 
         if self.crs == 'EPSG:4326' and not scale:
             # ee.Image.prepare_for_export() expects a scale in meters, but if the image is EPSG:4326, the default scale
             # is in degrees.
-            raise UnsupportedValueError(f'This image is in EPSG:4326, you need to specify a scale in meters.')
+            raise ValueError(f'This image is in EPSG:4326, you need to specify a scale in meters.')
 
         region = region or self.footprint  # TODO: test if this region is not in the download crs
         crs = crs or self.crs
         scale = scale or self.scale
 
         if crs == 'SR-ORG:6974':
-            raise UnsupportedValueError(
+            raise ValueError(
                 'There is an earth engine bug exporting in SR-ORG:6974, specify another CRS: '
                 'https://issuetracker.google.com/issues/194561313'
             )
@@ -417,7 +420,7 @@ class BaseImage:
         ee_image = self._ee_image
         if resampling != self._default_resampling:
             if not self.has_fixed_projection:
-                raise UnsupportedValueError(
+                raise ValueError(
                     'This image has no fixed projection and cannot be resampled.  If this image is a composite, '
                     'you can resample the images used to create the composite.'
                 )
@@ -466,7 +469,7 @@ class BaseImage:
         # find the total number of tiles we must divide the image into to satisfy max_download_size
         image_shape = exp_image.shape
         dtype_size = np.dtype(exp_image.dtype).itemsize
-        image_size = exp_image.byte_size
+        image_size = exp_image.size_in_bytes
         if exp_image.dtype.endswith('int8'):
             # workaround for GEE overestimate of *int8 dtype download sizes
             dtype_size *= 2
@@ -521,7 +524,7 @@ class BaseImage:
     def _build_overviews(dataset: rio.io.DatasetWriter, max_num_levels=8, min_ovw_pixels=256):
         """Build internal overviews, downsampled by successive powers of 2, for an open rasterio dataset."""
         if dataset.closed:
-            raise IoError('Image dataset is closed')
+            raise IOError('Image dataset is closed')
 
         # limit overviews so that the highest level has at least 2**8=256 pixels along the shortest dimension,
         # and so there are no more than 8 levels.
@@ -534,7 +537,7 @@ class BaseImage:
     def _write_metadata(self, dataset: rio.io.DatasetWriter):
         """Write EE and geedim image metadata to an open rasterio dataset."""
         if dataset.closed:
-            raise IoError('Image dataset is closed')
+            raise IOError('Image dataset is closed')
 
         dataset.update_tags(**self.properties)
         # populate band metadata
@@ -626,7 +629,7 @@ class BaseImage:
                 bar.update(status['metadata']['progress'] - bar.n)
 
         if status['metadata']['state'] != 'SUCCEEDED':
-            raise IoError(f"Export failed \n{status}")
+            raise IOError(f"Export failed \n{status}")
 
     def export(self, filename, folder='', wait=True, **kwargs):
         """
@@ -661,7 +664,7 @@ class BaseImage:
         exp_image = self._prepare_for_export(**kwargs)
 
         if logger.getEffectiveLevel() <= logging.DEBUG:
-            logger.debug(f'Uncompressed size: {self._str_format_size(exp_image.byte_size)}')
+            logger.debug(f'Uncompressed size: {self._str_format_size(exp_image.size_in_bytes)}')
 
         # create export task and start
         task = ee.batch.Export.image.toDrive(
@@ -722,7 +725,7 @@ class BaseImage:
 
         # find raw size of the download data (less than the actual download size as the image data is zipped in a
         # compressed geotiff)
-        raw_download_size = exp_image.byte_size
+        raw_download_size = exp_image.size_in_bytes
         if logger.getEffectiveLevel() <= logging.DEBUG:
             dtype_size = np.dtype(exp_image.dtype).itemsize
             raw_tile_size = tile_shape[0] * tile_shape[1] * exp_image.count * dtype_size
