@@ -23,17 +23,5 @@ class UnfilteredError(GeedimError):
     """ Raised when attempting to retrieve the properties of an unfiltered image collection. """
 
 
-class UnsupportedTypeError(GeedimError):
-    """ Raised when the type of an object is not supported. """
-
-
-class UnsupportedValueError(GeedimError):
-    """ Raised when the value of an object is not supported. """
-
-
-class OutOfRangeError(GeedimError):
-    """ Raised when the value of an object is out of the allowed range. """
-
-
-class IoError(GeedimError):
-    """ Raised when reading/writing from/to a file fails.  """
+class ComponentImageError(GeedimError):
+    """ Raised when there is a problem with the images making up a collection. """

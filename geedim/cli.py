@@ -30,7 +30,6 @@ from geedim import collection as coll_api, info, _ee_init, version
 from geedim.collection import MaskedCollection
 from geedim.download import BaseImage, get_bounds
 from geedim.enums import CloudMaskMethod, CompositeMethod, ResamplingMethod
-from geedim.errors import UnsupportedValueError
 from geedim.mask import MaskedImage
 
 logger = logging.getLogger(__name__)
@@ -177,7 +176,7 @@ def _prepare_image_list(obj: SimpleNamespace, mask=False) -> List[MaskedImage,]:
             if mask:
                 im_obj.mask_clouds()
         else:
-            raise UnsupportedValueError(f'Unsupported image object type: {type(im_obj)}')
+            raise ValueError(f'Unsupported image object type: {type(im_obj)}')
         image_list.append(im_obj)
 
     if obj.region is None and any([not im.has_fixed_projection for im in image_list]):

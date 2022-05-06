@@ -25,8 +25,6 @@ from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 from tqdm import tqdm
 
-from geedim.errors import IoError
-
 
 def _requests_retry_session(retries=3, backoff_factor=0.3, status_forcelist=(500, 502, 504), session=None):
     """A persistent requests session configured for retries."""
@@ -108,7 +106,7 @@ class Tile:
         download_size = int(response.headers.get('content-length', 0))
 
         if download_size == 0 or not response.ok:
-            raise IoError(response.json())
+            raise IOError(response.json())
 
         # download zip into buffer
         zip_buffer = BytesIO()

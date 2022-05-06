@@ -27,7 +27,7 @@ from tabulate import TableFormat, Line, DataRow
 from geedim import info, medoid
 from geedim.download import BaseImage, split_id
 from geedim.enums import ResamplingMethod, CompositeMethod
-from geedim.errors import UnfilteredError, UnsupportedValueError, UnsupportedTypeError, OutOfRangeError
+from geedim.errors import UnfilteredError, ComponentImageError
 from geedim.mask import MaskedImage, class_from_id
 
 logger = logging.getLogger(__name__)
@@ -86,7 +86,7 @@ class MaskedCollection:
             The Earth Engine image collection to encapsulate.
         """
         if not isinstance(ee_collection, ee.ImageCollection):
-            raise UnsupportedTypeError(f'`ee_collection` must be an instance of ee.ImageCollection')
+            raise TypeError(f'`ee_collection` must be an instance of ee.ImageCollection')
         self._name = None
         self._info = None
         self._properties = None
@@ -117,7 +117,12 @@ class MaskedCollection:
     @classmethod
     def from_list(cls, image_list):
         """
-        Create a MaskedCollection instance from a list of EE image IDs, ee.Image's and/or MaskedImage's.
+        Create a MaskedCollection instance from a list of EE image ID strings, ee.Image objects and/or MaskedImage
+        objects.
+
+        Any ee.Image objects (including those encapsulated by MaskedImage) must have `system:id` and
+        `system:time_start` properties.  This is always the case for images from the EE data catalog, and images
+        returned from MaskedCollection.composite().
 
         Parameters
         ----------
@@ -130,6 +135,11 @@ class MaskedCollection:
             The MaskedCollection instance.
         """
         # build lists of EE images and IDs from image_list
+        # TODO: do we assume/force all images to have system:id and system:start_time properties.  or somehow allow
+        #  images w/o these values?
+        if len(image_list) == 0:
+            raise ValueError('`image_list` is empty.')
+
         ee_image_list = []
         ee_id_list = []
         for image_obj in image_list:
@@ -138,17 +148,22 @@ class MaskedCollection:
                 ee_id_list.append(image_obj)
             elif isinstance(image_obj, ee.Image):
                 ee_image_list.append(image_obj)
-                ee_id_list.append(image_obj.getInfo()['id'])
+                ee_info = image_obj.getInfo()
+                ee_id_list.append(ee_info['id'] if 'id' in ee_info else None)
             elif isinstance(image_obj, BaseImage):
                 ee_image_list.append(image_obj.ee_image)
                 ee_id_list.append(image_obj.id)
             else:
-                raise UnsupportedTypeError(f'Unsupported image object type: {type(image_obj)}')
+                raise TypeError(f'Unsupported image object type: {type(image_obj)}')
 
-        # check the images all come from the same collection
+        # check all images have IDs
+        if any([ee_id is None for ee_id in ee_id_list]):
+            raise ComponentImageError('Image(s) must have a "system:id" property')
+
+        # check the images all come from the same or compatible collections
         ee_coll_names = [split_id(im_id)[0] for im_id in ee_id_list]
         if not compatible_collections(ee_coll_names):
-            raise UnsupportedValueError(
+            raise ComponentImageError(
                 'All images must belong to the same, or spectrally compatible, collections.'
             )
 
@@ -168,7 +183,7 @@ class MaskedCollection:
         """ Name of the encapsulated Earth Engine image collection. """
         if not self._name:
             ee_info = self._ee_collection.first().getInfo()
-            self._name = split_id(ee_info['id'])[0] if ee_info else None
+            self._name = split_id(ee_info['id'])[0]
         return self._name
 
     @property
@@ -229,6 +244,7 @@ class MaskedCollection:
         props_list = ee.List(ee_collection.iterate(aggregrate_props, ee.List([]))).getInfo()
         # add image properties to the return dict in the same order as the underlying collection
         props_dict = OrderedDict()
+        # TODO: deal with the case where props images don't have system:time_start/id (wrt composite)
         for prop_dict in props_list:
             props_dict[prop_dict['system:id']] = prop_dict
         return props_dict
@@ -272,7 +288,7 @@ class MaskedCollection:
         resampling = ResamplingMethod(resampling)
         if (method == CompositeMethod.q_mosaic) and (self.image_type == MaskedImage):
             # TODO get a list of supported collections, report this in CLI help too
-            raise UnsupportedValueError(f'The `q-mosaic` method is not supported for the {self.name} collection.')
+            raise ValueError(f'The `q-mosaic` method is not supported for this ("{self.name}") collection.')
 
         ee_collection = self._ee_collection
         if method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic]:
@@ -336,7 +352,7 @@ class MaskedCollection:
         if end_date is None:
             end_date = start_date + timedelta(days=1)
         if end_date <= start_date:
-            raise OutOfRangeError('`end_date` must be at least a day later than `start_date`')
+            raise ValueError('`end_date` must be at least a day later than `start_date`')
 
         def set_region_stats(ee_image: ee.Image):
             """ Find filled and cloud/shadow free portions inside the search region for a given image.  """
@@ -408,7 +424,7 @@ class MaskedCollection:
             try:
                 date = datetime.strptime(date, '%Y-%m-%d')
             except ValueError:
-                raise UnsupportedValueError(
+                raise ValueError(
                     '`date` should be a datetime instance or a string with format: "%Y-%m-%d"'
                 )
 
@@ -435,10 +451,12 @@ class MaskedCollection:
         elif method == CompositeMethod.mean:
             comp_image = ee_collection.mean()
         else:
-            raise UnsupportedValueError(f'Unsupported composite method: {method}')
+            raise ValueError(f'Unsupported composite method: {method}')
 
         # populate composite image metadata with info on component images
         props = self._get_properties(ee_collection)
+        if len(props) == 0:
+            raise ValueError('The collection is empty.')
         props_str = self._get_properties_table(props)
         comp_image = comp_image.set('COMPONENT_IMAGES', 'TABLE:\n' + props_str)
 
