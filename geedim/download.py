@@ -287,7 +287,8 @@ class BaseImage:
                 band_info = np.array(ee_info['bands'])[fixed_idx][idx]
                 projection_info['scale'] = abs(band_info['crs_transform'][0])
                 projection_info['crs'] = band_info['crs']
-                projection_info['shape'] = band_info['dimensions'][::-1]
+                if 'dimensions' in band_info:
+                    projection_info['shape'] = band_info['dimensions'][::-1]
                 projection_info['transform'] = rio.Affine(*band_info['crs_transform'])
                 if ('origin' in band_info) and not np.any(np.isnan(band_info['origin'])):
                     projection_info['transform'] *= rio.Affine.translation(*band_info['origin'])
