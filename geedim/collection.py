@@ -475,5 +475,6 @@ class MaskedCollection:
 
         # set the composite capture time to the capture time of the first component image
         comp_image = comp_image.set('system:time_start', min(dates).timestamp() * 1000)
-
-        return self.image_type(comp_image)
+        gd_comp_image = self.image_type(comp_image)
+        gd_comp_image._id = comp_id     # avoid getInfo() for id property
+        return gd_comp_image
