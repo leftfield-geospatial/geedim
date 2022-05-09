@@ -245,13 +245,15 @@ class BaseImage:
     @property
     def size_in_bytes(self) -> int:
         """The size in bytes of this image."""
+        if not self.shape:
+            return None
         dtype_size = np.dtype(self.dtype).itemsize
         return self.shape[0] * self.shape[1] * self.count * dtype_size
 
     @property
     def footprint(self) -> Union[Dict, None]:
         """A geojson polygon of the image extent."""
-        if 'system:footprint' not in self.ee_info['properties']:
+        if ('properties' not in self.ee_info) or ('system:footprint' not in self.ee_info['properties']):
             return None
         return self.ee_info['properties']['system:footprint']
 
@@ -281,7 +283,7 @@ class BaseImage:
             # get scale & crs corresponding to min/max scale band
             scales = np.array([abs(bd['crs_transform'][0]) for bd in ee_info['bands']])
             crss = np.array([bd['crs'] for bd in ee_info['bands']])
-            fixed_idx = (crss != 'EPSG:4326') & (scales != 1)
+            fixed_idx = (crss != 'EPSG:4326') | (scales != 1)
             if sum(fixed_idx) > 0:
                 idx = np.argmin(scales[fixed_idx]) if min_scale else np.argmax(scales[fixed_idx])
                 band_info = np.array(ee_info['bands'])[fixed_idx][idx]
@@ -326,7 +328,7 @@ class BaseImage:
         Returns a human readable string representation of bytes.
         Adapted from https://stackoverflow.com/questions/1094841/get-human-readable-version-of-file-size.
         """
-        if byte_size < 1024:
+        if byte_size < 1000:
             return f'{byte_size:.2f} {units[0]}'
         else:
             return BaseImage._str_format_size(byte_size / 1000, units[1:])
@@ -428,6 +430,12 @@ class BaseImage:
             ee_image = ee_image.resample(resampling.value)
 
         ee_image = self._convert_dtype(ee_image, dtype=dtype or self.dtype)
+        # TODO: EE seems to resample here onto a different grid to the source ee_image, even when the crs,
+        #  scale etc below are the same as the source ee_image's (i.e. even with region, crs and scale as the
+        #  source ee_image values, the image returned by ee_image.prepare_for_export() has different shape,
+        #  crs_transform origin and bounds compared to source ee_image).  Perhaps it would be better to specify
+        #  `crs_transform` and `dimensions` as it is in tile, so that everything stays on the source grid where
+        #  possible.  But "where possible" will only be cases where the export CRS and scale are the same as the source.
         export_args = dict(region=region, crs=crs, scale=scale, fileFormat='GeoTIFF', filePerBand=False)
         ee_image, _ = ee_image.prepare_for_export(export_args)
         return BaseImage(ee_image)
@@ -459,8 +467,9 @@ class BaseImage:
         )
         return exp_image, profile
 
+    @staticmethod
     def _get_tile_shape(
-        self, exp_image: 'BaseImage', max_download_size=32 << 20, max_grid_dimension=10000
+        exp_image: 'BaseImage', max_download_size=32 << 20, max_grid_dimension=10000
     ) -> (Tuple[int, int], int):
         """
         Return a tile shape and number of tiles for a given BaseImage, such that the tile shape satisfies GEE
@@ -468,7 +477,7 @@ class BaseImage:
         """
 
         # find the total number of tiles we must divide the image into to satisfy max_download_size
-        image_shape = exp_image.shape
+        image_shape = np.array(exp_image.shape, dtype='int64')
         dtype_size = np.dtype(exp_image.dtype).itemsize
         image_size = exp_image.size_in_bytes
         if exp_image.dtype.endswith('int8'):
@@ -476,48 +485,19 @@ class BaseImage:
             dtype_size *= 2
             image_size *= 2
 
-        # here ceil_size is the worst case extra tile size due to np.ceil(image_shape / shape_num_tiles).astype('int')
-        ceil_size = (image_shape[0] + image_shape[1]) * exp_image.count * dtype_size
+        pixel_size = dtype_size * exp_image.count
 
-        # TODO: the below is an approx and there is still the chance of tile size > max_download_size in unusual cases
-        # adjust worst case ceil_size for the approx number of tiles in this case
-        init_num_tiles = max(1, np.floor(image_size / max_download_size))
-        ceil_size = ceil_size / np.sqrt(init_num_tiles)
+        num_tile_shape = np.array([1, 1], dtype='int64')
+        tile_size = image_size
+        tile_shape = image_shape
+        while tile_size >= max_download_size:
+            div_axis = np.argmax(tile_shape)
+            num_tile_shape[div_axis] += 1  # increase the num tiles down the longest dimension of tile_shape
+            tile_shape = np.ceil(image_shape / num_tile_shape).astype('int64')
+            tile_size = tile_shape[0] * tile_shape[1] * pixel_size
 
-        #  the total tile download size (tds) should be <= max_download_size, and
-        #   tds <= image_size/num_tiles + ceil_size, which gives us:
-        num_tiles = np.ceil(image_size / (max_download_size - ceil_size))
-
-        def is_prime(x: int) -> bool:
-            """Return True if x is prime else False."""
-            for d in range(2, int(x ** 0.5) + 1):
-                if x % d == 0:
-                    return False
-            return True
-
-        # increment num_tiles if it is prime (This is so that we can factorize num_tiles into x & y dimension
-        # components, and don't have all tiles along a single dimension.
-        if num_tiles > 4 and is_prime(num_tiles):
-            num_tiles += 1
-
-        def factors(x: int) -> np.ndarray:
-            """Return a Nx2 array of factors of x."""
-            facts = np.arange(1, x + 1)
-            facts = facts[np.mod(x, facts) == 0]
-            return np.vstack((facts, x / facts)).transpose()
-
-        # factorise num_tiles into the number of tiles down x,y axes
-        fact_num_tiles = factors(num_tiles)
-
-        # choose the factors that produce the most square-ish tile shape
-        fact_aspect_ratios = fact_num_tiles[:, 0] / fact_num_tiles[:, 1]
-        image_aspect_ratio = image_shape[0] / image_shape[1]
-        fact_idx = np.argmin(np.abs(fact_aspect_ratios - image_aspect_ratio))
-        shape_num_tiles = fact_num_tiles[fact_idx, :]
-
-        # find the tile shape and clip to max_grid_dimension if necessary
-        tile_shape = np.ceil(np.array(image_shape) / shape_num_tiles).astype('int')
         tile_shape[tile_shape > max_grid_dimension] = max_grid_dimension
+        num_tiles = int(np.product(np.ceil(image_shape / tile_shape)))
         tile_shape = tuple(tile_shape.tolist())
         return tile_shape, num_tiles
 
