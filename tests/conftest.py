@@ -62,6 +62,10 @@ def big_region() -> Dict:
                          [22.5, -34.]]]
     }
 
+@pytest.fixture
+def s2_sr_small_image(small_region) -> TestImage:
+    return TestImage('COPERNICUS/S2_SR/20220114T080159_20220114T082124_T35HKC', region=small_region)
+
 
 @pytest.fixture
 def s2_sr_small_image(small_region) -> TestImage:
@@ -143,4 +147,5 @@ def synth_fixed_ee_image(synth_unfixed_ee_image, small_region) -> ee.Image:
 
 @pytest.fixture(scope='session')
 def synth_fixed_ee_info(synth_fixed_ee_image) -> Dict:
-    return synth_fixed_ee_image.getInfo()
+    ee_info = synth_fixed_ee_image.getInfo()
+    return ee_info
