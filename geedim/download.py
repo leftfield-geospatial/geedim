@@ -306,14 +306,11 @@ class BaseImage:
                 dtype_minmax = np.array(
                     [(bd['data_type']['min'], bd['data_type']['max']) for bd in ee_info['bands']], dtype=np.int64
                 )
-                dtype_min = int(dtype_minmax[:, 0].min())  # minimum image pixel value
-                dtype_max = int(dtype_minmax[:, 1].max())  # maximum image pixel value
+                dtype_min = min(0, int(dtype_minmax[:, 0].min()))  # minimum image pixel value
+                dtype_max = max(0, int(dtype_minmax[:, 1].max()))  # maximum image pixel value
 
                 # determine the number of integer bits required to represent the value range
-                bits = 0
-                for bound in [abs(dtype_max), abs(dtype_min)]:
-                    bound_bits = 0 if bound == 0 else 2 ** np.ceil(np.log2(np.log2(abs(bound))))
-                    bits += bound_bits
+                bits = 2 ** np.ceil(np.log2(np.log2(dtype_max - dtype_min)))
                 bits = min(max(bits, 8), 32)  # clamp bits to allowed values
                 dtype = f'{"u" if dtype_min >= 0 else ""}int{int(bits)}'
             elif any(precisions == 'double'):
@@ -527,7 +524,8 @@ class BaseImage:
                 dataset.set_band_description(band_i + 1, band_info['id'])
             dataset.update_tags(band_i + 1, **band_info)
 
-    def tiles(self, exp_image, tile_shape=None):
+    @staticmethod
+    def tiles(exp_image, tile_shape=None):
         """
         Iterator over downloadable image tiles.
 
@@ -547,7 +545,7 @@ class BaseImage:
             An image tile that can be downloaded.
         """
         if not tile_shape:
-            tile_shape, num_tiles = self._get_tile_shape(exp_image)
+            tile_shape, num_tiles = BaseImage._get_tile_shape(exp_image)
 
         # split the image up into tiles of at most `tile_shape` dimension
         image_shape = exp_image.shape
