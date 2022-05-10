@@ -15,19 +15,33 @@
 """
 import pathlib
 from typing import Dict, Tuple
-from collections import namedtuple
 
 import ee
 import numpy as np
 import pytest
 import rasterio as rio
 from rasterio import Affine
+from rasterio.coords import BoundingBox
 from rasterio.features import bounds
 from rasterio.warp import transform_geom
-from rasterio.crs import CRS
+from rasterio.windows import union
 
 from geedim.download import BaseImage, split_id
 from geedim.enums import ResamplingMethod
+
+
+class BaseImageLike:
+    """ Emulate BaseImage for _get_tile_shape() and tiles(). """
+
+    def __init__(
+        self, shape: Tuple[int, int], count: int = 10, dtype: str = 'uint16', transform: Affine = Affine.identity()
+    ):
+        self.shape = shape
+        self.count = count
+        self.dtype = dtype
+        self.transform = transform
+        dtype_size = np.dtype(dtype).itemsize
+        self.size_in_bytes = shape[0] * shape[1] * count * dtype_size
 
 
 @pytest.fixture(scope='session')
@@ -55,6 +69,14 @@ def s2_base_image() -> BaseImage:
 def l9_base_image() -> BaseImage:
     """ A BaseImage instance encapsulating a Landsat-9 image.  Covers `small_region`.  """
     return BaseImage.from_id('LANDSAT/LC09/C02/T1_L2/LC09_171084_20220427')
+
+@pytest.fixture(scope='session')
+def mnbar_base_image(small_region) -> BaseImage:
+    """ A BaseImage instance encapsulating a MODIS NBAR image.  Covers `small_region`.  """
+    return BaseImage(
+        ee.Image('MODIS/006/MCD43A4/2022_01_01').clip(small_region).reproject(crs='EPSG:3857', scale=500)
+    )
+
 
 
 def test_properties(synth_fixed_ee_image: ee.Image, synth_fixed_ee_info: Dict, small_region: Dict):
@@ -202,12 +224,19 @@ def test_prepare_exceptions(user_base_image: BaseImage, user_fix_base_image: Bas
     'src_image, tgt_image', [
         ('s2_base_image', 's2_base_image'),
         ('l9_base_image', 's2_base_image'),
+        ('mnbar_base_image', 's2_base_image'),
         ('user_base_image', 's2_base_image'),
         ('user_fix_base_image', 's2_base_image'),
         ('l9_base_image', 'l9_base_image'),
         ('s2_base_image', 'l9_base_image'),
+        ('mnbar_base_image', 'l9_base_image'),
         ('user_base_image', 'l9_base_image'),
         ('user_fix_base_image', 'l9_base_image'),
+        ('l9_base_image', 'mnbar_base_image'),
+        ('s2_base_image', 'mnbar_base_image'),
+        ('mnbar_base_image', 'mnbar_base_image'),
+        ('user_base_image', 'mnbar_base_image'),
+        ('user_fix_base_image', 'mnbar_base_image'),
     ]
 )
 def test_prepare_for_export(src_image: str, tgt_image: str, request):
@@ -239,6 +268,7 @@ def test_prepare_for_export(src_image: str, tgt_image: str, request):
         (exp_bounds[2] >= tgt_bounds[2]) and (exp_bounds[3] >= tgt_bounds[3])
     )
 
+
 @pytest.mark.parametrize(
     'src_image, tgt_image', [
         ('s2_base_image', 's2_base_image'),
@@ -261,26 +291,108 @@ def test_prepare_for_download(src_image: str, tgt_image: str, small_region, requ
     assert exp_profile['dtype'] == tgt_image.dtype
     assert exp_profile['nodata'] is not None
 
+
+@pytest.mark.parametrize(
+    'dtype, exp_nodata', [
+        ('uint8', 0), ('int8', -2 ** 7), ('uint16', 0), ('int16', -2 ** 15), ('uint32', 0), ('int32', -2 ** 31),
+        ('float32', float('nan')), ('float64', float('nan'))
+    ]
+)
+def test_prepare_nodata(user_fix_base_image, small_region, dtype, exp_nodata, request):
+    """ Test BaseImage._prepare_for_download() sets rasterio profile nodata correctly for different dtypes.  """
+    exp_image, exp_profile = user_fix_base_image._prepare_for_download(region=small_region, scale=30, dtype=dtype)
+    assert exp_image.dtype == dtype
+    if np.isnan(exp_profile['nodata']):
+        assert np.isnan(exp_nodata)
+    else:
+        assert exp_profile['nodata'] == exp_nodata
+
+
 def test_tile_shape():
-    """ Test BaseImage._get_tile_shape() for different image shapes.  """
-    BaseImageLike = namedtuple('BaseImageLike', ['shape', 'count', 'dtype', 'size_in_bytes'])
+    """ Test BaseImage._get_tile_shape() statisfies the EE download limit for different image shapes. """
     max_download_size = 32 << 20
     max_grid_dimension = 10000
-
-    def base_image_like(shape: Tuple[int, int], count:int=10, dtype:str='uint16'):
-        dtype_size = np.dtype(dtype).itemsize
-        size_in_bytes = shape[0] * shape[1] * count * dtype_size
-        return BaseImageLike(shape, count, dtype, size_in_bytes)
 
     for height in range(1, 11000, 100):
         for width in range(1, 11000, 100):
             exp_shape = (height, width)
-            exp_image = base_image_like(shape=exp_shape)
+            exp_image = BaseImageLike(shape=exp_shape)  # emulate a BaseImage
             tile_shape, num_tiles = BaseImage._get_tile_shape(exp_image)
             assert all(np.array(tile_shape) <= np.array(exp_shape))
             assert all(np.array(tile_shape) <= max_grid_dimension)
-            tile_image = base_image_like(shape=tile_shape)
+            tile_image = BaseImageLike(shape=tile_shape)
             assert tile_image.size_in_bytes <= max_download_size
+
+
+@pytest.mark.parametrize(
+    'image_shape, tile_shape, image_transform', [
+        ((1000, 500), (101, 101), Affine.identity()),
+        ((1000, 100), (101, 101), Affine.scale(1.23)),
+        ((1000, 102), (101, 101), Affine.scale(1.23) * Affine.translation(12, 34)),
+    ]
+)
+def test_tiles(image_shape, tile_shape, image_transform):
+    """ Test continuity and coverage of tiles. """
+    exp_image = BaseImageLike(shape=image_shape, transform=image_transform)
+    tiles = [tile for tile in BaseImage.tiles(exp_image, tile_shape=tile_shape)]
+
+    # test window coverage, and window & transform continuity
+    prev_tile = tiles[0]
+    accum_window = prev_tile.window
+    for tile in tiles[1:]:
+        accum_window = union(accum_window, tile.window)
+        assert all(np.array(tile._shape) <= np.array(tile_shape))
+
+        if tile.window.row_off == prev_tile.window.row_off:
+            assert tile.window.col_off == (prev_tile.window.col_off + prev_tile.window.width)
+            assert tile._transform == pytest.approx(
+                (prev_tile._transform * Affine.translation(prev_tile.window.width, 0)), rel=0.001
+            )
+        else:
+            assert tile.window.row_off == (prev_tile.window.row_off + prev_tile.window.height)
+            assert tile._transform == pytest.approx(
+                prev_tile._transform * Affine.translation(-prev_tile.window.col_off, prev_tile.window.height), rel=0.001
+            )
+        prev_tile = tile
+    assert (accum_window.height, accum_window.width) == exp_image.shape
+
+
+@pytest.mark.parametrize(
+    'base_image, region', [
+        ('user_base_image', 'small_region'),
+        ('user_fix_base_image', 'small_region'),
+        # ('s2_base_image', 'small_region'),
+        # ('l9_base_image', 'small_region'),
+        # ('mnbar_base_image', 'small_region'),
+    ]
+)
+def test_download(base_image, region, tmp_path, request):
+    base_image = request.getfixturevalue(base_image)
+    region = request.getfixturevalue(region)
+    filename = tmp_path.joinpath('test_user_download.tif')
+    crs = 'EPSG:3857'
+    dtype = 'uint16'
+    scale = 30
+    base_image.download(filename, region=region, crs=crs, scale=scale, dtype=dtype)
+    exp_region = transform_geom('EPSG:4326', crs, region)
+    exp_bounds = BoundingBox(*bounds(exp_region))
+    assert filename.exists()
+    with rio.open(filename, 'r') as ds:
+        assert ds.count == base_image.count
+        assert ds.dtypes[0] == dtype
+        assert ds.nodata == 0
+        assert abs(ds.transform[0]) == scale
+        assert ds.transform.xoff <= exp_bounds.left
+        assert ds.transform.yoff >= exp_bounds.top  # 'EPSG:3857' has y -ve
+        ds_bounds = ds.bounds
+        assert (
+            (ds_bounds[0] <= exp_bounds[0]) and (ds_bounds[1] <= exp_bounds[1]) and
+            (ds_bounds[2] >= exp_bounds[2]) and (ds_bounds[3] >= exp_bounds[3])
+        )
+        if ds.count < 4:
+            array = ds.read()
+            for i in range(ds.count):
+                assert np.all(array[i] == i + 1)
 
 # TO test
 # --------
@@ -320,6 +432,11 @@ def test_tile_shape():
 #   but as A one tile, and B many tiles, and then compare the 2 images.  Test the shape, transform, dtype etc of the
 #   downloaded image against the exp_image.  Perhaps we have to make the exp_image ourselves with prepare_for_export
 
+# Other to test:
+# - nodata for different data types (in profile?)
+# - resampling smooths things out
+# - different generic collection images are downloaded ok (perhaps this goes with MaskedImage more than BaseImage)
+# - test float mask/nodata in downloaded image
 
 # (a thought - if we make per session BaseImage objects, perhaps we can use them in above tests and avoid repeat
 # getInfo calls)
