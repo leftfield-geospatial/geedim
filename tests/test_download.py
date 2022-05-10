@@ -79,39 +79,6 @@ def mnbar_base_image(small_region) -> BaseImage:
 
 
 
-def test_properties(synth_fixed_ee_image: ee.Image, synth_fixed_ee_info: Dict, small_region: Dict):
-    base_image = BaseImage(synth_fixed_ee_image)
-    assert base_image.ee_info == synth_fixed_ee_info
-    assert base_image.crs == 'EPSG:3857'
-    assert base_image.scale == 30
-    assert bounds(base_image.footprint) == bounds(small_region)
-    assert base_image.id is None
-    assert base_image.name is None
-    assert base_image.dtype == 'uint8'
-    assert base_image.has_fixed_projection
-    band_info = synth_fixed_ee_info['bands'][0]
-    assert base_image.shape == band_info['dimensions'][::-1]
-    assert base_image.count == 3
-    transform = Affine(*band_info['crs_transform']) * Affine.translation(*band_info['origin'])
-    assert base_image.transform == transform
-
-
-def test_download(synth_unfixed_ee_image: ee.Image, small_region: Dict, tmp_path: pathlib.Path):
-    base_image = BaseImage(synth_unfixed_ee_image.reproject(crs='EPSG:3857', scale=30))
-    filename = tmp_path.joinpath('synth.tif')
-    download_args = dict(region=small_region, crs='EPSG:3857', scale=30)
-    exp_image, profile = base_image._prepare_for_download(**download_args)
-
-    base_image.download(filename, overwrite=True, region=small_region)
-    assert filename.exists()
-    with rio.open(filename, 'r') as ds:
-        array = ds.read()
-    assert array.shape == (exp_image.count, *exp_image.shape)
-    assert array.dtype == np.dtype(exp_image.dtype)
-    for i in range(3):
-        assert np.all(array[i] == i + 1)
-
-
 @pytest.mark.parametrize('id, exp_split', [('A/B/C', ('A/B', 'C')), ('ABC', ('', 'ABC')), (None, (None, None))])
 def test_split_id(id, exp_split):
     """ Test split_id(). """
@@ -173,16 +140,18 @@ def test_has_fixed_projection(user_base_image: BaseImage, user_fix_base_image: B
 
 @pytest.mark.parametrize(
     'ee_data_type_list, exp_dtype', [
-        ([{'precision': 'int', 'min': 1, 'max': 100},
-          {'precision': 'int', 'min': 0, 'max': 255}], 'uint8'),
-        ([{'precision': 'int', 'min': 1, 'max': 255},
-          {'precision': 'int', 'min': -255, 'max': -1}], 'int16'),
-        ([{'precision': 'int', 'min': 0, 'max': 1},
-          {'precision': 'int', 'min': 1, 'max': 2 << 32}], 'uint32'),
-        ([{'precision': 'float', 'min': 0, 'max': 2 << 32},
+        ([{'precision': 'int', 'min': 10, 'max': 11},
+          {'precision': 'int', 'min': 100, 'max': 101}], 'uint8'),
+        ([{'precision': 'int', 'min': -128, 'max': -100},
+          {'precision': 'int', 'min': 0, 'max': 127}], 'int8'),
+        ([{'precision': 'int', 'min': 256, 'max': 257}], 'uint16'),
+        ([{'precision': 'int', 'min': -32768, 'max': 32767}], 'int16'),
+        ([{'precision': 'int', 'min': 2 << 15, 'max': 2 << 32}], 'uint32'),
+        ([{'precision': 'int', 'min': -2 << 31, 'max': 2 << 31}], 'int32'),
+        ([{'precision': 'float', 'min': 0, 'max': 1e9},
           {'precision': 'float', 'min': 0, 'max': 1}], 'float32'),
-        ([{'precision': 'int', 'min': 0, 'max': 2 << 32},
-          {'precision': 'double', 'min': 0, 'max': 1}], 'float64'),
+        ([{'precision': 'int', 'min': 0, 'max': 255},
+          {'precision': 'double', 'min': -1e100, 'max': 1e100}], 'float64'),
     ]
 )
 def test_min_dtype(ee_data_type_list, exp_dtype):
@@ -193,12 +162,17 @@ def test_min_dtype(ee_data_type_list, exp_dtype):
     assert BaseImage._get_min_dtype(ee_info) == exp_dtype
 
 
+def test_convert_dtype_error():
+    """ Test BaseImage.test_convert_dtype() raises an error with incorrect dtype. """
+    with pytest.raises(TypeError):
+        BaseImage._convert_dtype(ee.Image(1), dtype='unknown')
+
 @pytest.mark.parametrize('size, exp_str', [(1024, '1.02 KB'), (234.56e6, '234.56 MB'), (1e9, '1.00 GB')])
 def test_str_format_size(size, exp_str):
     """ Test formatting of byte sizes as human readable strings. """
     assert BaseImage._str_format_size(size) == exp_str
 
-
+@pytest.mark.xdist_group('user_image')
 def test_prepare_exceptions(user_base_image: BaseImage, user_fix_base_image: BaseImage, small_region: Dict):
     """ Test BaseImage._prepare_for_export() error cases. """
     with pytest.raises(ValueError):
@@ -294,8 +268,8 @@ def test_prepare_for_download(src_image: str, tgt_image: str, small_region, requ
 
 @pytest.mark.parametrize(
     'dtype, exp_nodata', [
-        ('uint8', 0), ('int8', -2 ** 7), ('uint16', 0), ('int16', -2 ** 15), ('uint32', 0), ('int32', -2 ** 31),
-        ('float32', float('nan')), ('float64', float('nan'))
+        ('uint8', 0), ('int8', -2 ** 7), ('uint16', 0), ('int16', -2 ** 15), ('uint32', 0),
+        ('int32', -2 ** 31), ('float32', float('nan')), ('float64', float('nan'))
     ]
 )
 def test_prepare_nodata(user_fix_base_image, small_region, dtype, exp_nodata, request):
@@ -309,7 +283,7 @@ def test_prepare_nodata(user_fix_base_image, small_region, dtype, exp_nodata, re
 
 
 def test_tile_shape():
-    """ Test BaseImage._get_tile_shape() statisfies the EE download limit for different image shapes. """
+    """ Test BaseImage._get_tile_shape() satisfies the EE download limit for different image shapes. """
     max_download_size = 32 << 20
     max_grid_dimension = 10000
 
@@ -367,6 +341,7 @@ def test_tiles(image_shape, tile_shape, image_transform):
     ]
 )
 def test_download(base_image, region, tmp_path, request):
+    """ Test downloaded file properties and pixel data.  """
     base_image = request.getfixturevalue(base_image)
     region = request.getfixturevalue(region)
     filename = tmp_path.joinpath('test_user_download.tif')
@@ -394,50 +369,36 @@ def test_download(base_image, region, tmp_path, request):
             for i in range(ds.count):
                 assert np.all(array[i] == i + 1)
 
+def test_overviews(user_base_image: BaseImage, small_region: Dict, tmp_path: pathlib.Path):
+    """ Test overviews get built on download. """
+    filename = tmp_path.joinpath('test_user_download.tif')
+    user_base_image.download(filename, region=small_region, crs='EPSG:3857', scale=1)
+    assert filename.exists()
+    with rio.open(filename, 'r') as ds:
+        for band_i in range(ds.count):
+            assert len(ds.overviews(band_i + 1)) > 0
+            assert ds.overviews(band_i + 1)[0] == 2
+
+def test_export(user_fix_base_image: BaseImage, small_region: Dict):
+    """ Test start of a small export. """
+    task = user_fix_base_image.export(
+        'test_export.tif', folder='geedim', scale=30, region=small_region, wait=False
+    )
+    assert task.active()
+    assert task.status()['state'] == 'READY'
+
 # TO test
 # --------
-# split_id()
 # get_bounds() # test this on downloaded image against download region
-# from_id has _id set
-# user image has no id, ee image does & name
-# unfixed & fixed image properties i.e.:  has_fixed_projection (scale, crs, shape, transform ?) effectively,
-# this is testing _get_projection
-# scale, shape, transform  on s2 image match band 1 info from ee_info
-# other properties (incl in one of the above?): count, x size_in_bytes
-# footprint: fixed and unfixed & clipped images.  can be combined with other fixed / unfixed above?
-
-# dtype & _get_min_dtype on mock-up / known ee_info dicts
-# _str_format_size on a few sizes
-# _convert_dtype raises TypeError (we should test in some other place the dtype of a downloaded image,
-# and/or of exp_image)
 # _get_band_metadata: leave for now
-# _prepare_for_export exceptions:
-#   - raises ValueError with non fixed projection image and no crs / scale / region
-#   - raises ValueError with no footprint and no region (can this occur in a non non fixed proj situation?)
-#   - raise ValueError crs = EPSG:4326 and no scale
-#   - raise ValueError export MODIS with no crs, or export to 'SR-ORG:6974'
-#   - raise ValueError resampling and non fixed proj image
-# _prepare_for_export return BaseImage: check relevant props of returned image match args to _prepare_for_export both
-# default and non-default cases
-# _prepare_for_download: test profile matches params similar to above
 # _get_tile_shape: test with mockup BaseImages that steadily / randomly increase image shape and/or count,
 # and tests that the tile size does not increase past max_size
-# _build_overviews: test downloaded file has overviews.  as part of another test.
 # _write_metadata: test downloaded bands have ids / descriptions
-# tiles: use mockup BaseImage to test tiles are contiguous and cover the image properly / exactly.  both in terms of
-#  pixel and proj co-ords.
 # export(): test an export of small file (with wait ? - it kind of has to be to test monitor_export_task() )
-# download(): test a download of small file(s) but with >1 tiles.  perhaps make it a synthetic file so we can test
-#   tiling easily i.e. no blank lines between tiles, and tiles align correctly.  or somehow test download of same image
-#   but as A one tile, and B many tiles, and then compare the 2 images.  Test the shape, transform, dtype etc of the
-#   downloaded image against the exp_image.  Perhaps we have to make the exp_image ourselves with prepare_for_export
 
 # Other to test:
-# - nodata for different data types (in profile?)
 # - resampling smooths things out
 # - different generic collection images are downloaded ok (perhaps this goes with MaskedImage more than BaseImage)
 # - test float mask/nodata in downloaded image
 
-# (a thought - if we make per session BaseImage objects, perhaps we can use them in above tests and avoid repeat
-# getInfo calls)
 ##
