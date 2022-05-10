@@ -50,7 +50,7 @@ def _ee_init():
             try:
                 service_account = key_dict['client_email']
                 credentials = ee.ServiceAccountCredentials(service_account, filename)
-                ee.Initialize(credentials)
+                ee.Initialize(credentials, opt_url='https://earthengine-highvolume.googleapis.com')
             finally:
                 os.remove(filename)
         else:
