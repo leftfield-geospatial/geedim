@@ -68,7 +68,7 @@ def s2_base_image() -> BaseImage:
 @pytest.fixture(scope='session')
 def l9_base_image() -> BaseImage:
     """ A BaseImage instance encapsulating a Landsat-9 image.  Covers `small_region`.  """
-    return BaseImage.from_id('LANDSAT/LC09/C02/T1_L2/LC09_171084_20220427')
+    return BaseImage.from_id('LANDSAT/LC09/C02/T1_L2/LC09_172083_20220213')
 
 @pytest.fixture(scope='session')
 def mnbar_base_image(small_region) -> BaseImage:

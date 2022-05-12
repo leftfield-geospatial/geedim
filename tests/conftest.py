@@ -40,7 +40,7 @@ def ee_init() -> None:
 
 
 @pytest.fixture(scope='session')
-def small_region() -> Dict:
+def _small_region() -> Dict:
     return {
         'type': 'Polygon',
         'coordinates': [[[24.3885, -33.6659],
@@ -48,6 +48,16 @@ def small_region() -> Dict:
                          [24.3947, -33.6601],
                          [24.3947, -33.6659],
                          [24.3885, -33.6659]]]
+    }
+
+
+@pytest.fixture(scope='session')
+def small_region() -> Dict:
+    return {
+        "type": "Polygon", "coordinates": [
+            [[24.3853, -33.6686], [24.3853, -33.6573],
+             [24.3977, -33.6573], [24.3977, -33.6686],
+             [24.3853, -33.6686]]]
     }
 
 
@@ -79,22 +89,22 @@ def s2_sr_small_image(small_region) -> TestImage:
 
 @pytest.fixture
 def l9_small_image(small_region) -> TestImage:
-    return TestImage('LANDSAT/LC09/C02/T1_L2/LC09_171084_20220427', region=small_region)  # no cloud
+    return TestImage('LANDSAT/LC09/C02/T1_L2/LC09_172083_20220213', region=small_region)  # no cloud
 
 
 @pytest.fixture
 def l8_small_image(small_region) -> TestImage:
-    return TestImage('LANDSAT/LC08/C02/T1_L2/LC08_171084_20220113', region=small_region)  # no cloud
+    return TestImage('LANDSAT/LC08/C02/T1_L2/LC08_171084_20211009', region=small_region)  # no cloud
 
 
 @pytest.fixture
 def l7_small_image(small_region) -> TestImage:
-    return TestImage('LANDSAT/LE07/C02/T1_L2/LE07_171083_20210118', region=small_region)  # no cloud
+    return TestImage('LANDSAT/LE07/C02/T1_L2/LE07_172083_20220128', region=small_region)  # no cloud
 
 
 @pytest.fixture
 def l5_small_image(small_region) -> TestImage:
-    return TestImage('LANDSAT/LT05/C02/T1_L2/LT05_172083_20110207', region=small_region)  # no cloud
+    return TestImage('LANDSAT/LT05/C02/T1_L2/LT05_171083_20070715', region=small_region)  # no cloud
 
 
 @pytest.fixture
