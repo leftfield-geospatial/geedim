@@ -109,8 +109,18 @@ class MaskedCollection:
         gd_collection: MaskedCollection
             The MaskedCollection instance.
         """
-        # this is separate from __inti__ for consistency with MaskedImage.from_id()
-        gd_collection = cls(ee.ImageCollection(name))
+        # this is separate from __init__ for consistency with MaskedImage.from_id()
+        if (name == 'COPERNICUS/S2') or (name == 'COPERNICUS/S2_SR'):
+            # Recent images in S2_SR do not always have matching images in S2_CLOUD_PROBABILITY (which is needed for
+            # 'cloud_prob' cloud masking), so this is a special case to return a filtered S2/S2_SR collection that has
+            # matching images in S2_CLOUD_PROBABILITY.
+            cloud_prob_coll = ee.ImageCollection('COPERNICUS/S2_CLOUD_PROBABILITY')
+            s2_coll = ee.ImageCollection(name)
+            filt = ee.Filter.equals(leftField='system:index', rightField='system:index')
+            ee_collection = ee.ImageCollection(ee.Join.simple().apply(s2_coll, cloud_prob_coll, filt))
+        else:
+            ee_collection = ee.ImageCollection(name)
+        gd_collection = cls(ee_collection)
         gd_collection._name = name
         return gd_collection
 
