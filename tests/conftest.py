@@ -13,24 +13,12 @@
     See the License for the specific language governing permissions and
     limitations under the License.
 """
-from typing import Dict
+from typing import Dict, List
 
 import ee
 import pytest
 
-from geedim import _ee_init
-
-
-class TestImage:
-    def __init__(self, ee_id, region=None, scale=None):
-        if isinstance(ee_id, str):
-            self.ee_image = ee.Image(ee_id)
-            self.id = ee_id
-        else:
-            self.ee_image = ee_id
-            self.id = 'None'
-        self.region = region
-        self.scale = scale
+from geedim import _ee_init, MaskedImage
 
 
 @pytest.fixture(scope='session', autouse=True)
@@ -40,122 +28,159 @@ def ee_init() -> None:
 
 
 @pytest.fixture(scope='session')
-def _small_region() -> Dict:
-    return {
-        'type': 'Polygon',
-        'coordinates': [[[24.3885, -33.6659],
-                         [24.3885, -33.6601],
-                         [24.3947, -33.6601],
-                         [24.3947, -33.6659],
-                         [24.3885, -33.6659]]]
-    }
-
-
-@pytest.fixture(scope='session')
-def small_region() -> Dict:
+def region_25ha() -> Dict:
+    """ A geojson polygon defining a 500x500m region. """
     return {
         "type": "Polygon", "coordinates": [
-            [[24.3853, -33.6686], [24.3853, -33.6573],
-             [24.3977, -33.6573], [24.3977, -33.6686],
-             [24.3853, -33.6686]]]
+            [[21.6389, -33.4520], [21.6389, -33.4474], [21.6442, -33.4474], [21.6442, -33.4520], [21.6389, -33.4520]]
+        ]
     }
 
 
-@pytest.fixture
-def big_region() -> Dict:
+@pytest.fixture(scope='session')
+def region_100ha() -> Dict:
+    """ A geojson polygon defining a 1x1km region. """
     return {
-        'type': 'Polygon',
-        'coordinates': [[[22.5, -34.],
-                         [22.5, -33.5],
-                         [23.5, -33.5],
-                         [23.5, -34.],
-                         [22.5, -34.]]]
+        "type": "Polygon", "coordinates": [
+            [[21.6374, -33.4547], [21.6374, -33.4455], [21.6480, -33.4455], [21.6480, -33.4547], [21.6374, -33.4547]]
+        ]
     }
 
-@pytest.fixture
-def s2_sr_small_image(small_region) -> TestImage:
-    return TestImage('COPERNICUS/S2_SR/20220114T080159_20220114T082124_T35HKC', region=small_region)
-
-
-@pytest.fixture
-def s2_sr_small_image(small_region) -> TestImage:
-    return TestImage('COPERNICUS/S2_SR/20220114T080159_20220114T082124_T35HKC', region=small_region)
-
-
-@pytest.fixture
-def s2_sr_small_image(small_region) -> TestImage:
-    return TestImage('COPERNICUS/S2/20220114T080159_20220114T082124_T35HKC', region=small_region)
-
-
-@pytest.fixture
-def l9_small_image(small_region) -> TestImage:
-    return TestImage('LANDSAT/LC09/C02/T1_L2/LC09_172083_20220213', region=small_region)  # no cloud
-
-
-@pytest.fixture
-def l8_small_image(small_region) -> TestImage:
-    return TestImage('LANDSAT/LC08/C02/T1_L2/LC08_171084_20211009', region=small_region)  # no cloud
-
-
-@pytest.fixture
-def l7_small_image(small_region) -> TestImage:
-    return TestImage('LANDSAT/LE07/C02/T1_L2/LE07_172083_20220128', region=small_region)  # no cloud
-
-
-@pytest.fixture
-def l5_small_image(small_region) -> TestImage:
-    return TestImage('LANDSAT/LT05/C02/T1_L2/LT05_171083_20070715', region=small_region)  # no cloud
-
-
-@pytest.fixture
-def l4_small_image(small_region) -> TestImage:
-    return TestImage('LANDSAT/LT04/C02/T1_L2/LT04_172083_19890306', region=small_region)  # no cloud
-
-
-@pytest.fixture
-def s2_sr_big_image(big_region) -> TestImage:
-    return TestImage('COPERNICUS/S2_SR/20220226T080909_20220226T083100_T34HFH', region=big_region)
-
-
-@pytest.fixture
-def s2_toa_big_image(big_region) -> TestImage:
-    return TestImage('COPERNICUS/S2/20220226T080909_20220226T083100_T34HFH', region=big_region)
-
-
-@pytest.fixture
-def l9_big_image(big_region) -> TestImage:
-    return TestImage('LANDSAT/LC09/C02/T1_L2/LC09_172083_20220128', region=big_region)
-
-
-@pytest.fixture
-def l8_big_image(big_region) -> TestImage:
-    return TestImage('LANDSAT/LC08/C02/T1_L2/LC08_172083_20220104', region=big_region)
-
-
-@pytest.fixture
-def l7_big_image(big_region) -> TestImage:
-    return TestImage('LANDSAT/LE07/C02/T1_L2/LE07_172083_20220128', region=big_region)
-
-
-@pytest.fixture
-def l5_big_image(big_region) -> TestImage:
-    return TestImage('LANDSAT/LT05/C02/T1_L2/LT05_172083_20100204', region=big_region)
-
-
-@pytest.fixture
-def l4_big_image(big_region) -> TestImage:
-    return TestImage('LANDSAT/LT04/C02/T1_L2/LT04_172083_19880319', region=big_region)
 
 @pytest.fixture(scope='session')
-def synth_unfixed_ee_image() -> ee.Image:
-    return ee.Image([1, 2, 3])
-
-@pytest.fixture(scope='session')
-def synth_fixed_ee_image(synth_unfixed_ee_image, small_region) -> ee.Image:
-    return synth_unfixed_ee_image.reproject(crs='EPSG:3857', scale=30).clip(small_region)
+def region_10000ha() -> Dict:
+    """ A geojson polygon defining a 10x10km region. """
+    return {
+        "type": "Polygon", "coordinates": [
+            [[21.5893, -33.4964], [21.5893, -33.4038], [21.6960, -33.4038], [21.6960, -33.4964], [21.5893, -33.4964]]
+        ]
+    }
 
 
 @pytest.fixture(scope='session')
-def synth_fixed_ee_info(synth_fixed_ee_image) -> Dict:
-    ee_info = synth_fixed_ee_image.getInfo()
-    return ee_info
+def l4_image_id() -> str:
+    """ Landsat-4 EE ID for image that covers `region_*ha`, with partial cloud cover only for `region10000ha`.  """
+    return 'LANDSAT/LT04/C02/T1_L2/LT04_173083_19880310'
+
+
+@pytest.fixture(scope='session')
+def l5_image_id() -> str:
+    """ Landsat-5 EE ID for image that covers `region_*ha` with partial cloud cover.  """
+    return 'LANDSAT/LT05/C02/T1_L2/LT05_173083_20051112'  # 'LANDSAT/LT05/C02/T1_L2/LT05_173083_20070307'
+
+
+@pytest.fixture(scope='session')
+def l7_image_id() -> str:
+    """ Landsat-7 EE ID for image that covers `region_*ha` with partial cloud cover.  """
+    return 'LANDSAT/LE07/C02/T1_L2/LE07_173083_20220119'  # 'LANDSAT/LE07/C02/T1_L2/LE07_173083_20200521'
+
+
+@pytest.fixture(scope='session')
+def l8_image_id() -> str:
+    """ Landsat-8 EE ID for image that covers `region_*ha` with partial cloud cover.  """
+    return 'LANDSAT/LC08/C02/T1_L2/LC08_173083_20180217'  # 'LANDSAT/LC08/C02/T1_L2/LC08_173083_20171113'
+
+
+@pytest.fixture(scope='session')
+def l9_image_id() -> str:
+    """ Landsat-9 EE ID for image that covers `region_*ha` with partial cloud cover. """
+    return 'LANDSAT/LC09/C02/T1_L2/LC09_173083_20220308'  # 'LANDSAT/LC09/C02/T1_L2/LC09_173083_20220103'
+
+
+@pytest.fixture(scope='session')
+def landsat_image_ids(l4_image_id, l5_image_id, l7_image_id, l8_image_id, l9_image_id) -> List[str]:
+    """ Landsat4-9 EE IDs for images that covers `region_*ha` with partial cloud cover. """
+    return [l4_image_id, l5_image_id, l7_image_id, l8_image_id, l9_image_id]
+
+
+@pytest.fixture(scope='session')
+def s2_sr_image_id() -> str:
+    """ Sentinel-2 SR EE ID for image that covers `region_*ha` with partial cloud cover. """
+    # 'COPERNICUS/S2_SR/20211123T081241_20211123T083704_T34HEJ'
+    # 'COPERNICUS/S2_SR/20211123T081241_20211123T083704_T34HEH',  #no shadow
+    return 'COPERNICUS/S2_SR/20211004T080801_20211004T083709_T34HEJ'
+
+
+@pytest.fixture(scope='session')
+def s2_toa_image_id() -> str:
+    """ Sentinel-2 TOA EE ID for image that covers `region_*ha` with partial cloud cover. """
+    # 'COPERNICUS/S2/20211123T081241_20211123T083704_T34HEJ'
+    # 'COPERNICUS/S2/20211123T081241_20211123T083704_T34HEH'
+    return 'COPERNICUS/S2/20211004T080801_20211004T083709_T34HEJ'
+
+
+@pytest.fixture(scope='session')
+def s2_image_ids(s2_sr_image_id, s2_toa_image_id) -> List[str]:
+    """ Sentinel-2 TOA/SR EE IDs for images that covers `region_*ha` with partial cloud cover. """
+    return [s2_sr_image_id, s2_toa_image_id]
+
+
+@pytest.fixture(scope='session')
+def l4_masked_image(l4_image_id) -> MaskedImage:
+    """ Landsat-4 MaskedImage that covers `region_*ha`, with partial cloud cover only for `region10000ha`. """
+    return MaskedImage.from_id(l4_image_id)
+
+
+@pytest.fixture(scope='session')
+def l5_masked_image(l5_image_id) -> MaskedImage:
+    """ Landsat-5 MaskedImage that covers `region_*ha` with partial cloud cover. """
+    return MaskedImage.from_id(l5_image_id)
+
+
+@pytest.fixture(scope='session')
+def l7_masked_image(l7_image_id) -> MaskedImage:
+    """ Landsat-7 MaskedImage that covers `region_*ha` with partial cloud cover. """
+    return MaskedImage.from_id(l7_image_id)
+
+
+@pytest.fixture(scope='session')
+def l8_masked_image(l8_image_id) -> MaskedImage:
+    """ Landsat-8 MaskedImage that cover `region_*ha` with partial cloud cover. """
+    return MaskedImage.from_id(l8_image_id)
+
+
+@pytest.fixture(scope='session')
+def l9_masked_image(l9_image_id) -> MaskedImage:
+    """ Landsat-9 MaskedImage that covers `region_*ha` with partial cloud cover. """
+    return MaskedImage.from_id(l9_image_id)
+
+
+@pytest.fixture(scope='session')
+def landsat_masked_images(
+    l4_masked_image, l5_masked_image, l7_masked_image, l8_masked_image, l9_masked_image
+) -> List[MaskedImage]:
+    """ Landsat4-9 MaskedImage's that cover `region_*ha` with partial cloud cover. """
+    return [l4_masked_image, l5_masked_image, l7_masked_image, l8_masked_image, l9_masked_image]
+
+
+@pytest.fixture(scope='session')
+def s2_sr_masked_image(s2_sr_image_id) -> MaskedImage:
+    """ Sentinel-2 SR MaskedImage that covers `region_*ha` with partial cloud cover. """
+    return MaskedImage.from_id(s2_sr_image_id)
+
+
+@pytest.fixture(scope='session')
+def s2_toa_masked_image(s2_toa_image_id) -> MaskedImage:
+    """ Sentinel-2 TOA MaskedImage that covers `region_*ha` with partial cloud cover. """
+    return MaskedImage.from_id(s2_toa_image_id)
+
+
+@pytest.fixture(scope='session')
+def s2_masked_images(s2_sr_masked_image, s2_toa_masked_image) -> List[MaskedImage]:
+    """ Sentinel-2 TOA and SRR MaskedImage's that cover `region_*ha` with partial cloud cover. """
+    return [s2_sr_masked_image, s2_toa_masked_image]
+
+
+@pytest.fixture(scope='session')
+def user_masked_image() -> MaskedImage:
+    """ A MaskedImage instance where the encapsulated image has no fixed projection or ID.  """
+    return MaskedImage(ee.Image([1, 2, 3]))
+
+
+@pytest.fixture(scope='session')
+def modis_nbar_masked_image(region_10000ha) -> MaskedImage:
+    """ A list of MaskedImage's from non cloud/shadow masked collections.  """
+    return MaskedImage(
+        ee.Image('MODIS/006/MCD43A4/2022_01_01').clip(region_10000ha).
+            reproject('EPSG:3857', scale=500)
+    )
