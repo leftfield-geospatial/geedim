@@ -60,23 +60,23 @@ def user_fix_base_image() -> BaseImage:
 
 
 @pytest.fixture(scope='session')
-def s2_base_image() -> BaseImage:
-    """ A BaseImage instance encapsulating a Sentinel-2 image.  Covers `small_region`.  """
-    return BaseImage.from_id('COPERNICUS/S2_SR/20220114T080159_20220114T082124_T35HKC')
+def s2_base_image(s2_sr_image_id) -> BaseImage:
+    """ A BaseImage instance encapsulating a Sentinel-2 image.  Covers `region_*ha`.  """
+    return BaseImage.from_id(s2_sr_image_id)
 
 
 @pytest.fixture(scope='session')
-def l9_base_image() -> BaseImage:
-    """ A BaseImage instance encapsulating a Landsat-9 image.  Covers `small_region`.  """
-    return BaseImage.from_id('LANDSAT/LC09/C02/T1_L2/LC09_172083_20220213')
+def l9_base_image(l9_image_id) -> BaseImage:
+    """ A BaseImage instance encapsulating a Landsat-9 image.  Covers `region_*ha`.  """
+    return BaseImage.from_id(l9_image_id)
+
 
 @pytest.fixture(scope='session')
-def mnbar_base_image(small_region) -> BaseImage:
-    """ A BaseImage instance encapsulating a MODIS NBAR image.  Covers `small_region`.  """
+def modis_nbar_base_image(region_100ha) -> BaseImage:
+    """ A BaseImage instance encapsulating a MODIS NBAR image.  Covers `region_*ha`.  """
     return BaseImage(
-        ee.Image('MODIS/006/MCD43A4/2022_01_01').clip(small_region).reproject(crs='EPSG:3857', scale=500)
+        ee.Image('MODIS/006/MCD43A4/2022_01_01').clip(region_100ha).reproject(crs='EPSG:3857', scale=500)
     )
-
 
 
 @pytest.mark.parametrize('id, exp_split', [('A/B/C', ('A/B', 'C')), ('ABC', ('', 'ABC')), (None, (None, None))])
@@ -167,13 +167,15 @@ def test_convert_dtype_error():
     with pytest.raises(TypeError):
         BaseImage._convert_dtype(ee.Image(1), dtype='unknown')
 
+
 @pytest.mark.parametrize('size, exp_str', [(1024, '1.02 KB'), (234.56e6, '234.56 MB'), (1e9, '1.00 GB')])
 def test_str_format_size(size, exp_str):
     """ Test formatting of byte sizes as human readable strings. """
     assert BaseImage._str_format_size(size) == exp_str
 
+
 @pytest.mark.xdist_group('user_image')
-def test_prepare_exceptions(user_base_image: BaseImage, user_fix_base_image: BaseImage, small_region: Dict):
+def test_prepare_exceptions(user_base_image: BaseImage, user_fix_base_image: BaseImage, region_25ha: Dict):
     """ Test BaseImage._prepare_for_export() error cases. """
     with pytest.raises(ValueError):
         # no fixed projection and no region / crs / scale
@@ -183,14 +185,14 @@ def test_prepare_exceptions(user_base_image: BaseImage, user_fix_base_image: Bas
         user_fix_base_image._prepare_for_export()
     with pytest.raises(ValueError):
         # EPSG:4326 and no scale
-        user_fix_base_image._prepare_for_export(region=small_region)
+        user_fix_base_image._prepare_for_export(region=region_25ha)
     with pytest.raises(ValueError):
         # export in 'SR-ORG:6974'
-        user_fix_base_image._prepare_for_export(region=small_region, crs='SR-ORG:6974', scale=30)
+        user_fix_base_image._prepare_for_export(region=region_25ha, crs='SR-ORG:6974', scale=30)
     with pytest.raises(ValueError):
         # no fixed projection and resample
         user_base_image._prepare_for_export(
-            region=small_region, crs='EPSG:3857', scale=30, resampling=ResamplingMethod.bilinear
+            region=region_25ha, crs='EPSG:3857', scale=30, resampling=ResamplingMethod.bilinear
         )
 
 
@@ -198,19 +200,19 @@ def test_prepare_exceptions(user_base_image: BaseImage, user_fix_base_image: Bas
     'src_image, tgt_image', [
         ('s2_base_image', 's2_base_image'),
         ('l9_base_image', 's2_base_image'),
-        ('mnbar_base_image', 's2_base_image'),
+        ('modis_nbar_base_image', 's2_base_image'),
         ('user_base_image', 's2_base_image'),
         ('user_fix_base_image', 's2_base_image'),
         ('l9_base_image', 'l9_base_image'),
         ('s2_base_image', 'l9_base_image'),
-        ('mnbar_base_image', 'l9_base_image'),
+        ('modis_nbar_base_image', 'l9_base_image'),
         ('user_base_image', 'l9_base_image'),
         ('user_fix_base_image', 'l9_base_image'),
-        ('l9_base_image', 'mnbar_base_image'),
-        ('s2_base_image', 'mnbar_base_image'),
-        ('mnbar_base_image', 'mnbar_base_image'),
-        ('user_base_image', 'mnbar_base_image'),
-        ('user_fix_base_image', 'mnbar_base_image'),
+        ('l9_base_image', 'modis_nbar_base_image'),
+        ('s2_base_image', 'modis_nbar_base_image'),
+        ('modis_nbar_base_image', 'modis_nbar_base_image'),
+        ('user_base_image', 'modis_nbar_base_image'),
+        ('user_fix_base_image', 'modis_nbar_base_image'),
     ]
 )
 def test_prepare_for_export(src_image: str, tgt_image: str, request):
@@ -249,7 +251,7 @@ def test_prepare_for_export(src_image: str, tgt_image: str, request):
         ('user_base_image', 's2_base_image'),
     ]
 )
-def test_prepare_for_download(src_image: str, tgt_image: str, small_region, request):
+def test_prepare_for_download(src_image: str, tgt_image: str, region_25ha, request):
     """ Test BaseImage._prepare_for_download() sets rasterio profile as expected.  """
     # TODO: I suspect this will be duplicated elsewhere and can be removed
     src_image: BaseImage = request.getfixturevalue(src_image)
@@ -258,7 +260,7 @@ def test_prepare_for_download(src_image: str, tgt_image: str, small_region, requ
         exp_image, exp_profile = src_image._prepare_for_download()
     else:
         exp_image, exp_profile = src_image._prepare_for_download(
-            crs=tgt_image.crs, scale=tgt_image.scale, region=small_region, dtype=tgt_image.dtype
+            crs=tgt_image.crs, scale=tgt_image.scale, region=region_25ha, dtype=tgt_image.dtype
         )
     assert f'EPSG:{exp_profile["crs"].to_epsg()}' == tgt_image.crs
     assert exp_profile['count'] == src_image.count
@@ -272,9 +274,9 @@ def test_prepare_for_download(src_image: str, tgt_image: str, small_region, requ
         ('int32', -2 ** 31), ('float32', float('nan')), ('float64', float('nan'))
     ]
 )
-def test_prepare_nodata(user_fix_base_image, small_region, dtype, exp_nodata, request):
+def test_prepare_nodata(user_fix_base_image, region_25ha, dtype, exp_nodata, request):
     """ Test BaseImage._prepare_for_download() sets rasterio profile nodata correctly for different dtypes.  """
-    exp_image, exp_profile = user_fix_base_image._prepare_for_download(region=small_region, scale=30, dtype=dtype)
+    exp_image, exp_profile = user_fix_base_image._prepare_for_download(region=region_25ha, scale=30, dtype=dtype)
     assert exp_image.dtype == dtype
     if np.isnan(exp_profile['nodata']):
         assert np.isnan(exp_nodata)
@@ -333,11 +335,11 @@ def test_tiles(image_shape, tile_shape, image_transform):
 
 @pytest.mark.parametrize(
     'base_image, region', [
-        ('user_base_image', 'small_region'),
-        ('user_fix_base_image', 'small_region'),
-        # ('s2_base_image', 'small_region'),
-        # ('l9_base_image', 'small_region'),
-        # ('mnbar_base_image', 'small_region'),
+        ('user_base_image', 'region_25ha'),
+        ('user_fix_base_image', 'region_25ha'),
+        # ('s2_base_image', 'region_25ha'),
+        # ('l9_base_image', 'region_25ha'),
+        # ('modis_nbar_base_image', 'region_25ha'),
     ]
 )
 def test_download(base_image, region, tmp_path, request):
@@ -369,20 +371,22 @@ def test_download(base_image, region, tmp_path, request):
             for i in range(ds.count):
                 assert np.all(array[i] == i + 1)
 
-def test_overviews(user_base_image: BaseImage, small_region: Dict, tmp_path: pathlib.Path):
+
+def test_overviews(user_base_image: BaseImage, region_25ha: Dict, tmp_path: pathlib.Path):
     """ Test overviews get built on download. """
     filename = tmp_path.joinpath('test_user_download.tif')
-    user_base_image.download(filename, region=small_region, crs='EPSG:3857', scale=1)
+    user_base_image.download(filename, region=region_25ha, crs='EPSG:3857', scale=1)
     assert filename.exists()
     with rio.open(filename, 'r') as ds:
         for band_i in range(ds.count):
             assert len(ds.overviews(band_i + 1)) > 0
             assert ds.overviews(band_i + 1)[0] == 2
 
-def test_export(user_fix_base_image: BaseImage, small_region: Dict):
+
+def test_export(user_fix_base_image: BaseImage, region_25ha: Dict):
     """ Test start of a small export. """
     task = user_fix_base_image.export(
-        'test_export.tif', folder='geedim', scale=30, region=small_region, wait=False
+        'test_export.tif', folder='geedim', scale=30, region=region_25ha, wait=False
     )
     assert task.active()
     assert task.status()['state'] == 'READY'
