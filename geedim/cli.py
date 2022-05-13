@@ -152,12 +152,12 @@ def _mask_method_cb(ctx, param, value):
     return CloudMaskMethod(value)
 
 
-def _resampling_cb(ctx, param, value):
+def _resampling_method_cb(ctx, param, value):
     """click callback to convert resampling string to enum."""
     return ResamplingMethod(value)
 
 
-def _method_cb(ctx, param, value):
+def _comp_method_cb(ctx, param, value):
     """click callback to convert composite method string to enum."""
     return CompositeMethod(value)
 
@@ -214,7 +214,7 @@ mask_option = click.option(
 )
 resampling_option = click.option(
     '-rs', '--resampling', type=click.Choice([rm.value for rm in ResamplingMethod], case_sensitive=True),
-    default=BaseImage._default_resampling.value, show_default=True, callback=_resampling_cb,
+    default=BaseImage._default_resampling.value, show_default=True, callback=_resampling_method_cb,
     help='Resampling method.',
 )
 
@@ -419,7 +419,7 @@ cli.add_command(export)
 @image_id_option
 @click.option(
     '-cm', '--method', type=click.Choice([cm.value for cm in CompositeMethod], case_sensitive=False),
-    default=MaskedCollection._default_comp_method.value, show_default=True, callback=_method_cb,
+    default=MaskedCollection._default_comp_method.value, show_default=True, callback=_comp_method_cb,
     help='Compositing method to use.'
 )
 @click.option(

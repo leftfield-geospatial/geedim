@@ -336,12 +336,9 @@ class Sentinel2ClImage(CloudMaskedImage):
         aux_image: ee.Image
             An Earth Engine image containing *_MASK and CLOUD_DIST bands.
         """
-
+        mask_method = CloudMaskMethod(mask_method)
         def get_cloud_prob(ee_im):
             """Get the cloud probability image from COPERNICUS/S2_CLOUD_PROBABILITY that corresponds to `ee_im`."""
-            # TODO: there are cases where there is no corresponding cloud prob image for a S2/S2_SR image. E.g.
-            #  ID=20220305T075809_20220305T082125_T35HKD.  Might joining and filtering collections (from search) be a
-            #  way of filtering these cases out?  Also ID=20220122T081241_20220122T083135_T34HEJ, 20220226T080909_20220226T083100_T34HEH
             idx = ee_im.get('system:index')
             return ee.ImageCollection('COPERNICUS/S2_CLOUD_PROBABILITY').filter(
                 ee.Filter.eq('system:index', idx)
@@ -349,15 +346,15 @@ class Sentinel2ClImage(CloudMaskedImage):
 
         def get_cloud_mask(ee_im, cloud_prob=None):
             """Get the cloud mask for ee_im"""
-            if CloudMaskMethod(mask_method) == CloudMaskMethod.cloud_prob:
+            if mask_method == CloudMaskMethod.cloud_prob:
                 if not cloud_prob:
                     cloud_prob = get_cloud_prob(ee_im)
                 cloud_mask = cloud_prob.gte(prob).rename('CLOUD_MASK')
             else:
                 qa = ee_im.select('QA60')
-                cloud_mask = qa.bitwiseAnd(1 << 10).eq(0)
+                cloud_mask = qa.bitwiseAnd(1 << 10).neq(0)
                 if mask_cirrus:
-                    cloud_mask = cloud_mask.And(qa.bitwiseAnd(1 << 11).eq(0))
+                    cloud_mask = cloud_mask.Or(qa.bitwiseAnd(1 << 11).neq(0))
             return cloud_mask
 
         def get_cdi_cloud_mask(ee_im):
@@ -391,7 +388,7 @@ class Sentinel2ClImage(CloudMaskedImage):
 
         # gather and combine the various masks
         ee_image = self.ee_image
-        cloud_prob = get_cloud_prob(ee_image)
+        cloud_prob = get_cloud_prob(ee_image) if mask_method == CloudMaskMethod.cloud_prob else None
         cloud_mask = get_cloud_mask(ee_image, cloud_prob=cloud_prob)
         cloud_shadow_mask = cloud_mask
         if cdi_thresh is not None:
@@ -412,9 +409,11 @@ class Sentinel2ClImage(CloudMaskedImage):
         cloudless_mask = (cloud_shadow_mask.Not()).And(fill_mask).rename('CLOUDLESS_MASK')
 
         # construct and return the auxiliary image
-        aux_bands = [cloud_prob, fill_mask, cloud_mask, cloudless_mask]
+        aux_bands = [fill_mask, cloud_mask, cloudless_mask]
         if mask_shadows:
             aux_bands.append(shadow_mask)
+        if mask_method == CloudMaskMethod.cloud_prob:
+            aux_bands.append(cloud_prob)
 
         cloud_dist = self._cloud_dist(cloudless_mask=cloudless_mask, max_cloud_dist=max_cloud_dist)
         return ee.Image(aux_bands + [cloud_dist])
