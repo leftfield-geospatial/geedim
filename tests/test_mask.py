@@ -112,6 +112,25 @@ def test_s2_cloudless_portion(image_id: str, request):
     # CLOUDLESS_MASK is eroded and dilated, so allow 10% difference to account for that
     assert masked_image.properties['CLOUDLESS_PORTION'] == pytest.approx(s2_cloudless_portion, abs=10)
 
+@pytest.mark.parametrize(
+    'image_id', ['l9_image_id']
+)
+def test_landsat_cloudmask_params(image_id: str, request):
+    """ Test Landsat cloud/shadow masking parameters. """
+    image_id: str = request.getfixturevalue(image_id)
+    masked_image = MaskedImage.from_id(image_id, mask_shadows=False, mask_cirrus=False)
+    masked_image.set_region_stats()
+    cloud_only_portion = 100 * masked_image.properties['CLOUDLESS_PORTION'] / masked_image.properties['FILL_PORTION']
+    masked_image = MaskedImage.from_id(image_id, mask_shadows=True, mask_cirrus=False)
+    masked_image.set_region_stats()
+    cloud_shadow_portion = 100 * masked_image.properties['CLOUDLESS_PORTION'] / masked_image.properties['FILL_PORTION']
+    masked_image = MaskedImage.from_id(image_id, mask_shadows=True, mask_cirrus=True)
+    masked_image.set_region_stats()
+    cloudless_portion = 100 * masked_image.properties['CLOUDLESS_PORTION'] / masked_image.properties['FILL_PORTION']
+
+    assert cloud_only_portion > cloud_shadow_portion
+    assert cloud_shadow_portion > cloudless_portion
+
 
 @pytest.mark.parametrize(
     'image_id', ['s2_sr_image_id', 's2_toa_image_id']
@@ -227,7 +246,6 @@ def test_s2_clouddist_max(image_id: str, max_cloud_dist:int, region_10000ha: Dic
     cloud_dist = masked_image.ee_image.select('CLOUD_DIST')
     _max_cloud_dist = get_max_cloud_dist(cloud_dist)
     assert _max_cloud_dist == pytest.approx(max_cloud_dist, rel=0.1)
-
 
 
 @pytest.mark.parametrize(
