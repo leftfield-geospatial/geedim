@@ -116,6 +116,54 @@ def s2_image_ids(s2_sr_image_id, s2_toa_image_id) -> List[str]:
 
 
 @pytest.fixture(scope='session')
+def modis_nbar_image_id() -> str:
+    """ Global MODIS NBAR image ID.  WGS84 @ 500m. """
+    return 'MODIS/006/MCD43A4/2022_01_01'
+
+
+@pytest.fixture(scope='session')
+def gch_image_id() -> str:
+    """
+    Global Canopy Height (10m) image derived from Sentinel-2 and GEDI.  WGS84 @ 10m.
+    https://nlang.users.earthengine.app/view/global-canopy-height-2020.
+    """
+    return 'users/nlang/ETH_GlobalCanopyHeight_2020_10m_v1'
+
+
+@pytest.fixture(scope='session')
+def s1_sar_image_id() -> str:
+    """ Sentinel-1 SAR GRD EE image ID.  10m. """
+    return 'COPERNICUS/S1_GRD/S1A_IW_GRDH_1SDV_20220112T171750_20220112T171815_041430_04ED28_0A04'
+
+
+@pytest.fixture(scope='session')
+def gedi_agb_image_id() -> str:
+    """ GEDI aboveground biomass density EE image ID.  1km."""
+    return 'LARSE/GEDI/GEDI04_B_002'
+
+
+@pytest.fixture(scope='session')
+def gedi_cth_image_id() -> str:
+    """ GEDI canopy top height EE image ID.  25m."""
+    return 'LARSE/GEDI/GEDI02_A_002_MONTHLY/202010_018E_036S'
+
+
+@pytest.fixture(scope='session')
+def landsat_ndvi_image_id() -> str:
+    """ Landsat 8-day NDVI composite EE image iD.  Composite in WGS84 with underlying 30m scale."""
+    return 'LANDSAT/LC08/C01/T1_8DAY_NDVI/20211219'
+
+
+@pytest.fixture(scope='session')
+def generic_image_ids(
+    modis_nbar_image_id, gch_image_id, s1_sar_image_id, gedi_agb_image_id, gedi_cth_image_id, landsat_ndvi_image_id
+) -> List[str]:
+    """ A list of various EE image IDs for non-cloud/shadow masked images. """
+    return [
+        modis_nbar_image_id, gch_image_id, s1_sar_image_id, gedi_agb_image_id, gedi_cth_image_id, landsat_ndvi_image_id
+    ]
+
+@pytest.fixture(scope='session')
 def l4_masked_image(l4_image_id) -> MaskedImage:
     """ Landsat-4 MaskedImage that covers `region_*ha`, with partial cloud cover only for `region10000ha`. """
     return MaskedImage.from_id(l4_image_id)
@@ -143,6 +191,7 @@ def l8_masked_image(l8_image_id) -> MaskedImage:
 def l9_masked_image(l9_image_id) -> MaskedImage:
     """ Landsat-9 MaskedImage that covers `region_*ha` with partial cloud cover. """
     return MaskedImage.from_id(l9_image_id)
+
 
 
 @pytest.fixture(scope='session')
@@ -178,9 +227,51 @@ def user_masked_image() -> MaskedImage:
 
 
 @pytest.fixture(scope='session')
-def modis_nbar_masked_image(region_10000ha) -> MaskedImage:
-    """ A list of MaskedImage's from non cloud/shadow masked collections.  """
-    return MaskedImage(
-        ee.Image('MODIS/006/MCD43A4/2022_01_01').clip(region_10000ha).
-            reproject('EPSG:3857', scale=500)
-    )
+def modis_nbar_masked_image(modis_nbar_image_id, region_10000ha) -> MaskedImage:
+    """ MODIS NBAR MaskedImage with clipped/global? coverage.  """
+    # return MaskedImage(
+    #     ee.Image('MODIS/006/MCD43A4/2022_01_01').clip(region_10000ha).
+    #         reproject('EPSG:3857', scale=500)
+    # )
+    return MaskedImage.from_id(modis_nbar_image_id)
+
+@pytest.fixture(scope='session')
+def gch_masked_image(gch_image_id) -> MaskedImage:
+    """ Global Canopy Height (10m) MaskedImage. """
+    return MaskedImage.from_id(gch_image_id)
+
+
+@pytest.fixture(scope='session')
+def s1_sar_masked_image(s1_sar_image_id) -> MaskedImage:
+    """ Sentinel-1 SAR GRD MaskedImage.  10m. """
+    return MaskedImage.from_id(s1_sar_image_id)
+
+
+@pytest.fixture(scope='session')
+def gedi_agb_masked_image(gedi_agb_image_id) -> MaskedImage:
+    """ GEDI aboveground biomass density MaskedImage.  1km."""
+    return MaskedImage.from_id(gedi_agb_image_id)
+
+
+@pytest.fixture(scope='session')
+def gedi_cth_masked_image(gedi_cth_image_id) -> MaskedImage:
+    """ GEDI canopy top height MaskedImage.  25m."""
+    return MaskedImage.from_id(gedi_cth_image_id)
+
+
+@pytest.fixture(scope='session')
+def landsat_ndvi_masked_image(landsat_ndvi_image_id) -> MaskedImage:
+    """ Landsat 8-day NDVI composite MaskedImage.  Composite in WGS84 with underlying 30m scale."""
+    return MaskedImage.from_id(landsat_ndvi_image_id)
+
+
+@pytest.fixture(scope='session')
+def generic_masked_images(
+    modis_nbar_masked_image, gch_masked_image, s1_sar_masked_image, gedi_agb_masked_image, gedi_cth_masked_image,
+    landsat_ndvi_masked_image
+) -> List[MaskedImage]:
+    """ A list of various non-cloud/shadow MaskedImage's. """
+    return [
+        modis_nbar_masked_image, gch_masked_image, s1_sar_masked_image, gedi_agb_masked_image, gedi_cth_masked_image,
+        landsat_ndvi_masked_image
+    ]

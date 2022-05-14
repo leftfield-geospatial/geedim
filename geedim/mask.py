@@ -132,7 +132,14 @@ class MaskedImage(BaseImage):
         if not region:
             region = self.ee_image.geometry()  # use the image footprint
 
-        proj = get_projection(self.ee_image, min_scale=False)  # get projection of minimum scale band
+        # TODO: min_scale=False works for Sentinel-2, but not e.g. for Sentinel-1 SAR where one band is 12km and the
+        #  others 10m.  So we need something that works for all cases which apparently include cases where one band's
+        #  scale is very different to the others.  And the case of composite images.  Currently if it is a supported
+        #  cloud-masked image, it will have a meaningful _proj_scale, so that it ok for those images.  Otherwise
+        #  perhaps it is best to use STAC and use min scale, but there could be cases where min scale is extreme,
+        #  so we should check that across STAC too.  Some sort of generic algorithm like mode(scales) might be
+        #  better??  Or we just don't report FILL_PORTION for generic images?
+        proj = get_projection(self.ee_image, min_scale=True)  # get projection of minimum scale band
         # If _proj_scale is set, use that as the scale, otherwise use the proj.nomimalScale().  For non-composite images
         # these should be the same value.  For composite images, there is no `fixed` projection, hence the
         # need for _proj_scale.
@@ -325,7 +332,7 @@ class Sentinel2ClImage(CloudMaskedImage):
         buffer : int, optional
             Distance in meters (m) to dilate cloud and cloud shadows objects.
         cdi_thresh : float, optional
-            Cloud Displacement Index threshold. Values below this threshold are considered potential clouds.
+            Cloud Displacement Index threshold [-1..1]. Values below this threshold are considered potential clouds.
             A cdi_thresh = None means that the index is not used.
             See https://developers.google.com/earth-engine/apidocs/ee-algorithms-sentinel2-cdi for more detail.
         max_cloud_dist: int, optional
@@ -399,7 +406,7 @@ class Sentinel2ClImage(CloudMaskedImage):
 
         # do a morphological opening type operation that removes small (20m) blobs from the mask and then dilates
         cloud_shadow_mask = cloud_shadow_mask.focal_min(20, units='meters').focal_max(buffer * 2 / 10, units='meters')
-
+        # TODO: check buffer is really in meters - the above does not look like its in meters
         # derive a fill mask from the Earth Engine mask for the surface reflectance bands
         fill_mask = ee_image.select('B.*').mask().reduce(ee.Reducer.allNonZero())
         # Clip this mask to the image footprint.  (Without this step we get memory limit errors on download.)

@@ -60,7 +60,7 @@ def user_fix_base_image() -> BaseImage:
 
 
 @pytest.fixture(scope='session')
-def s2_base_image(s2_sr_image_id) -> BaseImage:
+def s2_sr_base_image(s2_sr_image_id) -> BaseImage:
     """ A BaseImage instance encapsulating a Sentinel-2 image.  Covers `region_*ha`.  """
     return BaseImage.from_id(s2_sr_image_id)
 
@@ -72,10 +72,15 @@ def l9_base_image(l9_image_id) -> BaseImage:
 
 
 @pytest.fixture(scope='session')
-def modis_nbar_base_image(region_100ha) -> BaseImage:
+def landsat_ndvi_base_image(landsat_ndvi_image_id) -> BaseImage:
+    """ A BaseImage instance encapsulating a Landsat NDVI composite image.  Covers `region_*ha`.  """
+    return BaseImage.from_id(landsat_ndvi_image_id)
+
+@pytest.fixture(scope='session')
+def modis_nbar_base_image(modis_nbar_image_id, region_100ha) -> BaseImage:
     """ A BaseImage instance encapsulating a MODIS NBAR image.  Covers `region_*ha`.  """
     return BaseImage(
-        ee.Image('MODIS/006/MCD43A4/2022_01_01').clip(region_100ha).reproject(crs='EPSG:3857', scale=500)
+        ee.Image(modis_nbar_image_id).clip(region_100ha).reproject(crs='EPSG:3857', scale=500)
     )
 
 
@@ -85,13 +90,13 @@ def test_split_id(id, exp_split):
     assert split_id(id) == exp_split
 
 
-def test_id_name(user_base_image: BaseImage, s2_base_image: BaseImage):
+def test_id_name(user_base_image: BaseImage, s2_sr_base_image):
     """ Test `id` and `name` properties for different scenarios. """
     assert user_base_image.id is None
     assert user_base_image.name is None
     # check that BaseImage.from_id() sets id without a getInfo
-    assert (s2_base_image.id is not None) and (s2_base_image._ee_info is None)
-    assert s2_base_image.name == s2_base_image.id.replace('/', '-')
+    assert (s2_sr_base_image.id is not None) and (s2_sr_base_image._ee_info is None)
+    assert s2_sr_base_image.name == s2_sr_base_image.id.replace('/', '-')
 
 
 def test_user_props(user_base_image: BaseImage):
@@ -118,24 +123,24 @@ def test_fix_user_props(user_fix_base_image: BaseImage):
     assert user_fix_base_image.count == 3
 
 
-def test_s2_props(s2_base_image: BaseImage):
+def test_s2_props(s2_sr_base_image):
     """ Test fixed projection S2 image properties (other than id and has_fixed_projection). """
-    min_band_info = s2_base_image.ee_info['bands'][1]
-    assert s2_base_image.crs == min_band_info['crs']
-    assert s2_base_image.scale == min_band_info['crs_transform'][0]
-    assert s2_base_image.transform == Affine(*min_band_info['crs_transform'])
-    assert s2_base_image.shape == min_band_info['dimensions'][::-1]
-    assert s2_base_image.size_in_bytes is not None
-    assert s2_base_image.footprint is not None
-    assert s2_base_image.dtype == 'uint32'
-    assert s2_base_image.count == len(s2_base_image.ee_info['bands'])
+    min_band_info = s2_sr_base_image.ee_info['bands'][1]
+    assert s2_sr_base_image.crs == min_band_info['crs']
+    assert s2_sr_base_image.scale == min_band_info['crs_transform'][0]
+    assert s2_sr_base_image.transform == Affine(*min_band_info['crs_transform'])
+    assert s2_sr_base_image.shape == min_band_info['dimensions'][::-1]
+    assert s2_sr_base_image.size_in_bytes is not None
+    assert s2_sr_base_image.footprint is not None
+    assert s2_sr_base_image.dtype == 'uint32'
+    assert s2_sr_base_image.count == len(s2_sr_base_image.ee_info['bands'])
 
 
-def test_has_fixed_projection(user_base_image: BaseImage, user_fix_base_image: BaseImage, s2_base_image: BaseImage):
+def test_has_fixed_projection(user_base_image: BaseImage, user_fix_base_image: BaseImage, s2_sr_base_image):
     """ Test the `has_fixed_projection` property.  """
     assert not user_base_image.has_fixed_projection
     assert user_fix_base_image.has_fixed_projection
-    assert s2_base_image.has_fixed_projection
+    assert s2_sr_base_image.has_fixed_projection
 
 
 @pytest.mark.parametrize(
@@ -174,7 +179,6 @@ def test_str_format_size(size, exp_str):
     assert BaseImage._str_format_size(size) == exp_str
 
 
-@pytest.mark.xdist_group('user_image')
 def test_prepare_exceptions(user_base_image: BaseImage, user_fix_base_image: BaseImage, region_25ha: Dict):
     """ Test BaseImage._prepare_for_export() error cases. """
     with pytest.raises(ValueError):
@@ -198,18 +202,18 @@ def test_prepare_exceptions(user_base_image: BaseImage, user_fix_base_image: Bas
 
 @pytest.mark.parametrize(
     'src_image, tgt_image', [
-        ('s2_base_image', 's2_base_image'),
-        ('l9_base_image', 's2_base_image'),
-        ('modis_nbar_base_image', 's2_base_image'),
-        ('user_base_image', 's2_base_image'),
-        ('user_fix_base_image', 's2_base_image'),
+        ('s2_sr_base_image', 's2_sr_base_image'),
+        ('l9_base_image', 's2_sr_base_image'),
+        ('modis_nbar_base_image', 's2_sr_base_image'),
+        ('user_base_image', 's2_sr_base_image'),
+        ('user_fix_base_image', 's2_sr_base_image'),
         ('l9_base_image', 'l9_base_image'),
-        ('s2_base_image', 'l9_base_image'),
+        ('s2_sr_base_image', 'l9_base_image'),
         ('modis_nbar_base_image', 'l9_base_image'),
         ('user_base_image', 'l9_base_image'),
         ('user_fix_base_image', 'l9_base_image'),
         ('l9_base_image', 'modis_nbar_base_image'),
-        ('s2_base_image', 'modis_nbar_base_image'),
+        ('s2_sr_base_image', 'modis_nbar_base_image'),
         ('modis_nbar_base_image', 'modis_nbar_base_image'),
         ('user_base_image', 'modis_nbar_base_image'),
         ('user_fix_base_image', 'modis_nbar_base_image'),
@@ -247,8 +251,8 @@ def test_prepare_for_export(src_image: str, tgt_image: str, request):
 
 @pytest.mark.parametrize(
     'src_image, tgt_image', [
-        ('s2_base_image', 's2_base_image'),
-        ('user_base_image', 's2_base_image'),
+        ('s2_sr_base_image', 's2_sr_base_image'),
+        ('user_base_image', 's2_sr_base_image'),
     ]
 )
 def test_prepare_for_download(src_image: str, tgt_image: str, region_25ha, request):
@@ -337,7 +341,8 @@ def test_tiles(image_shape, tile_shape, image_transform):
     'base_image, region', [
         ('user_base_image', 'region_25ha'),
         ('user_fix_base_image', 'region_25ha'),
-        # ('s2_base_image', 'region_25ha'),
+
+        # ('s2_sr_base_image', 'region_25ha'),
         # ('l9_base_image', 'region_25ha'),
         # ('modis_nbar_base_image', 'region_25ha'),
     ]
