@@ -172,7 +172,8 @@ def test_s2_cloudmask_method(image_id: str, region_10000ha, request):
     masked_image = MaskedImage.from_id(image_id, mask_method='qa')
     masked_image.set_region_stats(region_10000ha)
     qa_portion = 100 * masked_image.properties['CLOUDLESS_PORTION'] / masked_image.properties['FILL_PORTION']
-    assert cloud_prob_portion == pytest.approx(qa_portion, abs=5)
+    assert cloud_prob_portion != qa_portion
+    assert cloud_prob_portion == pytest.approx(qa_portion, abs=10)
 
 @pytest.mark.parametrize(
     'image_id', ['s2_sr_image_id', 's2_toa_image_id']
@@ -186,7 +187,7 @@ def test_s2_cloudmask_mask_cirrus(image_id: str, region_10000ha, request):
     masked_image = MaskedImage.from_id(image_id, mask_method='qa', mask_cirrus=True)
     masked_image.set_region_stats(region_10000ha)
     cirrus_portion = 100 * masked_image.properties['CLOUDLESS_PORTION'] / masked_image.properties['FILL_PORTION']
-    assert non_cirrus_portion > cirrus_portion
+    assert non_cirrus_portion >= cirrus_portion
 
 @pytest.mark.parametrize(
     'image_id', ['s2_sr_image_id', 's2_toa_image_id']
@@ -250,16 +251,17 @@ def test_s2_clouddist_max(image_id: str, max_cloud_dist:int, region_10000ha: Dic
 
 @pytest.mark.parametrize(
     'masked_image', [
-        'l9_masked_image', 'l8_masked_image', 'l7_masked_image', 'l5_masked_image'
+        'l9_masked_image', 'l8_masked_image', 'l7_masked_image', 'l5_masked_image', 'l4_masked_image'
     ]
 )
-def test_landsat_download_aux_bands(masked_image: str, region_100ha, tmp_path, request):
-    """ Test the downloaded auxiliary bands on different cloud masked images. """
+def test_landsat_download_aux_bands(masked_image: str, region_10000ha, tmp_path, request):
+    """ Test downloaded Landsat auxiliary bands. """
+    # Test on a large region at native 30m scale which makes this a time-consuming, but thorough check
     masked_image: MaskedImage = request.getfixturevalue(masked_image)
     filename = tmp_path.joinpath(f'test_image.tif')
     aux_mask_names = ['CLOUD_MASK', 'SHADOW_MASK', 'FILL_MASK', 'CLOUDLESS_MASK']
-    masked_image.set_region_stats(region_100ha)
-    masked_image.download(filename, region=region_100ha)  # uint16 means nodata=0 wh
+    masked_image.set_region_stats(region_10000ha)
+    masked_image.download(filename, region=region_10000ha, dtype='int32')
     assert filename.exists()
 
     with rio.open(filename, 'r') as ds:
@@ -270,32 +272,34 @@ def test_landsat_download_aux_bands(masked_image: str, region_100ha, tmp_path, r
         masks = {}
         for mask_name in aux_mask_names:
             assert mask_name in ds.descriptions
-            masks[mask_name] = ds_mask & ds.read(ds.descriptions.index(mask_name) + 1).astype('bool')
+            masks[mask_name] = ds.read(ds.descriptions.index(mask_name) + 1, masked=True)
+            masks[mask_name] = masks[mask_name].filled(0).astype('bool')    # fill nodata with 0 and cast to bool
 
         assert np.all(ds_mask == masks['FILL_MASK'])
         cloud_dist = ds.read(ds.descriptions.index('CLOUD_DIST') + 1, masked=True)
-        cloud_dist[~ds_mask] = 0
-        pan = ds.read([1, 2, 3], masked=True).mean(axis=0)
+        pan = ds.read([1, 2, 3], masked=True).mean(axis=0)  # pan-ish approx
         cloudless_mask = ~(masks['CLOUD_MASK'] | masks['SHADOW_MASK']) & masks['FILL_MASK']
 
         # some sanity checking on the masks
         assert np.all(cloudless_mask == masks['CLOUDLESS_MASK'])
         assert cloud_dist[masks['CLOUD_MASK']].mean() < cloud_dist[~masks['CLOUD_MASK']].mean()
         assert pan[masks['CLOUD_MASK']].mean() > pan[masks['CLOUDLESS_MASK']].mean()
+        assert pan[masks['CLOUDLESS_MASK']].mean() > pan[masks['SHADOW_MASK']].mean()
 
 @pytest.mark.parametrize(
     'masked_image', [
         's2_sr_masked_image', 's2_toa_masked_image'
     ]
 )
-def test_s2_download_aux_band(masked_image: str, region_100ha, tmp_path, request):
-    """ Test the downloaded auxiliary bands on different cloud masked images. """
+def test_s2_download_aux_band(masked_image: str, region_10000ha, tmp_path, request):
+    """ Test downloaded Sentinel-2 auxiliary bands. """
+    # Test on a large region at CLOUD_DIST/SHADOW_MASK scale (60m) which makes this a time-consuming, but thorough check
     masked_image: MaskedImage = request.getfixturevalue(masked_image)
     filename = tmp_path.joinpath(f'test_image.tif')
     aux_mask_names = ['CLOUD_MASK', 'SHADOW_MASK', 'FILL_MASK', 'CLOUDLESS_MASK']
-    masked_image.set_region_stats(region_100ha)
+    masked_image.set_region_stats(region_10000ha)
     # download as int32 so that nodata does not overlap with CLOUD_DIST etc
-    masked_image.download(filename, region=region_100ha, dtype='int32')
+    masked_image.download(filename, region=region_10000ha, dtype='int32', scale=masked_image._proj_scale)
     assert filename.exists()
 
     with rio.open(filename, 'r') as ds:
@@ -306,19 +310,20 @@ def test_s2_download_aux_band(masked_image: str, region_100ha, tmp_path, request
         masks = {}
         for mask_name in aux_mask_names:
             assert mask_name in ds.descriptions
-            masks[mask_name] = ds_mask & ds.read(ds.descriptions.index(mask_name) + 1).astype('bool')
+            masks[mask_name] = ds.read(ds.descriptions.index(mask_name) + 1, masked=True)
+            masks[mask_name] = masks[mask_name].filled(0).astype('bool')    # fill nodata with 0 and cast to bool
 
         assert np.all(ds_mask == masks['FILL_MASK'])
         cloud_dist = ds.read(ds.descriptions.index('CLOUD_DIST') + 1, masked=True)
-        cloud_dist[~ds_mask] = 0
         pan = ds.read([2, 3, 4], masked=True).mean(axis=0)
+        cloudless_mask = ~(masks['CLOUD_MASK'] | masks['SHADOW_MASK']) & masks['FILL_MASK']
 
         # some sanity checking on the masks
+        assert np.all(cloudless_mask == masks['CLOUDLESS_MASK'])
         assert cloud_dist[~masks['CLOUDLESS_MASK']].mean() < cloud_dist[masks['CLOUDLESS_MASK']].mean()
         assert np.unique(cloud_dist[cloud_dist > 0])[0] == masked_image._proj_scale
         assert pan[masks['CLOUD_MASK']].mean() > pan[masks['CLOUDLESS_MASK']].mean()
-        if np.sum(masks['SHADOW_MASK']) > 0:
-            assert pan[masks['CLOUDLESS_MASK']].mean() > pan[masks['SHADOW_MASK']].mean()
+        assert pan[masks['CLOUDLESS_MASK']].mean() > pan[masks['SHADOW_MASK']].mean()
 
 
 

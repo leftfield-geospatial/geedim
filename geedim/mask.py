@@ -233,7 +233,9 @@ class CloudMaskedImage(MaskedImage):
         stats_image = ee.Image(
             [self.ee_image.select(['FILL_MASK', 'CLOUDLESS_MASK']).unmask(), ee.Image(1).rename('REGION_SUM')]
         )
-
+        # TODO: can we use crs=proj everywhere instead of crs=proj.crs() which breaks with e.g. GEDI AGB data?  We do
+        #  know that proj.crs() is ok for Landsat and S2 though, so this should be safe as is, it's just better to
+        #  have consistency
         sums = stats_image.reduceRegion(
             reducer="sum", geometry=region, crs=proj.crs(), scale=scale, bestEffort=True, maxPixels=1e6
         ).rename(['FILL_MASK', 'CLOUDLESS_MASK'], ['FILL_PORTION', 'CLOUDLESS_PORTION'])
