@@ -96,17 +96,14 @@ def landsat_image_ids(l4_image_id, l5_image_id, l7_image_id, l8_image_id, l9_ima
 @pytest.fixture(scope='session')
 def s2_sr_image_id() -> str:
     """ Sentinel-2 SR EE ID for image that covers `region_*ha` with partial cloud cover. """
-    # 'COPERNICUS/S2_SR/20211123T081241_20211123T083704_T34HEJ'
-    # 'COPERNICUS/S2_SR/20211123T081241_20211123T083704_T34HEH',  #no shadow
+    # 'COPERNICUS/S2/20220107T081229_20220107T083059_T34HEJ'
     return 'COPERNICUS/S2_SR/20211004T080801_20211004T083709_T34HEJ'
 
 
 @pytest.fixture(scope='session')
 def s2_toa_image_id() -> str:
     """ Sentinel-2 TOA EE ID for image that covers `region_*ha` with partial cloud cover. """
-    # 'COPERNICUS/S2/20211123T081241_20211123T083704_T34HEJ'
-    # 'COPERNICUS/S2/20211123T081241_20211123T083704_T34HEH'
-    return 'COPERNICUS/S2/20211004T080801_20211004T083709_T34HEJ'
+    return 'COPERNICUS/S2/20220107T081229_20220107T083059_T34HEJ'
 
 
 @pytest.fixture(scope='session')
