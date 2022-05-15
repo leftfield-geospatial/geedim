@@ -151,9 +151,9 @@ class MaskedImage(BaseImage):
         stats_image = ee.Image(
             [self.ee_image.select('FILL_MASK').rename('FILL_PORTION').unmask(), ee.Image(1).rename('REGION_SUM')]
         )
-
+        # Note: sometimes proj has no EPSG in crs(), hence use crs=proj and not crs=proj.crs() below
         sums_dict = stats_image.reduceRegion(
-            reducer="sum", geometry=region, crs=proj.crs(), scale=scale, bestEffort=True, maxPixels=1e6
+            reducer="sum", geometry=region, crs=proj, scale=scale, bestEffort=True, maxPixels=1e6
         )
 
         def region_percentage(key, value):
@@ -186,8 +186,10 @@ class CloudMaskedImage(MaskedImage):
             cloudless_mask = self.ee_image.select('CLOUDLESS_MASK')
         proj = get_projection(self.ee_image, min_scale=False)  # use maximum scale projection to save processing time
 
-        # A mask of cloud and shadows (and unfilled pixels which are often cloud shadow, or other deep shadow).
-        # Note that initial *MASK bands before any call to mask_clouds(), are unmasked.
+        # A mask of cloud and shadows
+        # Note that initial *MASK bands before any call to mask_clouds(), are themselves masked, so this cloud/shadow
+        # mask excludes (masks) already masked pixels.  This avoids finding distance to e.g. scanline errors in
+        # Landsat7.
         cloud_shadow_mask = cloudless_mask.Not()
         cloud_pix = ee.Number(max_cloud_dist).divide(proj.nominalScale()).round()  # cloud_dist in pixels
 
