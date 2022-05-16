@@ -401,12 +401,13 @@ class Sentinel2ClImage(CloudMaskedImage):
         ee_image = self.ee_image
         cloud_prob = get_cloud_prob(ee_image) if mask_method == CloudMaskMethod.cloud_prob else None
         cloud_mask = get_cloud_mask(ee_image, cloud_prob=cloud_prob)
-        cloud_shadow_mask = cloud_mask
         if cdi_thresh is not None:
-            cloud_shadow_mask = cloud_shadow_mask.And(get_cdi_cloud_mask(ee_image))
+            cloud_mask = cloud_mask.And(get_cdi_cloud_mask(ee_image))
         if mask_shadows:
             shadow_mask = get_shadow_mask(ee_image, cloud_mask)
-            cloud_shadow_mask = cloud_shadow_mask.Or(shadow_mask)
+            cloud_shadow_mask = cloud_mask.Or(shadow_mask)
+        else:
+            cloud_shadow_mask = cloud_mask
 
         # do a morphological opening type operation that removes small (20m) blobs from the mask and then dilates
         cloud_shadow_mask = cloud_shadow_mask.focal_min(20, units='meters').focal_max(buffer * 2 / 10, units='meters')
