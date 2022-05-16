@@ -132,7 +132,8 @@ class MaskedCollection:
 
         Any ee.Image objects (including those encapsulated by MaskedImage) must have `system:id` and
         `system:time_start` properties.  This is always the case for images from the EE data catalog, and images
-        returned from MaskedCollection.composite().
+        returned from MaskedCollection.composite(), but user-created images passed to from_list() should have these
+        properties set.
 
         Parameters
         ----------
@@ -254,7 +255,8 @@ class MaskedCollection:
         props_list = ee.List(ee_collection.iterate(aggregrate_props, ee.List([]))).getInfo()
         # add image properties to the return dict in the same order as the underlying collection
         props_dict = OrderedDict()
-        # TODO: deal with the case where props images don't have system:time_start/id (wrt composite)
+        # TODO: deal with the case where props images don't have system:time_start/id (wrt composite).  perhaps by
+        #  forcing images to have this property is best?
         for prop_dict in props_list:
             props_dict[prop_dict['system:id']] = prop_dict
         return props_dict
@@ -378,6 +380,8 @@ class MaskedCollection:
                 filter(ee.Filter.gte('CLOUDLESS_PORTION', cloudless_portion)).
                 sort('system:time_start')
         )
+        # TODO: here we filter on system:time_start, so we also need to ensure this property is in any images passed
+        #  to from_list()
         # return a new MaskedCollection containing the filtered EE collection (the EE collection
         # wrapped by MaskedCollection remains fixed)
         gd_collection = MaskedCollection(ee_collection)
