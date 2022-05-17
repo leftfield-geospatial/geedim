@@ -28,7 +28,7 @@ BaseImageLike = namedtuple('BaseImageLike', ['ee_image', 'crs', 'transform', 'sh
 
 
 @pytest.fixture(scope='module')
-def user_base_image_like(region_25ha):
+def base_image_like(region_25ha):
     """ Create a synthetic image object to emulate BaseImage. """
     ee_image = ee.Image([1, 2, 3]).reproject(crs='EPSG:4326', scale=30).clip(region_25ha)
     ee_info = ee_image.getInfo()
@@ -37,28 +37,28 @@ def user_base_image_like(region_25ha):
     return BaseImageLike(ee_image, 'EPSG:3857', transform, tuple(band_info['dimensions'][::-1]), 3, 'uint8')
 
 
-def test_create(user_base_image_like):
-    """ Test creation of a Tile object that refers to the whole of `user_base_image_like`. """
-    window = Window(0, 0, *user_base_image_like.shape[::-1])
-    tile = Tile(user_base_image_like, window)
+def test_create(base_image_like):
+    """ Test creation of a Tile object that refers to the whole of `base_image_like`. """
+    window = Window(0, 0, *base_image_like.shape[::-1])
+    tile = Tile(base_image_like, window)
     assert tile.window == window
-    assert tile._transform == user_base_image_like.transform
-    assert tile._shape == user_base_image_like.shape
+    assert tile._transform == base_image_like.transform
+    assert tile._shape == base_image_like.shape
 
 
 @pytest.mark.parametrize('session', [None, _requests_retry_session()])
-def test_download(user_base_image_like, session):
+def test_download(base_image_like, session):
     """ Test downloading the synthetic image tile.  """
-    window = Window(0, 0, *user_base_image_like.shape[::-1])
-    tile = Tile(user_base_image_like, window)
+    window = Window(0, 0, *base_image_like.shape[::-1])
+    tile = Tile(base_image_like, window)
     dtype_size = np.dtype(tile._exp_image.dtype).itemsize
     raw_download_size = tile._shape[0] * tile._shape[1] * tile._exp_image.count * dtype_size
     bar = tqdm(total=float(raw_download_size))
     array = tile.download(session=session, bar=bar)
 
     assert array is not None
-    assert array.shape == (user_base_image_like.count, *user_base_image_like.shape)
-    assert array.dtype == np.dtype(user_base_image_like.dtype)
+    assert array.shape == (base_image_like.count, *base_image_like.shape)
+    assert array.dtype == np.dtype(base_image_like.dtype)
     for i in range(3):
         assert np.all(array[i] == i + 1)
     assert bar.n == pytest.approx(raw_download_size, rel=0.01)

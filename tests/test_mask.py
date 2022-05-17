@@ -19,7 +19,6 @@ import ee
 import numpy as np
 import pytest
 import rasterio as rio
-from rasterio.mask import mask
 
 from geedim.mask import MaskedImage, get_projection, class_from_id
 
@@ -290,6 +289,7 @@ def test_s2_clouddist_max(image_id: str, max_cloud_dist: int, region_10000ha: Di
     meas_max_cloud_dist = get_max_cloud_dist(cloud_dist)
     assert meas_max_cloud_dist == pytest.approx(max_cloud_dist, rel=0.1)
 
+
 def get_mask_stats(masked_image: MaskedImage, region: Dict):
     """  Get cloud/shadow etc aux band statistics for a given MaskedImage and region. """
     ee_image = masked_image.ee_image
@@ -314,53 +314,19 @@ def get_mask_stats(masked_image: MaskedImage, region: Dict):
     means = means.set('CDIST_MIN', cdist_min.get('CLOUD_DIST'))
     return means.getInfo()
 
+
 @pytest.mark.parametrize(
     'masked_image', [
         'l9_masked_image', 'l8_masked_image', 'l7_masked_image', 'l5_masked_image', 'l4_masked_image'
     ]
 )
-def test_landsat_aux_bands(masked_image: str, region_10000ha, tmp_path, request):
+def test_landsat_aux_bands(masked_image: str, region_10000ha, request):
     """ Test Landsat auxiliary bands by downloading them. """
     masked_image: MaskedImage = request.getfixturevalue(masked_image)
     stats = get_mask_stats(masked_image, region_10000ha)
     assert stats['PAN_CLOUD'] > stats['PAN_CLOUDLESS']
     assert stats['PAN_CLOUDLESS'] > stats['PAN_SHADOW']
     assert stats['CDIST_CLOUDLESS'] > stats['CDIST_CLOUD']
-    return
-    filename = tmp_path.joinpath(f'test_image.tif')
-    aux_mask_names = ['CLOUD_MASK', 'SHADOW_MASK', 'FILL_MASK', 'CLOUDLESS_MASK']
-    masked_image.set_region_stats(region_10000ha)
-    # Download a large region at native 30m scale to avoid any resampling/noise issues.  Download as int32 so valid
-    # pixels don't overlap nodata.
-    masked_image.download(filename, region=region_10000ha, dtype='int32')
-    assert filename.exists()
-
-    with rio.open(filename, 'r') as ds:
-        # reproduce the FILL_MASK by combining the dataset masks from SR bands
-        sr_band_idx = [
-            ds.descriptions.index(band_name) + 1 for band_name in ds.descriptions if band_name.startswith('SR_B')
-        ]
-        ds_mask = np.all(ds.read_masks(sr_band_idx).astype('bool'), axis=0)
-        # read the *_MASK bands as boolean arrays, any masked pixels are set to False
-        masks = {}
-        for mask_name in aux_mask_names:
-            assert mask_name in ds.descriptions
-            masks[mask_name] = ds.read(ds.descriptions.index(mask_name) + 1, masked=True)
-            masks[mask_name] = masks[mask_name].filled(0).astype('bool')  # fill nodata with 0 and cast to bool
-
-        assert np.all(ds_mask == masks['FILL_MASK'])
-
-        cloud_dist = ds.read(ds.descriptions.index('CLOUD_DIST') + 1, masked=True)
-        pan = ds.read([1, 2, 3], masked=True).mean(axis=0)  # pan-ish SR approximation
-        # reproduce CLOUDLESS_MASK from the other *MASK bands
-        cloudless_mask = ~(masks['CLOUD_MASK'] | masks['SHADOW_MASK']) & masks['FILL_MASK']
-
-        # sanity checking on the masks
-        assert np.all(cloudless_mask == masks['CLOUDLESS_MASK'])
-        # TODO: we could replace these download tests with reduceRegion type tests
-        assert cloud_dist[masks['CLOUD_MASK']].mean() < cloud_dist[~masks['CLOUD_MASK']].mean()
-        assert pan[masks['CLOUD_MASK']].mean() > pan[masks['CLOUDLESS_MASK']].mean()
-        assert pan[masks['CLOUDLESS_MASK']].mean() > pan[masks['SHADOW_MASK']].mean()
 
 
 @pytest.mark.parametrize(
@@ -368,7 +334,7 @@ def test_landsat_aux_bands(masked_image: str, region_10000ha, tmp_path, request)
         's2_sr_masked_image', 's2_toa_masked_image'
     ]
 )
-def test_s2_aux_bands(masked_image: str, region_10000ha, tmp_path, request):
+def test_s2_aux_bands(masked_image: str, region_10000ha, request):
     """ Test Sentinel-2 auxiliary bands by downloading them. """
     masked_image: MaskedImage = request.getfixturevalue(masked_image)
     stats = get_mask_stats(masked_image, region_10000ha)
@@ -376,42 +342,7 @@ def test_s2_aux_bands(masked_image: str, region_10000ha, tmp_path, request):
     assert stats['PAN_CLOUDLESS'] > stats['PAN_SHADOW']
     assert stats['CDIST_CLOUDLESS'] > stats['CDIST_CLOUD']
     assert stats['CDIST_MIN'] == masked_image._proj_scale
-    return
-    filename = tmp_path.joinpath(f'test_image.tif')
-    aux_mask_names = ['CLOUD_MASK', 'SHADOW_MASK', 'FILL_MASK', 'CLOUDLESS_MASK']
-    masked_image.set_region_stats(region_10000ha)
-    # Download a large region at CLOUD_DIST/SHADOW_MASK 60m scale to avoid any resampling/noise issues.  Download as
-    # int32 so valid pixels don't overlap nodata.
-    masked_image.download(filename, region=region_10000ha, dtype='int32', scale=masked_image._proj_scale)
-    assert filename.exists()
 
-    with rio.open(filename, 'r') as ds:
-        # reproduce the FILL_MASK by combining the dataset masks from SR bands
-        sr_band_idx = [
-            ds.descriptions.index(band_name) + 1 for band_name in ds.descriptions if band_name.startswith('B')
-        ]
-        ds_mask = np.all(ds.read_masks(sr_band_idx).astype('bool'), axis=0)
-        # read the *_MASK bands as boolean arrays, any masked pixels are set to False
-        masks = {}
-        for mask_name in aux_mask_names:
-            assert mask_name in ds.descriptions
-            masks[mask_name] = ds.read(ds.descriptions.index(mask_name) + 1, masked=True)
-            masks[mask_name] = masks[mask_name].filled(0).astype('bool')  # fill nodata with 0 and cast to bool
-
-        assert np.all(ds_mask == masks['FILL_MASK'])
-
-        cloud_dist = ds.read(ds.descriptions.index('CLOUD_DIST') + 1, masked=True)
-        pan = ds.read([2, 3, 4], masked=True).mean(axis=0)  # pan SR approximation
-        # reproduce CLOUDLESS_MASK from the other *MASK bands
-        cloudless_mask = ~(masks['CLOUD_MASK'] | masks['SHADOW_MASK']) & masks['FILL_MASK']
-
-        # some sanity checking on the masks
-        assert np.all(cloudless_mask == masks['CLOUDLESS_MASK'])
-        assert cloud_dist[~masks['CLOUDLESS_MASK']].mean() < cloud_dist[masks['CLOUDLESS_MASK']].mean()
-        # test CLOUD_DIST is calculated/reprojected at correct scale
-        assert np.unique(cloud_dist[cloud_dist > 0])[0] == masked_image._proj_scale
-        assert pan[masks['CLOUD_MASK']].mean() > pan[masks['CLOUDLESS_MASK']].mean()
-        assert pan[masks['CLOUDLESS_MASK']].mean() > pan[masks['SHADOW_MASK']].mean()
 
 @pytest.mark.parametrize(
     'masked_image', [
@@ -433,4 +364,3 @@ def test_mask_clouds(masked_image: str, region_100ha, tmp_path, request):
         # test that cloudless_mask is the same as the nodata/dataset mask for each bands
         ds_masks = ds.read_masks().astype('bool')
         assert np.all(cloudless_mask == ds_masks)
-

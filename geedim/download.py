@@ -424,6 +424,12 @@ class BaseImage:
                     'This image has no fixed projection and cannot be resampled.  If this image is a composite, '
                     'you can resample the images used to create the composite.'
                 )
+            # TODO: write custom resample methods for BaseImage and CloudMaskedImage.  These should use
+            #  reduceResolution when downsampling and resample when upsampling.  STAC gsd could be used to determine
+            #  up or downsampling. Then the method is called here and in composite().  First, establish if NN
+            #  resampling is genuinely being used for downsampling. See
+            #  https://developers.google.com/earth-engine/guides/resample
+
             ee_image = ee_image.resample(resampling.value)
 
         ee_image = self._convert_dtype(ee_image, dtype=dtype or self.dtype)

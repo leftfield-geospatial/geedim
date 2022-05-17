@@ -13,7 +13,7 @@
     See the License for the specific language governing permissions and
     limitations under the License.
 """
-from typing import List, Union
+from typing import List, Union, Dict
 
 import ee
 import pytest
@@ -22,7 +22,8 @@ from datetime import datetime
 
 from geedim.collection import MaskedCollection, split_id
 from geedim.errors import UnfilteredError, ComponentImageError
-from geedim.mask import MaskedImage
+from geedim.enums import CompositeMethod, ResamplingMethod
+from geedim.mask import MaskedImage, get_projection
 
 
 @pytest.fixture()
@@ -173,7 +174,8 @@ def test_from_list_order(image_list: str, request):
     ('COPERNICUS/S2', '2022-01-01', '2022-01-15', 'region_100ha', 50, True),
     ('COPERNICUS/S2', '2022-01-01', '2022-01-15', 'region_100ha', 50, True),
     ('LARSE/GEDI/GEDI02_A_002_MONTHLY', '2021-11-01', '2022-01-01', 'region_100ha', 1, False)
-    ])
+    ]
+)
 def test_search(name, start_date:str, end_date:str, region:str, cloudless_portion:float, is_csmask, request):
     """ Test MaskedCollection.search() results with different cloud/shadow maskable collections. """
     region: dict = request.getfixturevalue(region)
@@ -203,7 +205,66 @@ def test_empty_search(region_100ha):
     assert len(searched_collection.properties) == 0
     assert searched_collection.properties_table is not None
 
+@pytest.mark.parametrize('image_list, method, region, date', [
+    ('s2_sr_image_list', CompositeMethod.q_mosaic, 'region_10000ha', None),
+    ('s2_sr_image_list', CompositeMethod.q_mosaic, None, '2021-10-01'),
+    ('gedi_image_list', CompositeMethod.mosaic, 'region_10000ha', None),
+    ('gedi_image_list', CompositeMethod.mosaic, None, '2020-09-01'),
+    ]
+)
+def test_composite_region_date_ordering(image_list, method, region, date, request):
+    """ Test the ordering of images in the collection returned by MaskedCollection._prepare_for_composite(). """
+    image_list: List = request.getfixturevalue(image_list)
+    region: Dict = request.getfixturevalue(region) if region else None
+    gd_collection = MaskedCollection.from_list(image_list)
+    ee_collection = gd_collection._prepare_for_composite(method=method, date=date, region=region)
+    properties = gd_collection._get_properties(ee_collection)
+    assert len(properties) == len(image_list)
+    if region:
+        # test images are ordered by CLOUDLESS/FILL_PORTION
+        # CLOUDLESS_PORTION is not in MaskedCollection.properties_key for generic images, so use FILL_PORTION instead
+        property_keys = list(gd_collection.properties_key.keys())
+        portion_key = 'CLOUDLESS_PORTION' if 'CLOUDLESS_PORTION' in property_keys else 'FILL_PORTION'
+        im_portions = [im_props[portion_key] for im_props in properties.values()]
+        assert sorted(im_portions) == im_portions
+    elif date:
+        # test images are ordered by time difference with `date`
+        im_dates = np.array(
+            [datetime.utcfromtimestamp(im_props['system:time_start'] / 1000) for im_props in properties.values()]
+        )
+        comp_date = datetime.strptime(date, '%Y-%m-%d')
+        im_date_diff = np.abs(comp_date - im_dates)
+        assert all(sorted(im_date_diff, reverse=True) == im_date_diff)
 
+@pytest.mark.parametrize('image_list, resampling', [
+    ('s2_sr_image_list', ResamplingMethod.bilinear),
+    ('s2_sr_image_list', ResamplingMethod.bicubic),
+    ('l8_9_image_list', ResamplingMethod.bilinear),
+    ('l8_9_image_list', ResamplingMethod.bicubic),
+    ('l4_5_image_list', ResamplingMethod.bilinear),
+    ('l4_5_image_list', ResamplingMethod.bicubic),
+])
+def test_composite_resampling(image_list: str, resampling: ResamplingMethod, region_100ha, request):
+    """ Test that resampling smooths the composite image. """
+    image_list: List = request.getfixturevalue(image_list)
+    gd_collection = MaskedCollection.from_list(image_list)
+    proj = get_projection(gd_collection.ee_collection.first(), min_scale=True)
+    comp_im = gd_collection.composite(method=CompositeMethod.mosaic)
+    comp_im_resampled = gd_collection.composite(method=CompositeMethod.mosaic, resampling=resampling)
+    def get_image_std(ee_image: ee.Image):
+        """ Get the mean of the local/neighbourhood image std. dev., over a region. """
+        # Note that for Sentinel-2 images, only the 20m and 60m bands get resampled, here B1 @ 60m is used for testing.
+        # test_image = ee_image.select('B.*|SR|_B.*').reduce(ee.Reducer.mean()).rename('TEST')
+        test_image = ee_image.select(0)
+        std_image = test_image.reduceNeighborhood(reducer='stdDev', kernel=ee.Kernel.square(2)).rename('TEST')
+        # reproject the composite image to fixed, known projection for the neighbourhood operation
+        std_image = std_image.reproject(crs=proj.crs(), scale=proj.nominalScale())
+        mean_std_image = std_image.reduceRegion(
+            reducer='mean', geometry=region_100ha, crs=proj, scale=proj.nominalScale(), bestEffort=True, maxPixels=1e6
+        )
+        return mean_std_image.get('TEST').getInfo()
+
+    assert get_image_std(comp_im.ee_image) > get_image_std(comp_im_resampled.ee_image)
 
 
 # To Test
@@ -233,4 +294,10 @@ def test_empty_search(region_100ha):
 #   - return images have correct CLOUDLESS_PORTION
 #   - return images are marked filtered.
 # - composite:
-#   -
+#   - we have method, mask, resampling, date & region params, as well as all the additional cloud mask params
+#   - how can we test all this w/o downloading many times?  and what do we want to test?
+#   - most importantly, i think we just want to test we have a valid, downloadable image.  so just checking ee_info
+#   would achieve that.
+#   - then we could test that we have less CLOUDLESS_PORTION in the composite than any of the downloaded images.
+#   - perhaps a reduceRegion with variance could tell us about resampling.  now that i think of this, we could use a
+#   similar approach with test_mask and e.g. mean CLOUD_MASK, CLOUD_DIST vals.
