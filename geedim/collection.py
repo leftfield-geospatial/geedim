@@ -282,7 +282,7 @@ class MaskedCollection:
             abbrev_props.append(abbrev_dict)
         return tabulate.tabulate(abbrev_props, headers='keys', floatfmt='.2f', tablefmt=_table_fmt)
 
-    def _prepare_for_composite(
+    def __prepare_for_composite(
         self, method=_default_comp_method, mask=True, resampling=BaseImage._default_resampling, date=None,
         region=None, **kwargs
     ):
@@ -301,6 +301,8 @@ class MaskedCollection:
         if (method == CompositeMethod.q_mosaic) and (self.image_type == MaskedImage):
             # TODO get a list of supported collections, report this in CLI help too
             raise ValueError(f'The `q-mosaic` method is not supported for this ("{self.name}") collection.')
+
+        # mask, method=q_mosaic, method=mosaic and region
 
         ee_collection = self._ee_collection
         if method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic]:
@@ -325,18 +327,71 @@ class MaskedCollection:
                 ee_collection = ee_collection.sort('system:time_start')
 
         if mask:
+            # add auxiliary bands and mask clouds
             def mask_clouds(ee_image):
                 gd_image = self.image_type(ee_image, **kwargs)
                 gd_image.mask_clouds()
                 return gd_image.ee_image
 
             ee_collection = ee_collection.map(mask_clouds)
+        elif method == CompositeMethod.q_mosaic and not region:
+            # add auxiliary bands if they are needed and haven't been added already
+            def add_aux_bands(ee_image):
+                gd_image = self.image_type(ee_image, **kwargs)
+                return gd_image.ee_image
+
+            ee_collection = ee_collection.map(add_aux_bands)
 
         if resampling != BaseImage._default_resampling:
             def resample(ee_image):
                 return ee_image.resample(resampling.value)
 
             ee_collection = ee_collection.map(resample)
+        return ee_collection
+
+    def _prepare_for_composite(
+        self, method=_default_comp_method, mask=True, resampling=BaseImage._default_resampling, date=None,
+        region=None, **kwargs
+    ):
+        """
+        Prepare the Earth Engine collection for compositing. See MaskedCollection.composite() for
+        parameter descriptions.
+        """
+
+        if not self._filtered:
+            raise UnfilteredError(
+                'Composites can only be created from collections returned by `search()` and `from_list()`'
+            )
+
+        method = CompositeMethod(method)
+        resampling = ResamplingMethod(resampling) if resampling else BaseImage._default_resampling
+        if (method == CompositeMethod.q_mosaic) and (self.image_type == MaskedImage):
+            # TODO get a list of supported collections, report this in CLI help too
+            raise ValueError(f'The `q-mosaic` method is not supported for this ("{self.name}") collection.')
+
+        def prepare_image(ee_image: ee.Image):
+            """ Prepare an EE image for use in compositing. """
+            if date and (method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic]):
+                date_dist = ee.Number(ee_image.get('system:time_start')).subtract(ee.Date(date).millis()).abs()
+                ee_image = ee_image.set('DATE_DIST', date_dist)
+
+            gd_image = self.image_type(ee_image, **kwargs)
+            if region and (method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic]):
+                gd_image.set_region_stats(region)
+            if mask:
+                gd_image.mask_clouds()
+            if resampling != BaseImage._default_resampling:
+                return gd_image.ee_image.resample(resampling.value)
+            else:
+                return gd_image.ee_image
+
+        ee_collection = self._ee_collection.map(prepare_image)
+
+        if date and (method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic]):
+            ee_collection = ee_collection.sort('DATE_DIST', opt_ascending=False)
+        elif region and (method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic]):
+            ee_collection = ee_collection.sort('CLOUDLESS_PORTION')
+
         return ee_collection
 
     def search(self, start_date, end_date, region, cloudless_portion=0, **kwargs):
