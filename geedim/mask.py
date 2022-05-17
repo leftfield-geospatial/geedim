@@ -261,6 +261,8 @@ class LandsatImage(CloudMaskedImage):
     _proj_scale = 30
 
     def _aux_image(self, mask_shadows=True, mask_cirrus=True, **kwargs) -> ee.Image:
+        # TODO: lose the kwargs here if possible so an exception is raised when unsupported kwargs are passed.  will
+        #  need changes to CLI.
         """
         Retrieve the auxiliary image containing cloud/shadow masks and cloud distance.
 
