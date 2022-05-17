@@ -297,7 +297,7 @@ class MaskedCollection:
             )
 
         method = CompositeMethod(method)
-        resampling = ResamplingMethod(resampling)
+        resampling = ResamplingMethod(resampling) if resampling else BaseImage._default_resampling
         if (method == CompositeMethod.q_mosaic) and (self.image_type == MaskedImage):
             # TODO get a list of supported collections, report this in CLI help too
             raise ValueError(f'The `q-mosaic` method is not supported for this ("{self.name}") collection.')
