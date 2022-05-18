@@ -146,33 +146,31 @@ class MaskedCollection:
             The MaskedCollection instance.
         """
         # build lists of EE images and IDs from image_list
-        # TODO: do we assume/force all images to have system:id and system:start_time properties.  or somehow allow
-        #  images w/o these values?
         if len(image_list) == 0:
             raise ValueError('`image_list` is empty.')
 
-        ee_image_list = []
-        ee_id_list = []
+        im_dict_list = []
         for image_obj in image_list:
             if isinstance(image_obj, str):
-                ee_image_list.append(ee.Image(image_obj))
-                ee_id_list.append(image_obj)
+                im_dict_list.append(dict(ee_image=ee.Image(image_obj), id=image_obj, has_date=True))
             elif isinstance(image_obj, ee.Image):
-                ee_image_list.append(image_obj)
                 ee_info = image_obj.getInfo()
-                ee_id_list.append(ee_info['id'] if 'id' in ee_info else None)
+                ee_id = ee_info['id'] if 'id' in ee_info else None
+                has_date = ('properties' in ee_info) and ('system:time_start' in ee_info['properties'])
+                im_dict_list.append(dict(ee_image=ee.Image(image_obj), id=ee_id, has_date=has_date))
             elif isinstance(image_obj, BaseImage):
-                ee_image_list.append(image_obj.ee_image)
-                ee_id_list.append(image_obj.id)
+                im_dict_list.append(
+                    dict(ee_image=image_obj.ee_image, id=image_obj.id, has_date=image_obj.date is not None)
+                )
             else:
                 raise TypeError(f'Unsupported image object type: {type(image_obj)}')
 
-        # check all images have IDs
-        if any([ee_id is None for ee_id in ee_id_list]):
-            raise ComponentImageError('Image(s) must have a "system:id" property')
+        # check all images have IDs and capture dates
+        if any([(im_dict['id'] is None) or (not im_dict['has_date']) for im_dict in im_dict_list]):
+            raise ComponentImageError('Image(s) must have "id" and "system:time_start" properties.')
 
         # check the images all come from the same or compatible collections
-        ee_coll_names = [split_id(im_id)[0] for im_id in ee_id_list]
+        ee_coll_names = [split_id(im_dict['id'])[0] for im_dict in im_dict_list]
         if not compatible_collections(ee_coll_names):
             raise ComponentImageError(
                 'All images must belong to the same, or spectrally compatible, collections.'
@@ -180,7 +178,9 @@ class MaskedCollection:
 
         # create the collection object, using the name of the first collection in ee_coll_names.
         gd_collection = cls.from_name(ee_coll_names[0])
-        gd_collection._ee_collection = ee.ImageCollection(ee.List(ee_image_list))
+        gd_collection._ee_collection = ee.ImageCollection(
+            ee.List([im_dict['ee_image'] for im_dict in im_dict_list])
+        )
         gd_collection._filtered = True
         return gd_collection
 
@@ -194,7 +194,7 @@ class MaskedCollection:
         """ Name of the encapsulated Earth Engine image collection. """
         if not self._name:
             ee_info = self._ee_collection.first().getInfo()
-            self._name = split_id(ee_info['id'])[0]
+            self._name = split_id(ee_info['id'])[0] if ee_info and 'id' in ee_info else 'None'
         return self._name
 
     @property
@@ -255,8 +255,6 @@ class MaskedCollection:
         props_list = ee.List(ee_collection.iterate(aggregrate_props, ee.List([]))).getInfo()
         # add image properties to the return dict in the same order as the underlying collection
         props_dict = OrderedDict()
-        # TODO: deal with the case where props images don't have system:time_start/id (wrt composite).  perhaps by
-        #  forcing images to have this property is best?
         for prop_dict in props_list:
             props_dict[prop_dict['system:id']] = prop_dict
         return props_dict
@@ -301,8 +299,6 @@ class MaskedCollection:
         if (method == CompositeMethod.q_mosaic) and (self.image_type == MaskedImage):
             # TODO get a list of supported collections, report this in CLI help too
             raise ValueError(f'The `q-mosaic` method is not supported for this ("{self.name}") collection.')
-
-        # mask, method=q_mosaic, method=mosaic and region
 
         ee_collection = self._ee_collection
         if method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic]:
@@ -435,8 +431,6 @@ class MaskedCollection:
                 filter(ee.Filter.gte('CLOUDLESS_PORTION', cloudless_portion)).
                 sort('system:time_start')
         )
-        # TODO: here we filter on system:time_start, so we also need to ensure this property is in any images passed
-        #  to from_list()
         # return a new MaskedCollection containing the filtered EE collection (the EE collection
         # wrapped by MaskedCollection remains fixed)
         gd_collection = MaskedCollection(ee_collection)
@@ -493,9 +487,7 @@ class MaskedCollection:
             try:
                 date = datetime.strptime(date, '%Y-%m-%d')
             except ValueError:
-                raise ValueError(
-                    '`date` should be a datetime instance or a string with format: "%Y-%m-%d"'
-                )
+                raise ValueError('`date` should be a datetime instance or a string with format: "%Y-%m-%d"')
 
         # mask, sort & resample the EE collection
         method = CompositeMethod(method)
@@ -539,11 +531,12 @@ class MaskedCollection:
             method_str += '-' + date.strftime('%Y_%m_%d')
 
         comp_id = f'{self.name}/{start_date}-{end_date}-{method_str}-COMP'
-        comp_image = comp_image.set('system:id', comp_id)
-        comp_image = comp_image.set('system:index', comp_id)
+        comp_image = comp_image.set('system:id', comp_id)  # sets root 'id' property
+        comp_image = comp_image.set('system:index', comp_id)  # sets 'properties'->'system:index'
 
-        # set the composite capture time to the capture time of the first component image
+        # set the composite capture time to the capture time of the first component image (sets
+        # 'properties'->'system:time_start')
         comp_image = comp_image.set('system:time_start', min(dates).timestamp() * 1000)
         gd_comp_image = self.image_type(comp_image)
-        gd_comp_image._id = comp_id     # avoid getInfo() for id property
+        gd_comp_image._id = comp_id  # avoid getInfo() for id property
         return gd_comp_image
