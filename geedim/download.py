@@ -24,6 +24,7 @@ import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from itertools import product
 from typing import Tuple, Dict, List, Union
+from datetime import datetime
 
 import ee
 import numpy as np
@@ -171,6 +172,14 @@ class BaseImage:
             return self._id
         else:
             return self.ee_info['id'] if 'id' in self.ee_info else None
+
+    @property
+    def date(self) -> Union[datetime, None]:
+        """The image capture date & time."""
+        if 'system:time_start' in self.properties:
+            return datetime.utcfromtimestamp(self.properties['system:time_start'] / 1000)
+        else:
+            return None
 
     @property
     def name(self) -> Union[str, None]:

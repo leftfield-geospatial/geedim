@@ -15,6 +15,7 @@
 """
 import pathlib
 from typing import Dict, Tuple
+from datetime import datetime
 
 import ee
 import numpy as np
@@ -105,6 +106,7 @@ def test_user_props(user_base_image: BaseImage):
     assert user_base_image.scale is None
     assert user_base_image.transform is None
     assert user_base_image.shape is None
+    assert user_base_image.date is None
     assert user_base_image.size_in_bytes is None
     assert user_base_image.footprint is None
     assert user_base_image.dtype == 'uint8'
@@ -117,6 +119,7 @@ def test_fix_user_props(user_fix_base_image: BaseImage):
     assert user_fix_base_image.scale < 1
     assert user_fix_base_image.transform is not None
     assert user_fix_base_image.shape is None
+    assert user_fix_base_image.date is None
     assert user_fix_base_image.size_in_bytes is None
     assert user_fix_base_image.footprint is None
     assert user_fix_base_image.dtype == 'uint8'
@@ -130,6 +133,7 @@ def test_s2_props(s2_sr_base_image):
     assert s2_sr_base_image.scale == min_band_info['crs_transform'][0]
     assert s2_sr_base_image.transform == Affine(*min_band_info['crs_transform'])
     assert s2_sr_base_image.shape == min_band_info['dimensions'][::-1]
+    assert s2_sr_base_image.date == datetime.utcfromtimestamp(s2_sr_base_image.properties['time_start'] / 1000)
     assert s2_sr_base_image.size_in_bytes is not None
     assert s2_sr_base_image.footprint is not None
     assert s2_sr_base_image.dtype == 'uint32'
