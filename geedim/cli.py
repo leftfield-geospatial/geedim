@@ -22,6 +22,7 @@ from types import SimpleNamespace
 from typing import List
 
 import click
+from click.core import ParameterSource
 import rasterio.crs as rio_crs
 from rasterio.dtypes import dtype_ranges
 from rasterio.errors import CRSError
@@ -277,8 +278,10 @@ def cli(ctx, verbose, quiet):
 @click.pass_context
 def config(ctx, mask_cirrus, mask_shadows, mask_method, prob, dark, shadow_dist, buffer, cdi_thresh, max_cloud_dist):
     """Configure cloud/shadow masking."""
-    # store configuration in the context object for use by other commands
-    ctx.obj.cloud_kwargs = ctx.params
+    # store commandline configuration (only) in the context object for use by other commands
+    for key, val in ctx.params.items():
+        if ctx.get_parameter_source(key) == ParameterSource.COMMANDLINE:
+            ctx.obj.cloud_kwargs[key] = val
 
 
 cli.add_command(config)
