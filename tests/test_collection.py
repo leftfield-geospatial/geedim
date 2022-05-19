@@ -176,7 +176,6 @@ def test_from_list_order(image_list: str, request):
         ('LANDSAT/LT05/C02/T1_L2', '2005-01-01', '2006-02-01', 'region_100ha', 50, True),
         ('COPERNICUS/S2_SR', '2022-01-01', '2022-01-15', 'region_100ha', 50, True),
         ('COPERNICUS/S2', '2022-01-01', '2022-01-15', 'region_100ha', 50, True),
-        ('COPERNICUS/S2', '2022-01-01', '2022-01-15', 'region_100ha', 50, True),
         ('LARSE/GEDI/GEDI02_A_002_MONTHLY', '2021-11-01', '2022-01-01', 'region_100ha', 1, False)
     ]
 )
@@ -342,7 +341,7 @@ def test_composite_resampling(image_list: str, resampling: ResamplingMethod, reg
         return mean_std_image.get('TEST').getInfo()
 
     # test the resampled composite is smoother than the default composite
-    assert get_image_std(comp_im_resampled.ee_image) > get_image_std(comp_im.ee_image)
+    assert get_image_std(comp_im_resampled.ee_image) < get_image_std(comp_im.ee_image)
 
 
 def test_composite_s2_cloud_mask_params(s2_sr_image_list, region_10000ha):

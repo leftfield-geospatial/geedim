@@ -133,7 +133,7 @@ def test_s2_props(s2_sr_base_image):
     assert s2_sr_base_image.scale == min_band_info['crs_transform'][0]
     assert s2_sr_base_image.transform == Affine(*min_band_info['crs_transform'])
     assert s2_sr_base_image.shape == min_band_info['dimensions'][::-1]
-    assert s2_sr_base_image.date == datetime.utcfromtimestamp(s2_sr_base_image.properties['time_start'] / 1000)
+    assert s2_sr_base_image.date == datetime.utcfromtimestamp(s2_sr_base_image.properties['system:time_start'] / 1000)
     assert s2_sr_base_image.size_in_bytes is not None
     assert s2_sr_base_image.footprint is not None
     assert s2_sr_base_image.dtype == 'uint32'
@@ -400,16 +400,12 @@ def test_export(user_fix_base_image: BaseImage, region_25ha: Dict):
     assert task.active()
     assert task.status()['state'] == 'READY'
 
-# TO test
+# TODo
 # --------
 # get_bounds() # test this on downloaded image against download region
 # _get_band_metadata: leave for now
-# _get_tile_shape: test with mockup BaseImages that steadily / randomly increase image shape and/or count,
-# and tests that the tile size does not increase past max_size
 # _write_metadata: test downloaded bands have ids / descriptions
 # export(): test an export of small file (with wait ? - it kind of has to be to test monitor_export_task() )
-
-# Other to test:
 # - resampling smooths things out
 # - different generic collection images are downloaded ok (perhaps this goes with MaskedImage more than BaseImage)
 # - test float mask/nodata in downloaded image
