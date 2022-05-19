@@ -40,18 +40,10 @@ def _ee_init():
         env_key = 'EE_SERVICE_ACC_PRIVATE_KEY'
 
         if env_key in os.environ:
-            # write key val to json file
+            # authenticate with service account
             key_dict = json.loads(os.environ[env_key])
-            filename = pathlib.Path('_service.json').absolute()
-            with open(filename, 'w') as f:
-                json.dump(key_dict, f)
-
-            # authenticate with service account and delete json file
-            try:
-                service_account = key_dict['client_email']
-                credentials = ee.ServiceAccountCredentials(service_account, str(filename))
-                ee.Initialize(credentials, opt_url='https://earthengine-highvolume.googleapis.com')
-            finally:
-                os.remove(filename)
+            service_account = key_dict['client_email']
+            credentials = ee.ServiceAccountCredentials(service_account, key_data=key_dict)
+            ee.Initialize(credentials, opt_url='https://earthengine-highvolume.googleapis.com')
         else:
             ee.Initialize(opt_url='https://earthengine-highvolume.googleapis.com')
