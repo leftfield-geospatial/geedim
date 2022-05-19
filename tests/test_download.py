@@ -345,7 +345,6 @@ def test_tiles(image_shape, tile_shape, image_transform):
     'base_image, region', [
         ('user_base_image', 'region_25ha'),
         ('user_fix_base_image', 'region_25ha'),
-
         # ('s2_sr_base_image', 'region_25ha'),
         # ('l9_base_image', 'region_25ha'),
         # ('modis_nbar_base_image', 'region_25ha'),
@@ -409,5 +408,6 @@ def test_export(user_fix_base_image: BaseImage, region_25ha: Dict):
 # - resampling smooths things out
 # - different generic collection images are downloaded ok (perhaps this goes with MaskedImage more than BaseImage)
 # - test float mask/nodata in downloaded image
+# - test mult tile download has no discontinuities
 
 ##

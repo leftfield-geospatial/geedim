@@ -16,14 +16,21 @@
 import json
 import pathlib
 from datetime import datetime
+from typing import List, Dict, Union
+from glob import glob
 
 import numpy as np
 import pytest
+import rasterio as rio
 from click.testing import CliRunner
+from rasterio.crs import CRS
+from rasterio.coords import BoundingBox
 from rasterio.features import bounds
+from rasterio.warp import transform_geom
 
 from geedim import root_path
 from geedim.cli import cli
+from geedim.enums import ResamplingMethod, CompositeMethod
 
 
 # TODO: some way of avoiding multiple calls to ee_init?
@@ -50,6 +57,58 @@ def region_10000ha_file():
     """ Path to region_10000ha geojson file. """
     return root_path.joinpath('data/inputs/tests/region_10000ha.geojson')
 
+
+@pytest.fixture()
+def l4_5_image_id_list(l4_image_id, l5_image_id) -> List[str]:
+    """ A list of landsat 4 & 5 image ID's. """
+    return [l4_image_id, l5_image_id]
+
+
+@pytest.fixture()
+def l8_9_image_id_list(l8_image_id, l9_image_id) -> List[str]:
+    """ A list of landsat 8 & 9 image ID's. """
+    return [l8_image_id, l9_image_id]
+
+
+@pytest.fixture()
+def s2_sr_image_id_list() -> List[str]:
+    """ A list of Sentinel-2 SR image IDs. """
+    return [
+        'COPERNICUS/S2_SR/20211004T080801_20211004T083709_T34HEJ',
+        'COPERNICUS/S2_SR/20211123T081241_20211123T083704_T34HEJ',
+        'COPERNICUS/S2_SR/20220107T081229_20220107T083059_T34HEJ'
+    ]
+
+
+@pytest.fixture()
+def gedi_image_id_list() -> List[str]:
+    """ A list of GEDI canopy top height ID's. """
+    return [
+        'LARSE/GEDI/GEDI02_A_002_MONTHLY/202009_018E_036S', 'LARSE/GEDI/GEDI02_A_002_MONTHLY/202010_018E_036S',
+        'LARSE/GEDI/GEDI02_A_002_MONTHLY/202112_018E_036S'
+    ]
+
+def _test_downloaded_file(filename: pathlib.Path, region: Dict=None, crs: str=None, scale:float=None, dtype:str=None):
+    """ Helper function to test image file format against given parameters. """
+    with rio.open(filename, 'r') as ds:
+        ds: rio.DatasetReader = ds
+        assert ds.nodata is not None
+        array = ds.read(masked=True)
+        am = array.mean()
+        assert np.isfinite(am) and (am != 0)
+        if region:
+            exp_region = transform_geom('EPSG:4326', ds.crs, region)
+            exp_bounds = BoundingBox(*bounds(exp_region))
+            assert (
+                (ds.bounds[0] <= exp_bounds[0]) and (ds.bounds[1] <= exp_bounds[1]) and
+                (ds.bounds[2] >= exp_bounds[2]) and (ds.bounds[3] >= exp_bounds[3])
+            )
+        if crs:
+            assert CRS(ds.crs) == CRS.from_string(crs)
+        if scale:
+            assert abs(ds.transform[0]) == scale
+        if dtype:
+            assert ds.dtypes[0] == dtype
 
 @pytest.mark.parametrize(
     'name, start_date, end_date, region, cloudless_portion, is_csmask', [
@@ -163,3 +222,168 @@ def test_region_bbox_search(region_100ha_file: pathlib.Path, runner: CliRunner, 
         props_list.append(properties)
 
     assert props_list[0] == props_list[1]
+
+
+@pytest.mark.parametrize(
+    'image_id, region_file', [
+        ('l8_image_id', 'region_25ha_file'),
+        ('s2_sr_image_id', 'region_25ha_file'),
+        ('gedi_cth_image_id', 'region_25ha_file'),
+    ]
+)
+def test_download_defaults(image_id:str, region_file:pathlib.Path, tmp_path:pathlib.Path, runner:CliRunner,
+    request
+):
+    """ Test image download with default crs, scale, dtype etc.  """
+    image_id = request.getfixturevalue(image_id)
+    region_file = request.getfixturevalue(region_file)
+    out_file = tmp_path.joinpath(image_id.replace('/', '-') + '.tif')
+
+    cli_str = f'download -i {image_id} -r {region_file} -dd {tmp_path}'
+    result = runner.invoke(cli, cli_str.split())
+    assert (result.exit_code == 0)
+    assert (out_file.exists())
+
+    # test downloaded file readability and format
+    with open(region_file) as f:
+        region = json.load(f)
+    _test_downloaded_file(out_file, region)
+
+
+@pytest.mark.parametrize(
+    'image_id, region_file, crs, scale, dtype, mask, resampling', [
+        ('l5_image_id', 'region_25ha_file', 'EPSG:3857', 30, 'uint16', False, 'near'),
+        ('s2_toa_image_id', 'region_25ha_file', 'EPSG:3857', 10, 'int32', True, 'bilinear'),
+        ('modis_nbar_image_id', 'region_100ha_file', 'EPSG:3857', 500, 'uint32', False, 'bicubic'),
+        ('gedi_cth_image_id', 'region_25ha_file', 'EPSG:3857', 10, 'float32', True, 'bilinear'),
+        ('landsat_ndvi_image_id', 'region_25ha_file', 'EPSG:3857', 30, 'float64', True, 'near'),
+    ]
+)
+def test_download_params(
+    image_id:str, region_file:pathlib.Path, crs:str, scale:float, dtype:str, mask: bool, resampling: str,
+    tmp_path:pathlib.Path, runner:CliRunner, request
+):
+    """ Test image download, specifying all possible cli params. """
+    image_id = request.getfixturevalue(image_id)
+    region_file = request.getfixturevalue(region_file)
+    out_file = tmp_path.joinpath(image_id.replace('/', '-') + '.tif')
+
+    cli_str = (
+        f'download -i {image_id} -r {region_file} -dd {tmp_path} --crs {crs} --scale {scale} --dtype {dtype} '
+        f'--resampling {resampling}'
+    )
+    cli_str += ' --mask' if mask else ' --no-mask'
+    result = runner.invoke(cli, cli_str.split())
+    assert (result.exit_code == 0)
+    assert (out_file.exists())
+
+    with open(region_file) as f:
+        region = json.load(f)
+    # test downloaded file readability and format
+    _test_downloaded_file(out_file, region=region, crs=crs, scale=scale, dtype=dtype)
+
+def test_export_params(l8_image_id: str, region_25ha_file: pathlib.Path, runner:CliRunner, tmp_path: pathlib.Path):
+    """ Test export starts ok, specifying all cli params"""
+    cli_str = (
+        f'export -i {l8_image_id} -r {region_25ha_file} -df geedim/test --crs EPSG:3857 --scale 30 '
+        f'--dtype uint16 --mask --resampling bilinear --no-wait'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert (result.exit_code == 0)
+
+
+@pytest.mark.parametrize('image_list, scale', [('s2_sr_image_id_list', 10), ('l8_9_image_id_list', 30)])
+def test_composite_defaults(
+    image_list: str, scale: float, region_25ha_file: pathlib.Path, runner:CliRunner, tmp_path: pathlib.Path, request
+):
+    """ Test composite with default CLI parameters.  """
+    image_list = request.getfixturevalue(image_list)
+    image_ids_str = ' -i '.join(image_list)
+    cli_str = f'composite -i {image_ids_str} download --crs EPSG:3857 --scale {scale} -r {region_25ha_file} -dd' \
+              f' {tmp_path}'
+    result = runner.invoke(cli, cli_str.split())
+    assert (result.exit_code == 0)
+
+    # test downloaded file exists
+    out_files = glob(str(tmp_path.joinpath(f'*COMP*.tif')))
+    assert len(out_files) == 1
+
+    # test downloaded file readability and format
+    with open(region_25ha_file) as f:
+        region = json.load(f)
+    _test_downloaded_file(out_files[0], region)
+
+@pytest.mark.parametrize(
+    'image_list, method, region_file, date, mask, resampling, download_scale', [
+        ('s2_sr_image_id_list', 'mosaic', None, '2021-10-01', True, 'near', 10),
+        ('l8_9_image_id_list', 'q-mosaic', 'region_25ha_file', None, True, 'bilinear', 30),
+        ('gedi_image_id_list', 'medoid', None, None, True, 'bilinear', 10),
+    ]
+)
+def test_composite_params(
+    image_list: str, method: str, region_file: str, date: str, mask: bool, resampling: str, download_scale: float,
+    region_25ha_file, runner:CliRunner, tmp_path: pathlib.Path, request
+):
+    """ Test composite with default CLI parameters. """
+    image_list = request.getfixturevalue(image_list)
+    region_file = request.getfixturevalue(region_file) if region_file else None
+    image_ids_str = ' -i '.join(image_list)
+    cli_comp_str = f'composite -i {image_ids_str} -cm {method} --resampling {resampling}'
+    cli_comp_str += f' -r {region_file}' if region_file else ''
+    cli_comp_str += f' -d {date}' if date else ''
+    cli_comp_str += ' --mask' if mask else ' --no-mask'
+    cli_download_str = f'download -r {region_25ha_file} --crs EPSG:3857 --scale {download_scale} -dd {tmp_path}'
+    cli_str = cli_comp_str + ' ' + cli_download_str
+    result = runner.invoke(cli, cli_str.split())
+    assert (result.exit_code == 0)
+
+    # test downloaded file exists
+    out_files = glob(str(tmp_path.joinpath(f'*COMP*.tif')))
+    assert len(out_files) == 1
+
+    # test downloaded file readability and format
+    with open(region_25ha_file) as f:
+        region = json.load(f)
+    _test_downloaded_file(out_files[0], region=region, crs='EPSG:3857', scale=download_scale)
+
+def test_search_composite_download(region_25ha_file, runner:CliRunner, tmp_path: pathlib.Path):
+    """ Test chaining of `search`, `composite` and `download`. """
+
+    cli_search_str = f'search -c COPERNICUS/S1_GRD -s 2022-01-01 -e 2022-02-01 -r {region_25ha_file}'
+    cli_comp_str = f'composite --mask'
+    cli_download_str = f'download --crs EPSG:3857 --scale 10 -dd {tmp_path}'
+    cli_str = cli_search_str + ' ' + cli_comp_str + ' ' + cli_download_str
+    result = runner.invoke(cli, cli_str.split())
+    assert (result.exit_code == 0)
+
+    # test downloaded file exists
+    out_files = glob(str(tmp_path.joinpath(f'*COMP*.tif')))
+    assert len(out_files) == 1
+
+    # test downloaded file readability and format
+    with open(region_25ha_file) as f:
+        region = json.load(f)
+    _test_downloaded_file(out_files[0], region=region, crs='EPSG:3857', scale=10)
+
+def test_search_composite_x2_download(region_25ha_file, runner:CliRunner, tmp_path: pathlib.Path):
+    """
+    Test chaining of `search`, `composite`, `composite` and `download` i.e. the first composite is included as a
+    component image in the second composite.
+    """
+
+    cli_search_str = f'search -c landsat7_c2_l2 -s 2022-01-15 -e 2022-04-01 -r {region_25ha_file} -cp 20'
+    cli_comp1_str = f'composite --mask'
+    cli_comp2_str = f'composite -i LANDSAT/LE07/C02/T1_L2/LE07_173083_20220103 -cm mosaic --date 2022-04-01 --mask'
+    cli_download_str = f'download --crs EPSG:3857 --scale 30 -dd {tmp_path}'
+    cli_str = cli_search_str + ' ' + cli_comp1_str + ' ' + cli_comp2_str + ' ' + cli_download_str
+    result = runner.invoke(cli, cli_str.split())
+    assert (result.exit_code == 0)
+
+    # test downloaded file exists
+    out_files = glob(str(tmp_path.joinpath(f'*COMP*.tif')))
+    assert len(out_files) == 1
+
+    # test downloaded file readability and format
+    with open(region_25ha_file) as f:
+        region = json.load(f)
+    _test_downloaded_file(out_files[0], region=region, crs='EPSG:3857', scale=30)
