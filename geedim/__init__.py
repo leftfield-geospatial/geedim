@@ -42,7 +42,7 @@ def _ee_init():
         if env_key in os.environ:
             # write key val to json file
             key_dict = json.loads(os.environ[env_key])
-            filename = '_service.json'
+            filename = pathlib.Path('_service.json').absolute()
             with open(filename, 'w') as f:
                 json.dump(key_dict, f)
 
