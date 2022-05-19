@@ -54,4 +54,4 @@ def _ee_init():
             finally:
                 os.remove(filename)
         else:
-            ee.Initialize()
+            ee.Initialize(opt_url='https://earthengine-highvolume.googleapis.com')
