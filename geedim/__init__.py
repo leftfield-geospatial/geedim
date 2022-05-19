@@ -42,8 +42,7 @@ def _ee_init():
         if env_key in os.environ:
             # authenticate with service account
             key_dict = json.loads(os.environ[env_key])
-            service_account = key_dict['client_email']
-            credentials = ee.ServiceAccountCredentials(service_account, key_data=key_dict)
+            credentials = ee.ServiceAccountCredentials(key_dict['client_email'], key_data=key_dict['private_key'])
             ee.Initialize(credentials, opt_url='https://earthengine-highvolume.googleapis.com')
         else:
             ee.Initialize(opt_url='https://earthengine-highvolume.googleapis.com')
