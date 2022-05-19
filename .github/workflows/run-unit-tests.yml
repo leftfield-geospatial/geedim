@@ -38,7 +38,7 @@ jobs:
     - name: Test with pytest
       timeout-minutes: 10
       run: |
-        python -m pytest -n 4 --cov=geedim --cov-report=term-missing --cov-report=xml:coverage.xml ./tests
+        python -m pytest --cov=geedim --cov-report=term-missing --cov-report=xml:coverage.xml ./tests
     - name: Upload coverage
       uses: codecov/codecov-action@v2
       with:
