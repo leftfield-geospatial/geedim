@@ -348,6 +348,7 @@ class Sentinel2ClImage(CloudMaskedImage):
             An Earth Engine image containing *_MASK and CLOUD_DIST bands.
         """
         mask_method = CloudMaskMethod(mask_method)
+
         def get_cloud_prob(ee_im):
             """Get the cloud probability image from COPERNICUS/S2_CLOUD_PROBABILITY that corresponds to `ee_im`."""
             idx = ee_im.get('system:index')

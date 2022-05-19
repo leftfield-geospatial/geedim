@@ -74,6 +74,7 @@ class MaskedCollection:
     Class for encapsulating, searching and compositing an Earth Engine image collection, with support for
     cloud/shadow masking.
     """
+
     def __init__(self, ee_collection):
         """
         Create a MaskedCollection instance.
@@ -278,80 +279,6 @@ class MaskedCollection:
             abbrev_props.append(abbrev_dict)
         return tabulate.tabulate(abbrev_props, headers='keys', floatfmt='.2f', tablefmt=_table_fmt)
 
-    def __prepare_for_composite(
-        self, method=None, mask=True, resampling=BaseImage._default_resampling, date=None,
-        region=None, **kwargs
-    ):
-        """
-        Prepare the Earth Engine collection for compositing. See MaskedCollection.composite() for
-        parameter descriptions.
-        """
-
-        if not self._filtered:
-            raise UnfilteredError(
-                'Composites can only be created from collections returned by `search()` and `from_list()`'
-            )
-
-        method = CompositeMethod(method)
-        resampling = ResamplingMethod(resampling) if resampling else BaseImage._default_resampling
-        if (method == CompositeMethod.q_mosaic) and (self.image_type == MaskedImage):
-            # TODO get a list of supported collections, report this in CLI help too
-            raise ValueError(f'The `q-mosaic` method is not supported for this ("{self.name}") collection.')
-
-        ee_collection = self._ee_collection
-        if method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic]:
-            if date:
-                # sort the collection by time difference to `date`, so that *mosaic uses the closest in time pixels
-                def set_date_dist(ee_image):
-                    date_dist = ee.Number(ee_image.get('system:time_start')).subtract(ee.Date(date).millis()).abs()
-                    return ee_image.set('DATE_DIST', date_dist)
-
-                ee_collection = ee_collection.map(set_date_dist).sort('DATE_DIST', opt_ascending=False)
-            elif region:
-                # sort the collection by cloud/shadow free portion, so that *mosaic favours pixels from the least
-                # cloudy image
-                def set_cloudless_portion(ee_image):
-                    gd_image = self.image_type(ee_image, **kwargs)
-                    gd_image.set_region_stats(region)
-                    return gd_image.ee_image
-
-                ee_collection = ee_collection.map(set_cloudless_portion).sort('CLOUDLESS_PORTION')
-            else:
-                # sort the collection by capture date.  *mosaic will favour the most recent pixels.
-                ee_collection = ee_collection.sort('system:time_start')
-        else:
-            if date:
-                logger.warning(
-                    'Sorting by time difference to `date` is performed for "mosaic" and "q_mosaic" methods only.'
-                )
-            elif region:
-                logger.warning(
-                    'Sorting by cloudless portion in `region` is performed for "mosaic" and "q_mosaic" methods only.'
-                )
-
-        if mask:
-            # add auxiliary bands and mask clouds
-            def mask_clouds(ee_image):
-                gd_image = self.image_type(ee_image, **kwargs)
-                gd_image.mask_clouds()
-                return gd_image.ee_image
-
-            ee_collection = ee_collection.map(mask_clouds)
-        elif method == CompositeMethod.q_mosaic and not region:
-            # add auxiliary bands if they are needed and haven't been added already
-            def add_aux_bands(ee_image):
-                gd_image = self.image_type(ee_image, **kwargs)
-                return gd_image.ee_image
-
-            ee_collection = ee_collection.map(add_aux_bands)
-
-        if resampling != BaseImage._default_resampling:
-            def resample(ee_image):
-                return ee_image.resample(resampling.value)
-
-            ee_collection = ee_collection.map(resample)
-        return ee_collection
-
     def _prepare_for_composite(
         self, method=None, mask=True, resampling=BaseImage._default_resampling, date=None,
         region=None, **kwargs
@@ -402,7 +329,6 @@ class MaskedCollection:
                 logger.warning('`date` is valid for "mosaic" and "q_mosaic" methods only.')
             elif region:
                 logger.warning('`region` is valid for "mosaic" and "q_mosaic" methods only.')
-
 
         return ee_collection
 

@@ -30,10 +30,8 @@ else:
 
 def _ee_init():
     """
-    Initialize earth engine using service account pvt key if it exists (i.e. for GitHub CI)
-
-    adpated from https://gis.stackexchange.com/questions/380664/how-to-de-authenticate-from-earth-engine-api
-
+    Initialise earth engine using service account pvt key if it exists (i.e. for GitHub CI).
+    Adpated from https://gis.stackexchange.com/questions/380664/how-to-de-authenticate-from-earth-engine-api.
     """
 
     if not ee.data._credentials:

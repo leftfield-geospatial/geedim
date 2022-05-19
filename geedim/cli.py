@@ -22,8 +22,8 @@ from types import SimpleNamespace
 from typing import List
 
 import click
-from click.core import ParameterSource
 import rasterio.crs as rio_crs
+from click.core import ParameterSource
 from rasterio.dtypes import dtype_ranges
 from rasterio.errors import CRSError
 

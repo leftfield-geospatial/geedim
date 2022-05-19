@@ -22,9 +22,9 @@ import threading
 import time
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 from itertools import product
 from typing import Tuple, Dict, List, Union
-from datetime import datetime
 
 import ee
 import numpy as np
