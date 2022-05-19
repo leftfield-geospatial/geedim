@@ -52,7 +52,8 @@ def s2_sr_image_list() -> List[Union[str, MaskedImage]]:
 def gedi_image_list() -> List[Union[str, MaskedImage]]:
     """ A list of GEDI canopy top height IDs/ MaskedImage's """
     return [
-        'LARSE/GEDI/GEDI02_A_002_MONTHLY/202009_018E_036S', 'LARSE/GEDI/GEDI02_A_002_MONTHLY/202010_018E_036S',
+        'LARSE/GEDI/GEDI02_A_002_MONTHLY/202009_018E_036S',
+        'LARSE/GEDI/GEDI02_A_002_MONTHLY/202010_018E_036S',
         MaskedImage.from_id('LARSE/GEDI/GEDI02_A_002_MONTHLY/202112_018E_036S')
     ]
 
@@ -165,6 +166,15 @@ def test_from_list_order(image_list: str, request):
     """ Test MaskedCollection.from_list() maintains the order of the provided image list. """
     image_list: List = request.getfixturevalue(image_list)[::-1]
     image_ids = [im_obj if isinstance(im_obj, str) else im_obj.id for im_obj in image_list]
+    gd_collection = MaskedCollection.from_list(image_list)
+    assert list(gd_collection.properties.keys()) == image_ids
+
+
+def test_from_list_ee_image(gedi_image_list: List, request):
+    """ Test MaskedCollection.from_list() with an ee.Image in the list. """
+    image_ids = [im_obj if isinstance(im_obj, str) else im_obj.id for im_obj in gedi_image_list]
+    image_list = gedi_image_list
+    image_list[1] = ee.Image(image_list[1])
     gd_collection = MaskedCollection.from_list(image_list)
     assert list(gd_collection.properties.keys()) == image_ids
 

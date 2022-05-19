@@ -18,7 +18,7 @@ from typing import Dict, List
 import ee
 import pytest
 
-from geedim import _ee_init, MaskedImage
+from geedim import _ee_init, MaskedImage, root_path
 
 
 @pytest.fixture(scope='session', autouse=True)
@@ -55,6 +55,11 @@ def region_10000ha() -> Dict:
             [[21.5893, -33.4964], [21.5893, -33.4038], [21.6960, -33.4038], [21.6960, -33.4964], [21.5893, -33.4964]]
         ]
     }
+
+
+@pytest.fixture
+def const_image_25ha_file():
+    return root_path.joinpath('data/inputs/tests/const_image_25ha.tif')
 
 
 @pytest.fixture(scope='session')
@@ -160,6 +165,7 @@ def generic_image_ids(
         modis_nbar_image_id, gch_image_id, s1_sar_image_id, gedi_agb_image_id, gedi_cth_image_id, landsat_ndvi_image_id
     ]
 
+
 @pytest.fixture(scope='session')
 def l4_masked_image(l4_image_id) -> MaskedImage:
     """ Landsat-4 MaskedImage that covers `region_*ha`, with partial cloud cover only for `region10000ha`. """
@@ -188,7 +194,6 @@ def l8_masked_image(l8_image_id) -> MaskedImage:
 def l9_masked_image(l9_image_id) -> MaskedImage:
     """ Landsat-9 MaskedImage that covers `region_*ha` with partial cloud cover. """
     return MaskedImage.from_id(l9_image_id)
-
 
 
 @pytest.fixture(scope='session')
@@ -231,6 +236,7 @@ def modis_nbar_masked_image(modis_nbar_image_id, region_10000ha) -> MaskedImage:
     #         reproject('EPSG:3857', scale=500)
     # )
     return MaskedImage.from_id(modis_nbar_image_id)
+
 
 @pytest.fixture(scope='session')
 def gch_masked_image(gch_image_id) -> MaskedImage:

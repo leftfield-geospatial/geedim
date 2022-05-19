@@ -16,21 +16,20 @@
 import json
 import pathlib
 from datetime import datetime
-from typing import List, Dict, Union
 from glob import glob
+from typing import List, Dict
 
 import numpy as np
 import pytest
 import rasterio as rio
 from click.testing import CliRunner
-from rasterio.crs import CRS
 from rasterio.coords import BoundingBox
+from rasterio.crs import CRS
 from rasterio.features import bounds
 from rasterio.warp import transform_geom
 
 from geedim import root_path
 from geedim.cli import cli
-from geedim.enums import ResamplingMethod, CompositeMethod
 
 
 # TODO: some way of avoiding multiple calls to ee_init?
@@ -88,7 +87,10 @@ def gedi_image_id_list() -> List[str]:
         'LARSE/GEDI/GEDI02_A_002_MONTHLY/202112_018E_036S'
     ]
 
-def _test_downloaded_file(filename: pathlib.Path, region: Dict=None, crs: str=None, scale:float=None, dtype:str=None):
+
+def _test_downloaded_file(
+    filename: pathlib.Path, region: Dict = None, crs: str = None, scale: float = None, dtype: str = None
+):
     """ Helper function to test image file format against given parameters. """
     with rio.open(filename, 'r') as ds:
         ds: rio.DatasetReader = ds
@@ -109,6 +111,7 @@ def _test_downloaded_file(filename: pathlib.Path, region: Dict=None, crs: str=No
             assert abs(ds.transform[0]) == scale
         if dtype:
             assert ds.dtypes[0] == dtype
+
 
 @pytest.mark.parametrize(
     'name, start_date, end_date, region, cloudless_portion, is_csmask', [
@@ -200,7 +203,7 @@ def test_config_search_l9(region_10000ha_file: pathlib.Path, runner: CliRunner, 
 
 
 def test_region_bbox_search(region_100ha_file: pathlib.Path, runner: CliRunner, tmp_path: pathlib.Path):
-    """ Test --bbox gives same search results as --region. """
+    """ Test --bbox gives same search results as --region <geojson file>. """
 
     results_file = tmp_path.joinpath('search_results.json')
     with open(region_100ha_file, 'r') as f:
@@ -224,6 +227,27 @@ def test_region_bbox_search(region_100ha_file: pathlib.Path, runner: CliRunner, 
     assert props_list[0] == props_list[1]
 
 
+def test_raster_region_search(const_image_25ha_file, region_25ha_file, runner: CliRunner, tmp_path: pathlib.Path):
+    """ Test --region works with a raster file. """
+
+    results_file = tmp_path.joinpath('search_results.json')
+    cli_strs = [
+        f'search -c LANDSAT/LC09/C02/T1_L2 -s 2022-01-01 -e 2022-02-01 -r {region_25ha_file} -o {results_file}',
+        f'search -c LANDSAT/LC09/C02/T1_L2 -s 2022-01-01 -e 2022-02-01 -r {const_image_25ha_file} -o {results_file}'
+    ]
+
+    props_list = []
+    for cli_str in cli_strs:
+        result = runner.invoke(cli, cli_str.split())
+        assert (result.exit_code == 0)
+        assert (results_file.exists())
+        with open(results_file, 'r') as f:
+            properties = json.load(f)
+        props_list.append(properties)
+
+    assert props_list[0].keys() == props_list[1].keys()
+
+
 @pytest.mark.parametrize(
     'image_id, region_file', [
         ('l8_image_id', 'region_25ha_file'),
@@ -231,7 +255,8 @@ def test_region_bbox_search(region_100ha_file: pathlib.Path, runner: CliRunner, 
         ('gedi_cth_image_id', 'region_25ha_file'),
     ]
 )
-def test_download_defaults(image_id:str, region_file:pathlib.Path, tmp_path:pathlib.Path, runner:CliRunner,
+def test_download_defaults(
+    image_id: str, region_file: pathlib.Path, tmp_path: pathlib.Path, runner: CliRunner,
     request
 ):
     """ Test image download with default crs, scale, dtype etc.  """
@@ -260,8 +285,8 @@ def test_download_defaults(image_id:str, region_file:pathlib.Path, tmp_path:path
     ]
 )
 def test_download_params(
-    image_id:str, region_file:pathlib.Path, crs:str, scale:float, dtype:str, mask: bool, resampling: str,
-    tmp_path:pathlib.Path, runner:CliRunner, request
+    image_id: str, region_file: pathlib.Path, crs: str, scale: float, dtype: str, mask: bool, resampling: str,
+    tmp_path: pathlib.Path, runner: CliRunner, request
 ):
     """ Test image download, specifying all possible cli params. """
     image_id = request.getfixturevalue(image_id)
@@ -282,7 +307,8 @@ def test_download_params(
     # test downloaded file readability and format
     _test_downloaded_file(out_file, region=region, crs=crs, scale=scale, dtype=dtype)
 
-def test_export_params(l8_image_id: str, region_25ha_file: pathlib.Path, runner:CliRunner, tmp_path: pathlib.Path):
+
+def test_export_params(l8_image_id: str, region_25ha_file: pathlib.Path, runner: CliRunner, tmp_path: pathlib.Path):
     """ Test export starts ok, specifying all cli params"""
     cli_str = (
         f'export -i {l8_image_id} -r {region_25ha_file} -df geedim/test --crs EPSG:3857 --scale 30 '
@@ -294,7 +320,7 @@ def test_export_params(l8_image_id: str, region_25ha_file: pathlib.Path, runner:
 
 @pytest.mark.parametrize('image_list, scale', [('s2_sr_image_id_list', 10), ('l8_9_image_id_list', 30)])
 def test_composite_defaults(
-    image_list: str, scale: float, region_25ha_file: pathlib.Path, runner:CliRunner, tmp_path: pathlib.Path, request
+    image_list: str, scale: float, region_25ha_file: pathlib.Path, runner: CliRunner, tmp_path: pathlib.Path, request
 ):
     """ Test composite with default CLI parameters.  """
     image_list = request.getfixturevalue(image_list)
@@ -313,6 +339,7 @@ def test_composite_defaults(
         region = json.load(f)
     _test_downloaded_file(out_files[0], region)
 
+
 @pytest.mark.parametrize(
     'image_list, method, region_file, date, mask, resampling, download_scale', [
         ('s2_sr_image_id_list', 'mosaic', None, '2021-10-01', True, 'near', 10),
@@ -322,7 +349,7 @@ def test_composite_defaults(
 )
 def test_composite_params(
     image_list: str, method: str, region_file: str, date: str, mask: bool, resampling: str, download_scale: float,
-    region_25ha_file, runner:CliRunner, tmp_path: pathlib.Path, request
+    region_25ha_file, runner: CliRunner, tmp_path: pathlib.Path, request
 ):
     """ Test composite with default CLI parameters. """
     image_list = request.getfixturevalue(image_list)
@@ -346,7 +373,8 @@ def test_composite_params(
         region = json.load(f)
     _test_downloaded_file(out_files[0], region=region, crs='EPSG:3857', scale=download_scale)
 
-def test_search_composite_download(region_25ha_file, runner:CliRunner, tmp_path: pathlib.Path):
+
+def test_search_composite_download(region_25ha_file, runner: CliRunner, tmp_path: pathlib.Path):
     """ Test chaining of `search`, `composite` and `download`. """
 
     cli_search_str = f'search -c COPERNICUS/S1_GRD -s 2022-01-01 -e 2022-02-01 -r {region_25ha_file}'
@@ -365,7 +393,8 @@ def test_search_composite_download(region_25ha_file, runner:CliRunner, tmp_path:
         region = json.load(f)
     _test_downloaded_file(out_files[0], region=region, crs='EPSG:3857', scale=10)
 
-def test_search_composite_x2_download(region_25ha_file, runner:CliRunner, tmp_path: pathlib.Path):
+
+def test_search_composite_x2_download(region_25ha_file, runner: CliRunner, tmp_path: pathlib.Path):
     """
     Test chaining of `search`, `composite`, `composite` and `download` i.e. the first composite is included as a
     component image in the second composite.

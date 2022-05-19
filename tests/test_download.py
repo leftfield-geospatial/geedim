@@ -27,7 +27,7 @@ from rasterio.features import bounds
 from rasterio.warp import transform_geom
 from rasterio.windows import union
 
-from geedim.download import BaseImage, split_id
+from geedim.download import BaseImage, split_id, get_bounds
 from geedim.enums import ResamplingMethod
 
 
@@ -89,6 +89,13 @@ def modis_nbar_base_image(modis_nbar_image_id, region_100ha) -> BaseImage:
 def test_split_id(id, exp_split):
     """ Test split_id(). """
     assert split_id(id) == exp_split
+
+
+def test_get_bounds(const_image_25ha_file, region_25ha):
+    """ Test get_bounds(). """
+    raster_bounds = bounds(get_bounds(const_image_25ha_file, expand=0))
+    test_bounds = bounds(region_25ha)
+    assert raster_bounds == pytest.approx(test_bounds, abs=.001)
 
 
 def test_id_name(user_base_image: BaseImage, s2_sr_base_image):
