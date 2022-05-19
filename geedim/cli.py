@@ -160,7 +160,7 @@ def _resampling_method_cb(ctx, param, value):
 
 def _comp_method_cb(ctx, param, value):
     """click callback to convert composite method string to enum."""
-    return CompositeMethod(value)
+    return CompositeMethod(value) if value else None
 
 
 def _prepare_image_list(obj: SimpleNamespace, mask=False) -> List[MaskedImage,]:
@@ -422,8 +422,8 @@ cli.add_command(export)
 @image_id_option
 @click.option(
     '-cm', '--method', type=click.Choice([cm.value for cm in CompositeMethod], case_sensitive=False),
-    default=MaskedCollection._default_comp_method.value, show_default=True, callback=_comp_method_cb,
-    help='Compositing method to use.'
+    default=None, callback=_comp_method_cb,
+    help='Compositing method to use.  [default: `q_mosaic` for supported collections, otherwise `mosaic` ]'
 )
 @click.option(
     '-m/-nm', '--mask/--no-mask', default=True,

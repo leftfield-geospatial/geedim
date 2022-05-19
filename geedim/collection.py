@@ -74,8 +74,6 @@ class MaskedCollection:
     Class for encapsulating, searching and compositing an Earth Engine image collection, with support for
     cloud/shadow masking.
     """
-    _default_comp_method = CompositeMethod.q_mosaic
-
     def __init__(self, ee_collection):
         """
         Create a MaskedCollection instance.
@@ -281,7 +279,7 @@ class MaskedCollection:
         return tabulate.tabulate(abbrev_props, headers='keys', floatfmt='.2f', tablefmt=_table_fmt)
 
     def __prepare_for_composite(
-        self, method=_default_comp_method, mask=True, resampling=BaseImage._default_resampling, date=None,
+        self, method=None, mask=True, resampling=BaseImage._default_resampling, date=None,
         region=None, **kwargs
     ):
         """
@@ -321,6 +319,15 @@ class MaskedCollection:
             else:
                 # sort the collection by capture date.  *mosaic will favour the most recent pixels.
                 ee_collection = ee_collection.sort('system:time_start')
+        else:
+            if date:
+                logger.warning(
+                    'Sorting by time difference to `date` is performed for "mosaic" and "q_mosaic" methods only.'
+                )
+            elif region:
+                logger.warning(
+                    'Sorting by cloudless portion in `region` is performed for "mosaic" and "q_mosaic" methods only.'
+                )
 
         if mask:
             # add auxiliary bands and mask clouds
@@ -346,7 +353,7 @@ class MaskedCollection:
         return ee_collection
 
     def _prepare_for_composite(
-        self, method=_default_comp_method, mask=True, resampling=BaseImage._default_resampling, date=None,
+        self, method=None, mask=True, resampling=BaseImage._default_resampling, date=None,
         region=None, **kwargs
     ):
         """
@@ -383,10 +390,19 @@ class MaskedCollection:
 
         ee_collection = self._ee_collection.map(prepare_image)
 
-        if date and (method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic]):
-            ee_collection = ee_collection.sort('DATE_DIST', opt_ascending=False)
-        elif region and (method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic]):
-            ee_collection = ee_collection.sort('CLOUDLESS_PORTION')
+        if method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic]:
+            if date:
+                ee_collection = ee_collection.sort('DATE_DIST', opt_ascending=False)
+            elif region:
+                ee_collection = ee_collection.sort('CLOUDLESS_PORTION')
+            else:
+                ee_collection = ee_collection.sort('system:time_start')
+        else:
+            if date:
+                logger.warning('`date` is valid for "mosaic" and "q_mosaic" methods only.')
+            elif region:
+                logger.warning('`region` is valid for "mosaic" and "q_mosaic" methods only.')
+
 
         return ee_collection
 
@@ -439,7 +455,7 @@ class MaskedCollection:
         return gd_collection
 
     def composite(
-        self, method=_default_comp_method, mask=True, resampling=BaseImage._default_resampling, date=None,
+        self, method=None, mask=True, resampling=BaseImage._default_resampling, date=None,
         region=None, **kwargs
     ):
         """
@@ -449,7 +465,7 @@ class MaskedCollection:
         ----------
         method: CompositeMethod, optional
             The compositing method to use.  One of:
-                `q_mosiac`: Select each composite pixel from the collection image with the highest quality (i.e.
+                `q_mosaic`: Select each composite pixel from the collection image with the highest quality (i.e.
                     distance to nearest cloud). When more than one image shares the highest quality value,
                     the first of the competing images is used. Valid for cloud/shadow maskable image collections only
                     (Sentinel-2 TOA and SR, and Landsat4-9 level 2 collection 2).
@@ -488,6 +504,9 @@ class MaskedCollection:
                 date = datetime.strptime(date, '%Y-%m-%d')
             except ValueError:
                 raise ValueError('`date` should be a datetime instance or a string with format: "%Y-%m-%d"')
+
+        if method is None:
+            method = CompositeMethod.mosaic if self.image_type == MaskedImage else CompositeMethod.q_mosaic
 
         # mask, sort & resample the EE collection
         method = CompositeMethod(method)
