@@ -192,7 +192,7 @@ bbox_option = click.option(
 )
 region_option = click.option(
     '-r', '--region', type=click.Path(exists=True, dir_okay=False, allow_dash=True), default=None, callback=_region_cb,
-    help='Region defined by geojson or raster file.  Use "-" to read geojson from stdin.'
+    help='Region defined by geojson polygon polygon or raster file.  Use "-" to read geojson from stdin.'
 )
 image_id_option = click.option(
     '-i', '--id', 'image_id', type=click.STRING, multiple=True, help='Earth engine image ID(s).'
@@ -262,8 +262,8 @@ def cli(ctx, verbose, quiet):
     help='Maximum distance in meters (m) to look for cloud shadows from cloud edges.  Valid for Sentinel-2 images.'
 )
 @click.option(
-    '-b', '--buffer', type=click.INT, default=250, show_default=True,
-    help='Distance in meters (m) to dilate cloud and cloud shadows objects.  Valid for Sentinel-2 images.'
+    '-b', '--buffer', type=click.INT, default=50, show_default=True,
+    help='Distance in meters (m) to dilate cloud/shadow.  Valid for Sentinel-2 images.'
 )
 @click.option(
     '-cdi', '--cdi-thresh', type=click.FloatRange(min=-1, max=1), default=None,
@@ -303,8 +303,8 @@ cli.add_command(config)
 @bbox_option
 @click.option(
     '-r', '--region', type=click.Path(exists=True, dir_okay=False, allow_dash=True), callback=_region_cb,
-    help='Region defined by geojson or raster file. Use "-" to read geojson from stdin.  [One of --bbox or --region is '
-         'required]'
+    help='Region defined by geojson polygon or raster file. Use "-" to read geojson from stdin.  [One of --bbox or '
+         '--region is required]'
 )
 @click.option(
     '-cp', '--cloudless-portion', type=click.FloatRange(min=0, max=100), default=0, show_default=True,

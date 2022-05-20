@@ -29,7 +29,8 @@ logger = logging.getLogger(__name__)
 class MaskedImage(BaseImage):
     _default_mask = False
     _supported_collection_ids = ['*']
-    _proj_scale = None  # TODO: for images w/o fixed projections, nominalScale() is 1deg~100km.  Can we get this from
+    _proj_scale = None
+    # TODO: for images w/o fixed projections, nominalScale() is 1deg~100km.  Can we get this from STAC?
 
     #  STAC w/o overheads for e.g. mapping over collections
 
@@ -44,7 +45,7 @@ class MaskedImage(BaseImage):
         mask: bool, optional
             Whether to mask the image [default: False].
         region: dict, optional
-            A geojson region inside of which to find statistics for the image.  These values are stored in the image
+            A geojson polygon inside of which to find statistics for the image.  These values are stored in the image
             properties [default: don't find statistics].
         kwargs: optional
             Any cloud/shadow masking parameters supported for the encapsulated image.
@@ -138,7 +139,7 @@ class MaskedImage(BaseImage):
         #  cloud-masked image, it will have a meaningful _proj_scale, so that it ok for those images.  Otherwise
         #  perhaps it is best to use STAC and use min scale, but there could be cases where min scale is extreme,
         #  so we should check that across STAC too.  Some sort of generic algorithm like mode(scales) might be
-        #  better??  Or we just don't report FILL_PORTION for generic images?
+        #  better?
         proj = get_projection(self.ee_image, min_scale=True)  # get projection of minimum scale band
         # If _proj_scale is set, use that as the scale, otherwise use the proj.nomimalScale().  For non-composite images
         # these should be the same value.  For composite images, there is no `fixed` projection, hence the
@@ -198,7 +199,7 @@ class CloudMaskedImage(MaskedImage):
             cloud_shadow_mask.fastDistanceTransform(
                 neighborhood=cloud_pix, units='pixels', metric='squared_euclidean'
             ).sqrt().multiply(proj.nominalScale()).rename('CLOUD_DIST').reproject(
-                crs=proj.crs(), scale=proj.nominalScale()
+                crs=proj, scale=proj.nominalScale()
             )
         )
 
@@ -233,11 +234,8 @@ class CloudMaskedImage(MaskedImage):
         stats_image = ee.Image(
             [self.ee_image.select(['FILL_MASK', 'CLOUDLESS_MASK']).unmask(), ee.Image(1).rename('REGION_SUM')]
         )
-        # TODO: can we use crs=proj everywhere instead of crs=proj.crs() which breaks with e.g. GEDI AGB data?  We do
-        #  know that proj.crs() is ok for Landsat and S2 though, so this should be safe as is, it's just better to
-        #  have consistency
         sums = stats_image.reduceRegion(
-            reducer="sum", geometry=region, crs=proj.crs(), scale=scale, bestEffort=True, maxPixels=1e6
+            reducer="sum", geometry=region, crs=proj, scale=scale, bestEffort=True, maxPixels=1e6
         ).rename(['FILL_MASK', 'CLOUDLESS_MASK'], ['FILL_PORTION', 'CLOUDLESS_PORTION'])
 
         def region_percentage(key, value):
@@ -287,7 +285,6 @@ class LandsatImage(CloudMaskedImage):
 
         shadow_mask = qa_pixel.bitwiseAnd(0b10000).neq(0).rename('SHADOW_MASK')
         if mask_cirrus:
-            # TODO: test this is always zero for landsat 4-7
             cloud_mask = qa_pixel.bitwiseAnd(0b1100).neq(0).rename('CLOUD_MASK')
         else:
             cloud_mask = qa_pixel.bitwiseAnd(0b1000).neq(0).rename('CLOUD_MASK')
@@ -307,7 +304,7 @@ class Sentinel2ClImage(CloudMaskedImage):
 
     def _aux_image(
         self, s2_toa=False, mask_method=CloudMaskMethod.cloud_prob, mask_cirrus=True, mask_shadows=True, prob=60,
-        dark=0.15, shadow_dist=1000, buffer=250, cdi_thresh=None, max_cloud_dist=5000
+        dark=0.15, shadow_dist=1000, buffer=50, cdi_thresh=None, max_cloud_dist=5000
     ):
         """
         Derive cloud, shadow and validity masks for the encapsulated image.
@@ -411,8 +408,7 @@ class Sentinel2ClImage(CloudMaskedImage):
             cloud_shadow_mask = cloud_mask
 
         # do a morphological opening type operation that removes small (20m) blobs from the mask and then dilates
-        cloud_shadow_mask = cloud_shadow_mask.focal_min(20, units='meters').focal_max(buffer * 2 / 10, units='meters')
-        # TODO: check buffer is really in meters - the above does not look like its in meters
+        cloud_shadow_mask = cloud_shadow_mask.focal_min(20, units='meters').focal_max(buffer, units='meters')
         # derive a fill mask from the Earth Engine mask for the surface reflectance bands
         fill_mask = ee_image.select('B.*').mask().reduce(ee.Reducer.allNonZero())
         # Clip this mask to the image footprint.  (Without this step we get memory limit errors on download.)
