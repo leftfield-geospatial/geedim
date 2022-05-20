@@ -272,15 +272,6 @@ class BaseImage:
         """A list of dicts describing the image bands."""
         return self._get_band_metadata()
 
-    @property
-    def info(self) -> Dict:
-        # TODO can be removed after rewrite of tests?
-        """All the BasicImage properties packed into a dictionary"""
-        return dict(
-            id=self.id, properties=self.properties, footprint=self.footprint, bands=self.band_metadata,
-            **self.min_projection
-        )
-
     @staticmethod
     def _get_projection(ee_info: Dict, min_scale=True) -> Dict:
         """
@@ -415,8 +406,8 @@ class BaseImage:
             # is in degrees.
             raise ValueError(f'This image is in EPSG:4326, you need to specify a scale in meters.')
 
-        region = region or self.footprint  # TODO: test if this region is not in the download crs
-        crs = crs or self.crs
+        region = region or self.footprint
+        crs = crs or ee.Projection(self.crs, tuple(self.transform)[:6])
         scale = scale or self.scale
 
         if crs == 'SR-ORG:6974':
@@ -437,17 +428,15 @@ class BaseImage:
             #  reduceResolution when downsampling and resample when upsampling.  STAC gsd could be used to determine
             #  up or downsampling. Then the method is called here and in composite().  First, establish if NN
             #  resampling is genuinely being used for downsampling. See
-            #  https://developers.google.com/earth-engine/guides/resample
+            #  https://developers.google.com/earth-engine/guides/resample.  A quick test shows downsampling with
+            #  reduceResolution gives crispness of NN resampling, but spatial accuracy of bilinear resampling.  With
+            #  no scale change, reduceResolution it is blurred compared to NN, and identical to bilinear.
 
             ee_image = ee_image.resample(resampling.value)
 
         ee_image = self._convert_dtype(ee_image, dtype=dtype or self.dtype)
-        # TODO: EE seems to resample here onto a different grid to the source ee_image, even when the crs,
-        #  scale etc below are the same as the source ee_image's (i.e. even with region, crs and scale as the
-        #  source ee_image values, the image returned by ee_image.prepare_for_export() has different shape,
-        #  crs_transform origin and bounds compared to source ee_image).  Perhaps it would be better to specify
-        #  `crs_transform` and `dimensions` as it is in tile, so that everything stays on the source grid where
-        #  possible.  But "where possible" will only be cases where the export CRS and scale are the same as the source.
+        # TODO: Specify `crs_transform` and `dimensions` (as in tile), so that everything stays on the source grid
+        #  where possible i.e. where the export CRS and scale are the same as the source.
         export_args = dict(region=region, crs=crs, scale=scale, fileFormat='GeoTIFF', filePerBand=False)
         ee_image, _ = ee_image.prepare_for_export(export_args)
         return BaseImage(ee_image)

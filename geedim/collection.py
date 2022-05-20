@@ -411,8 +411,8 @@ class MaskedCollection:
             Sort collection images by their absolute difference in time from this date.  Useful for
             prioritising pixels from images closest to this date.  Valid for the `q-mosaic`
             and `mosaic` methods only.  If None, no time difference sorting is done. [default: None].
-        region: dict, geojson, optional
-            Sort collection images by their cloudless portion inside this region (only if `date` is not
+        region: dict, optional
+            Sort collection images by their cloudless portion inside this geojson polygon (only if `date` is not
             specified).  This is useful to prioritise pixels from the least cloudy image(s).  Valid for the `q-mosaic`
             and `mosaic` methods.  If `date` and `region` are not specified, collection images are sorted by their
             capture date.
