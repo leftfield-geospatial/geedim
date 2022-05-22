@@ -611,8 +611,10 @@ class BaseImage:
                 status = ee.data.getOperation(task.name)  # get task status
                 bar.update(status['metadata']['progress'] - bar.n)
 
-        if status['metadata']['state'] != 'SUCCEEDED':
-            raise IOError(f"Export failed \n{status}")
+            if status['metadata']['state'] == 'SUCCEEDED':
+                bar.update(1 - bar.n)
+            else:
+                raise IOError(f"Export failed \n{status}")
 
     def export(self, filename, folder='', wait=True, **kwargs):
         """
@@ -627,21 +629,19 @@ class BaseImage:
         wait : bool
             Wait for the export to complete before returning [default: True].
         kwargs: optional
-
-            region : dict, geojson, ee.Geometry, optional
-                Region of interest (WGS84) to export [default: export the entire image footprint if it has one].
+            region : dict, ee.Geometry, optional
+                Region defined by geojson polygon in WGS84 [default: entire image granule].
             crs : str, optional
-                WKT, EPSG etc specification of CRS to export to.  Where image bands have different CRSs, all are
-                re-projected to this CRS.
-                [default: use the CRS of the minimum scale band if available].
+                Reproject image(s) to this EPSG or WKT CRS.  Where image bands have different CRSs, all are
+                re-projected to this CRS [default: CRS of the minimum scale band].
             scale : float, optional
-                Pixel scale (m) to export to.  Where image bands have different scales, all are re-projected to this
-                scale. [default: use the minimum scale of image bands if available].
+                Resample image(s) to this pixel resolution / scale (m).  Where image bands have different scales,
+                all are resampled to this scale. [default: minimum scale of image bands].
             resampling : ResamplingMethod, optional
-                Resampling method: ('near'|'bilinear'|'bicubic') [default: 'near'].
+                Resampling method ('near'|'bilinear'|'bicubic') [default: 'near'].
             dtype: str, optional
-                Data type to export to ('uint8'|'int8'|'uint16'|'int16'|'uint32'|'int32'|'float32'|'float64')
-                [default: auto select a minimal type].
+                Convert to this data type( 'uint8'|'int8'|'uint16'|'int16'|'uint32'|'int32'|'float32'|'float64')
+                [default: auto select a minimal type that can represent the range of pixel values].
         """
 
         exp_image = self._prepare_for_export(**kwargs)
@@ -662,8 +662,8 @@ class BaseImage:
         """
         Download the encapsulated image to a GeoTiff file.
 
-        There is no size limit on the EE image - it is split into tiles, and re-assembled locally, to work around the
-        EE download size limit.
+        Images larger than the EE size limit are split and downloaded as separate tiles, then re-assembled into a
+        single GeoTIFF
 
         Parameters
         ----------
@@ -674,21 +674,19 @@ class BaseImage:
         num_threads: int, optional
             Number of tiles to download concurrently [default: use a sensible auto value].
         kwargs: optional
-
-            region : dict, geojson, ee.Geometry, optional
-                Region of interest (WGS84) to export [default: export the entire image footprint if it has one].
+            region : dict, ee.Geometry, optional
+                Region defined by geojson polygon in WGS84 [default: entire image granule].
             crs : str, optional
-                WKT, EPSG etc specification of CRS to export to.  Where image bands have different CRSs, all are
-                re-projected to this CRS.
-                [default: use the CRS of the minimum scale band if available].
+                Reproject image(s) to this EPSG or WKT CRS.  Where image bands have different CRSs, all are
+                re-projected to this CRS [default: CRS of the minimum scale band].
             scale : float, optional
-                Pixel scale (m) to export to.  Where image bands have different scales, all are re-projected to this
-                scale. [default: use the minimum scale of image bands if available].
+                Resample image(s) to this pixel resolution / scale (m).  Where image bands have different scales,
+                all are resampled to this scale. [default: minimum scale of image bands].
             resampling : ResamplingMethod, optional
-                Resampling method: ('near'|'bilinear'|'bicubic') [default: 'near'].
+                Resampling method ('near'|'bilinear'|'bicubic') [default: 'near'].
             dtype: str, optional
-                Data type to export to ('uint8'|'int8'|'uint16'|'int16'|'uint32'|'int32'|'float32'|'float64')
-                [default: auto select a minimal type].
+                Convert to this data type( 'uint8'|'int8'|'uint16'|'int16'|'uint32'|'int32'|'float32'|'float64')
+                [default: auto select a minimal type that can represent the range of pixel values].
         """
 
         max_threads = num_threads or min(32, (os.cpu_count() or 1) + 4)
