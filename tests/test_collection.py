@@ -180,22 +180,26 @@ def test_from_list_ee_image(gedi_image_list: List, request):
 
 
 @pytest.mark.parametrize(
-    'name, start_date, end_date, region, cloudless_portion, is_csmask', [
-        ('LANDSAT/LC09/C02/T1_L2', '2022-01-01', '2022-02-01', 'region_100ha', 50, True),
-        ('LANDSAT/LE07/C02/T1_L2', '2022-01-01', '2022-02-01', 'region_100ha', 0, True),
-        ('LANDSAT/LT05/C02/T1_L2', '2005-01-01', '2006-02-01', 'region_100ha', 50, True),
-        ('COPERNICUS/S2_SR', '2022-01-01', '2022-01-15', 'region_100ha', 50, True),
-        ('COPERNICUS/S2', '2022-01-01', '2022-01-15', 'region_100ha', 50, True),
-        ('LARSE/GEDI/GEDI02_A_002_MONTHLY', '2021-11-01', '2022-01-01', 'region_100ha', 1, False)
+    'name, start_date, end_date, region, fill_portion, cloudless_portion, is_csmask', [
+        ('LANDSAT/LC09/C02/T1_L2', '2022-01-01', '2022-02-01', 'region_100ha', 0, 50, True),
+        ('LANDSAT/LE07/C02/T1_L2', '2022-01-01', '2022-02-01', 'region_100ha', 0, 0, True),
+        ('LANDSAT/LT05/C02/T1_L2', '2005-01-01', '2006-02-01', 'region_100ha', 40, 50, True),
+        ('COPERNICUS/S2_SR', '2022-01-01', '2022-01-15', 'region_100ha', 0, 50, True),
+        ('COPERNICUS/S2', '2022-01-01', '2022-01-15', 'region_100ha', 50, 40, True),
+        ('LARSE/GEDI/GEDI02_A_002_MONTHLY', '2021-11-01', '2022-01-01', 'region_100ha', 1, 0, False)
     ]
 )
-def test_search(name, start_date: str, end_date: str, region: str, cloudless_portion: float, is_csmask, request):
+def test_search(
+    name, start_date: str, end_date: str, region: str, fill_portion: float, cloudless_portion: float, is_csmask, request
+):
     """
     Test MaskedCollection.search() gives valid results for different cloud/shadow maskable, and generic collections.
     """
     region: dict = request.getfixturevalue(region)
     gd_collection = MaskedCollection.from_name(name)
-    searched_collection = gd_collection.search(start_date, end_date, region, cloudless_portion=cloudless_portion)
+    searched_collection = gd_collection.search(
+        start_date, end_date, region, fill_portion=fill_portion, cloudless_portion=cloudless_portion
+    )
 
     properties = searched_collection.properties
     start_date = datetime.strptime(start_date, '%Y-%m-%d')
@@ -205,6 +209,7 @@ def test_search(name, start_date: str, end_date: str, region: str, cloudless_por
     )
     # test FILL_PORTION in expected range
     im_fill_portions = np.array([im_props['FILL_PORTION'] for im_props in properties.values()])
+    assert np.all(im_fill_portions >= fill_portion) and np.all(im_fill_portions <= 100)
     assert np.all(im_fill_portions >= cloudless_portion) and np.all(im_fill_portions <= 100)
     if is_csmask:  # is a cloud/shadow masked collection
         # test CLOUDLESS_PORTION in expected range

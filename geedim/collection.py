@@ -332,20 +332,22 @@ class MaskedCollection:
 
         return ee_collection
 
-    def search(self, start_date, end_date, region, cloudless_portion=0, **kwargs):
+    def search(self, start_date, end_date, region, fill_portion=None, cloudless_portion=None, **kwargs):
         """
         Search for images based on date, region and cloudless portion criteria.
 
         Parameters
         ----------
         start_date : datetime.datetime
-            Start image capture date.
-        end_date : datetime.datetime
-            End image capture date (if None, then set to start_date + 1 day).
+            Start date (UTC).
+        end_date : datetime.datetime, optional
+            End date (UTC). [default: start_date + 1 day]
         region : dict, ee.Geometry
             Polygon in WGS84 specifying a region that images should intersect.
-        cloudless_portion: int, optional
-            Minimum portion (%) of image pixels that should be cloud/shadow free.
+        fill_portion: float, optional
+            Minimum portion (%) of valid/filled image pixels.
+        cloudless_portion: float, optional
+            Minimum portion (%) of cloud/shadow free image pixels.
         kwargs: optional
             Cloud/shadow masking parameters - see MaskedImage.__init__() for details.
 
@@ -366,13 +368,13 @@ class MaskedCollection:
             return gd_image.ee_image
 
         # filter the image collection, finding cloud/shadow masks and region stats
-        ee_collection = (
-            self._ee_collection.filterDate(start_date, end_date).
-                filterBounds(region).
-                map(set_region_stats).
-                filter(ee.Filter.gte('CLOUDLESS_PORTION', cloudless_portion)).
-                sort('system:time_start')
-        )
+        ee_collection = self._ee_collection.filterDate(start_date, end_date).filterBounds(region).map(set_region_stats)
+        if fill_portion:
+            ee_collection = ee_collection.filter(ee.Filter.gte('FILL_PORTION', fill_portion))
+        if cloudless_portion and self.image_type != MaskedImage:
+            ee_collection = ee_collection.filter(ee.Filter.gte('CLOUDLESS_PORTION', cloudless_portion))
+        ee_collection = ee_collection.sort('system:time_start')
+
         # return a new MaskedCollection containing the filtered EE collection (the EE collection
         # wrapped by MaskedCollection remains fixed)
         gd_collection = MaskedCollection(ee_collection)
