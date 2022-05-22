@@ -446,7 +446,7 @@ class BaseImage:
         Prepare the encapsulated image for tiled GeoTIFF download. Will reproject, resample, clip and convert the image
         according to the provided parameters.
 
-        Returns the prepared image and a rasterio profile for the download GeoTIFF.
+        Returns the prepared image and a rasterio profile for the downloaded GeoTIFF.
         """
         # resample, convert, clip and reproject image according to download params
         exp_image = self._prepare_for_export(**kwargs)
@@ -477,7 +477,7 @@ class BaseImage:
         download limits, and is 'square-ish'.
         """
 
-        # find the total number of tiles we must divide the image into to satisfy max_download_size
+        # find the total number of tiles the image must be divided into to satisfy max_download_size
         image_shape = np.array(exp_image.shape, dtype='int64')
         dtype_size = np.dtype(exp_image.dtype).itemsize
         image_size = exp_image.size_in_bytes

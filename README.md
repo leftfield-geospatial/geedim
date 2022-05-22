@@ -1,15 +1,18 @@
 [comment]: <> ([![Publish]&#40;https://github.com/dugalh/geedim/actions/workflows/publish-pypi.yml/badge.svg&#41;]&#40;https://github.com/dugalh/geedim/actions/workflows/publish-pypi.yml&#41;)
 [![Tests](https://github.com/dugalh/geedim/actions/workflows/run-unit-tests.yml/badge.svg)](https://github.com/dugalh/geedim/actions/workflows/run-unit-tests.yml)
+[![PyPI version](https://badge.fury.io/py/geedim.svg)](https://badge.fury.io/py/geedim)
+[![Anaconda-Server Badge](https://anaconda.org/conda-forge/geedim/badges/version.svg)](https://anaconda.org/conda-forge/geedim)
 [![codecov](https://codecov.io/gh/dugalh/geedim/branch/main/graph/badge.svg?token=69GZNQ3TI3)](https://codecov.io/gh/dugalh/geedim)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 # `geedim`
-Searching, compositing, and size limit-free downloading of [Google Earth Engine](https://earthengine.google.com/) imagery. 
+Search, composite, and download [Google Earth Engine](https://earthengine.google.com/) imagery, without size limits. 
+
 ## Description
-`geedim` provides a command line interface and API for searching Google Earth Engine (EE) images by date, region, and cloud/shadow statistics. It optionally performs cloud/shadow masking, and cloud-free compositing. Images and composites can be downloaded (including metadata and without size limits) or exported to Google Drive.
+`geedim` provides a command line interface and API for searching, compositing and downloading satellite imagery from Google Earth Engine (EE).  It optionally performs cloud/shadow masking, and cloud/shadow-free compositing on supported collections.  Images and composites can be downloaded, or exported to Google Drive.  Images larger than the EE size limit are split and downloaded as separate tiles, then re-assembled into a single GeoTIFF.   
 
 ### Cloud/shadow masking collections
-`geedim` supports cloud/shadow masking on the following surface reflectance image collections:
+`geedim` supports cloud/shadow masking on the following surface/TOA reflectance image collections:
 
 `geedim` name | EE name| Description
 ---------|-----------|------------
@@ -25,7 +28,7 @@ sentinel2_sr | [COPERNICUS/S2_SR](https://developers.google.com/earth-engine/dat
 `geedim` is a python 3 library, and requires users to be registered with [Google Earth Engine](https://signup.earthengine.google.com).
 
 ## Installation
-`geedim` is available via `pip` and `conda`.  Under Windows, we recommend using `conda` to resolve binary dependencies. 
+`geedim` is available via `pip` and `conda`.  Under Windows, using `conda` is the easiest way to resolve binary dependencies. 
 ### conda
 The [Miniconda](https://docs.conda.io/en/latest/miniconda.html) installation provides a minimal `conda`.
 ```shell
@@ -54,14 +57,14 @@ Download Landsat 8 image 'LANDSAT/LC08/C02/T1_L2/LC08_172083_20210610' with clou
 ```shell
 geedim download -i LANDSAT/LC08/C02/T1_L2/LC08_172083_20210610 --bbox 24 -33 24.1 -33.1 --mask
 ```
-Composite the results of a search, then download with specified CRS and pixel size (scale).
+Composite the results of a search, then download with specified CRS and scale (pixel size).
 ```shell
 geedim search -c landsat8_c2_l2 -s 2021-06-01 -e 2021-07-01 --bbox 24 -33 24.1 -33.1 composite download --crs EPSG:32634 --scale 30
 ```
 
 ## Usage
 ### Command line interface
-`geedim` command line functionality is accessed through sub-commands: `search`, `composite`, `download` and `export`.  Sub-commands can be chained.   
+`geedim` command line functionality is accessed through sub-commands: `search`, `composite`, `download` and `export`.  Sub-commands can be chained.
 ```
 geedim --help
 ```
