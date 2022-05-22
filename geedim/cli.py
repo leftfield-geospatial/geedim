@@ -284,14 +284,16 @@ def config(ctx, mask_cirrus, mask_shadows, mask_method, prob, dark, shadow_dist,
     Examples
     --------
 
-    Search the Sentinel-2 SR collection for images with a cloudless portion of at least 60%,
-    where cloud/shadow is identified with the `qa` mask-method:
+    Search the Sentinel-2 SR collection for images with a cloudless portion of at least 60%, where cloud/shadow is
+    identified with the `qa` mask-method:
 
-    $ geedim config --mask-method qa search -c sentinel2_sr --cloudless-portion 60 -s 2022-01-01 -e 2022-01-14 --bbox 24 -34 24.5 -33.5
+    $ geedim config --mask-method qa search -c sentinel2_sr --cloudless-portion 60 -s 2022-01-01 -e 2022-01-14
+    --bbox 24 -34 24.5 -33.5
 
     Download and cloud/shadow mask a Landsat-8 image, where shadows are excluded from the mask:
 
-    $ geedim config --no-mask-shadows download -i LANDSAT/LC08/C02/T1_L2/LC08_172083_20220104 --mask --bbox 24.25 -34 24.5 -33.75
+    $ geedim config --no-mask-shadows download -i LANDSAT/LC08/C02/T1_L2/LC08_172083_20220104 --mask
+    --bbox 24.25 -34 24.5 -33.75
     """
     # store commandline configuration (only) in the context object for use by other commands
     for key, val in ctx.params.items():
@@ -337,9 +339,9 @@ def search(obj, collection, start_date, end_date, bbox, region, fill_portion, cl
     """
     Search for images.
 
-    Search any Google Earth Engine image collection for images, filtered by date, region and optionally, the portion of
-    filled (valid) pixels.  The following image collections can also be filtered by the cloudless (cloud/shadow
-    free) portion:
+    Search a Google Earth Engine image collection for images, filtered by date, region and optionally, the portion of
+    filled (valid) pixels.  The following image collections can also be filtered by the cloudless
+    (cloud/shadow-free) portion:
 
     \b
         geedim name     EE name
@@ -431,13 +433,14 @@ def download(obj, image_id, bbox, region, download_dir, mask, overwrite, **kwarg
     Download image(s).
 
     Download Earth Engine image(s) to GeoTIFF file(s), allowing optional region of interest, and other image
-    formatting options to be specified.
+    formatting options to be specified.  Images larger than the EE size limit are split and downloaded as separate
+    tiles, then re-assembled into a single GeoTIFF.
 
-    This command should be chained after the `composite` command, to download the composite image.  It can also be
-    chained after the `search` command, in which case all the search result images will be downloaded, without the need
+    This command can be chained after the `composite` command, to download the composite image.  It can also be
+    chained after the `search` command, in which case the search result images will be downloaded, without the need
     to specify image IDs with `--id`, or region with `--bbox` or `--region`.
 
-    The following auxiliary bands are added to images from cloud/shadow mask-able collections:
+    The following auxiliary bands are added to images from collections with support for cloud/shadow maskig:
 
     \b
     Band name       Description
@@ -464,7 +467,6 @@ def download(obj, image_id, bbox, region, download_dir, mask, overwrite, **kwarg
 
     $ geedim search -c MODIS/006/MCD43A4 -s 2022-01-01 -e 2022-01-03 --bbox 23 -34 24 -33 download --crs EPSG:3857
     --scale 500
-
     """
     logger.info('\nDownloading:\n')
     image_list = _prepare_image_list(obj, mask=mask)
@@ -485,7 +487,7 @@ cli.add_command(download)
 @region_option
 @click.option(
     '-df', '--drive-folder', type=click.STRING, default='',
-    help='Export image(s) to this Google Drive folder. [default: root]'
+    help='Google Drive folder to export image(s) to. [default: root]'
 )
 @crs_option
 @scale_option
@@ -493,11 +495,48 @@ cli.add_command(download)
 @mask_option
 @resampling_option
 @click.option(
-    '-w/-nw', '--wait/--no-wait', default=True, help='Wait / don\'t wait for export to complete.  [default: --wait]'
+    '-w/-nw', '--wait/--no-wait', default=True, help='Whether to wait for the export to complete.  [default: --wait]'
 )
 @click.pass_obj
 def export(obj, image_id, bbox, region, drive_folder, mask, wait, **kwargs):
-    """Export image(s) to Google Drive."""
+    """
+    Export image(s) to Google Drive.
+
+    Export Earth Engine image(s) to GeoTIFF file(s) on Google Drive, allowing optional region of interest,
+    and other image formatting options to be specified.
+
+    This command can be chained after the `composite` command, to export the composite image.  It can also be
+    chained after the `search` command, in which case the search result images will be exported, without the need
+    to specify image IDs with `--id`, or region with `--bbox` or `--region`.
+
+    The following auxiliary bands are added to images from collections with support for cloud/shadow maskig:
+
+    \b
+    Band name       Description
+    --------------------------------------------------------
+    FILL_MASK       Mask of valid pixels.
+    SHADOW_MASK     Mask of cloud shadows.
+    CLOUD_MASK      Mask of clouds.
+    CLOUDLESS_MASK  Mask of valid & cloud/shadow-free pixels.
+    CLOUD_DIST      Distance to nearest cloud.
+
+    Images from other collections, will contain the FILL_MASK band only.
+
+    If neither `--bbox` or `--region` are specified, the entire image granule will be exported.
+
+    \b
+    Examples
+    --------
+
+    Export a region of a Landsat-9 image, applying the cloud/shadow mask and converting to uint16.
+
+    $ geedim export -i LANDSAT/LC09/C02/T1_L2/LC09_173083_20220308 --mask --bbox 21 .6 -33.5 21.7 -33.4 --dtype uint16
+
+    Export the results of a MODIS NBAR search, specifying a CRS and scale to reproject to.
+
+    $ geedim search -c MODIS/006/MCD43A4 -s 2022-01-01 -e 2022-01-03 --bbox 23 -34 24 -33 export --crs EPSG:3857
+    --scale 500
+    """
     logger.info('\nExporting:\n')
     image_list = _prepare_image_list(obj, mask=mask)
     export_tasks = []
