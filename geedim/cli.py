@@ -194,7 +194,8 @@ dtype_option = click.option(
 )
 mask_option = click.option(
     '-m/-nm', '--mask/--no-mask', default=MaskedImage._default_mask,
-    help='Whether to apply cloud/shadow mask(s).  [default: --no-mask]'
+    help='Whether to apply cloud/shadow mask(s), or `fill` (valid pixel) mask(s), in the case of images without '
+         'support for cloud/shadow masking.  [default: --no-mask]'
 )
 resampling_option = click.option(
     '-rs', '--resampling', type=click.Choice([rm.value for rm in ResamplingMethod], case_sensitive=True),
@@ -340,7 +341,7 @@ def search(obj, collection, start_date, end_date, bbox, region, fill_portion, cl
     Search for images.
 
     Search a Google Earth Engine image collection for images, filtered by date, region and optionally, the portion of
-    filled (valid) pixels.  The following image collections can also be filtered by the cloudless
+    filled (valid) pixels.  Cloud/shadow mask supported collections can also be filtered by the cloudless
     (cloud/shadow-free) portion:
 
     \b
@@ -440,7 +441,7 @@ def download(obj, image_id, bbox, region, download_dir, mask, overwrite, **kwarg
     chained after the `search` command, in which case the search result images will be downloaded, without the need
     to specify image IDs with `--id`, or region with `--bbox` or `--region`.
 
-    The following auxiliary bands are added to images from collections with support for cloud/shadow maskig:
+    The following auxiliary bands are added to images from collections with support for cloud/shadow masking:
 
     \b
     Band name       Description
@@ -530,7 +531,7 @@ def export(obj, image_id, bbox, region, drive_folder, mask, wait, **kwargs):
 
     Export a region of a Landsat-9 image, applying the cloud/shadow mask and converting to uint16.
 
-    $ geedim export -i LANDSAT/LC09/C02/T1_L2/LC09_173083_20220308 --mask --bbox 21 .6 -33.5 21.7 -33.4 --dtype uint16
+    $ geedim export -i LANDSAT/LC09/C02/T1_L2/LC09_173083_20220308 --mask --bbox 21.6 -33.5 21.7 -33.4 --dtype uint16
 
     Export the results of a MODIS NBAR search, specifying a CRS and scale to reproject to.
 
@@ -565,18 +566,64 @@ cli.add_command(export)
 )
 @click.option(
     '-m/-nm', '--mask/--no-mask', default=True,
-    help='Do/don\'t apply (cloud and shadow) nodata mask(s) before compositing.  [default: --mask]'
+    help='Whether to apply cloud/shadow masks to input images before compositing.  [default: --mask]'
 )
-@resampling_option
-@bbox_option  # TODO: the implications of these options here needs to be explained.  Likewise for method.
-@region_option
+@click.option(
+    '-rs', '--resampling', type=click.Choice([rm.value for rm in ResamplingMethod], case_sensitive=True),
+    default=BaseImage._default_resampling.value, show_default=True, callback=_resampling_method_cb,
+    help='Use this method to resample input images before compositing.',
+)
+@click.option(
+    '-b', '--bbox', type=click.FLOAT, nargs=4, default=None, callback=_bbox_cb,
+    help='Give preference to images with the highest cloudless (or filled) portion inside this bounding box (left, '
+         'bottom, right, top). [Valid for `mosaic` and `q-mosaic` methods.]'
+)
+@click.option(
+    '-r', '--region', type=click.Path(exists=True, dir_okay=False, allow_dash=True), default=None, callback=_region_cb,
+    help='Give preference to images with the highest cloudless (or filled) portion inside this geojson polygon '
+         'region, or raster file. [Valid for `mosaic` and `q-mosaic` methods.]'
+)
 @click.option(
     '-d', '--date', type=click.DateTime(),
-    help='Give preference to images closest to this date (UTC).  [Supported by `mosaic` and `q-mosaic` methods.]'
+    help='Give preference to images closest to this date (UTC).  [Valid for `mosaic` and `q-mosaic` methods.]'
 )
 @click.pass_obj
 def composite(obj, image_id, mask, method, resampling, bbox, region, date):
-    """Create a cloud-free composite image."""
+    """
+    Create a composite image.
+
+    Creates a (optionally cloud/shadow-free) composite image from provided input images.
+
+    The `download` or `export` commands can be chained after the `composite` command to download/export the composite
+    image. `composite` can also be chained after `search`, `download` or `composite`, in which it will composite the
+    output image(s) from the previous command.  Images specified with the `composite` command `--id` option
+    will be added to any existing chained images i.e. images output from previous chained `search`, `download` or
+    `composite` commands.
+
+    For the `mosaic` and `q_mosaic` methods there are three ways of prioritising input images:
+        1) If `--date` is specified, input images closest to this date are given priority.
+        2) If either `--region` or `--bbox` are given, priority is given to images with the highest cloudless (or valid)
+        portion inside this region.
+        3) If none of the above options are specified, priority is given to the most recent images.
+
+    \b
+    Examples
+    --------
+    Composite two Landsat-7 images using the default options and download the result:
+
+    $ geedim composite -i LANDSAT/LE07/C02/T1_L2/LE07_173083_20100203 -i LANDSAT/LE07/C02/T1_L2/LE07_173083_20100219
+    download --bbox 22 -33.1 22.1 -33 --crs EPSG:3857 --scale 30
+
+    Composite a year of GEDI canopy height data, by chaining with `search`.  Then download the result:
+
+    $ geedim search -c LARSE/GEDI/GEDI02_A_002_MONTHLY -s 2021-01-01 -e 2022-01-01 --bbox 23 -34 23.1 -33.9
+    --fill-portion 0.1 composite -cm mosaic download --crs EPSG:3857 --scale 25
+
+    Create a cloud/shadow-free composite of Sentinel-2 SR images, by chaining with `search`.  Then download the result:
+
+    $ geedim search -c sentinel2_sr -s 2021-01-12 -e 2021-01-23 --bbox 23 -33.5 23.1 -33.4 composite download
+    --crs EPSG:3857 --scale 10
+    """
 
     # get image ids from command line or chained search command
     if len(obj.image_list) == 0:

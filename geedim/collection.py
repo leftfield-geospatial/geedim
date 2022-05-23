@@ -326,9 +326,9 @@ class MaskedCollection:
                 ee_collection = ee_collection.sort('system:time_start')
         else:
             if date:
-                logger.warning('`date` is valid for "mosaic" and "q_mosaic" methods only.')
+                logger.warning('`date` is valid for `mosaic` and `q_mosaic` methods only.')
             elif region:
-                logger.warning('`region` is valid for "mosaic" and "q_mosaic" methods only.')
+                logger.warning('`region` is valid for `mosaic` and `q_mosaic` methods only.')
 
         return ee_collection
 
@@ -405,7 +405,8 @@ class MaskedCollection:
                 `mode`: Mode of the collection images.
                 `mean`: Mean of the collection images.
         mask: bool, optional
-            Mask cloud/shadow before compositing  [default: True].
+            Whether to apply the cloud/shadow mask, or fill (valid pixel) mask, in the case of images without
+            support for cloud/shadow masking.  [default: True].
         resampling: ResamplingMethod, optional
             The resampling method to use on collection images prior to compositing.  If 'near', no resampling is done
             [default: 'near'].
