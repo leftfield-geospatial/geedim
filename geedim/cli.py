@@ -194,7 +194,7 @@ dtype_option = click.option(
 )
 mask_option = click.option(
     '-m/-nm', '--mask/--no-mask', default=MaskedImage._default_mask,
-    help='Whether to apply cloud/shadow mask(s), or `fill` (valid pixel) mask(s), in the case of images without '
+    help='Whether to apply cloud/shadow mask(s); or fill mask(s), in the case of images without '
          'support for cloud/shadow masking.  [default: --no-mask]'
 )
 resampling_option = click.option(
@@ -358,7 +358,7 @@ def search(obj, collection, start_date, end_date, bbox, region, fill_portion, cl
     A search region must be specified by either the `--bbox` or `--region` option.
 
     If cloud/shadow masking is not supported for the searched collection the `--cloudless-portion` option will filter
-    on the portion of valid (filled) pixels i.e. the same as `--fill-portion`.  Note that filled/cloudless portions are
+    on the portion of filled (valid) pixels i.e. the same as `--fill-portion`.  Note that filled/cloudless portions are
     found for the specified search region, not entire image granules.
 
     \b
@@ -446,10 +446,10 @@ def download(obj, image_id, bbox, region, download_dir, mask, overwrite, **kwarg
     \b
     Band name       Description
     --------------------------------------------------------
-    FILL_MASK       Mask of valid pixels.
+    FILL_MASK       Mask of filled (valid) pixels.
     SHADOW_MASK     Mask of cloud shadows.
     CLOUD_MASK      Mask of clouds.
-    CLOUDLESS_MASK  Mask of valid & cloud/shadow-free pixels.
+    CLOUDLESS_MASK  Mask of filled & cloud/shadow-free pixels.
     CLOUD_DIST      Distance to nearest cloud.
 
     Images from other collections, will contain the FILL_MASK band only.
@@ -515,10 +515,10 @@ def export(obj, image_id, bbox, region, drive_folder, mask, wait, **kwargs):
     \b
     Band name       Description
     --------------------------------------------------------
-    FILL_MASK       Mask of valid pixels.
+    FILL_MASK       Mask of filled (valid) pixels.
     SHADOW_MASK     Mask of cloud shadows.
     CLOUD_MASK      Mask of clouds.
-    CLOUDLESS_MASK  Mask of valid & cloud/shadow-free pixels.
+    CLOUDLESS_MASK  Mask of filled & cloud/shadow-free pixels.
     CLOUD_DIST      Distance to nearest cloud.
 
     Images from other collections, will contain the FILL_MASK band only.
@@ -566,7 +566,7 @@ cli.add_command(export)
 )
 @click.option(
     '-m/-nm', '--mask/--no-mask', default=True,
-    help='Whether to apply cloud/shadow masks to input images before compositing.  [default: --mask]'
+    help='Whether to apply cloud/shadow (or fill) masks to input images before compositing.  [default: --mask]'
 )
 @click.option(
     '-rs', '--resampling', type=click.Choice([rm.value for rm in ResamplingMethod], case_sensitive=True),
@@ -592,19 +592,26 @@ def composite(obj, image_id, mask, method, resampling, bbox, region, date):
     """
     Create a composite image.
 
-    Creates a (optionally cloud/shadow-free) composite image from provided input images.
+    Create cloud/shadow-free and other composite image(s) from specified input images.
 
-    The `download` or `export` commands can be chained after the `composite` command to download/export the composite
-    image. `composite` can also be chained after `search`, `download` or `composite`, in which it will composite the
-    output image(s) from the previous command.  Images specified with the `composite` command `--id` option
-    will be added to any existing chained images i.e. images output from previous chained `search`, `download` or
-    `composite` commands.
+    `download` or `export` commands can be chained after the `composite` command to download/export the composite
+    image. `composite` can also be chained after `search`, `download` or `composite`, in which case it will composite
+    the output image(s) from the previous command.  Images specified with the `composite` command `--id` option
+    will be added to any existing chained images i.e. images output from previous chained commands.
 
     For the `mosaic` and `q_mosaic` methods there are three ways of prioritising input images:
-        1) If `--date` is specified, input images closest to this date are given priority.
-        2) If either `--region` or `--bbox` are given, priority is given to images with the highest cloudless (or valid)
-        portion inside this region.
-        3) If none of the above options are specified, priority is given to the most recent images.
+
+    \b
+        1) If `--date` is specified, input images closest to this date are
+        prioritised.
+        2) If either `--region` or `--bbox` are specified, priority is given
+        to images with the highest cloudless (or fill) portion inside this
+        region.
+        3) If none of the above options are specified, priority is given to
+        the most recent images.
+
+    By default, input images are masked before compositing.  This means that only cloud/shadow-free (or filled) pixels
+    are used to make the composite.  You can turn off this behaviour with the `--no-mask` option.
 
     \b
     Examples
@@ -614,15 +621,15 @@ def composite(obj, image_id, mask, method, resampling, bbox, region, date):
     $ geedim composite -i LANDSAT/LE07/C02/T1_L2/LE07_173083_20100203 -i LANDSAT/LE07/C02/T1_L2/LE07_173083_20100219
     download --bbox 22 -33.1 22.1 -33 --crs EPSG:3857 --scale 30
 
-    Composite a year of GEDI canopy height data, by chaining with `search`.  Then download the result:
+    Create and download a composite of a year of GEDI canopy height data, by chaining with `search`:
 
     $ geedim search -c LARSE/GEDI/GEDI02_A_002_MONTHLY -s 2021-01-01 -e 2022-01-01 --bbox 23 -34 23.1 -33.9
     --fill-portion 0.1 composite -cm mosaic download --crs EPSG:3857 --scale 25
 
-    Create a cloud/shadow-free composite of Sentinel-2 SR images, by chaining with `search`.  Then download the result:
+    Create and download a cloud/shadow-free composite of Sentinel-2 SR images, by chaining with `search`:
 
-    $ geedim search -c sentinel2_sr -s 2021-01-12 -e 2021-01-23 --bbox 23 -33.5 23.1 -33.4 composite download
-    --crs EPSG:3857 --scale 10
+    $ geedim search -c sentinel2_sr -s 2021-01-12 -e 2021-01-23 --bbox 23 -33.5 23.1 -33.4 composite -cm q-mosaic
+    download --crs EPSG:3857 --scale 10
     """
 
     # get image ids from command line or chained search command

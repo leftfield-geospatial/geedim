@@ -40,21 +40,21 @@ def runner():
 
 
 @pytest.fixture
-def region_25ha_file():
+def region_25ha_file() -> pathlib.Path:
     """ Path to region_25ha geojson file. """
-    return root_path.joinpath('data/inputs/tests/region_25ha.geojson')
+    return root_path.joinpath('tests/data/region_25ha.geojson')
 
 
 @pytest.fixture
-def region_100ha_file():
+def region_100ha_file() -> pathlib.Path:
     """ Path to region_100ha geojson file. """
-    return root_path.joinpath('data/inputs/tests/region_100ha.geojson')
+    return root_path.joinpath('tests/data/region_100ha.geojson')
 
 
 @pytest.fixture
-def region_10000ha_file():
+def region_10000ha_file() -> pathlib.Path:
     """ Path to region_10000ha geojson file. """
-    return root_path.joinpath('data/inputs/tests/region_10000ha.geojson')
+    return root_path.joinpath('tests/data/region_10000ha.geojson')
 
 
 @pytest.fixture()

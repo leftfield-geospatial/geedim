@@ -13,6 +13,7 @@
     See the License for the specific language governing permissions and
     limitations under the License.
 """
+import pathlib
 from typing import Dict, List
 
 import ee
@@ -58,8 +59,8 @@ def region_10000ha() -> Dict:
 
 
 @pytest.fixture
-def const_image_25ha_file():
-    return root_path.joinpath('data/inputs/tests/const_image_25ha.tif')
+def const_image_25ha_file() -> pathlib.Path:
+    return root_path.joinpath('tests/data/const_image_25ha.tif')
 
 
 @pytest.fixture(scope='session')
