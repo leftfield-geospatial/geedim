@@ -32,7 +32,6 @@ from geedim import root_path
 from geedim.cli import cli
 
 
-# TODO: some way of avoiding multiple calls to ee_init?
 @pytest.fixture
 def runner():
     """ click runner for command line execution. """

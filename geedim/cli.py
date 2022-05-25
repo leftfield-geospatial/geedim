@@ -215,7 +215,7 @@ def cli(ctx, verbose, quiet):
     ctx.obj = SimpleNamespace(image_list=[], region=None, cloud_kwargs={})
     verbosity = verbose - quiet
     _configure_logging(verbosity)
-
+# TODO: add clear docs on what is piped out of or into each command.
 
 # config command
 @click.command(cls=ChainedCommand, context_settings=dict(auto_envvar_prefix='GEEDIM'))
@@ -510,7 +510,7 @@ def export(obj, image_id, bbox, region, drive_folder, mask, wait, **kwargs):
     chained after the `search` command, in which case the search result images will be exported, without the need
     to specify image IDs with `--id`, or region with `--bbox` or `--region`.
 
-    The following auxiliary bands are added to images from collections with support for cloud/shadow maskig:
+    The following auxiliary bands are added to images from collections with support for cloud/shadow masking:
 
     \b
     Band name       Description
@@ -599,16 +599,30 @@ def composite(obj, image_id, mask, method, resampling, bbox, region, date):
     the output image(s) from the previous command.  Images specified with the `composite` command `--id` option
     will be added to any existing chained images i.e. images output from previous chained commands.
 
-    For the `mosaic` and `q_mosaic` methods there are three ways of prioritising input images:
+    `--method` specifies the method for finding a composite pixel from corresponding input image pixels.  The
+    following options are available:
 
     \b
-        1) If `--date` is specified, input images closest to this date are
-        prioritised.
-        2) If either `--region` or `--bbox` are specified, priority is given
-        to images with the highest cloudless (or fill) portion inside this
-        region.
-        3) If none of the above options are specified, priority is given to
-        the most recent images.
+        * `q_mosaic`: Use the unmasked pixel with the highest cloud distance.
+        Where more than one pixel has the same cloud distance, the first one
+        is selected.
+        * `mosaic`: Use the first unmasked pixel.
+        * `medoid`: Use the medoid of the unmasked pixels i.e. the pixels
+        of the image with minimum summed difference (across bands) to the
+        median over the input images.  Maintains relationship between bands.
+        * `median`: Use the median of the unmasked pixels.
+        * `mode`: Use the mode of the unmasked pixels.
+        * `mean`: Use the mean of the unmasked pixels.
+
+    For the `mosaic` and `q_mosaic` methods there are three ways of prioritising input images for selection:
+
+    \b
+        * If `--date` is specified, images are sorted by the absolute
+        difference of their capture time from this date.
+        * If either `--region` or `--bbox` are specified, images are
+        sorted by their cloudless (or filled) portion inside this region.
+        * If none of the above options are specified, images are sorted by
+        their capture time.
 
     By default, input images are masked before compositing.  This means that only cloud/shadow-free (or filled) pixels
     are used to make the composite.  You can turn off this behaviour with the `--no-mask` option.

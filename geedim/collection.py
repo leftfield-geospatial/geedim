@@ -392,18 +392,19 @@ class MaskedCollection:
         Parameters
         ----------
         method: CompositeMethod, optional
-            The compositing method to use.  One of:
-                `q_mosaic`: Select each composite pixel from the collection image with the highest quality (i.e.
-                    distance to nearest cloud). When more than one image shares the highest quality value,
-                    the first of the competing images is used. Valid for cloud/shadow maskable image collections only
-                    (Sentinel-2 TOA and SR, and Landsat4-9 level 2 collection 2).
-                `mosaic`: Select each composite pixel from the first unmasked collection image.
-                `medoid`: Select each composite pixel as the the image pixel having the minimum summed diff (across
-                    bands) from the median of all collection images.  Maintains the original relationship between
-                    bands.  See https://www.mdpi.com/2072-4292/5/12/6481 for detail.
-                `median`: Median of the collection images.
-                `mode`: Mode of the collection images.
-                `mean`: Mean of the collection images.
+            Method for finding each composite pixel from the collection of corresponding input image pixels.  One of:
+                `q_mosaic`: Use the unmasked pixel with the highest quality (i.e. distance to nearest cloud). When more
+                    than one pixel shares the highest quality value, the first of the competing pixels is used. Valid
+                    for cloud/shadow maskable image collections only (Sentinel-2 TOA and SR, and Landsat4-9 level 2
+                    collection 2).
+                `mosaic`: Use the first unmasked pixel.
+                `medoid`: Use the medoid of the unmasked pixels.  The medoid selects the image pixel (across
+                    bands) from the image having the minimum summed diff (across bands) from the median of the
+                    collection images. Maintains the original relationship between bands.
+                    See https://www.mdpi.com/2072-4292/5/12/6481 for detail.
+                `median`: Use the median of the unmasked pixels.
+                `mode`: Use the mode of the unmasked pixels.
+                `mean`: use the mean of the unmasked pixels.
         mask: bool, optional
             Whether to apply the cloud/shadow mask, or fill (valid pixel) mask, in the case of images without
             support for cloud/shadow masking.  [default: True].
@@ -411,7 +412,7 @@ class MaskedCollection:
             The resampling method to use on collection images prior to compositing.  If 'near', no resampling is done
             [default: 'near'].
         date: datetime.datetime, optional
-            Sort collection images by their absolute difference in time from this date.  Useful for
+            Sort collection images by their absolute difference in capture time from this date.  Useful for
             prioritising pixels from images closest to this date.  Valid for the `q-mosaic`
             and `mosaic` methods only.  If None, no time difference sorting is done. [default: None].
         region: dict, optional
