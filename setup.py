@@ -41,7 +41,7 @@ from version import __version__
 setup(
     name="geedim",
     version=__version__,
-    description="Google Earth Engine image download",
+    description="Search, composite and download Google Earth Engine imagery.",
     long_description=long_description,
     long_description_content_type='text/markdown',
     author="Dugal Harris",
