@@ -9,10 +9,10 @@
 Search, composite, and download [Google Earth Engine](https://earthengine.google.com/) imagery, without size limits. 
 
 ## Description
-`geedim` provides a command line interface and API for searching, compositing and downloading satellite imagery from Google Earth Engine (EE).  It optionally performs cloud/shadow masking, and cloud/shadow-free compositing on supported collections.  Images and composites can be downloaded, or exported to Google Drive.  Images larger than the EE size limit are split and downloaded as separate tiles, then re-assembled into a single GeoTIFF.   
+`geedim` provides a command line interface and API for searching, compositing and downloading satellite imagery from Google Earth Engine (EE).  It optionally performs cloud / shadow masking, and cloud / shadow-free compositing on supported collections.  Images and composites can be downloaded, or exported to Google Drive.  Images larger than the EE size limit are split and downloaded as separate tiles, then re-assembled into a single GeoTIFF.   
 
 ### Supported imagery
-Any EE imagery can be searched, composited or downloaded by `geedim`.  Cloud / shadow masking is supported for on the following collections:
+Any EE imagery can be searched, composited and downloaded by `geedim`.  Cloud / shadow masking is supported for on the following collections:
 
 `geedim` name | EE name| Description
 ---------|-----------|------------
@@ -51,7 +51,7 @@ earthengine authenticate
 * `composite`: Create a composite image.
 * `download`: Download image(s).
 * `export`: Export image(s) to Google Drive.
-* `config`: Configure cloud/shadow masking.
+* `config`: Configure cloud / shadow masking.
 
 Get help on `geedim` with:
 ```
@@ -84,7 +84,7 @@ geedim composite -i LANDSAT/LE07/C02/T1_L2/LE07_173083_20100203 -i LANDSAT/LE07/
 ```
 Composite the results of a Landsat-8 search and download the result.
 ```shell
-geedim search -c landsat8_c2_l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 composite -cm q-mosaic --mask download --scale 30 --crs EPSG:3857
+geedim search -c landsat8_c2_l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 composite -cm q-mosaic download --scale 30 --crs EPSG:3857
 ```
 Search for Sentinel-2 SR images with a cloudless portion of at least 60%, using the `qa` mask-method to identify clouds:
 ```shell
@@ -132,7 +132,7 @@ Contributions are welcome.  Report bugs or contact me with questions [here](http
 ## Credits
 - Tiled downloading was inspired by the work in [GEES2Downloader](https://github.com/cordmaur/GEES2Downloader) under terms of the [MIT license](https://github.com/cordmaur/GEES2Downloader/blob/main/LICENSE). 
 - Medoid compositing was adapted from [gee_tools](https://github.com/gee-community/gee_tools) under the terms of the [MIT license](https://github.com/gee-community/gee_tools/blob/master/LICENSE).
-- Sentinel-2 cloud/shadow masking was adapted from [ee_extra](https://github.com/r-earthengine/ee_extra) under terms of the [Apache-2.0 license](https://github.com/r-earthengine/ee_extra/blob/master/LICENSE)
+- Sentinel-2 cloud / shadow masking was adapted from [ee_extra](https://github.com/r-earthengine/ee_extra) under terms of the [Apache-2.0 license](https://github.com/r-earthengine/ee_extra/blob/master/LICENSE)
 
 ## Author
 **Dugal Harris** - [dugalh@gmail.com](mailto:dugalh@gmail.com)
