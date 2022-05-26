@@ -18,7 +18,7 @@ collection_info = {
     "LANDSAT/LT04/C02/T1_L2": {
         "start_date": "1982-08-22",
         "end_date": "1993-06-24",
-        "gd_coll_name": "landsat4_c2_l2",
+        "gd_coll_name": "landsat4-c2-l2",
         "bands": [
             {"id": "SR_B1", "name": "blue", "abbrev": "B", "bw_start": 0.45, "bw_end": 0.52, "res": 30},
             {"id": "SR_B2", "name": "green", "abbrev": "G", "bw_start": 0.52, "bw_end": 0.60, "res": 30},
@@ -49,7 +49,7 @@ collection_info = {
     "LANDSAT/LT05/C02/T1_L2": {
         "start_date": "1984-03-16",
         "end_date": "2012-05-05",
-        "gd_coll_name": "landsat5_c2_l2",
+        "gd_coll_name": "landsat5-c2-l2",
         "bands": [
             {"id": "SR_B1", "name": "blue", "abbrev": "B", "bw_start": 0.45, "bw_end": 0.52, "res": 30},
             {"id": "SR_B2", "name": "green", "abbrev": "G", "bw_start": 0.52, "bw_end": 0.60, "res": 30},
@@ -80,7 +80,7 @@ collection_info = {
     "LANDSAT/LE07/C02/T1_L2": {
         "start_date": "1999-01-01",
         "end_date": None,
-        "gd_coll_name": "landsat7_c2_l2",
+        "gd_coll_name": "landsat7-c2-l2",
         "bands": [
             {"id": "SR_B1", "name": "blue", "abbrev": "B", "bw_start": 0.45, "bw_end": 0.52, "res": 30},
             {"id": "SR_B2", "name": "green", "abbrev": "G", "bw_start": 0.52, "bw_end": 0.60, "res": 30},
@@ -115,7 +115,7 @@ collection_info = {
     "LANDSAT/LC08/C02/T1_L2": {
         "start_date": "2013-04-11",
         "end_date": None,
-        "gd_coll_name": "landsat8_c2_l2",
+        "gd_coll_name": "landsat8-c2-l2",
         "bands": [
             {"id": "SR_B1", "name": "ultra blue", "abbrev": "UB", "bw_start": 0.435, "bw_end": 0.451, "res": 30},
             {"id": "SR_B2", "name": "blue", "abbrev": "B", "bw_start": 0.452, "bw_end": 0.512, "res": 30},
@@ -151,7 +151,7 @@ collection_info = {
     "LANDSAT/LC09/C02/T1_L2": {
         "start_date": "2021-10-31",
         "end_date": None,
-        "gd_coll_name": "landsat9_c2_l2",
+        "gd_coll_name": "landsat9-c2-l2",
         "bands": [
             {"id": "SR_B1", "name": "ultra blue", "abbrev": "UB", "bw_start": 0.435, "bw_end": 0.451, "res": 30},
             {"id": "SR_B2", "name": "blue", "abbrev": "B", "bw_start": 0.452, "bw_end": 0.512, "res": 30},
@@ -187,7 +187,7 @@ collection_info = {
     "COPERNICUS/S2": {
         "start_date": "2015-06-23",
         "end_date": None,
-        "gd_coll_name": "sentinel2_toa",
+        "gd_coll_name": "sentinel2-toa",
         "bands": [
             {"id": "B1", "name": "aerosols", "abbrev": "UB", "bw_start": 0.421, "bw_end": 0.447, "res": 60},
             {"id": "B2", "name": "blue", "abbrev": "B", "bw_start": 0.439, "bw_end": 0.535, "res": 10},
@@ -233,7 +233,7 @@ collection_info = {
     "COPERNICUS/S2_SR": {
         "start_date": "2017-03-28",
         "end_date": None,
-        "gd_coll_name": "sentinel2_sr",
+        "gd_coll_name": "sentinel2-sr",
         "bands": [
             {"id": "B1", "name": "aerosols", "abbrev": "UB", "bw_start": 0.421, "bw_end": 0.447, "res": 60},
             {"id": "B2", "name": "blue", "abbrev": "B", "bw_start": 0.439, "bw_end": 0.535, "res": 10},
@@ -279,7 +279,7 @@ collection_info = {
     "MODIS/006/MCD43A4": {
         "start_date": "2000-02-18",
         "end_date": None,
-        "gd_coll_name": "modis_nbar",
+        "gd_coll_name": "modis-nbar",
         "bands": [
             {
                 "id": "Nadir_Reflectance_Band1", "name": "red", "abbrev": "R", "bw_start": 0.620, "bw_end": 0.670,

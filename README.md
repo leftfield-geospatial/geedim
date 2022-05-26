@@ -16,13 +16,13 @@ Any EE imagery can be searched, composited and downloaded by `geedim`.  Cloud / 
 
 `geedim` name | EE name| Description
 ---------|-----------|------------
-landsat4_c2_l2 | [LANDSAT/LT04/C02/T1_L2](https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT04_C02_T1_L2) | Landsat 4, collection 2, tier 1, level 2 surface reflectance 
-landsat5_c2_l2 | [LANDSAT/LT05/C02/T1_L2](https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT05_C02_T1_L2) | Landsat 5, collection 2, tier 1, level 2 surface reflectance 
-landsat7_c2_l2 | [LANDSAT/LE07/C02/T1_L2](https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LE07_C02_T1_L2) | Landsat 7, collection 2, tier 1, level 2 surface reflectance 
-landsat8_c2_l2 | [LANDSAT/LC08/C02/T1_L2](https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C02_T1_L2) | Landsat 8, collection 2, tier 1, level 2 surface reflectance 
-landsat9_c2_l2 | [LANDSAT/LC09/C02/T1_L2](https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC09_C02_T1_L2) | Landsat 9, collection 2, tier 1, level 2 surface reflectance 
-sentinel2_toa | [COPERNICUS/S2](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2) | Sentinel-2, level 1C, top of atmosphere reflectance 
-sentinel2_sr | [COPERNICUS/S2_SR](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR) | Sentinel-2, level 2A, surface reflectance
+landsat4-c2-l2 | [LANDSAT/LT04/C02/T1_L2](https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT04_C02_T1_L2) | Landsat 4, collection 2, tier 1, level 2 surface reflectance 
+landsat5-c2-l2 | [LANDSAT/LT05/C02/T1_L2](https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT05_C02_T1_L2) | Landsat 5, collection 2, tier 1, level 2 surface reflectance 
+landsat7-c2-l2 | [LANDSAT/LE07/C02/T1_L2](https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LE07_C02_T1_L2) | Landsat 7, collection 2, tier 1, level 2 surface reflectance 
+landsat8-c2-l2 | [LANDSAT/LC08/C02/T1_L2](https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C02_T1_L2) | Landsat 8, collection 2, tier 1, level 2 surface reflectance 
+landsat9-c2-l2 | [LANDSAT/LC09/C02/T1_L2](https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC09_C02_T1_L2) | Landsat 9, collection 2, tier 1, level 2 surface reflectance 
+sentinel2-toa | [COPERNICUS/S2](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2) | Sentinel-2, level 1C, top of atmosphere reflectance 
+sentinel2-sr | [COPERNICUS/S2_SR](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR) | Sentinel-2, level 2A, surface reflectance
 
 ## Requirements
 `geedim` is a python 3 library, and requires users to be registered with [Google Earth Engine](https://signup.earthengine.google.com).
@@ -65,7 +65,7 @@ geedim <command> --help
 #### Examples
 Search for Landsat-8 images.
 ```shell
-geedim search -c landsat8_c2_l2 -s 2021-06-01 -e 2021-07-01 --bbox 24 -33 24.1 -33.1
+geedim search -c landsat8-c2-l2 -s 2021-06-01 -e 2021-07-01 --bbox 24 -33 24.1 -33.1
 ```
 Download a Landsat-8 image with cloud / shadow mask applied.
 ```shell
@@ -84,11 +84,11 @@ geedim composite -i LANDSAT/LE07/C02/T1_L2/LE07_173083_20100203 -i LANDSAT/LE07/
 ```
 Composite the results of a Landsat-8 search and download the result.
 ```shell
-geedim search -c landsat8_c2_l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 composite -cm q-mosaic download --scale 30 --crs EPSG:3857
+geedim search -c landsat8-c2-l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 composite -cm q-mosaic download --scale 30 --crs EPSG:3857
 ```
 Search for Sentinel-2 SR images with a cloudless portion of at least 60%, using the `qa` mask-method to identify clouds:
 ```shell
-geedim config --mask-method qa search -c sentinel2_sr --cloudless-portion 60 -s 2022-01-01 -e 2022-01-14 --bbox 24 -34 24.5 -33.5
+geedim config --mask-method qa search -c sentinel2-sr --cloudless-portion 60 -s 2022-01-01 -e 2022-01-14 --bbox 24 -34 24.5 -33.5
 ```
 
 

@@ -54,6 +54,6 @@ jobs:
         env:
           EE_SERVICE_ACC_PRIVATE_KEY: ${{ secrets.EE_SERVICE_ACC_PRIVATE_KEY }}
         run: |
-          geedim search -c landsat8_c2_l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 composite -cm q_mosaic --mask download --scale 30 --crs EPSG:3857 -o
+          geedim search -c landsat8-c2-l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 composite -cm q-mosaic --mask download --scale 30 --crs EPSG:3857 -o
           pwd
           ls -R
