@@ -51,7 +51,6 @@ setup(
     packages=find_packages(exclude=['tests', 'data'], include=['geedim']),
     install_requires=["numpy>=1.19", "rasterio>=1.1", "click>=8", "tqdm>=4.6", "earthengine-api>=0.1.2",
                       "requests>=2.2", "tabulate>=0.8"],
-    # TODO: conda does not come with pip(?), so make the progress spinner a specific requirement
     python_requires=">=3.6",
     classifiers=[
         "Programming Language :: Python :: 3",

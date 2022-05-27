@@ -29,7 +29,7 @@ from typing import Tuple, Dict, List, Union
 import ee
 import numpy as np
 import rasterio as rio
-from pip._vendor.progress.spinner import Spinner
+
 from rasterio.crs import CRS
 from rasterio.enums import Resampling as RioResampling
 from rasterio.warp import transform_geom
@@ -40,6 +40,7 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 from geedim import info
 from geedim.enums import ResamplingMethod
 from geedim.tile import Tile, _requests_retry_session
+from geedim.utils import Spinner
 
 logger = logging.getLogger(__name__)
 
@@ -579,29 +580,11 @@ class BaseImage:
             label = status["metadata"]["description"]
         label = label if (len(label) < BaseImage._desc_width) else f'*{label[-BaseImage._desc_width:]}'
 
-        class Spin(threading.Thread):
-            stop = False
-
-            def run(self):
-                """Wait for export preparation to complete, displaying a spin toggle"""
-                with Spinner(f'Preparing {label}: ') as spinner:
-                    while 'progress' not in status['metadata'] and not self.stop:
-                        time.sleep(pause)
-                        spinner.next()
-                    spinner.writeln(f'Preparing {label}: done') if not self.stop else spinner.writeln('')
-
-        # run the spinner in a separate thread so it does not hang on EE calls
-        spin_thread = Spin()
-        spin_thread.start()
-        try:
-            # poll EE until the export preparation is complete
+        # poll EE until the export preparation is complete
+        with Spinner(label=f'Preparing {label}: ', leave='done'):
             while 'progress' not in status['metadata']:
                 time.sleep(5 * pause)
                 status = ee.data.getOperation(task.name)
-            spin_thread.join()
-        except KeyboardInterrupt:
-            spin_thread.stop = True
-            raise
 
         # wait for export to complete, displaying a progress bar
         bar_format = '{desc}: |{bar}| [{percentage:5.1f}%] in {elapsed:>5s} (eta: {remaining:>5s})'
