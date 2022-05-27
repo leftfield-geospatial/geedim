@@ -1,5 +1,5 @@
 {% set name = "geedim" %}
-{% set version = "0.3.1" %}
+{% set version = "1.0.0" %}
 
 package:
   name: {{ name|lower }}
@@ -7,7 +7,7 @@ package:
 
 source:
   url: https://pypi.io/packages/source/{{ name[0] }}/{{ name }}/geedim-{{ version }}.tar.gz
-  sha256: 1b25a40e10212910e5905e34bf5f22dafd6fbc13d80d6af2ca085b0336661249
+  sha256: c546928cdca826d5bfe6fd21084855e6420f122621b3ea4230ae682d37fa6ece
 
 build:
   entry_points:
@@ -20,16 +20,17 @@ requirements:
   host:
     - pip
     - python >=3.6
-    - pandas >= 1.1
   run:
+    - pip >=22,<=22.0.4
     - python >=3.6
-    - numpy >= 1.19
-    - rasterio >= 1.1
-    - click >= 8
-    - tqdm >= 4.6
-    - earthengine-api >= 0.1.2
-    - requests >= 2.2
-    - tabulate >= 0.8
+    - numpy >=1.19
+    - rasterio >=1.1
+    - click >=8
+    - tqdm >=4.6
+    - earthengine-api >=0.1.2
+    - requests >=2.2
+    - tabulate >=0.8
+
 test:
   imports:
     - geedim
@@ -38,15 +39,15 @@ test:
 
 about:
   home: https://github.com/dugalh/geedim
-  summary: Google Earth Engine image download
+  summary: Search, composite, and download Google Earth Engine imagery.
   license: Apache-2.0
   license_file: LICENSE
   description: |
-    geedim provides a command line interface and API for searching GEE images
-    by date, region, and cloud/shadow statistics. It optionally performs
-    cloud/shadow masking, and cloud-free compositing. Images and composites can
-    be downloaded (without size limits and including metadata), or exported to
-    Google Drive.
+    `geedim` provides a command line interface and API for searching, compositing and downloading 
+    satellite imagery from Google Earth Engine (EE).  It optionally performs cloud / shadow 
+    masking, and cloud / shadow-free compositing on supported collections.  Images and composites 
+    can be downloaded, or exported to Google Drive.  Images larger than the EE size limit are 
+    split and downloaded as separate tiles, then re-assembled into a single GeoTIFF.
 
 extra:
   recipe-maintainers:
