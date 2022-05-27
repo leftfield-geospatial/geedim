@@ -32,7 +32,7 @@ from geedim.collection import MaskedCollection
 from geedim.download import BaseImage
 from geedim.enums import CloudMaskMethod, CompositeMethod, ResamplingMethod
 from geedim.mask import MaskedImage
-from geedim.utils import get_bounds
+from geedim.utils import get_bounds, Spinner
 
 logger = logging.getLogger(__name__)
 
@@ -385,16 +385,19 @@ def search(obj, collection, start_date, end_date, bbox, region, fill_portion, cl
 
     # create collection wrapper and search
     gd_collection = coll_api.MaskedCollection.from_name(collection)
-    logger.info(
-        f'\nSearching for {collection} images between {start_date.strftime("%Y-%m-%d")} and '
-        f'{end_date.strftime("%Y-%m-%d")}... '
+    logger.info('')
+    label = (
+        f'Searching for {collection} images between {start_date.strftime("%Y-%m-%d")} and '
+        f'{end_date.strftime("%Y-%m-%d")}: '
     )
-    gd_collection = gd_collection.search(
-        start_date, end_date, obj.region, fill_portion=fill_portion, cloudless_portion=cloudless_portion,
-        **obj.cloud_kwargs
-    )
+    with Spinner(label=label, leave=' '):
+        gd_collection = gd_collection.search(
+            start_date, end_date, obj.region, fill_portion=fill_portion, cloudless_portion=cloudless_portion,
+            **obj.cloud_kwargs
+        )
+        num_images = len(gd_collection.properties)  # retrieve search result properties from EE
 
-    if len(gd_collection.properties) == 0:
+    if num_images == 0:
         logger.info('No images found\n')
     else:
         obj.image_list += list(gd_collection.properties.keys())  # store image ids for chained commands
@@ -468,7 +471,7 @@ def download(obj, image_id, bbox, region, download_dir, mask, overwrite, **kwarg
 
     Download a region of a Landsat-9 image, applying the cloud/shadow mask and converting to uint16.
 
-    $ geedim download -i LANDSAT/LC09/C02/T1_L2/LC09_173083_20220308 --mask --bbox 21 .6 -33.5 21.7 -33.4 --dtype uint16
+    $ geedim download -i LANDSAT/LC09/C02/T1_L2/LC09_173083_20220308 --mask --bbox 21.6 -33.5 21.7 -33.4 --dtype uint16
 
     Download the results of a MODIS NBAR search, specifying a CRS and scale to reproject to.
 

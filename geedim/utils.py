@@ -148,9 +148,9 @@ class Spinner(Thread):
         interval: float, optional
             Spinner update interval (s).
         leave: optional, bool, str
-            What to do with the spinner on stop():
-                False: clear the spinner.
-                True:  leave the spinner as is.
+            What to do with the spinner display on stop():
+                False: clear the label + spinner.
+                True:  leave the label + spinner as is.
                 <string message>: print this message in place of the spinner
         kwargs: optional
             Additional kwargs to pass to Thread.__init__()
@@ -160,7 +160,7 @@ class Spinner(Thread):
         self._interval = interval
         self._run = True
         self._leave = leave
-        self._file = sys.stdout
+        self._file = sys.stderr
 
     def __enter__(self):
         self.start()
@@ -174,10 +174,9 @@ class Spinner(Thread):
         """ Run the spinner thread. """
         cursors_it = itertools.cycle('/-\|')
 
-        tqdm.write(self._label + ' ', file=self._file, end='')
         while self._run:
             cursor = next(cursors_it)
-            tqdm.write('\b' + cursor, file=self._file, end='')
+            tqdm.write('\r' + self._label + cursor, file=self._file, end='')
             self._file.flush()
             time.sleep(self._interval)
 
@@ -186,7 +185,7 @@ class Spinner(Thread):
         elif self._leave == False:
             tqdm.write('\r', file=self._file, end='')
         elif isinstance(self._leave, str):
-            tqdm.write('\b' + self._leave + ' ', file=self._file, end='\n')
+            tqdm.write('\r' + self._label + self._leave + ' ', file=self._file, end='\n')
         self._file.flush()
 
     def start(self):
