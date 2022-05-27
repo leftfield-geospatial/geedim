@@ -23,11 +23,13 @@ jobs:
         channels: conda-forge
         channel-priority: true
         activate-environment: test
+        mamba-version: "*"
     - name: Install geedim
       run: |
-        conda info
-        conda install -c conda-forge geedim>=1
-        conda list
+        mamba info
+        mamba list
+        mamba install -c conda-forge geedim>=1.0.0
+        mamba list
     - name: Test geedim
       timeout-minutes: 5
       env:
