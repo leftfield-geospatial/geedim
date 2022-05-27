@@ -20,10 +20,11 @@ import ee
 import numpy as np
 import pytest
 
-from geedim.collection import MaskedCollection, split_id
+from geedim.collection import MaskedCollection
 from geedim.enums import CompositeMethod, ResamplingMethod
 from geedim.errors import UnfilteredError, ComponentImageError
-from geedim.mask import MaskedImage, get_projection
+from geedim.mask import MaskedImage
+from geedim.utils import split_id, get_projection
 
 
 @pytest.fixture()

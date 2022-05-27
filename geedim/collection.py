@@ -25,10 +25,11 @@ import tabulate
 from tabulate import TableFormat, Line, DataRow
 
 from geedim import info, medoid
-from geedim.download import BaseImage, split_id
+from geedim.download import BaseImage
 from geedim.enums import ResamplingMethod, CompositeMethod
 from geedim.errors import UnfilteredError, ComponentImageError
 from geedim.mask import MaskedImage, class_from_id
+from geedim.utils import split_id
 
 logger = logging.getLogger(__name__)
 tabulate.MIN_PADDING = 0

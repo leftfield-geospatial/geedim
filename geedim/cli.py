@@ -29,9 +29,10 @@ from rasterio.errors import CRSError
 
 from geedim import collection as coll_api, info, _ee_init, version
 from geedim.collection import MaskedCollection
-from geedim.download import BaseImage, get_bounds
+from geedim.download import BaseImage
 from geedim.enums import CloudMaskMethod, CompositeMethod, ResamplingMethod
 from geedim.mask import MaskedImage
+from geedim.utils import get_bounds
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,7 @@ class ChainedCommand(click.Command):
     """
     click Command sub-class for managing parameters shared between chained commands.
     """
+
     def invoke(self, ctx):
         """Manage shared `image_list` and `region` parameters."""
 
@@ -216,6 +218,8 @@ def cli(ctx, verbose, quiet):
     ctx.obj = SimpleNamespace(image_list=[], region=None, cloud_kwargs={})
     verbosity = verbose - quiet
     _configure_logging(verbosity)
+
+
 # TODO: add clear docs on what is piped out of or into each command.
 
 # config command
@@ -234,7 +238,7 @@ def cli(ctx, verbose, quiet):
     '-mm', '--mask-method', type=click.Choice([cmm.value for cmm in CloudMaskMethod], case_sensitive=True),
     default=CloudMaskMethod.cloud_prob.value, show_default=True, callback=_mask_method_cb,
     help='Method used to mask clouds.  Valid for Sentinel-2 images. '
-)   # TODO: add an explanation for these options
+)  # TODO: add an explanation for these options
 @click.option(
     '-p', '--prob', type=click.FloatRange(min=0, max=100), default=60, show_default=True,
     help='Cloud probability threshold (%). Valid for Sentinel-2 images with the `cloud-prob` mask-method'
@@ -379,14 +383,12 @@ def search(obj, collection, start_date, end_date, bbox, region, fill_portion, cl
     if not obj.region:
         raise click.BadOptionUsage('region', 'Either pass --region or --bbox')
 
-    # TODO: add spinner
-    logger.info(
-        f'\nSearching for {collection} images between {start_date.strftime("%Y-%m-%d")} and '
-        f'{end_date.strftime("%Y-%m-%d")}...'
-    )
-
     # create collection wrapper and search
     gd_collection = coll_api.MaskedCollection.from_name(collection)
+    logger.info(
+        f'\nSearching for {collection} images between {start_date.strftime("%Y-%m-%d")} and '
+        f'{end_date.strftime("%Y-%m-%d")}... '
+    )
     gd_collection = gd_collection.search(
         start_date, end_date, obj.region, fill_portion=fill_portion, cloudless_portion=cloudless_portion,
         **obj.cloud_kwargs

@@ -29,10 +29,8 @@ from typing import Tuple, Dict, List, Union
 import ee
 import numpy as np
 import rasterio as rio
-
 from rasterio.crs import CRS
 from rasterio.enums import Resampling as RioResampling
-from rasterio.warp import transform_geom
 from rasterio.windows import Window
 from tqdm import TqdmWarning, tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
@@ -40,74 +38,9 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 from geedim import info
 from geedim.enums import ResamplingMethod
 from geedim.tile import Tile, _requests_retry_session
-from geedim.utils import Spinner
+from geedim.utils import Spinner, split_id
 
 logger = logging.getLogger(__name__)
-
-
-def split_id(image_id):
-    """
-    Split Earth Engine image ID into collection and index components.
-
-    Parameters
-    ----------
-    image_id: str
-        Earth engine image ID.
-
-    Returns
-    -------
-    : Tuple[str, str]
-        A tuple of strings: (collection name, image index).
-    """
-    if not image_id:
-        return None, None
-    index = image_id.split("/")[-1]
-    ee_coll_name = "/".join(image_id.split("/")[:-1])
-    return ee_coll_name, index
-
-
-def get_bounds(filename, expand=5):  # pragma coverage
-    """
-    Get a geojson polygon representing the bounds of an image.
-
-    Parameters
-    ----------
-    filename: str, pathlib.Path
-        Path of the image file whose bounds to find.
-    expand : int, optional
-        Percentage (0-100) by which to expand the bounds (default: 5).
-
-    Returns
-    -------
-    dict
-        Geojson polygon.
-    """
-    try:
-        # GEE sets tif colorinterp tags incorrectly, suppress rasterio warning relating to this:
-        # 'Sum of Photometric type-related color channels and ExtraSamples doesn't match SamplesPerPixel'
-        logging.getLogger("rasterio").setLevel(logging.ERROR)
-        with rio.open(filename) as im:
-            bbox = im.bounds
-            if (im.crs.linear_units == "metre") and (expand > 0):  # expand the bounding box
-                expand_x = (bbox.right - bbox.left) * expand / 100.0
-                expand_y = (bbox.top - bbox.bottom) * expand / 100.0
-                bbox_expand = rio.coords.BoundingBox(
-                    bbox.left - expand_x, bbox.bottom - expand_y, bbox.right + expand_x, bbox.top + expand_y,
-                )
-            else:
-                bbox_expand = bbox
-
-            coordinates = [
-                [bbox_expand.right, bbox_expand.bottom], [bbox_expand.right, bbox_expand.top],
-                [bbox_expand.left, bbox_expand.top], [bbox_expand.left, bbox_expand.bottom],
-                [bbox_expand.right, bbox_expand.bottom],
-            ]
-
-            bbox_expand_dict = dict(type="Polygon", coordinates=[coordinates])
-            src_bbox_wgs84 = transform_geom(im.crs, "WGS84", bbox_expand_dict)  # convert to WGS84 geojson
-    finally:
-        logging.getLogger("rasterio").setLevel(logging.WARNING)
-    return src_bbox_wgs84
 
 
 class BaseImage:

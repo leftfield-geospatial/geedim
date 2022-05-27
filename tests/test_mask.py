@@ -23,21 +23,6 @@ import rasterio as rio
 from geedim.mask import MaskedImage, get_projection, class_from_id
 
 
-def test_get_projection(s2_sr_masked_image):
-    """ Test get_projection().  """
-    min_proj = get_projection(s2_sr_masked_image.ee_image, min_scale=True)
-    min_crs = min_proj.crs().getInfo()
-    min_scale = min_proj.nominalScale().getInfo()
-    max_proj = get_projection(s2_sr_masked_image.ee_image, min_scale=False)
-    max_crs = max_proj.crs().getInfo()
-    max_scale = max_proj.nominalScale().getInfo()
-
-    assert min_crs.startswith('EPSG:')
-    assert min_crs == max_crs
-    assert max_scale == 60
-    assert min_scale == 10
-
-
 def test_class_from_id(landsat_image_ids, s2_sr_image_id, s2_toa_image_id, generic_image_ids):
     """  Test class_from_id(). """
     from geedim.mask import LandsatImage, Sentinel2SrClImage, Sentinel2ToaClImage

@@ -17,8 +17,9 @@ import logging
 
 import ee
 
-from geedim.download import BaseImage, split_id
+from geedim.download import BaseImage
 from geedim.enums import CloudMaskMethod
+from geedim.utils import split_id, get_projection
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ class MaskedImage(BaseImage):
     _default_mask = False
     _supported_collection_ids = ['*']
     _proj_scale = None
+
     # TODO: for images w/o fixed projections, nominalScale() is 1deg~100km.  Can we get this from STAC?
 
     #  STAC w/o overheads for e.g. mapping over collections
@@ -462,44 +464,3 @@ def class_from_id(image_id: str) -> type:
         return masked_image_dict[ee_coll_name]
     else:
         return MaskedImage
-
-
-def get_projection(image, min_scale=True):
-    """
-    Get the min/max scale projection of image bands.  Server side - no calls to getInfo().
-    Adapted from from https://github.com/gee-community/gee_tools, MIT license.
-
-    Parameters
-    ----------
-    image : ee.Image, geedim.image.BaseImage
-            The image whose min/max projection to retrieve.
-    min_scale: bool, optional
-         Retrieve the projection corresponding to the band with the minimum (True) or maximum (False) scale.
-         (default: True)
-
-    Returns
-    -------
-    ee.Projection
-        The requested projection.
-    """
-    if isinstance(image, BaseImage):
-        image = image.ee_image
-
-    bands = image.bandNames()
-
-    compare = ee.Number.lte if min_scale else ee.Number.gte
-    init_proj = image.select(0).projection()
-
-    def compare_scale(name, prev_proj):
-        """Server side comparison of band scales"""
-        prev_proj = ee.Projection(prev_proj)
-        prev_scale = prev_proj.nominalScale()
-
-        curr_proj = image.select([name]).projection()
-        curr_scale = ee.Number(curr_proj.nominalScale())
-
-        condition = compare(curr_scale, prev_scale)
-        comp_proj = ee.Algorithms.If(condition, curr_proj, prev_proj)
-        return ee.Projection(comp_proj)
-
-    return ee.Projection(bands.iterate(compare_scale, init_proj))
