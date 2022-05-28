@@ -20,10 +20,14 @@ import logging
 import sys
 import time
 from threading import Thread
+from typing import Tuple
 
 import ee
 import rasterio as rio
+import requests
 from rasterio.warp import transform_geom
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 from tqdm import tqdm
 
 from geedim.enums import ResamplingMethod
@@ -234,3 +238,19 @@ def resample(ee_image: ee.Image, method: ResamplingMethod) -> ee.Image:
             return ee_image.resample(method.value)
 
     return ee.Image(ee.Algorithms.If(has_fixed_proj, _resample(ee_image), ee_image))
+
+
+def requests_retry_session(
+    retries: int=3, backoff_factor: float=0.3, status_forcelist: Tuple=(500, 502, 504),
+    session: requests.Session=None
+) -> requests.Session:
+    """A persistent requests session configured for retries."""
+    session = session or requests.Session()
+    retry = Retry(
+        total=retries, read=retries, connect=retries, backoff_factor=backoff_factor,
+        status_forcelist=status_forcelist
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    return session

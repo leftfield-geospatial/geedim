@@ -37,8 +37,8 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 
 from geedim import info
 from geedim.enums import ResamplingMethod
-from geedim.tile import Tile, _requests_retry_session
-from geedim.utils import Spinner, split_id, resample
+from geedim.tile import Tile
+from geedim.utils import Spinner, split_id, resample, requests_retry_session
 
 logger = logging.getLogger(__name__)
 
@@ -640,7 +640,7 @@ class BaseImage:
             desc=desc, total=raw_download_size, bar_format=bar_format, dynamic_ncols=True, unit_scale=True, unit='B'
         )
 
-        session = _requests_retry_session(5, status_forcelist=[500, 502, 503, 504])
+        session = requests_retry_session(5, status_forcelist=[500, 502, 503, 504])
         warnings.filterwarnings('ignore', category=TqdmWarning)
         redir_tqdm = logging_redirect_tqdm([logging.getLogger(__package__)])  # redirect logging through tqdm
         out_ds = rio.open(filename, 'w', **profile)  # create output geotiff
