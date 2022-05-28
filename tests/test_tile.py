@@ -22,7 +22,8 @@ from rasterio import Affine
 from rasterio.windows import Window
 from tqdm import tqdm
 
-from geedim.tile import Tile, requests_retry_session
+from geedim.tile import Tile
+from geedim.utils import requests_retry_session
 
 BaseImageLike = namedtuple('BaseImageLike', ['ee_image', 'crs', 'transform', 'shape', 'count', 'dtype'])
 
