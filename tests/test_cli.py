@@ -124,12 +124,12 @@ def _test_downloaded_file(
 )
 def test_search(
     name, start_date: str, end_date: str, region: str, fill_portion: float, cloudless_portion: float,
-    is_csmask: bool, tmp_path: pathlib.Path, runner: CliRunner, request
+    is_csmask: bool, tmp_path: pathlib.Path, runner: CliRunner, request: pytest.FixtureRequest
 ):
     """
     Test search command gives valid results for different cloud/shadow maskable, and generic collections.
     """
-    region_file: dict = request.getfixturevalue(region)
+    region_file: Dict = request.getfixturevalue(region)
     results_file = tmp_path.joinpath('search_results.json')
     cli_str = (
         f'search -c {name} -s {start_date} -e {end_date} -r {region_file} -fp {fill_portion} '
@@ -285,8 +285,8 @@ def test_download_defaults(
     ]
 )
 def test_download_params(
-    image_id: str, region_file: pathlib.Path, crs: str, scale: float, dtype: str, mask: bool, resampling: str,
-    tmp_path: pathlib.Path, runner: CliRunner, request
+    image_id: str, region_file: str, crs: str, scale: float, dtype: str, mask: bool, resampling: str,
+    tmp_path: pathlib.Path, runner: CliRunner, request: pytest.FixtureRequest
 ):
     """ Test image download, specifying all possible cli params. """
     image_id = request.getfixturevalue(image_id)
@@ -308,7 +308,7 @@ def test_download_params(
     _test_downloaded_file(out_file, region=region, crs=crs, scale=scale, dtype=dtype)
 
 
-def test_export_params(l8_image_id: str, region_25ha_file: pathlib.Path, runner: CliRunner, tmp_path: pathlib.Path):
+def test_export_params(l8_image_id: str, region_25ha_file: pathlib.Path, runner: CliRunner):
     """ Test export starts ok, specifying all cli params"""
     cli_str = (
         f'export -i {l8_image_id} -r {region_25ha_file} -df geedim/test --crs EPSG:3857 --scale 30 '
@@ -320,7 +320,8 @@ def test_export_params(l8_image_id: str, region_25ha_file: pathlib.Path, runner:
 
 @pytest.mark.parametrize('image_list, scale', [('s2_sr_image_id_list', 10), ('l8_9_image_id_list', 30)])
 def test_composite_defaults(
-    image_list: str, scale: float, region_25ha_file: pathlib.Path, runner: CliRunner, tmp_path: pathlib.Path, request
+    image_list: str, scale: float, region_25ha_file: pathlib.Path, runner: CliRunner, tmp_path: pathlib.Path,
+    request: pytest.FixtureRequest
 ):
     """ Test composite with default CLI parameters.  """
     image_list = request.getfixturevalue(image_list)
@@ -349,7 +350,7 @@ def test_composite_defaults(
 )
 def test_composite_params(
     image_list: str, method: str, region_file: str, date: str, mask: bool, resampling: str, download_scale: float,
-    region_25ha_file, runner: CliRunner, tmp_path: pathlib.Path, request
+    region_25ha_file, runner: CliRunner, tmp_path: pathlib.Path, request: pytest.FixtureRequest
 ):
     """ Test composite with default CLI parameters. """
     image_list = request.getfixturevalue(image_list)

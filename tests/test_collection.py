@@ -171,7 +171,7 @@ def test_from_list_order(image_list: str, request):
     assert list(gd_collection.properties.keys()) == image_ids
 
 
-def test_from_list_ee_image(gedi_image_list: List, request):
+def test_from_list_ee_image(gedi_image_list: List):
     """ Test MaskedCollection.from_list() with an ee.Image in the list. """
     image_ids = [im_obj if isinstance(im_obj, str) else im_obj.id for im_obj in gedi_image_list]
     image_list = gedi_image_list
@@ -196,7 +196,7 @@ def test_search(
     """
     Test MaskedCollection.search() gives valid results for different cloud/shadow maskable, and generic collections.
     """
-    region: dict = request.getfixturevalue(region)
+    region: Dict = request.getfixturevalue(region)
     gd_collection = MaskedCollection.from_name(name)
     searched_collection = gd_collection.search(
         start_date, end_date, region, fill_portion=fill_portion, cloudless_portion=cloudless_portion
@@ -324,10 +324,13 @@ def test_composite_mask(image_list, method, mask, region_100ha, request):
     'image_list, resampling', [
         ('s2_sr_image_list', ResamplingMethod.bilinear),
         ('s2_sr_image_list', ResamplingMethod.bicubic),
+        ('s2_sr_image_list', ResamplingMethod.average),
         ('l8_9_image_list', ResamplingMethod.bilinear),
         ('l8_9_image_list', ResamplingMethod.bicubic),
+        ('l8_9_image_list', ResamplingMethod.average),
         ('l4_5_image_list', ResamplingMethod.bilinear),
         ('l4_5_image_list', ResamplingMethod.bicubic),
+        ('l4_5_image_list', ResamplingMethod.average),
     ]
 )
 def test_composite_resampling(image_list: str, resampling: ResamplingMethod, region_100ha, request):

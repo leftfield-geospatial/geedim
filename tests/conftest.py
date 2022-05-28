@@ -230,12 +230,8 @@ def user_masked_image() -> MaskedImage:
 
 
 @pytest.fixture(scope='session')
-def modis_nbar_masked_image(modis_nbar_image_id, region_10000ha) -> MaskedImage:
-    """ MODIS NBAR MaskedImage with clipped/global? coverage.  """
-    # return MaskedImage(
-    #     ee.Image('MODIS/006/MCD43A4/2022_01_01').clip(region_10000ha).
-    #         reproject('EPSG:3857', scale=500)
-    # )
+def modis_nbar_masked_image(modis_nbar_image_id) -> MaskedImage:
+    """ MODIS NBAR MaskedImage with global coverage.  """
     return MaskedImage.from_id(modis_nbar_image_id)
 
 

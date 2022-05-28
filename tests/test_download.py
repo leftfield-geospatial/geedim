@@ -15,7 +15,7 @@
 """
 import pathlib
 from datetime import datetime
-from typing import Dict, Tuple
+from typing import Dict, Tuple, List
 
 import ee
 import numpy as np
@@ -61,32 +61,32 @@ def user_fix_base_image() -> BaseImage:
 
 
 @pytest.fixture(scope='session')
-def s2_sr_base_image(s2_sr_image_id) -> BaseImage:
+def s2_sr_base_image(s2_sr_image_id: str) -> BaseImage:
     """ A BaseImage instance encapsulating a Sentinel-2 image.  Covers `region_*ha`.  """
     return BaseImage.from_id(s2_sr_image_id)
 
 
 @pytest.fixture(scope='session')
-def l9_base_image(l9_image_id) -> BaseImage:
+def l9_base_image(l9_image_id: str) -> BaseImage:
     """ A BaseImage instance encapsulating a Landsat-9 image.  Covers `region_*ha`.  """
     return BaseImage.from_id(l9_image_id)
 
 
 @pytest.fixture(scope='session')
-def landsat_ndvi_base_image(landsat_ndvi_image_id) -> BaseImage:
+def landsat_ndvi_base_image(landsat_ndvi_image_id: str) -> BaseImage:
     """ A BaseImage instance encapsulating a Landsat NDVI composite image.  Covers `region_*ha`.  """
     return BaseImage.from_id(landsat_ndvi_image_id)
 
 
 @pytest.fixture(scope='session')
-def modis_nbar_base_image(modis_nbar_image_id, region_100ha) -> BaseImage:
+def modis_nbar_base_image(modis_nbar_image_id: str, region_100ha: Dict) -> BaseImage:
     """ A BaseImage instance encapsulating a MODIS NBAR image.  Covers `region_*ha`.  """
     return BaseImage(
         ee.Image(modis_nbar_image_id).clip(region_100ha).reproject(crs='EPSG:3857', scale=500)
     )
 
 
-def test_id_name(user_base_image: BaseImage, s2_sr_base_image):
+def test_id_name(user_base_image: BaseImage, s2_sr_base_image: BaseImage):
     """ Test `id` and `name` properties for different scenarios. """
     assert user_base_image.id is None
     assert user_base_image.name is None
@@ -121,7 +121,7 @@ def test_fix_user_props(user_fix_base_image: BaseImage):
     assert user_fix_base_image.count == 3
 
 
-def test_s2_props(s2_sr_base_image):
+def test_s2_props(s2_sr_base_image: BaseImage):
     """ Test fixed projection S2 image properties (other than id and has_fixed_projection). """
     min_band_info = s2_sr_base_image.ee_info['bands'][1]
     assert s2_sr_base_image.crs == min_band_info['crs']
@@ -158,7 +158,7 @@ def test_has_fixed_projection(user_base_image: BaseImage, user_fix_base_image: B
           {'precision': 'double', 'min': -1e100, 'max': 1e100}], 'float64'),
     ]
 )
-def test_min_dtype(ee_data_type_list, exp_dtype):
+def test_min_dtype(ee_data_type_list: List, exp_dtype: str):
     """ Test BasicImage.__get_min_dtype() with emulated EE info dicts.  """
     ee_info = dict(bands=[])
     for ee_data_type in ee_data_type_list:
@@ -173,7 +173,7 @@ def test_convert_dtype_error():
 
 
 @pytest.mark.parametrize('size, exp_str', [(1024, '1.02 KB'), (234.56e6, '234.56 MB'), (1e9, '1.00 GB')])
-def test_str_format_size(size, exp_str):
+def test_str_format_size(size: int, exp_str: str):
     """ Test formatting of byte sizes as human readable strings. """
     assert BaseImage._str_format_size(size) == exp_str
 
@@ -218,7 +218,7 @@ def test_prepare_exceptions(user_base_image: BaseImage, user_fix_base_image: Bas
         ('user_fix_base_image', 'modis_nbar_base_image'),
     ]
 )
-def test_prepare_for_export(src_image: str, tgt_image: str, request):
+def test_prepare_for_export(src_image: str, tgt_image: str, request: pytest.FixtureRequest):
     """ Test BaseImage._prepare_for_export() sets properties of export image as expected.  """
     src_image: BaseImage = request.getfixturevalue(src_image)
     tgt_image: BaseImage = request.getfixturevalue(tgt_image)
@@ -254,7 +254,7 @@ def test_prepare_for_export(src_image: str, tgt_image: str, request):
         ('user_base_image', 's2_sr_base_image'),
     ]
 )
-def test_prepare_for_download(src_image: str, tgt_image: str, region_25ha, request):
+def test_prepare_for_download(src_image: str, tgt_image: str, region_25ha: Dict, request: pytest.FixtureRequest):
     """ Test BaseImage._prepare_for_download() sets rasterio profile as expected.  """
     # TODO: I suspect this will be duplicated elsewhere and can be removed
     src_image: BaseImage = request.getfixturevalue(src_image)
@@ -277,7 +277,7 @@ def test_prepare_for_download(src_image: str, tgt_image: str, region_25ha, reque
         ('int32', -2 ** 31), ('float32', float('nan')), ('float64', float('nan'))
     ]
 )
-def test_prepare_nodata(user_fix_base_image, region_25ha, dtype, exp_nodata, request):
+def test_prepare_nodata(user_fix_base_image: BaseImage, region_25ha: Dict, dtype: str, exp_nodata: float):
     """ Test BaseImage._prepare_for_download() sets rasterio profile nodata correctly for different dtypes.  """
     exp_image, exp_profile = user_fix_base_image._prepare_for_download(region=region_25ha, scale=30, dtype=dtype)
     assert exp_image.dtype == dtype
@@ -310,7 +310,7 @@ def test_tile_shape():
         ((1000, 102), (101, 101), Affine.scale(1.23) * Affine.translation(12, 34)),
     ]
 )
-def test_tiles(image_shape, tile_shape, image_transform):
+def test_tiles(image_shape: Tuple, tile_shape: Tuple, image_transform: Affine):
     """ Test continuity and coverage of tiles. """
     exp_image = BaseImageLike(shape=image_shape, transform=image_transform)
     tiles = [tile for tile in BaseImage.tiles(exp_image, tile_shape=tile_shape)]
@@ -345,7 +345,7 @@ def test_tiles(image_shape, tile_shape, image_transform):
         # ('modis_nbar_base_image', 'region_25ha'),
     ]
 )
-def test_download(base_image, region, tmp_path, request):
+def test_download(base_image: str, region: Dict, tmp_path: pathlib.Path, request: pytest.FixtureRequest):
     """ Test downloaded file properties and pixel data.  """
     base_image = request.getfixturevalue(base_image)
     region = request.getfixturevalue(region)
@@ -394,13 +394,12 @@ def test_export(user_fix_base_image: BaseImage, region_25ha: Dict):
     assert task.active()
     assert task.status()['state'] == 'READY'
 
-# TODo
+# TODO
 # --------
 # get_bounds() # test this on downloaded image against download region
 # _get_band_metadata: leave for now
 # _write_metadata: test downloaded bands have ids / descriptions
 # export(): test an export of small file (with wait ? - it kind of has to be to test monitor_export_task() )
-# - resampling smooths things out
 # - different generic collection images are downloaded ok (perhaps this goes with MaskedImage more than BaseImage)
 # - test float mask/nodata in downloaded image
 # - test mult tile download has no discontinuities
