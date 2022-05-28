@@ -29,7 +29,7 @@ from geedim.download import BaseImage
 from geedim.enums import ResamplingMethod, CompositeMethod
 from geedim.errors import UnfilteredError, ComponentImageError
 from geedim.mask import MaskedImage, class_from_id
-from geedim.utils import split_id
+from geedim.utils import split_id, resample
 
 logger = logging.getLogger(__name__)
 tabulate.MIN_PADDING = 0
@@ -311,10 +311,7 @@ class MaskedCollection:
                 gd_image.set_region_stats(region)
             if mask:
                 gd_image.mask_clouds()
-            if resampling != BaseImage._default_resampling:
-                return gd_image.ee_image.resample(resampling.value)
-            else:
-                return gd_image.ee_image
+            return resample(gd_image.ee_image, resampling)
 
         ee_collection = self._ee_collection.map(prepare_image)
 

@@ -14,18 +14,19 @@
    limitations under the License.
 """
 
+import itertools
 ##
 import logging
+import sys
+import time
+from threading import Thread
 
 import ee
 import rasterio as rio
 from rasterio.warp import transform_geom
-
-import itertools
-from threading import Thread
-import time
 from tqdm import tqdm
-import sys
+
+from geedim.enums import ResamplingMethod
 
 
 def split_id(image_id):
@@ -196,3 +197,40 @@ class Spinner(Thread):
     def stop(self):
         """ Stop the spinner thread. """
         self._run = False
+
+
+def resample(ee_image: ee.Image, method: ResamplingMethod) -> ee.Image:
+    """
+    Resample an ee.Image. Extends ee.Image.resample by only resampling when the image has a fixed projection, and by
+    providing an additional 'average' method for downsampling.
+
+    See https://developers.google.com/earth-engine/guides/resample for more info.
+
+    Parameters
+    ----------
+    ee_image: ee.Image
+        The image to resample.
+    method: ResamplingMethod
+        The resampling method to use.
+
+    Returns
+    -------
+    ee_image: ee.Image
+        The resampled image.
+    """
+    method = ResamplingMethod(method)
+    if method == ResamplingMethod.near:
+        return ee_image
+
+    # resample the image, if it has a fixed projection
+    proj = ee_image.select(0).projection()
+    has_fixed_proj = proj.crs().compareTo('EPSG:4326').neq(0).Or(proj.nominalScale().neq(111319.49079327357))
+
+    def _resample(ee_image: ee.Image) -> ee.Image:
+        """ Resample the given image, allowing for additional 'average' method. """
+        if method == ResamplingMethod.average:
+            return ee_image.reduceResolution(reducer=ee.Reducer.mean(), maxPixels=1024)
+        else:
+            return ee_image.resample(method.value)
+
+    return ee.Image(ee.Algorithms.If(has_fixed_proj, _resample(ee_image), ee_image))

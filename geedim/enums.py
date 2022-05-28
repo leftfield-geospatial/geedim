@@ -37,3 +37,4 @@ class ResamplingMethod(str, Enum):
     near = 'near'
     bilinear = 'bilinear'
     bicubic = 'bicubic'
+    average = 'average'
