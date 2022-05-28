@@ -275,3 +275,19 @@ def generic_masked_images(
         modis_nbar_masked_image, gch_masked_image, s1_sar_masked_image, gedi_agb_masked_image, gedi_cth_masked_image,
         landsat_ndvi_masked_image
     ]
+
+def get_image_std(ee_image: ee.Image, region: Dict, std_scale: float):
+    """
+    Helper function to return the mean of the local/neighbourhood image std. dev., over a region.  This serves as a
+    measure of image smoothness.
+    """
+    # Note that for Sentinel-2 images, only the 20m and 60m bands get resampled by EE (and hence smoothed), so
+    # here B1 @ 60m is used for testing.
+    test_image = ee_image.select(0)
+    proj = test_image.projection()
+    std_image = test_image.reduceNeighborhood(reducer='stdDev', kernel=ee.Kernel.square(2)).rename('TEST')
+    mean_std_image = std_image.reduceRegion(
+        reducer='mean', geometry=region, crs=proj.crs(), scale=std_scale, bestEffort=True,
+        maxPixels=1e6
+    )
+    return mean_std_image.get('TEST').getInfo()

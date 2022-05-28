@@ -25,7 +25,7 @@ from geedim.enums import CompositeMethod, ResamplingMethod
 from geedim.errors import UnfilteredError, ComponentImageError
 from geedim.mask import MaskedImage
 from geedim.utils import split_id, get_projection
-
+from .conftest import get_image_std
 
 @pytest.fixture()
 def l4_5_image_list(l4_image_id, l5_masked_image) -> List[Union[str, MaskedImage]]:
@@ -321,46 +321,30 @@ def test_composite_mask(image_list, method, mask, region_100ha, request):
 
 
 @pytest.mark.parametrize(
-    'image_list, resampling', [
-        ('s2_sr_image_list', ResamplingMethod.bilinear),
-        ('s2_sr_image_list', ResamplingMethod.bicubic),
-        ('s2_sr_image_list', ResamplingMethod.average),
-        ('l8_9_image_list', ResamplingMethod.bilinear),
-        ('l8_9_image_list', ResamplingMethod.bicubic),
-        ('l8_9_image_list', ResamplingMethod.average),
-        ('l4_5_image_list', ResamplingMethod.bilinear),
-        ('l4_5_image_list', ResamplingMethod.bicubic),
-        ('l4_5_image_list', ResamplingMethod.average),
+    'image_list, resampling, std_scale', [
+        ('s2_sr_image_list', ResamplingMethod.bilinear, 60),
+        ('s2_sr_image_list', ResamplingMethod.bicubic, 60),
+        ('s2_sr_image_list', ResamplingMethod.average, 120),
+        ('l8_9_image_list', ResamplingMethod.bilinear, 30),
+        ('l8_9_image_list', ResamplingMethod.bicubic, 30),
+        ('l8_9_image_list', ResamplingMethod.average, 120),
     ]
 )
-def test_composite_resampling(image_list: str, resampling: ResamplingMethod, region_100ha, request):
+def test_composite_resampling(
+    image_list: str, resampling: ResamplingMethod, std_scale: float, region_10000ha: Dict,
+    request: pytest.FixtureRequest
+):
     """ Test that resampling smooths the composite image. """
 
     image_list: List = request.getfixturevalue(image_list)
     gd_collection = MaskedCollection.from_list(image_list)
-    proj = get_projection(gd_collection.ee_collection.first(), min_scale=True)
-    comp_im = gd_collection.composite(method=CompositeMethod.mosaic)
-    comp_im_resampled = gd_collection.composite(method=CompositeMethod.mosaic, resampling=resampling)
-
-    def get_image_std(ee_image: ee.Image):
-        """
-        Return the mean of the local/neighbourhood image std. dev., over a region.  This functions as a measure
-        of image smoothness.
-        """
-        # Note that for Sentinel-2 images, only the 20m and 60m bands get resampled by EE (and hence smoothed), so
-        # here B1 @ 60m is used for testing.
-        test_image = ee_image.select(0)
-        std_image = test_image.reduceNeighborhood(reducer='stdDev', kernel=ee.Kernel.square(2)).rename('TEST')
-        # reproject the composite image to fixed, known projection for the reduceNeighborhood operation
-        std_image = std_image.reproject(crs=proj.crs(), scale=proj.nominalScale())
-        mean_std_image = std_image.reduceRegion(
-            reducer='mean', geometry=region_100ha, crs=proj.crs(), scale=proj.nominalScale(), bestEffort=True,
-            maxPixels=1e6
-        )
-        return mean_std_image.get('TEST').getInfo()
+    comp_im_before = gd_collection.composite(method=CompositeMethod.mosaic, mask=False)
+    comp_im_after = gd_collection.composite(method=CompositeMethod.mosaic, resampling=resampling, mask=False)
 
     # test the resampled composite is smoother than the default composite
-    assert get_image_std(comp_im_resampled.ee_image) < get_image_std(comp_im.ee_image)
+    std_before = get_image_std(comp_im_before.ee_image, region_10000ha, std_scale)
+    std_after = get_image_std(comp_im_after.ee_image, region_10000ha, std_scale)
+    assert std_before > std_after
 
 
 def test_composite_s2_cloud_mask_params(s2_sr_image_list, region_10000ha):
