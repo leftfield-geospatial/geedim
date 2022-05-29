@@ -135,7 +135,7 @@ class MaskedImage(BaseImage):
         if not region:
             region = self.ee_image.geometry()  # use the image footprint
 
-        # TODO: min_scale=False works for Sentinel-2, but not e.g. for Sentinel-1 SAR where one band is 12km and the
+        # TODO: min_scale=False works for Sentinel-2, but not e.g. for COPERNICUS/S1_GRD where one band is 12km and the
         #  others 10m.  So we need something that works for all cases which apparently include cases where one band's
         #  scale is very different to the others.  And the case of composite images.  Currently if it is a supported
         #  cloud-masked image, it will have a meaningful _proj_scale, so that it ok for those images.  Otherwise

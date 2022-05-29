@@ -123,7 +123,6 @@ def get_projection(image, min_scale=True):
 
     compare = ee.Number.lte if min_scale else ee.Number.gte
     init_proj = image.select(0).projection()
-
     def compare_scale(name, prev_proj):
         """Server side comparison of band scales"""
         prev_proj = ee.Projection(prev_proj)
@@ -241,7 +240,7 @@ def resample(ee_image: ee.Image, method: ResamplingMethod) -> ee.Image:
 
 
 def requests_retry_session(
-    retries: int=3, backoff_factor: float=0.3, status_forcelist: Tuple=(500, 502, 504),
+    retries: int=3, backoff_factor: float=0.3, status_forcelist: Tuple=(429, 500, 502, 503, 504),
     session: requests.Session=None
 ) -> requests.Session:
     """A persistent requests session configured for retries."""
