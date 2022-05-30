@@ -397,7 +397,7 @@ def test_export(user_fix_base_image: BaseImage, region_25ha: Dict):
 # TODO
 # --------
 # get_bounds() # test this on downloaded image against download region
-# _get_band_metadata: leave for now
+# _get_band_props: leave for now
 # _write_metadata: test downloaded bands have ids / descriptions
 # export(): test an export of small file (with wait ? - it kind of has to be to test monitor_export_task() )
 # - different generic collection images are downloaded ok (perhaps this goes with MaskedImage more than BaseImage)

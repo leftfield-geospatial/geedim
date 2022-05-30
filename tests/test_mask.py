@@ -291,10 +291,10 @@ def get_mask_stats(masked_image: MaskedImage, region: Dict):
     stats_image = ee.Image([pan_cloud, pan_shadow, pan_cloudless, cdist_cloud, cdist_cloudless])
     proj = get_projection(ee_image, min_scale=False)
     means = stats_image.reduceRegion(
-        reducer='mean', geometry=region, crs=proj.crs(), scale=masked_image._proj_scale, bestEffort=True, maxPixels=1e8
+        reducer='mean', geometry=region, crs=proj.crs(), scale=proj.nominalScale(), bestEffort=True, maxPixels=1e8
     )
     cdist_min = cdist.updateMask(cdist).reduceRegion(
-        reducer='min', geometry=region, crs=proj.crs(), scale=masked_image._proj_scale, bestEffort=True, maxPixels=1e8
+        reducer='min', geometry=region, crs=proj.crs(), scale=proj.nominalScale(), bestEffort=True, maxPixels=1e8
     )
     means = means.set('CDIST_MIN', cdist_min.get('CLOUD_DIST'))
     return means.getInfo()
@@ -326,7 +326,8 @@ def test_s2_aux_bands(masked_image: str, region_10000ha: Dict, request: pytest.F
     assert stats['PAN_CLOUD'] > stats['PAN_CLOUDLESS']
     assert stats['PAN_CLOUDLESS'] > stats['PAN_SHADOW']
     assert stats['CDIST_CLOUDLESS'] > stats['CDIST_CLOUD']
-    assert stats['CDIST_MIN'] == masked_image._proj_scale
+    proj_scale = get_projection(masked_image.ee_image, min_scale=False).nominalScale().getInfo()
+    assert stats['CDIST_MIN'] == proj_scale
 
 
 @pytest.mark.parametrize(
@@ -339,7 +340,8 @@ def test_mask_clouds(masked_image: str, region_100ha: Dict, tmp_path, request: p
     masked_image: MaskedImage = request.getfixturevalue(masked_image)
     filename = tmp_path.joinpath(f'test_image.tif')
     masked_image.mask_clouds()
-    masked_image.download(filename, region=region_100ha, dtype='int32', scale=masked_image._proj_scale)
+    proj_scale = get_projection(masked_image.ee_image, min_scale=False).nominalScale()
+    masked_image.download(filename, region=region_100ha, dtype='int32', scale=proj_scale)
     assert filename.exists()
     with rio.open(filename, 'r') as ds:
         ds: rio.DatasetReader = ds

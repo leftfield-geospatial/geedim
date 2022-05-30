@@ -19,7 +19,8 @@ from typing import Dict, List
 import ee
 import pytest
 
-from geedim import _ee_init, MaskedImage, root_path
+from geedim import _ee_init, MaskedImage
+from geedim.utils import root_path
 
 
 @pytest.fixture(scope='session', autouse=True)
@@ -275,6 +276,7 @@ def generic_masked_images(
         modis_nbar_masked_image, gch_masked_image, s1_sar_masked_image, gedi_agb_masked_image, gedi_cth_masked_image,
         landsat_ndvi_masked_image
     ]
+
 
 def get_image_std(ee_image: ee.Image, region: Dict, std_scale: float):
     """

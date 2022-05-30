@@ -27,6 +27,7 @@ from geedim.mask import MaskedImage
 from geedim.utils import split_id, get_projection
 from .conftest import get_image_std
 
+
 @pytest.fixture()
 def l4_5_image_list(l4_image_id, l5_masked_image) -> List[Union[str, MaskedImage]]:
     """ A list of landsat 4 & 5 image ID / MaskedImage's """
@@ -354,9 +355,9 @@ def test_composite_s2_cloud_mask_params(s2_sr_image_list, region_10000ha):
     """
     gd_collection = MaskedCollection.from_list(s2_sr_image_list)
     comp_im_prob80 = gd_collection.composite(prob=80)
-    comp_im_prob80.set_region_stats(region_10000ha)
+    comp_im_prob80.set_region_stats(region_10000ha, scale=gd_collection.stats_scale)
     comp_im_prob40 = gd_collection.composite(prob=40)
-    comp_im_prob40.set_region_stats(region_10000ha)
+    comp_im_prob40.set_region_stats(region_10000ha, scale=gd_collection.stats_scale)
     prob80_portion = comp_im_prob80.properties['CLOUDLESS_PORTION']
     prob40_portion = comp_im_prob40.properties['CLOUDLESS_PORTION']
     assert prob80_portion > prob40_portion
@@ -369,9 +370,9 @@ def test_composite_landsat_cloud_mask_params(l8_9_image_list, region_10000ha):
     """
     gd_collection = MaskedCollection.from_list(l8_9_image_list)
     comp_im_wshadows = gd_collection.composite(mask_shadows=False)
-    comp_im_wshadows.set_region_stats(region_10000ha)
+    comp_im_wshadows.set_region_stats(region_10000ha, scale=gd_collection.stats_scale)
     comp_im_woshadows = gd_collection.composite(mask_shadows=True)
-    comp_im_woshadows.set_region_stats(region_10000ha)
+    comp_im_woshadows.set_region_stats(region_10000ha, scale=gd_collection.stats_scale)
     with_shadows_portion = comp_im_wshadows.properties['CLOUDLESS_PORTION']
     without_shadows_portion = comp_im_woshadows.properties['CLOUDLESS_PORTION']
     assert with_shadows_portion > without_shadows_portion

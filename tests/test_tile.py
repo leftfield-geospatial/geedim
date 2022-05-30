@@ -23,7 +23,7 @@ from rasterio.windows import Window
 from tqdm import tqdm
 
 from geedim.tile import Tile
-from geedim.utils import requests_retry_session
+from geedim.utils import retry_session
 
 BaseImageLike = namedtuple('BaseImageLike', ['ee_image', 'crs', 'transform', 'shape', 'count', 'dtype'])
 
@@ -47,7 +47,7 @@ def test_create(base_image_like):
     assert tile._shape == base_image_like.shape
 
 
-@pytest.mark.parametrize('session', [None, requests_retry_session()])
+@pytest.mark.parametrize('session', [None, retry_session()])
 def test_download(base_image_like, session):
     """ Test downloading the synthetic image tile.  """
     window = Window(0, 0, *base_image_like.shape[::-1])

@@ -28,8 +28,8 @@ from rasterio.crs import CRS
 from rasterio.features import bounds
 from rasterio.warp import transform_geom
 
-from geedim import root_path
 from geedim.cli import cli
+from geedim.utils import root_path
 
 
 @pytest.fixture
