@@ -29,12 +29,6 @@ logger = logging.getLogger(__name__)
 
 class MaskedImage(BaseImage):
     _default_mask = False
-    _supported_collection_ids = ['*']
-    _proj_scale = None
-
-    # TODO: for images w/o fixed projections, nominalScale() is 1deg~100km.  Can we get this from STAC?
-
-    #  STAC w/o overheads for e.g. mapping over collections
 
     def __init__(self, ee_image, mask=_default_mask, region=None, **kwargs):
         """
@@ -77,6 +71,8 @@ class MaskedImage(BaseImage):
                 Maximum distance (m) to look for clouds when forming the `cloud distance` band.  Valid for
                 Sentinel-2 images.
         """
+        # TODO: consider adding proj_scale parameter here, rather than in set_region_stats, then it can be re-used in
+        #  S2 cloud masking and distance
         BaseImage.__init__(self, ee_image)
         self._add_aux_bands(**kwargs)  # add any mask and cloud distance bands
         if region:
@@ -122,7 +118,7 @@ class MaskedImage(BaseImage):
         cond = ee.Number(self.ee_image.bandNames().contains('FILL_MASK'))
         self.ee_image = ee.Image(ee.Algorithms.If(cond, self.ee_image, self.ee_image.addBands(aux_image)))
 
-    def set_region_stats(self, region=None):
+    def set_region_stats(self, region=None, scale=None):
         """
         Set FILL_PORTION on the encapsulated image for the specified region.  Derived classes should override this
         method and add a true CLOUDLESS_PORTION and/or other statistics they support.
@@ -131,22 +127,17 @@ class MaskedImage(BaseImage):
         ----------
         region : dict, ee.Geometry, optional
             Region inside of which to find statistics.  If not specified, the image footprint is used.
+        scale: float, optional
+            Re-project to this scale when finding statistics.
         """
         if not region:
             region = self.ee_image.geometry()  # use the image footprint
 
-        # TODO: min_scale=False works for Sentinel-2, but not e.g. for COPERNICUS/S1_GRD where one band is 12km and the
-        #  others 10m.  So we need something that works for all cases which apparently include cases where one band's
-        #  scale is very different to the others.  And the case of composite images.  Currently if it is a supported
-        #  cloud-masked image, it will have a meaningful _proj_scale, so that it ok for those images.  Otherwise
-        #  perhaps it is best to use STAC and use min scale, but there could be cases where min scale is extreme,
-        #  so we should check that across STAC too.  Some sort of generic algorithm like mode(scales) might be
-        #  better?
-        proj = get_projection(self.ee_image, min_scale=True)  # get projection of minimum scale band
+        proj = get_projection(self.ee_image, min_scale=False)  # get projection of minimum scale band
         # If _proj_scale is set, use that as the scale, otherwise use the proj.nomimalScale().  For non-composite images
         # these should be the same value.  For composite images, there is no `fixed` projection, hence the
         # need for _proj_scale.
-        scale = self._proj_scale or proj.nominalScale()
+        scale = scale or proj.nominalScale()
 
         # Find the fill portion as the (sum over the region of FILL_MASK) divided by (sum over the region of a constant
         # image (==1)).  We take this approach rather than using a mean reducer, as this does not find the mean over
@@ -181,7 +172,6 @@ class CloudMaskedImage(MaskedImage):
     """
     Base class for encapsulating supported cloud/shadow masked images.
     """
-    _supported_collection_ids = []  # abstract base class
 
     def _cloud_dist(self, cloudless_mask=None, max_cloud_dist=5000) -> ee.Image:
         """Get the cloud/shadow distance for encapsulated image."""
@@ -211,7 +201,7 @@ class CloudMaskedImage(MaskedImage):
         # download.
         return cloud_dist.toUint32().rename('CLOUD_DIST')
 
-    def set_region_stats(self, region=None):
+    def set_region_stats(self, region=None, scale=None):
         """
         Set FILL_ and CLOUDLESS_PORTION on the encapsulated image for the specified region.
 
@@ -219,6 +209,8 @@ class CloudMaskedImage(MaskedImage):
         ----------
         region : dict, ee.Geometry, optional
             Region inside of which to find statistics.  If not specified, the image footprint is used.
+        scale: float, optional
+            Re-project to this scale when finding statistics.
         """
         if not region:
             region = self.ee_image.geometry()  # use the image footprint
@@ -227,7 +219,7 @@ class CloudMaskedImage(MaskedImage):
         # If _proj_scale is set, use that as the scale, otherwise use the proj.nomimalScale().  For non-composite images
         # these should be the same value.  For composite images, there is no `fixed` projection, hence the
         # need for _proj_scale.
-        scale = self._proj_scale or proj.nominalScale()
+        scale = scale or proj.nominalScale()
 
         # Find the fill portion as the (sum over the region of FILL_MASK) divided by (sum over the region of a constant
         # image (==1)).  We take this approach rather than using a mean reducer, as this does not find the mean over
@@ -254,11 +246,16 @@ class CloudMaskedImage(MaskedImage):
 
 
 class LandsatImage(CloudMaskedImage):
-    """ Class for cloud/shadow masking of Landsat level 2, collection 2 images """
-    _supported_collection_ids = ['LANDSAT/LT04/C02/T1_L2', 'LANDSAT/LT05/C02/T1_L2', 'LANDSAT/LE07/C02/T1_L2',
-                                 'LANDSAT/LC08/C02/T1_L2', 'LANDSAT/LC09/C02/T1_L2']
-    _proj_scale = 30
+    """
+    Class for cloud/shadow masking of Landsat level 2, collection 2 images.
 
+    Supports images from:
+    * LANDSAT/LT04/C02/T1_L2
+    * LANDSAT/LT05/C02/T1_L2
+    * LANDSAT/LE07/C02/T1_L2
+    * LANDSAT/LC08/C02/T1_L2
+    * LANDSAT/LC09/C02/T1_L2
+    """
     def _aux_image(self, mask_shadows=True, mask_cirrus=True) -> ee.Image:
         """
         Retrieve the auxiliary image containing cloud/shadow masks and cloud distance.
@@ -298,9 +295,6 @@ class LandsatImage(CloudMaskedImage):
 
 class Sentinel2ClImage(CloudMaskedImage):
     """Base class for cloud/shadow masking of Sentinel-2 TOA and SR (surface reflectance) images."""
-    _supported_collection_ids = []
-    _proj_scale = 60
-
     def _aux_image(
         self, s2_toa=False, mask_cirrus=True, mask_shadows=True, mask_method=CloudMaskMethod.cloud_prob, prob=60,
         dark=0.15, shadow_dist=1000, buffer=50, cdi_thresh=None, max_cloud_dist=5000
@@ -387,13 +381,16 @@ class Sentinel2ClImage(CloudMaskedImage):
             if not s2_toa:
                 dark_mask = ee_im.select('SCL').neq(6).And(dark_mask)
 
+            proj = get_projection(ee_im, min_scale=False)
             shadow_azimuth = ee.Number(90).subtract(ee.Number(ee_im.get('MEAN_SOLAR_AZIMUTH_ANGLE')))
+            proj_pixels = ee.Number(shadow_dist).divide(proj.nominalScale()).round()
             # Project the cloud mask in the direction of the shadows it will cast.
-            # The reproject is necessary to force calculation at the correct scale - the coarse _proj_scale is used to
+            # The reproject is necessary to force calculation at the correct scale - the coarse proj scale is used to
             # improve processing times.
-            proj_cloud_mask = (cloud_mask.directionalDistanceTransform(
-                shadow_azimuth, int(shadow_dist / self._proj_scale)
-            ).reproject(crs=ee_im.select(0).projection(), scale=self._proj_scale).select('distance').mask())
+            proj_cloud_mask = (
+                cloud_mask.directionalDistanceTransform(shadow_azimuth, proj_pixels).reproject(
+                    crs=proj.crs(), scale=proj.nominalScale()).select('distance').mask()
+            )
             return proj_cloud_mask.And(dark_mask).rename('SHADOW_MASK')
 
         # gather and combine the various masks
@@ -430,7 +427,7 @@ class Sentinel2ClImage(CloudMaskedImage):
 
 
 class Sentinel2SrClImage(Sentinel2ClImage):
-    """Class for cloud/shadow masking of Sentinel-2 SR (COPERNICUS/S2_SR) images."""
+    """ Class for cloud/shadow masking of Sentinel-2 SR (COPERNICUS/S2_SR) images. """
     _supported_collection_ids = ['COPERNICUS/S2_SR']
 
     def _aux_image(self, s2_toa=False, **kwargs):
@@ -438,7 +435,7 @@ class Sentinel2SrClImage(Sentinel2ClImage):
 
 
 class Sentinel2ToaClImage(Sentinel2ClImage):
-    """Class for cloud/shadow masking of Sentinel-2 TOA (COPERNICUS/S2) images."""
+    """ Class for cloud/shadow masking of Sentinel-2 TOA (COPERNICUS/S2) images. """
     _supported_collection_ids = ['COPERNICUS/S2']
 
     def _aux_image(self, s2_toa=False, **kwargs):
