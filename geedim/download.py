@@ -35,10 +35,10 @@ from rasterio.windows import Window
 from tqdm import TqdmWarning, tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
-from geedim import info
 from geedim.enums import ResamplingMethod
+from geedim.stac import STAC, STACitem
 from geedim.tile import Tile
-from geedim.utils import Spinner, split_id, resample, requests_retry_session
+from geedim.utils import Spinner, resample, retry_session
 
 logger = logging.getLogger(__name__)
 
@@ -201,10 +201,14 @@ class BaseImage:
         return self.ee_info['properties']['system:footprint']
 
     @property
-    def band_metadata(self) -> List:
-        # TODO: replace with STAC
-        """A list of dicts describing the image bands."""
-        return self._get_band_metadata()
+    def stac(self) -> STACitem:
+        """ STAC container corresponding to this image. """
+        return STAC().get_item(self.id)
+
+    @property
+    def band_props(self) -> List[Dict]:
+        """ List of dicts describing the image bands. """
+        return self._get_band_props()
 
     @staticmethod
     def _get_projection(ee_info: Dict, min_scale=True) -> Dict:
@@ -282,18 +286,15 @@ class BaseImage:
 
         return conv_dict[dtype](ee_image)
 
-    def _get_band_metadata(self) -> List[Dict]:
+    def _get_band_props(self) -> List[Dict]:
         """Return band metadata for this image."""
-        ee_coll_name, _ = split_id(self.id)
         band_ids = [bd['id'] for bd in self.ee_info['bands']]
-        if ee_coll_name in info.collection_info:  # include SR band metadata if it exists
-            # use DataFrame to concat SR band metadata from collection_info with band IDs from the image
-            sr_band_list = info.collection_info[ee_coll_name]["bands"].copy()
-            sr_band_dict = {bdict['id']: bdict for bdict in sr_band_list}
-            band_metadata = [sr_band_dict[bid] if bid in sr_band_dict else dict(id=bid) for bid in band_ids]
+        if self.stac:
+            stac_bands_props = self.stac.band_props
+            band_props = [stac_bands_props[bid] if bid in stac_bands_props else dict(name=bid) for bid in band_ids]
         else:  # just use the image band IDs
-            band_metadata = [dict(id=bid) for bid in band_ids]
-        return band_metadata
+            band_props = [dict(name=bid) for bid in band_ids]
+        return band_props
 
     def _prepare_for_export(self, region=None, crs=None, scale=None, resampling=_default_resampling, dtype=None):
         """
@@ -449,10 +450,10 @@ class BaseImage:
 
         dataset.update_tags(**self.properties)
         # populate band metadata
-        for band_i, band_info in enumerate(self.band_metadata):
-            if 'id' in band_info:
-                dataset.set_band_description(band_i + 1, band_info['id'])
-            dataset.update_tags(band_i + 1, **band_info)
+        for band_i, band_dict in enumerate(self.band_props):
+            if 'name' in band_dict:
+                dataset.set_band_description(band_i + 1, band_dict['name'])
+            dataset.update_tags(band_i + 1, **band_dict)
 
     @staticmethod
     def tiles(exp_image, tile_shape=None):
@@ -640,7 +641,7 @@ class BaseImage:
             desc=desc, total=raw_download_size, bar_format=bar_format, dynamic_ncols=True, unit_scale=True, unit='B'
         )
 
-        session = requests_retry_session(5, status_forcelist=[500, 502, 503, 504])
+        session = retry_session(5, status_forcelist=[500, 502, 503, 504])
         warnings.filterwarnings('ignore', category=TqdmWarning)
         redir_tqdm = logging_redirect_tqdm([logging.getLogger(__package__)])  # redirect logging through tqdm
         out_ds = rio.open(filename, 'w', **profile)  # create output geotiff
