@@ -641,7 +641,7 @@ class BaseImage:
             desc=desc, total=raw_download_size, bar_format=bar_format, dynamic_ncols=True, unit_scale=True, unit='B'
         )
 
-        session = retry_session(5, status_forcelist=[500, 502, 503, 504])
+        session = retry_session(5)
         warnings.filterwarnings('ignore', category=TqdmWarning)
         redir_tqdm = logging_redirect_tqdm([logging.getLogger(__package__)])  # redirect logging through tqdm
         out_ds = rio.open(filename, 'w', **profile)  # create output geotiff
