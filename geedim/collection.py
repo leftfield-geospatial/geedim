@@ -18,7 +18,7 @@ import logging
 import re
 from collections import OrderedDict
 from datetime import datetime, timedelta
-from typing import Dict, List
+from typing import Dict, List, Union
 
 import ee
 import tabulate
@@ -29,6 +29,7 @@ from geedim.download import BaseImage
 from geedim.enums import ResamplingMethod, CompositeMethod
 from geedim.errors import UnfilteredError, ComponentImageError
 from geedim.mask import MaskedImage, class_from_id
+from geedim.stac import STAC, STACitem
 from geedim.utils import split_id, resample
 
 logger = logging.getLogger(__name__)
@@ -93,6 +94,8 @@ class MaskedCollection:
         self._filtered = False
         self._ee_collection = ee_collection
         self._image_type = None
+        self._stac = None
+        self._stats_scale = None
 
     @classmethod
     def from_name(cls, name):
@@ -241,6 +244,32 @@ class MaskedCollection:
         key_dict = [dict(ABBREV=v['ABBREV'], DESCRIPTION=v['DESCRIPTION']) for v in self.properties_key.values()]
         return tabulate.tabulate(key_dict, headers='keys', floatfmt='.2f', tablefmt=_table_fmt)
 
+    @property
+    def stac(self) -> Union[STACitem, None]:
+        """ EE STAC container corresponding to this collection.  """
+        if not self._stac and (self.name in STAC().url_dict):
+            self._stac = STAC().get_item(self.name)
+        return self._stac
+
+    @property
+    def stats_scale(self) -> Union[float, None]:
+        """ A scale to use for re-projections when finding region statistics. """
+        if not self.stac:
+            return None
+        if not self._stats_scale:
+            gsds = [float(band_dict['gsd']) for band_dict in self.stac.band_props.values()]
+            max_gsd = max(gsds)
+            min_gsd = min(gsds)
+            self._stats_scale = min_gsd if (max_gsd > 10 * min_gsd) and (min_gsd > 0) else max_gsd
+        return self._stats_scale
+
+    @property
+    def refl_bands(self) -> Union[List[str], None]:
+        """ A list of spectral / reflectance bands, if any. """
+        if not self.stac:
+            return None
+        return [bname for bname, bdict in self.stac.band_props.items() if 'center_wavelength' in bdict]
+
     def _get_properties(self, ee_collection: ee.ImageCollection) -> Dict:
         """ Retrieve properties of images in a given Earth Engine image collection. """
 
@@ -308,7 +337,7 @@ class MaskedCollection:
 
             gd_image = self.image_type(ee_image, **kwargs)
             if region and (method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic]):
-                gd_image.set_region_stats(region)
+                gd_image.set_region_stats(region=region, scale=self.stats_scale)
             if mask:
                 gd_image.mask_clouds()
             return resample(gd_image.ee_image, resampling)
@@ -362,7 +391,7 @@ class MaskedCollection:
         def set_region_stats(ee_image: ee.Image):
             """ Find filled and cloud/shadow free portions inside the search region for a given image.  """
             gd_image = self.image_type(ee_image, **kwargs)
-            gd_image.set_region_stats(region)
+            gd_image.set_region_stats(region, scale=self.stats_scale)
             return gd_image.ee_image
 
         # filter the image collection, finding cloud/shadow masks and region stats
@@ -451,9 +480,7 @@ class MaskedCollection:
             comp_image = ee_collection.median()
         elif method == CompositeMethod.medoid:
             # limit medoid to surface reflectance bands
-            # TODO: we need another way to get sr_bands if we are removing collection_info
-            sr_bands = [band_dict['id'] for band_dict in self.info['bands']]
-            comp_image = medoid.medoid(ee_collection, bands=sr_bands)
+            comp_image = medoid.medoid(ee_collection, bands=self.refl_bands)
         elif method == CompositeMethod.mode:
             comp_image = ee_collection.mode()
         elif method == CompositeMethod.mean:
