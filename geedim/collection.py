@@ -236,12 +236,12 @@ class MaskedCollection:
     @property
     def properties_key(self) -> Dict:
         """ Abbreviations and descriptions for `properties`. """
-        return OrderedDict({key_dict['PROPERTY']: key_dict for key_dict in self.info['properties']})
+        return OrderedDict({key_dict['name']: key_dict for key_dict in self.info['search_properties']})
 
     @property
     def key_table(self) -> str:
         """ `properties_key` formatted as a table. """
-        key_dict = [dict(ABBREV=v['ABBREV'], DESCRIPTION=v['DESCRIPTION']) for v in self.properties_key.values()]
+        key_dict = [dict(abbrev=v['abbrev'], description=v['description']) for v in self.properties_key.values()]
         return tabulate.tabulate(key_dict, headers='keys', floatfmt='.2f', tablefmt=_table_fmt)
 
     @property
@@ -274,7 +274,7 @@ class MaskedCollection:
         """ Retrieve properties of images in a given Earth Engine image collection. """
 
         # the properties to retrieve
-        prop_key_list = ee.List([item['PROPERTY'] for item in self.info['properties']])
+        prop_key_list = ee.List([item['name'] for item in self.info['search_properties']])
 
         def aggregrate_props(ee_image, coll_list):
             im_dict = ee_image.toDictionary(prop_key_list)
@@ -303,9 +303,9 @@ class MaskedCollection:
                 if prop_name in im_prop_dict:
                     if prop_name == 'system:time_start':  # convert timestamp to date string
                         dt = datetime.utcfromtimestamp(im_prop_dict[prop_name] / 1000)
-                        abbrev_dict[key_dict['ABBREV']] = datetime.strftime(dt, '%Y-%m-%d %H:%M')
+                        abbrev_dict[key_dict['abbrev']] = datetime.strftime(dt, '%Y-%m-%d %H:%M')
                     else:
-                        abbrev_dict[key_dict['ABBREV']] = im_prop_dict[prop_name]
+                        abbrev_dict[key_dict['abbrev']] = im_prop_dict[prop_name]
             abbrev_props.append(abbrev_dict)
         return tabulate.tabulate(abbrev_props, headers='keys', floatfmt='.2f', tablefmt=_table_fmt)
 
