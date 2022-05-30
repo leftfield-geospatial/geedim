@@ -15,147 +15,75 @@
 """
 # Metadata for geedim supported Earth Engine collections
 collection_info = {
-    "si ": {
-        "gd_coll_name": "landsat4-c2-l2",
-        "search_properties": [
-            {"name": "system:id", "abbrev": "ID", "description": "Earth Engine image id"},
-            {"name": "system:time_start", "abbrev": "DATE", "description": "Image capture date/time (UTC)"},
-            {"name": "FILL_PORTION", "abbrev": "FILL", "description": "Portion of valid pixels (%)"},
-            {
-                "name": "CLOUDLESS_PORTION", "abbrev": "CLOUDLESS",
-                "description": "Portion of cloud/shadow free pixels (%)"
-            },
-            {"name": "GEOMETRIC_RMSE_MODEL", "abbrev": "GRMSE", "description": "Orthorectification RMSE (m)"},
-            {"name": "SUN_AZIMUTH", "abbrev": "SAA", "description": "Solar azimuth angle (deg)"},
-            {"name": "SUN_ELEVATION", "abbrev": "SEA", "description": "Solar elevation angle (deg)"}
-        ]
+    'LANDSAT/LT04/C02/T1_L2': {
+        'gd_coll_name': 'landsat4-c2-l2',
+        'schema': {
+            'GEOMETRIC_RMSE_MODEL': {'abbrev': 'GRMSE', 'description': 'Orthorectification RMSE (m)'},
+            'SUN_AZIMUTH': {'abbrev': 'SAA', 'description': 'Solar azimuth angle (deg)'},
+            'SUN_ELEVATION': {'abbrev': 'SEA', 'description': 'Solar elevation angle (deg)'}
+        }
     },
-    "LANDSAT/LT05/C02/T1_L2": {
-        "gd_coll_name": "landsat5-c2-l2",
-        "search_properties": [
-            {"name": "system:id", "abbrev": "ID", "description": "Earth Engine image id"},
-            {"name": "system:time_start", "abbrev": "DATE", "description": "Image capture date/time (UTC)"},
-            {"name": "FILL_PORTION", "abbrev": "FILL", "description": "Portion of valid pixels (%)"},
-            {
-                "name": "CLOUDLESS_PORTION", "abbrev": "CLOUDLESS",
-                "description": "Portion of cloud/shadow free pixels (%)"
-            },
-            {"name": "GEOMETRIC_RMSE_MODEL", "abbrev": "GRMSE", "description": "Orthorectification RMSE (m)"},
-            {"name": "SUN_AZIMUTH", "abbrev": "SAA", "description": "Solar azimuth angle (deg)"},
-            {"name": "SUN_ELEVATION", "abbrev": "SEA", "description": "Solar elevation angle (deg)"}
-        ]
+    'LANDSAT/LT05/C02/T1_L2': {
+        'gd_coll_name': 'landsat5-c2-l2',
+        'schema': {
+            'GEOMETRIC_RMSE_MODEL': {'abbrev': 'GRMSE', 'description': 'Orthorectification RMSE (m)'},
+            'SUN_AZIMUTH': {'abbrev': 'SAA', 'description': 'Solar azimuth angle (deg)'},
+            'SUN_ELEVATION': {'abbrev': 'SEA', 'description': 'Solar elevation angle (deg)'}
+        }
     },
-    "LANDSAT/LE07/C02/T1_L2": {
-        "gd_coll_name": "landsat7-c2-l2",
-        "search_properties": [
-            {"name": "system:id", "abbrev": "ID", "description": "Earth Engine image id"},
-            {"name": "system:time_start", "abbrev": "DATE", "description": "Image capture date/time (UTC)"},
-            {"name": "FILL_PORTION", "abbrev": "FILL", "description": "Portion of valid pixels (%)"},
-            {
-                "name": "CLOUDLESS_PORTION", "abbrev": "CLOUDLESS",
-                "description": "Portion of cloud/shadow free pixels (%)"
-            },
-            {"name": "GEOMETRIC_RMSE_MODEL", "abbrev": "GRMSE", "description": "Orthorectification RMSE (m)"},
-            {"name": "SUN_AZIMUTH", "abbrev": "SAA", "description": "Solar azimuth angle (deg)"},
-            {"name": "SUN_ELEVATION", "abbrev": "SEA", "description": "Solar elevation angle (deg)"}
-        ]
+    'LANDSAT/LE07/C02/T1_L2': {
+        'gd_coll_name': 'landsat7-c2-l2',
+        'schema': {
+            'GEOMETRIC_RMSE_MODEL': {'abbrev': 'GRMSE', 'description': 'Orthorectification RMSE (m)'},
+            'SUN_AZIMUTH': {'abbrev': 'SAA', 'description': 'Solar azimuth angle (deg)'},
+            'SUN_ELEVATION': {'abbrev': 'SEA', 'description': 'Solar elevation angle (deg)'}
+        }
     },
-    "LANDSAT/LC08/C02/T1_L2": {
-        "gd_coll_name": "landsat8-c2-l2",
-        "search_properties": [
-            {"name": "system:id", "abbrev": "ID", "description": "Earth Engine image id"},
-            {"name": "system:time_start", "abbrev": "DATE", "description": "Image capture date/time (UTC)"},
-            {"name": "FILL_PORTION", "abbrev": "FILL", "description": "Portion of valid pixels (%)"},
-            {
-                "name": "CLOUDLESS_PORTION", "abbrev": "CLOUDLESS",
-                "description": "Portion of cloud/shadow free pixels (%)"
-            },
-            {"name": "GEOMETRIC_RMSE_MODEL", "abbrev": "GRMSE", "description": "Orthorectification RMSE (m)"},
-            {"name": "SUN_AZIMUTH", "abbrev": "SAA", "description": "Solar azimuth angle (deg)"},
-            {"name": "SUN_ELEVATION", "abbrev": "SEA", "description": "Solar elevation angle (deg)"}
-        ]
+    'LANDSAT/LC08/C02/T1_L2': {
+        'gd_coll_name': 'landsat8-c2-l2',
+        'schema': {
+            'GEOMETRIC_RMSE_MODEL': {'abbrev': 'GRMSE', 'description': 'Orthorectification RMSE (m)'},
+            'SUN_AZIMUTH': {'abbrev': 'SAA', 'description': 'Solar azimuth angle (deg)'},
+            'SUN_ELEVATION': {'abbrev': 'SEA', 'description': 'Solar elevation angle (deg)'}
+        }
     },
-    "LANDSAT/LC09/C02/T1_L2": {
-        "gd_coll_name": "landsat9-c2-l2",
-        "search_properties": [
-            {"name": "system:id", "abbrev": "ID", "description": "Earth Engine image id"},
-            {"name": "system:time_start", "abbrev": "DATE", "description": "Image capture date/time (UTC)"},
-            {"name": "FILL_PORTION", "abbrev": "FILL", "description": "Portion of valid pixels (%)"},
-            {
-                "name": "CLOUDLESS_PORTION", "abbrev": "CLOUDLESS",
-                "description": "Portion of cloud/shadow free pixels (%)"
-            },
-            {"name": "GEOMETRIC_RMSE_MODEL", "abbrev": "GRMSE", "description": "Orthorectification RMSE (m)"},
-            {"name": "SUN_AZIMUTH", "abbrev": "SAA", "description": "Solar azimuth angle (deg)"},
-            {"name": "SUN_ELEVATION", "abbrev": "SEA", "description": "Solar elevation angle (deg)"}
-        ]
+    'LANDSAT/LC09/C02/T1_L2': {
+        'gd_coll_name': 'landsat9-c2-l2',
+        'schema': {
+            'GEOMETRIC_RMSE_MODEL': {'abbrev': 'GRMSE', 'description': 'Orthorectification RMSE (m)'},
+            'SUN_AZIMUTH': {'abbrev': 'SAA', 'description': 'Solar azimuth angle (deg)'},
+            'SUN_ELEVATION': {'abbrev': 'SEA', 'description': 'Solar elevation angle (deg)'}
+        }
     },
-    "COPERNICUS/S2": {
-        "gd_coll_name": "sentinel2-toa",
-        "search_properties": [
-            {"name": "system:id", "abbrev": "ID", "description": "Earth Engine image id"},
-            {"name": "system:time_start", "abbrev": "DATE", "description": "Image capture date/time (UTC)"},
-            {"name": "FILL_PORTION", "abbrev": "FILL", "description": "Portion of valid pixels (%)"},
-            {
-                "name": "CLOUDLESS_PORTION", "abbrev": "CLOUDLESS",
-                "description": "Portion of cloud/shadow free pixels (%)"
-            },
-            {"name": "RADIOMETRIC_QUALITY", "abbrev": "RADQ", "description": "Radiometric quality check"},
-            {"name": "GEOMETRIC_QUALITY", "abbrev": "GEOMQ", "description": "Geometric quality check"},
-            {"name": "MEAN_SOLAR_AZIMUTH_ANGLE", "abbrev": "SAA", "description": "Solar azimuth angle (deg)"},
-            {"name": "MEAN_SOLAR_ZENITH_ANGLE", "abbrev": "SZA", "description": "Solar zenith angle (deg)"},
-            {
-                "name": "MEAN_INCIDENCE_AZIMUTH_ANGLE_B1", "abbrev": "VAA",
-                "description": "View (B1) azimuth angle (deg)"
-            },
-            {
-                "name": "MEAN_INCIDENCE_ZENITH_ANGLE_B1", "abbrev": "VZA",
-                "description": "View (B1) zenith angle (deg)"
-            }
-        ]
+    'COPERNICUS/S2': {
+        'gd_coll_name': 'sentinel2-toa',
+        'schema': {
+            'RADIOMETRIC_QUALITY': {'abbrev': 'RADQ', 'description': 'Radiometric quality check'},
+            'GEOMETRIC_QUALITY': {'abbrev': 'GEOMQ', 'description': 'Geometric quality check'},
+            'MEAN_SOLAR_AZIMUTH_ANGLE': {'abbrev': 'SAA', 'description': 'Solar azimuth angle (deg)'},
+            'MEAN_SOLAR_ZENITH_ANGLE': {'abbrev': 'SZA', 'description': 'Solar zenith angle (deg)'},
+            'MEAN_INCIDENCE_AZIMUTH_ANGLE_B1': {'abbrev': 'VAA', 'description': 'View (B1) azimuth angle (deg)'},
+            'MEAN_INCIDENCE_ZENITH_ANGLE_B1': {'abbrev': 'VZA', 'description': 'View (B1) zenith angle (deg)'}
+        }
     },
-    "COPERNICUS/S2_SR": {
-        "gd_coll_name": "sentinel2-sr",
-        "search_properties": [
-            {"name": "system:id", "abbrev": "ID", "description": "Earth Engine image id"},
-            {"name": "system:time_start", "abbrev": "DATE", "description": "Image capture date/time (UTC)"},
-            {"name": "FILL_PORTION", "abbrev": "FILL", "description": "Portion of valid pixels (%)"},
-            {
-                "name": "CLOUDLESS_PORTION", "abbrev": "CLOUDLESS",
-                "description": "Portion of cloud/shadow free pixels (%)"
-            },
-            {"name": "RADIOMETRIC_QUALITY", "abbrev": "RADQ", "description": "Radiometric quality check"},
-            {"name": "GEOMETRIC_QUALITY", "abbrev": "GEOMQ", "description": "Geometric quality check"},
-            {"name": "MEAN_SOLAR_AZIMUTH_ANGLE", "abbrev": "SAA", "description": "Solar azimuth angle (deg)"},
-            {"name": "MEAN_SOLAR_ZENITH_ANGLE", "abbrev": "SZA", "description": "Solar zenith angle (deg)"},
-            {
-                "name": "MEAN_INCIDENCE_AZIMUTH_ANGLE_B1", "abbrev": "VAA",
-                "description": "View (B1) azimuth angle (deg)"
-            },
-            {
-                "name": "MEAN_INCIDENCE_ZENITH_ANGLE_B1", "abbrev": "VZA",
-                "description": "View (B1) zenith angle (deg)"
-            }
-        ]
+    'COPERNICUS/S2_SR': {
+        'gd_coll_name': 'sentinel2-sr',
+        'schema': {
+            'RADIOMETRIC_QUALITY': {'abbrev': 'RADQ', 'description': 'Radiometric quality check'},
+            'GEOMETRIC_QUALITY': {'abbrev': 'GEOMQ', 'description': 'Geometric quality check'},
+            'MEAN_SOLAR_AZIMUTH_ANGLE': {'abbrev': 'SAA', 'description': 'Solar azimuth angle (deg)'},
+            'MEAN_SOLAR_ZENITH_ANGLE': {'abbrev': 'SZA', 'description': 'Solar zenith angle (deg)'},
+            'MEAN_INCIDENCE_AZIMUTH_ANGLE_B1': {'abbrev': 'VAA', 'description': 'View (B1) azimuth angle (deg)'},
+            'MEAN_INCIDENCE_ZENITH_ANGLE_B1': {'abbrev': 'VZA', 'description': 'View (B1) zenith angle (deg)'}
+        }
     },
-    "MODIS/006/MCD43A4": {
-        "gd_coll_name": "modis-nbar",
-        "search_properties": [
-            {"name": "system:id", "abbrev": "ID", "description": "Earth Engine image id"},
-            {"name": "system:time_start", "abbrev": "DATE", "description": "Image capture date/time (UTC)"},
-            {"name": "FILL_PORTION", "abbrev": "FILL", "description": "Portion of valid pixels (%)"},
-        ]
+    'MODIS/006/MCD43A4': {
+        'gd_coll_name': 'modis-nbar',
+        'schema': {}
     },
-    "*": {
-        "start_date": None,
-        "end_date": None,
-        "gd_coll_name": "generic",
-        "bands": [],
-        "properties": [
-            {"name": "system:id", "abbrev": "ID", "description": "Earth Engine image id"},
-            {"name": "system:time_start", "abbrev": "DATE", "description": "Image capture date/time (UTC)"},
-            {"name": "FILL_PORTION", "abbrev": "FILL", "description": "Portion of valid pixels (%)"},
-        ]
+    '*': {
+        'gd_coll_name': 'generic',
+        'schema': {}
     }
 }
 

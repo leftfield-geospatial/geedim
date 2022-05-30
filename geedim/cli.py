@@ -402,7 +402,7 @@ def search(obj, collection, start_date, end_date, bbox, region, fill_portion, cl
     else:
         obj.image_list += list(gd_collection.properties.keys())  # store image ids for chained commands
         logger.info(f'{len(gd_collection.properties)} images found\n')
-        logger.info(f'Image property descriptions:\n\n{gd_collection.key_table}\n')
+        logger.info(f'Image property descriptions:\n\n{gd_collection.schema_table}\n')
         logger.info(f'Search Results:\n\n{gd_collection.properties_table}')
 
     # write results to file

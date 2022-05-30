@@ -256,6 +256,7 @@ class LandsatImage(CloudMaskedImage):
     * LANDSAT/LC08/C02/T1_L2
     * LANDSAT/LC09/C02/T1_L2
     """
+
     def _aux_image(self, mask_shadows=True, mask_cirrus=True) -> ee.Image:
         """
         Retrieve the auxiliary image containing cloud/shadow masks and cloud distance.
@@ -295,6 +296,7 @@ class LandsatImage(CloudMaskedImage):
 
 class Sentinel2ClImage(CloudMaskedImage):
     """Base class for cloud/shadow masking of Sentinel-2 TOA and SR (surface reflectance) images."""
+
     def _aux_image(
         self, s2_toa=False, mask_cirrus=True, mask_shadows=True, mask_method=CloudMaskMethod.cloud_prob, prob=60,
         dark=0.15, shadow_dist=1000, buffer=50, cdi_thresh=None, max_cloud_dist=5000
@@ -389,7 +391,8 @@ class Sentinel2ClImage(CloudMaskedImage):
             # improve processing times.
             proj_cloud_mask = (
                 cloud_mask.directionalDistanceTransform(shadow_azimuth, proj_pixels).reproject(
-                    crs=proj.crs(), scale=proj.nominalScale()).select('distance').mask()
+                    crs=proj.crs(), scale=proj.nominalScale()
+                ).select('distance').mask()
             )
             return proj_cloud_mask.And(dark_mask).rename('SHADOW_MASK')
 

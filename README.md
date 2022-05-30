@@ -110,7 +110,7 @@ region = {
 # make collection and search
 gd_collection = MaskedCollection.from_name('COPERNICUS/S2_SR')
 gd_collection = gd_collection.search('2019-01-10', '2019-01-21', region)
-print(gd_collection.key_table)
+print(gd_collection.schema_table)
 print(gd_collection.properties_table)
 
 # create and download an image

@@ -76,6 +76,17 @@ class MaskedCollection:
     Class for encapsulating, searching and compositing an Earth Engine image collection, with support for
     cloud/shadow masking.
     """
+    _mask_schema = {
+        'system:id': {'abbrev': 'ID', 'description': 'Earth Engine image id'},
+        'system:time_start': {'abbrev': 'DATE', 'description': 'Image capture date/time (UTC)'},
+        'FILL_PORTION': {'abbrev': 'FILL', 'description': 'Portion of valid pixels (%)'},
+    }
+    _cloudless_schema = {
+        'system:id': {'abbrev': 'ID', 'description': 'Earth Engine image id'},
+        'system:time_start': {'abbrev': 'DATE', 'description': 'Image capture date/time (UTC)'},
+        'FILL_PORTION': {'abbrev': 'FILL', 'description': 'Portion of valid pixels (%)'},
+        'CLOUDLESS_PORTION': {'abbrev': 'CLOUDLESS', 'description': 'Portion of cloud/shadow free pixels (%)'},
+    }
 
     def __init__(self, ee_collection):
         """
@@ -89,8 +100,8 @@ class MaskedCollection:
         if not isinstance(ee_collection, ee.ImageCollection):
             raise TypeError(f'`ee_collection` must be an instance of ee.ImageCollection')
         self._name = None
-        self._info = None
         self._properties = None
+        self._schema = None
         self._filtered = False
         self._ee_collection = ee_collection
         self._image_type = None
@@ -201,16 +212,6 @@ class MaskedCollection:
         return self._name
 
     @property
-    def info(self) -> Dict:
-        """ Search properties and band metadata. """
-        if not self._info:
-            if self.name in info.collection_info:
-                self._info = info.collection_info[self.name]
-            else:
-                self._info = info.collection_info['*']
-        return self._info
-
-    @property
     def image_type(self) -> type:
         """ geedim class to encapsulate images from `ee_collection`. """
         if not self._image_type:
@@ -234,15 +235,19 @@ class MaskedCollection:
         return self._get_properties_table(self.properties)
 
     @property
-    def properties_key(self) -> Dict:
+    def schema(self) -> Dict:
         """ Abbreviations and descriptions for `properties`. """
-        return OrderedDict({key_dict['name']: key_dict for key_dict in self.info['search_properties']})
+        if not self._schema:
+            self._schema = (self._mask_schema if self.image_type is MaskedImage else self._cloudless_schema).copy()
+            if self.name in info.collection_info:
+                self._schema.update(**info.collection_info[self.name]['schema'])
+        return self._schema
 
     @property
-    def key_table(self) -> str:
-        """ `properties_key` formatted as a table. """
-        key_dict = [dict(abbrev=v['abbrev'], description=v['description']) for v in self.properties_key.values()]
-        return tabulate.tabulate(key_dict, headers='keys', floatfmt='.2f', tablefmt=_table_fmt)
+    def schema_table(self) -> str:
+        """ `schema` formatted as a table. """
+        headers = {key: key.upper() for key in list(self.schema.values())[0].keys()}
+        return tabulate.tabulate(self.schema.values(), headers=headers, floatfmt='.2f', tablefmt=_table_fmt)
 
     @property
     def stac(self) -> Union[STACitem, None]:
@@ -274,7 +279,7 @@ class MaskedCollection:
         """ Retrieve properties of images in a given Earth Engine image collection. """
 
         # the properties to retrieve
-        prop_key_list = ee.List([item['name'] for item in self.info['search_properties']])
+        prop_key_list = ee.List(list(self.schema.keys()))
 
         def aggregrate_props(ee_image, coll_list):
             im_dict = ee_image.toDictionary(prop_key_list)
@@ -288,18 +293,18 @@ class MaskedCollection:
             props_dict[prop_dict['system:id']] = prop_dict
         return props_dict
 
-    def _get_properties_table(self, properties: Dict, properties_key: Dict = None) -> str:
+    def _get_properties_table(self, properties: Dict, schema: Dict = None) -> str:
         """
-        Format the given properties into a table.  Orders properties (columns) according `properties_key` and replaces
+        Format the given properties into a table.  Orders properties (columns) according `schema` and replaces
         long form property names with abbreviations.
         """
-        if not properties_key:
-            properties_key = self.properties_key
+        if not schema:
+            schema = self.schema
 
         abbrev_props = []
         for im_id, im_prop_dict in properties.items():
             abbrev_dict = OrderedDict()
-            for prop_name, key_dict in properties_key.items():
+            for prop_name, key_dict in schema.items():
                 if prop_name in im_prop_dict:
                     if prop_name == 'system:time_start':  # convert timestamp to date string
                         dt = datetime.utcfromtimestamp(im_prop_dict[prop_name] / 1000)

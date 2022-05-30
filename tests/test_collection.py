@@ -77,8 +77,8 @@ def test_from_name(name: str, request):
     name, _ = split_id(name)
     gd_collection = MaskedCollection.from_name(name)
     assert gd_collection._name == name
-    assert gd_collection.info is not None and len(gd_collection.info) > 0
-    assert gd_collection.properties_key is not None and len(gd_collection.properties_key) > 0
+    assert gd_collection.schema is not None
+    assert len(gd_collection.schema) >= len(MaskedCollection._mask_schema)
     assert gd_collection.ee_collection == ee.ImageCollection(name)
 
 
@@ -92,8 +92,8 @@ def test_from_name_s2(name: str, request):
     name, _ = split_id(name)
     gd_collection = MaskedCollection.from_name(name)
     assert gd_collection._name == name
-    assert gd_collection.info is not None and len(gd_collection.info) > 0
-    assert gd_collection.properties_key is not None and len(gd_collection.properties_key) > 0
+    assert gd_collection.schema is not None
+    assert len(gd_collection.schema) > len(MaskedCollection._cloudless_schema)
     # check ee_collection is not the full unfiltered collection
     assert gd_collection.ee_collection != ee.ImageCollection(name)
     # check one of the problem images is not in the collection
@@ -153,14 +153,14 @@ def test_from_list(image_list: str, request):
     image_ids = [im_obj if isinstance(im_obj, str) else im_obj.id for im_obj in image_list]
     gd_collection = MaskedCollection.from_list(image_list)
     assert gd_collection.properties is not None
-    assert gd_collection.properties_key is not None
-    assert gd_collection.info is not None and len(gd_collection.info) > 0
+    assert gd_collection.schema is not None
+    assert len(gd_collection.schema) >= len(MaskedCollection._mask_schema)
     assert gd_collection.name == split_id(image_ids[0])[0]
     assert len(gd_collection.properties) == len(image_list)
     assert list(gd_collection.properties.keys()) == image_ids
-    assert set(gd_collection.properties_key.keys()) > set(list(gd_collection.properties.values())[0].keys())
+    assert set(gd_collection.schema.keys()) > set(list(gd_collection.properties.values())[0].keys())
     assert gd_collection.properties_table is not None
-    assert gd_collection.key_table is not None
+    assert gd_collection.schema_table is not None
 
 
 @pytest.mark.parametrize('image_list', ['s2_sr_image_list', 'gedi_image_list'])
@@ -220,7 +220,7 @@ def test_search(
         assert np.all(im_cl_portions <= im_fill_portions)
     # test search result image dates lie between `start_date` and `end_date`
     assert np.all(im_dates >= start_date) and np.all(im_dates < end_date)
-    assert set(searched_collection.properties_key.keys()) == set(list(properties.values())[0].keys())
+    assert set(searched_collection.schema.keys()) == set(list(properties.values())[0].keys())
     # test search result image dates are sorted
     assert np.all(sorted(im_dates) == im_dates)
 
@@ -262,9 +262,9 @@ def test_composite_region_date_ordering(image_list, method, region, date, reques
     assert len(properties) == len(image_list)
     if region:
         # test images are ordered by CLOUDLESS/FILL_PORTION
-        property_keys = list(gd_collection.properties_key.keys())
-        # CLOUDLESS_PORTION is not in MaskedCollection.properties_key for generic images, so use FILL_PORTION instead
-        portion_key = 'CLOUDLESS_PORTION' if 'CLOUDLESS_PORTION' in property_keys else 'FILL_PORTION'
+        schema_keys = list(gd_collection.schema.keys())
+        # CLOUDLESS_PORTION is not in MaskedCollection.schema for generic images, so use FILL_PORTION instead
+        portion_key = 'CLOUDLESS_PORTION' if 'CLOUDLESS_PORTION' in schema_keys else 'FILL_PORTION'
         im_portions = [im_props[portion_key] for im_props in properties.values()]
         assert sorted(im_portions) == im_portions
     elif date:
