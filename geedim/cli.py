@@ -27,7 +27,7 @@ from click.core import ParameterSource
 from rasterio.dtypes import dtype_ranges
 from rasterio.errors import CRSError
 
-from geedim import collection as coll_api, info, _ee_init, version
+from geedim import collection as coll_api, schema, _ee_init, version
 from geedim.collection import MaskedCollection
 from geedim.download import BaseImage
 from geedim.enums import CloudMaskMethod, CompositeMethod, ResamplingMethod
@@ -91,8 +91,8 @@ def _configure_logging(verbosity):
 
 def _collection_cb(ctx, param, value):
     """click callback to validate collection name"""
-    if value in info.gd_to_ee:
-        value = info.gd_to_ee[value]
+    if value in schema.gd_to_ee:
+        value = schema.gd_to_ee[value]
     return value
 
 

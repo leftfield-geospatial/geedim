@@ -24,7 +24,7 @@ import ee
 import tabulate
 from tabulate import TableFormat, Line, DataRow
 
-from geedim import info, medoid
+from geedim import schema, medoid
 from geedim.download import BaseImage
 from geedim.enums import ResamplingMethod, CompositeMethod
 from geedim.errors import UnfilteredError, ComponentImageError
@@ -76,18 +76,6 @@ class MaskedCollection:
     Class for encapsulating, searching and compositing an Earth Engine image collection, with support for
     cloud/shadow masking.
     """
-    _mask_schema = {
-        'system:id': {'abbrev': 'ID', 'description': 'Earth Engine image id'},
-        'system:time_start': {'abbrev': 'DATE', 'description': 'Image capture date/time (UTC)'},
-        'FILL_PORTION': {'abbrev': 'FILL', 'description': 'Portion of valid pixels (%)'},
-    }
-    _cloudless_schema = {
-        'system:id': {'abbrev': 'ID', 'description': 'Earth Engine image id'},
-        'system:time_start': {'abbrev': 'DATE', 'description': 'Image capture date/time (UTC)'},
-        'FILL_PORTION': {'abbrev': 'FILL', 'description': 'Portion of valid pixels (%)'},
-        'CLOUDLESS_PORTION': {'abbrev': 'CLOUDLESS', 'description': 'Portion of cloud/shadow free pixels (%)'},
-    }
-
     def __init__(self, ee_collection):
         """
         Create a MaskedCollection instance.
@@ -238,9 +226,10 @@ class MaskedCollection:
     def schema(self) -> Dict:
         """ Abbreviations and descriptions for `properties`. """
         if not self._schema:
-            self._schema = (self._mask_schema if self.image_type is MaskedImage else self._cloudless_schema).copy()
-            if self.name in info.collection_info:
-                self._schema.update(**info.collection_info[self.name]['schema'])
+            if self.name in schema.schema:
+                self._schema = schema.schema[self.name]['prop_schema']
+            else:
+                self._schema = schema.default_prop_schema
         return self._schema
 
     @property

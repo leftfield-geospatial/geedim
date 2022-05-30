@@ -25,6 +25,7 @@ from geedim.enums import CompositeMethod, ResamplingMethod
 from geedim.errors import UnfilteredError, ComponentImageError
 from geedim.mask import MaskedImage
 from geedim.utils import split_id, get_projection
+from geedim import schema
 from .conftest import get_image_std
 
 
@@ -78,7 +79,7 @@ def test_from_name(name: str, request):
     gd_collection = MaskedCollection.from_name(name)
     assert gd_collection._name == name
     assert gd_collection.schema is not None
-    assert len(gd_collection.schema) >= len(MaskedCollection._mask_schema)
+    assert len(gd_collection.schema) >= len(schema.default_prop_schema)
     assert gd_collection.ee_collection == ee.ImageCollection(name)
 
 
@@ -93,7 +94,7 @@ def test_from_name_s2(name: str, request):
     gd_collection = MaskedCollection.from_name(name)
     assert gd_collection._name == name
     assert gd_collection.schema is not None
-    assert len(gd_collection.schema) > len(MaskedCollection._cloudless_schema)
+    assert gd_collection.schema == schema.s2_prop_schema
     # check ee_collection is not the full unfiltered collection
     assert gd_collection.ee_collection != ee.ImageCollection(name)
     # check one of the problem images is not in the collection
@@ -154,7 +155,7 @@ def test_from_list(image_list: str, request):
     gd_collection = MaskedCollection.from_list(image_list)
     assert gd_collection.properties is not None
     assert gd_collection.schema is not None
-    assert len(gd_collection.schema) >= len(MaskedCollection._mask_schema)
+    assert len(gd_collection.schema) >= len(schema.default_prop_schema)
     assert gd_collection.name == split_id(image_ids[0])[0]
     assert len(gd_collection.properties) == len(image_list)
     assert list(gd_collection.properties.keys()) == image_ids

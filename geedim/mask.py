@@ -20,6 +20,7 @@ import ee
 from geedim.download import BaseImage
 from geedim.enums import CloudMaskMethod
 from geedim.utils import split_id, get_projection
+import geedim.schema
 
 logger = logging.getLogger(__name__)
 
@@ -448,19 +449,10 @@ class Sentinel2ToaClImage(Sentinel2ClImage):
 def class_from_id(image_id: str) -> type:
     """Return the *Image class that corresponds to the provided EE image/collection ID."""
 
-    masked_image_dict = {
-        'LANDSAT/LT04/C02/T1_L2': LandsatImage,
-        'LANDSAT/LT05/C02/T1_L2': LandsatImage,
-        'LANDSAT/LE07/C02/T1_L2': LandsatImage,
-        'LANDSAT/LC08/C02/T1_L2': LandsatImage,
-        'LANDSAT/LC09/C02/T1_L2': LandsatImage,
-        'COPERNICUS/S2': Sentinel2ToaClImage,
-        'COPERNICUS/S2_SR': Sentinel2SrClImage,
-    }
     ee_coll_name, _ = split_id(image_id)
-    if image_id in masked_image_dict:
-        return masked_image_dict[image_id]
-    elif ee_coll_name in masked_image_dict:
-        return masked_image_dict[ee_coll_name]
+    if image_id in geedim.schema.schema:
+        return geedim.schema.schema[image_id]['image_type']
+    elif ee_coll_name in geedim.schema.schema:
+        return geedim.schema.schema[ee_coll_name]['image_type']
     else:
         return MaskedImage
