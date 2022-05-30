@@ -17,80 +17,108 @@ import json
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Dict
+from typing import Dict, Union
 
-import numpy as np
-
-from geedim import root_path
-from geedim.utils import requests_retry_session
+from geedim.utils import retry_session, root_path, split_id, singleton
 
 logger = logging.getLogger(__name__)
-
 root_stac_url = 'https://earthengine-stac.storage.googleapis.com/catalog/catalog.json'
 
 
 class STACitem:
-    def __init__(self, name, item_dict: Dict):
+    """
+    Image/collection STAC container class.  Provides access to band properties and root property descriptions.
+    """
+
+    def __init__(self, name: str, item_dict: Dict):
+        """
+        Create a STACitem instance.
+
+        Parameters
+        ----------
+        name: str
+            The image/collection ID/name
+        item_dict: dict
+            The raw STAC dict for the image/collection.
+        """
         self._name = name
         self._item_dict = item_dict
-        self._prop_descriptions = self._get_prop_descriptions(item_dict)
-        self._bands_dict = self._get_bands_dict(item_dict)
+        self._descriptions = self._get_descriptions(item_dict)
+        self._band_props = self._get_band_props(item_dict)
 
-    def _get_prop_descriptions(self, item_dict: Dict) -> Dict[str, str]:
-        if 'summaries' in item_dict and 'gee:schema' in item_dict['summaries']:
-            gee_schema = item_dict['summaries']['gee:schema']
-            prop_descriptions = {item['name']: item['description'] for item in gee_schema}
-            return prop_descriptions
-        else:
+    def _get_descriptions(self, item_dict: Dict) -> Union[Dict[str, str], None]:
+        """ Return a dictionary with property names as keys, and descriptions as values. """
+        if not ('summaries' in item_dict and 'gee:schema' in item_dict['summaries']):
             return None
+        gee_schema = item_dict['summaries']['gee:schema']
+        descriptions = {item['name']: item['description'] for item in gee_schema}
+        return descriptions
 
-    def _get_bands_dict(self, item_dict: Dict) -> Dict:
-        if 'summaries' in item_dict and 'eo:bands' in item_dict['summaries']:
-            summaries = item_dict['summaries']
-            eo_bands = summaries['eo:bands']
-            global_gsd = summaries['gsd'] if 'gsd' in summaries else None
-            bands_dict = {}
-            prop_keys = [
-                'name', 'description', 'center_wavelength', 'gee:wavelength', 'gee:units', 'units', 'gee:scale',
-                'gee:offset'
-            ]
-            for eo_band in eo_bands:
-                band_dict = {prop_key: eo_band[prop_key] for prop_key in prop_keys if prop_key in eo_band}
-                gsd = eo_band['gsd'] if 'gsd' in eo_band else global_gsd
-                gsd = gsd[0] if isinstance(gsd, (list, tuple)) else gsd
-                band_dict.update(gsd=gsd) if gsd else None
-                bands_dict[eo_band['name']] = band_dict
-            return bands_dict
-        else:
+    def _get_band_props(self, item_dict: Dict) -> Union[Dict[str, Dict], None]:
+        """
+        Return a dictionary of band properties, with band names as keys, and properties as values.
+        """
+        if not ('summaries' in item_dict and 'eo:bands' in item_dict['summaries']):
             logger.warning(f'There is no STAC band information for {self._name}')
             return None
 
-    @property
-    def prop_descriptions(self) -> Dict[str, str]:
-        return self._prop_descriptions
+        summaries = item_dict['summaries']
+        ee_band_props = summaries['eo:bands']
+        # if the gsd is the same across all bands, there is a `gsd` key in summaries, otherwise there are `gsd` keys
+        # for each item in ee_band_props
+        global_gsd = summaries['gsd'] if 'gsd' in summaries else None
+        band_props = {}
+        # a list of the EE band properties we want to copy
+        prop_keys = [
+            'name', 'description', 'center_wavelength', 'gee:wavelength', 'gee:units', 'gee:scale', 'gee:offset'
+        ]
+
+        def strip_gee(key: str):
+            """ Remove 'gee:' from the start of `key` if it is there. """
+            return key[4:] if key.startswith('gee:') else key
+
+        for ee_band_dict in ee_band_props:
+            band_dict = {
+                strip_gee(prop_key): ee_band_dict[prop_key] for prop_key in prop_keys if prop_key in ee_band_dict
+            }
+            gsd = ee_band_dict['gsd'] if 'gsd' in ee_band_dict else global_gsd
+            gsd = gsd[0] if isinstance(gsd, (list, tuple)) else gsd
+            band_dict.update(gsd=gsd) if gsd else None
+            band_props[ee_band_dict['name']] = band_dict
+        return band_props
 
     @property
-    def bands_dict(self) -> Dict:
-        return self._bands_dict
+    def name(self) -> str:
+        """ ID/name of the contained image/collection STAC. """
+        return self._name
+
+    @property
+    def descriptions(self) -> Union[Dict[str, str], None]:
+        """ Dictionary of property descriptions with property names as keys, and descriptions as values. """
+        return self._descriptions
+
+    @property
+    def band_props(self) -> Union[Dict[str, Dict], None]:
+        """ Dictionary of band properties, with band names as keys, and properties as values. """
+        return self._band_props
 
 
-class STAC(object):
-    _filename = root_path.joinpath('geedim/data/ee_image_stac.json')
-    _session = requests_retry_session()
-    _url_dict = None
-    _cache = {}
-    _lock = threading.Lock()
+@singleton
+class STAC:
+    """ Singleton class to provide a central interface to the EE STAC for retrieving image/collection STAC data. """
 
-    def __new__(cls):
-        """ Singleton constructor. """
-        if not hasattr(cls, 'instance'):
-            cls.instance = object.__new__(cls)
-        return cls.instance
+    def __init__(self):
+        self._filename = root_path.joinpath('geedim/data/ee_stac_urls.json')
+        self._session = retry_session()
+        self._url_dict = None
+        self._cache = {}
+        self._lock = threading.Lock()
 
     @property
     def url_dict(self) -> Dict[str, str]:
-        """ A dictionary with image/collection IDs/names as keys, and STAC URLs as values. """
-        if not self._url_dict:  # delayed read
+        """ Dictionary with image/collection IDs/names as keys, and STAC URLs as values. """
+        if not self._url_dict:
+            # delay reading the json file until it is needed.
             with open(self._filename, 'r') as f:
                 self._url_dict = json.load(f)
         return self._url_dict
@@ -123,7 +151,7 @@ class STAC(object):
                     url_dict = future.result()
         return url_dict
 
-    def write_url_dict_file(self, filename=None):
+    def write_url_dict_file(self, filename: str = None):
         """ Gets the latest url_dict from EE STAC and writes it to file. """
         filename = filename or self._filename
         url_dict = {}
@@ -131,8 +159,24 @@ class STAC(object):
         with open(filename, 'w') as f:
             json.dump(url_dict, f, sort_keys=True, indent=4)
 
-    def get_item_dict(self, name) -> Dict:
-        """ Returns the raw STAC dict for a given an image/collection name/ID. """
+    def get_item_dict(self, name):
+        """
+        Get the raw STAC dict for a given an image/collection name/ID.
+
+        Parameters
+        ----------
+        name: str
+            The ID/name of the image/collection whose STAC data to retrieve.
+
+        Returns
+        -------
+        item_dict: dict
+            image/collection STAC data in a dict, if it exists, otherwise None.
+        """
+        coll_name = split_id(name)[0]
+        if coll_name in self.url_dict:
+            name = coll_name
+
         if name not in self._cache:
             if name not in self.url_dict:
                 logger.warning(f'There is no STAC entry for: {name}')
@@ -142,85 +186,19 @@ class STAC(object):
                 self._cache[name] = response.json()
         return self._cache[name]
 
-    def get_item(self, name) -> STACitem:
+    def get_item(self, name):
+        """
+        Get a STAC container instance for a given an image/collection name/ID.
+
+        Parameters
+        ----------
+        name: str
+            The ID/name of the image/collection whose STAC container to retrieve.
+
+        Returns
+        -------
+        stac_item: STACitem
+            image/collection STAC container, if it exists, otherwise None.
+        """
         item_dict = self.get_item_dict(name)
-        return STACitem(name, item_dict)
-
-
-if False:
-    def testing():
-        # Notes:
-        # - If all bands are same gsd, the  gsd is in info['summaries]['gsd]
-        # - If bands have different gsd's, the gsd is in info['summaries']['eo:bands'][0..N]['gsd']
-        # - If band has scale and offset, these are in info['summaries']['eo:bands'][0..N]['gee:scale'] and [
-        # 'gee:offset'],
-        #   but only if they have a scale/offset
-        # - Similarly, iff it is a spectral band it has center_wavelength and gee:wavelength keys
-        # - info['gee:schema'] lists image properties with name and description keys. But some products don't have this
-        # e.g. MODIS.
-        stac = STAC()
-        name = 'COPERNICUS/S2_SR'
-        name = 'LANDSAT/LC08/C02/T1_L2'
-        name = 'MODIS/006/MCD43A4'
-        name = 'TRMM/3B42'
-        name = 'LANDSAT/LC08/C01/T1_8DAY_EVI'
-        stac.get_band_info(name)
-
-        gsd_dict = {}
-        for name in stac._stac_dict.keys():
-            band_info = stac.get_band_info(name)
-            gsds = np.array([bi['gsd'] for bi in band_info])
-            gsd_dict[name] = [min(gsds), max(gsds)]
-            print(name)
-
-
-    def aggr_props():
-        stac = STAC()
-
-        def get_properties(name):
-            try:
-                print(name)
-                return stac.get_properties(name)
-            except Exception as ex:
-                print('Error: ' + name)
-                print(stac.get_coll_im_stac(name)['summaries'])
-                return None
-
-        props_dict = {}
-        with ThreadPoolExecutor() as executor:
-            futures = []
-            for name in stac._stac_dict.keys():
-                futures.append(executor.submit(get_properties, name))
-            for future in as_completed(futures):
-                res = future.result()
-                if res:
-                    props_dict[res['name']] = res
-
-        with open('gee_stac.json', 'w') as f:
-            json.dump(props_dict, f, sort_keys=True, indent=4)
-
-
-    def aggr_gsds():
-        stac = STAC()
-
-        def get_gsd_info(name):
-            try:
-                band_info = stac.get_band_info(name)
-                gsds = np.array([bi['gsd'] for bi in band_info])
-                return [name, min(gsds), min(gsds[gsds > 0]), max(gsds)]
-            except Exception as ex:
-                print(name)
-                print(stac.get_coll_im_stac(name)['summaries'])
-                return None
-
-        gsd_dict = {}
-        with ThreadPoolExecutor() as executor:
-            futures = []
-            for name in stac._stac_dict.keys():
-                futures.append(executor.submit(get_gsd_info, name))
-            for future in as_completed(futures):
-                res = future.result()
-                if res:
-                    gsd_dict[res[0]] = res
-        import pandas as pd
-        gsd_df = pd.DataFrame(gsd_dict.values(), columns=['ID', 'min', 'min>0', 'max'])
+        return STACitem(name, item_dict) if item_dict else None
