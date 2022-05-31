@@ -48,9 +48,14 @@ class StacItem:
 
     def _get_descriptions(self, item_dict: Dict) -> Union[Dict[str, str], None]:
         """ Return a dictionary with property names as keys, and descriptions as values. """
-        if not ('summaries' in item_dict and 'gee:collection_schema' in item_dict['summaries']):
+        if 'summaries' not in item_dict:
             return None
-        gee_schema = item_dict['summaries']['gee:schema']
+        if 'gee:schema' in item_dict['summaries']:
+            gee_schema = item_dict['summaries']['gee:schema']
+        elif 'gee:collection_schema' in item_dict['summaries']:
+            gee_schema = item_dict['summaries']['gee:collection_schema']
+        else:
+            return None
         descriptions = {item['name']: item['description'] for item in gee_schema}
         return descriptions
 
@@ -164,13 +169,10 @@ class StacCatalog:
                     url_dict = future.result()
         return url_dict
 
-    def write_url_dict_file(self, filename: str = None):
-        """ Gets the latest url_dict from EE STAC and writes it to file. """
-        filename = filename or self._filename
+    def refresh_url_dict(self):
+        """ Update `url_dict` with the latest from EE STAC. """
         url_dict = {}
-        url_dict = self._traverse_stac(root_stac_url, url_dict)
-        with open(filename, 'w') as f:
-            json.dump(url_dict, f, sort_keys=True, indent=4)
+        self._url_dict = self._traverse_stac(root_stac_url, url_dict)
 
     def get_item_dict(self, name):
         """
@@ -214,5 +216,8 @@ class StacCatalog:
         stac_item: StacItem
             image/collection STAC container, if it exists, otherwise None.
         """
+        coll_name = split_id(name)[0]
+        if coll_name in self.url_dict:
+            name = coll_name
         item_dict = self.get_item_dict(name)
         return StacItem(name, item_dict) if item_dict else None
