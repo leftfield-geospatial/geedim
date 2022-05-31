@@ -432,27 +432,22 @@ class Sentinel2ClImage(CloudMaskedImage):
 
 class Sentinel2SrClImage(Sentinel2ClImage):
     """ Class for cloud/shadow masking of Sentinel-2 SR (COPERNICUS/S2_SR) images. """
-    _supported_collection_ids = ['COPERNICUS/S2_SR']
-
     def _aux_image(self, s2_toa=False, **kwargs):
         return Sentinel2ClImage._aux_image(self, s2_toa=False, **kwargs)
 
 
 class Sentinel2ToaClImage(Sentinel2ClImage):
     """ Class for cloud/shadow masking of Sentinel-2 TOA (COPERNICUS/S2) images. """
-    _supported_collection_ids = ['COPERNICUS/S2']
-
     def _aux_image(self, s2_toa=False, **kwargs):
         return Sentinel2ClImage._aux_image(self, s2_toa=True, **kwargs)
 
 
 def class_from_id(image_id: str) -> type:
     """Return the *Image class that corresponds to the provided EE image/collection ID."""
-
     ee_coll_name, _ = split_id(image_id)
-    if image_id in geedim.schema.schema:
-        return geedim.schema.schema[image_id]['image_type']
-    elif ee_coll_name in geedim.schema.schema:
-        return geedim.schema.schema[ee_coll_name]['image_type']
+    if image_id in geedim.schema.collection_schema:
+        return geedim.schema.collection_schema[image_id]['image_type']
+    elif ee_coll_name in geedim.schema.collection_schema:
+        return geedim.schema.collection_schema[ee_coll_name]['image_type']
     else:
         return MaskedImage

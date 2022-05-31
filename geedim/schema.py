@@ -46,7 +46,7 @@ s2_prop_schema = {
     'MEAN_INCIDENCE_ZENITH_ANGLE_B1': {'abbrev': 'VZA', 'description': 'View (B1) zenith angle (deg)'}
 }
 
-schema = {
+collection_schema = {
     'LANDSAT/LT04/C02/T1_L2': {
         'gd_coll_name': 'landsat4-c2-l2',
         'prop_schema': landsat_prop_schema,
@@ -90,10 +90,10 @@ schema = {
 }
 
 # Dict to convert from geedim to Earth Engine collection names
-ee_to_gd = dict([(k, v['gd_coll_name']) for k, v in schema.items()])
+ee_to_gd = dict([(k, v['gd_coll_name']) for k, v in collection_schema.items()])
 
 # Dict to convert from Earth Engine to geedim collection names
-gd_to_ee = dict([(v['gd_coll_name'], k) for k, v in schema.items()])
+gd_to_ee = dict([(v['gd_coll_name'], k) for k, v in collection_schema.items()])
 
 # "Two way" dict to convert Earth Engine to/from geedim collection names
 coll_names = dict(**gd_to_ee, **ee_to_gd)

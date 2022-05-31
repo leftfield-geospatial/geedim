@@ -29,7 +29,7 @@ from geedim.download import BaseImage
 from geedim.enums import ResamplingMethod, CompositeMethod
 from geedim.errors import UnfilteredError, ComponentImageError
 from geedim.mask import MaskedImage, class_from_id
-from geedim.stac import STAC, STACitem
+from geedim.stac import StacCatalog, StacItem
 from geedim.utils import split_id, resample
 
 logger = logging.getLogger(__name__)
@@ -226,23 +226,23 @@ class MaskedCollection:
     def schema(self) -> Dict:
         """ Abbreviations and descriptions for `properties`. """
         if not self._schema:
-            if self.name in schema.schema:
-                self._schema = schema.schema[self.name]['prop_schema']
+            if self.name in schema.collection_schema:
+                self._schema = schema.collection_schema[self.name]['prop_schema']
             else:
                 self._schema = schema.default_prop_schema
         return self._schema
 
     @property
     def schema_table(self) -> str:
-        """ `schema` formatted as a table. """
+        """ `collection_schema` formatted as a table. """
         headers = {key: key.upper() for key in list(self.schema.values())[0].keys()}
         return tabulate.tabulate(self.schema.values(), headers=headers, floatfmt='.2f', tablefmt=_table_fmt)
 
     @property
-    def stac(self) -> Union[STACitem, None]:
+    def stac(self) -> Union[StacItem, None]:
         """ EE STAC container corresponding to this collection.  """
-        if not self._stac and (self.name in STAC().url_dict):
-            self._stac = STAC().get_item(self.name)
+        if not self._stac and (self.name in StacCatalog().url_dict):
+            self._stac = StacCatalog().get_item(self.name)
         return self._stac
 
     @property
@@ -284,7 +284,7 @@ class MaskedCollection:
 
     def _get_properties_table(self, properties: Dict, schema: Dict = None) -> str:
         """
-        Format the given properties into a table.  Orders properties (columns) according `schema` and replaces
+        Format the given properties into a table.  Orders properties (columns) according `collection_schema` and replaces
         long form property names with abbreviations.
         """
         if not schema:

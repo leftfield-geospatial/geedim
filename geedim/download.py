@@ -36,7 +36,7 @@ from tqdm import TqdmWarning, tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 from geedim.enums import ResamplingMethod
-from geedim.stac import STAC, STACitem
+from geedim.stac import StacCatalog, StacItem
 from geedim.tile import Tile
 from geedim.utils import Spinner, resample, retry_session
 
@@ -201,9 +201,9 @@ class BaseImage:
         return self.ee_info['properties']['system:footprint']
 
     @property
-    def stac(self) -> STACitem:
+    def stac(self) -> StacItem:
         """ STAC container corresponding to this image. """
-        return STAC().get_item(self.id)
+        return StacCatalog().get_item(self.id)
 
     @property
     def band_props(self) -> List[Dict]:
@@ -449,6 +449,8 @@ class BaseImage:
             raise IOError('Image dataset is closed')
 
         dataset.update_tags(**self.properties)
+        if self.stac:
+            dataset.update_tags(TERMS_OF_USE=self.stac.terms)
         # populate band metadata
         for band_i, band_dict in enumerate(self.band_props):
             if 'name' in band_dict:

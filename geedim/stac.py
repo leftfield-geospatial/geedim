@@ -25,14 +25,14 @@ logger = logging.getLogger(__name__)
 root_stac_url = 'https://earthengine-stac.storage.googleapis.com/catalog/catalog.json'
 
 
-class STACitem:
+class StacItem:
     """
     Image/collection STAC container class.  Provides access to band properties and root property descriptions.
     """
 
     def __init__(self, name: str, item_dict: Dict):
         """
-        Create a STACitem instance.
+        Create a StacItem instance.
 
         Parameters
         ----------
@@ -48,7 +48,7 @@ class STACitem:
 
     def _get_descriptions(self, item_dict: Dict) -> Union[Dict[str, str], None]:
         """ Return a dictionary with property names as keys, and descriptions as values. """
-        if not ('summaries' in item_dict and 'gee:schema' in item_dict['summaries']):
+        if not ('summaries' in item_dict and 'gee:collection_schema' in item_dict['summaries']):
             return None
         gee_schema = item_dict['summaries']['gee:schema']
         descriptions = {item['name']: item['description'] for item in gee_schema}
@@ -102,11 +102,19 @@ class STACitem:
         """ Dictionary of band properties, with band names as keys, and properties as values. """
         return self._band_props
 
+    @property
+    def terms(self) -> Union[str, None]:
+        """ Terms of use / license. """
+        if 'gee:terms_of_use' in self._item_dict:
+            return self._item_dict['gee:terms_of_use']
+        elif 'license' in self._item_dict:
+            return self._item_dict['license']
+        else:
+            return None
 
 @singleton
-class STAC:
-    """ Singleton class to provide a central interface to the EE STAC for retrieving image/collection STAC data. """
-
+class StacCatalog:
+    """ Singleton class to interface to the EE STAC, and retrieve image/collection STAC data. """
     def __init__(self):
         self._filename = root_path.joinpath('geedim/data/ee_stac_urls.json')
         self._session = retry_session()
@@ -125,7 +133,7 @@ class STAC:
 
     def _traverse_stac(self, url: str, url_dict: Dict) -> Dict:
         """
-        Recursive & threaded EE STAC traversal that returns the `url_dict` i.e. a dict with image/collection
+        Recursive & threaded EE STAC tree traversal that returns the `url_dict` i.e. a dict with image/collection
         IDs/names as keys, and the corresponding json STAC URLs as values.
         """
         response = self._session.get(url)
@@ -135,18 +143,23 @@ class STAC:
         response_dict = response.json()
         if 'type' in response_dict:
             if (response_dict['type'].lower() == 'collection'):
-                if ('gee:type' in response_dict) and (
-                    response_dict['gee:type'].lower() in ['image_collection', 'image']):
+                # we have reached a leaf node
+                if (
+                    ('gee:type' in response_dict) and
+                    (response_dict['gee:type'].lower() in ['image_collection', 'image'])
+                ):
+                    # we have reached an image / image collection leaf node
                     with self._lock:
                         url_dict[response_dict['id']] = url
                         logger.debug(f'ID: {response_dict["id"]}, Type: {response_dict["gee:type"]}, URL: {url}')
                 return url_dict
 
             with ThreadPoolExecutor() as executor:
+                # traverse the sub-tree links in a thread pool
                 futures = []
                 for link in response_dict['links']:
                     if link['rel'].lower() == 'child':
-                        futures.append(executor.submit(STAC._traverse_stac, link['href'], url_dict))
+                        futures.append(executor.submit(self._traverse_stac, link['href'], url_dict))
                 for future in as_completed(futures):
                     url_dict = future.result()
         return url_dict
@@ -177,6 +190,7 @@ class STAC:
         if coll_name in self.url_dict:
             name = coll_name
 
+        # store item dicts in a cache so we don't have to request them more than once
         if name not in self._cache:
             if name not in self.url_dict:
                 logger.warning(f'There is no STAC entry for: {name}')
@@ -197,8 +211,8 @@ class STAC:
 
         Returns
         -------
-        stac_item: STACitem
+        stac_item: StacItem
             image/collection STAC container, if it exists, otherwise None.
         """
         item_dict = self.get_item_dict(name)
-        return STACitem(name, item_dict) if item_dict else None
+        return StacItem(name, item_dict) if item_dict else None
