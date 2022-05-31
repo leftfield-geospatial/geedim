@@ -43,7 +43,7 @@ def singleton(cls):
     """ Class decorator to make it a singleton. """
     instances = {}
 
-    def getinstance():
+    def getinstance() -> cls:
         if cls not in instances:
             instances[cls] = cls()
         return instances[cls]

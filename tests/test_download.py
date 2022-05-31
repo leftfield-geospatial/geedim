@@ -136,33 +136,19 @@ def test_s2_props(s2_sr_base_image: BaseImage):
     assert s2_sr_base_image.count == len(s2_sr_base_image.ee_info['bands'])
 
 
-@pytest.mark.parametrize('base_image', ['user_base_image', 'landsat_ndvi_base_image'])
-def test_gen_band_props(base_image: str, request: pytest.FixtureRequest):
-    """ Test `band_props` completeness for generic/user images. """
+@pytest.mark.parametrize(
+    'base_image', [
+        'landsat_ndvi_base_image', 's2_sr_base_image', 'l9_base_image', 'modis_nbar_base_image'
+    ]
+)
+def test_band_props(base_image: str, request: pytest.FixtureRequest):
+    """ Test `band_props` completeness for generic/user/reflectance images. """
     base_image: BaseImage = request.getfixturevalue(base_image)
     assert base_image.band_props is not None
     assert [bd['name'] for bd in base_image.band_props] == [bd['id'] for bd in base_image.ee_info['bands']]
-
-
-@pytest.mark.parametrize('base_image', ['s2_sr_base_image', 'l9_base_image', 'modis_nbar_base_image'])
-def test_refl_band_props(base_image: str, request: pytest.FixtureRequest):
-    """ Test `band_props` completeness for reflectance images. """
-    base_image: BaseImage = request.getfixturevalue(base_image)
-    assert base_image.band_props is not None
-    band_ids = [bd['name'] for bd in base_image.band_props]
-    assert band_ids == [bd['id'] for bd in base_image.ee_info['bands']]
-
     for key in ['gsd', 'description']:
         has_key = [key in bd for bd in base_image.band_props]
         assert all(has_key)
-
-    has_center_wavelength = ['center_wavelength' in bd for bd in base_image.band_props]
-    assert sum(has_center_wavelength) > 5
-
-    for band_dict in base_image.band_props:
-        if re.search('^B\d|^SR_B\d|^Nadir_Reflectance_Band\d', band_dict['name']):
-            assert 'center_wavelength' in band_dict
-            assert 'scale' in band_dict
 
 
 def test_has_fixed_projection(user_base_image: BaseImage, user_fix_base_image: BaseImage, s2_sr_base_image):
@@ -438,7 +424,7 @@ def test_export(user_fix_base_image: BaseImage, region_25ha: Dict):
     assert task.active()
     assert task.status()['state'] == 'READY'
 
-# TODO
+# TODO:
 # -  export(): test an export of small file (with wait ? - it kind of has to be to test monitor_export_task() )
 # - different generic collection images are downloaded ok (perhaps this goes with MaskedImage more than BaseImage)
 # - test float mask/nodata in downloaded image
