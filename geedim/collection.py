@@ -320,8 +320,11 @@ class MaskedCollection:
         method = CompositeMethod(method)
         resampling = ResamplingMethod(resampling) if resampling else BaseImage._default_resampling
         if (method == CompositeMethod.q_mosaic) and (self.image_type == MaskedImage):
-            # TODO get a list of supported collections, report this in CLI help too
-            raise ValueError(f'The `q-mosaic` method is not supported for this ("{self.name}") collection.')
+            cloud_coll_str = ", ".join(schema.cloud_coll_names)
+            raise ValueError(
+                f'The `q-mosaic` method is not supported for this collection: {self.name}.  It is supported for the '
+                f'{cloud_coll_str} collections only.'
+            )
 
         def prepare_image(ee_image: ee.Image):
             """ Prepare an EE image for use in compositing. """
@@ -470,7 +473,6 @@ class MaskedCollection:
         elif method == CompositeMethod.mosaic:
             comp_image = ee_collection.mosaic()
         elif method == CompositeMethod.median:
-            # TODO: S2 median gives 'Output of image computation is too large' on download dtype=uint16
             comp_image = ee_collection.median()
         elif method == CompositeMethod.medoid:
             # limit medoid to surface reflectance bands

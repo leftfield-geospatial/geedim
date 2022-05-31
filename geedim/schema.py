@@ -97,3 +97,6 @@ gd_to_ee = dict([(v['gd_coll_name'], k) for k, v in collection_schema.items()])
 
 # "Two way" dict to convert Earth Engine to/from geedim collection names
 coll_names = dict(**gd_to_ee, **ee_to_gd)
+
+# A list of cloud/shadow mask supported EE collection names
+cloud_coll_names = [k for k, v in collection_schema.items() if v['image_type'] != geedim.mask.MaskedImage]

@@ -272,7 +272,6 @@ def test_prepare_for_export(src_image: str, tgt_image: str, request: pytest.Fixt
 )
 def test_prepare_for_download(src_image: str, tgt_image: str, region_25ha: Dict, request: pytest.FixtureRequest):
     """ Test BaseImage._prepare_for_download() sets rasterio profile as expected.  """
-    # TODO: I suspect this will be duplicated elsewhere and can be removed
     src_image: BaseImage = request.getfixturevalue(src_image)
     tgt_image: BaseImage = request.getfixturevalue(tgt_image)
     if tgt_image == src_image:
