@@ -14,6 +14,7 @@
     limitations under the License.
 """
 import pathlib
+import re
 from datetime import datetime
 from typing import Dict, Tuple, List
 
@@ -133,6 +134,35 @@ def test_s2_props(s2_sr_base_image: BaseImage):
     assert s2_sr_base_image.footprint is not None
     assert s2_sr_base_image.dtype == 'uint32'
     assert s2_sr_base_image.count == len(s2_sr_base_image.ee_info['bands'])
+
+
+@pytest.mark.parametrize('base_image', ['user_base_image', 'landsat_ndvi_base_image'])
+def test_gen_band_props(base_image: str, request: pytest.FixtureRequest):
+    """ Test `band_props` completeness for generic/user images. """
+    base_image: BaseImage = request.getfixturevalue(base_image)
+    assert base_image.band_props is not None
+    assert [bd['name'] for bd in base_image.band_props] == [bd['id'] for bd in base_image.ee_info['bands']]
+
+
+@pytest.mark.parametrize('base_image', ['s2_sr_base_image', 'l9_base_image', 'modis_nbar_base_image'])
+def test_refl_band_props(base_image: str, request: pytest.FixtureRequest):
+    """ Test `band_props` completeness for reflectance images. """
+    base_image: BaseImage = request.getfixturevalue(base_image)
+    assert base_image.band_props is not None
+    band_ids = [bd['name'] for bd in base_image.band_props]
+    assert band_ids == [bd['id'] for bd in base_image.ee_info['bands']]
+
+    for key in ['gsd', 'description']:
+        has_key = [key in bd for bd in base_image.band_props]
+        assert all(has_key)
+
+    has_center_wavelength = ['center_wavelength' in bd for bd in base_image.band_props]
+    assert sum(has_center_wavelength) > 5
+
+    for band_dict in base_image.band_props:
+        if re.search('^B\d|^SR_B\d|^Nadir_Reflectance_Band\d', band_dict['name']):
+            assert 'center_wavelength' in band_dict
+            assert 'scale' in band_dict
 
 
 def test_has_fixed_projection(user_base_image: BaseImage, user_fix_base_image: BaseImage, s2_sr_base_image):
@@ -386,6 +416,20 @@ def test_overviews(user_base_image: BaseImage, region_25ha: Dict, tmp_path: path
             assert ds.overviews(band_i + 1)[0] == 2
 
 
+def test_metadata(landsat_ndvi_base_image: BaseImage, region_25ha: Dict, tmp_path: pathlib.Path):
+    """ Test metadata is written to a downloaded file. """
+    filename = tmp_path.joinpath('test_landsat_ndvi_download.tif')
+    landsat_ndvi_base_image.download(filename, region=region_25ha, crs='EPSG:3857', scale=30)
+    assert filename.exists()
+    with rio.open(filename, 'r') as ds:
+        assert 'TERMS_OF_USE' in ds.tags()
+        assert len(ds.tags()['TERMS_OF_USE']) > 0
+        assert 'NDVI' in ds.descriptions
+        band_dict = ds.tags(1)
+        for key in ['gsd', 'name', 'description']:
+            assert key in band_dict
+
+
 def test_export(user_fix_base_image: BaseImage, region_25ha: Dict):
     """ Test start of a small export. """
     task = user_fix_base_image.export(
@@ -395,11 +439,7 @@ def test_export(user_fix_base_image: BaseImage, region_25ha: Dict):
     assert task.status()['state'] == 'READY'
 
 # TODO
-# --------
-# get_bounds() # test this on downloaded image against download region
-# _get_band_props: leave for now
-# _write_metadata: test downloaded bands have ids / descriptions
-# export(): test an export of small file (with wait ? - it kind of has to be to test monitor_export_task() )
+# -  export(): test an export of small file (with wait ? - it kind of has to be to test monitor_export_task() )
 # - different generic collection images are downloaded ok (perhaps this goes with MaskedImage more than BaseImage)
 # - test float mask/nodata in downloaded image
 # - test mult tile download has no discontinuities
