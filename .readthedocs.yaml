@@ -1,2 +1,4 @@
+version: 2
+
 name: geedim
 requirements_file: docs/requirements.txt
