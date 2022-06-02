@@ -33,7 +33,7 @@ from setuptools import setup, find_packages
 """
 
 this_directory = Path(__file__).parent
-long_description = (this_directory / "README.md").read_text()
+long_description = (this_directory / "README.rst").read_text()
 
 sys.path[0:0] = ['geedim']
 from version import __version__

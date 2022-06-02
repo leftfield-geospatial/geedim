@@ -113,20 +113,23 @@ Command line interface
 ~~~~~~~~~~~~~~~~~~~~~~
 
 ``geedim`` command line functionality is accessed through the commands:
-\* ``search``: Search for images. \* ``composite``: Create a composite
-image. \* ``download``: Download image(s). \* ``export``: Export
-image(s) to Google Drive. \* ``config``: Configure cloud / shadow
-masking.
+
+* ``search``: Search for images.
+* ``composite``: Create a composite image.
+* ``download``: Download image(s).
+* ``export``: Export image(s) to Google Drive.
+* ``config``: Configure cloud / shadow masking.
+
 
 Get help on ``geedim`` with:
 
-::
+.. code:: shell
 
    geedim --help
 
 and help on a ``geedim`` command with:
 
-::
+.. code:: shell
 
    geedim <command> --help
 
