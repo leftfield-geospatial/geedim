@@ -52,6 +52,21 @@ class ChainedCommand(click.Command):
     """
     click Command sub-class for managing parameters shared between chained commands.
     """
+    def get_help(self, ctx):
+        """
+        Modify help string to allow sphinx-click RST formatting inside \b blocks.
+        """
+        click_wrap_text = click.formatting.wrap_text
+        # assumes no grid tables
+        repl_strings = {'\b\n': '\n\b', ':option:': '', '| ': ''}
+        def reformat_text(text, width, **kwargs):
+            for repl_key, repl_value in repl_strings.items():
+                text = text.replace(repl_key, repl_value)
+            return click_wrap_text(text, width, **kwargs)
+        # TODO: if this gets called more than once on the same instance, it will start recursing itself
+        #  cannot we not do this some other way, like provide our own formatter?
+        click.formatting.wrap_text = reformat_text
+        return click.Command.get_help(self, ctx)
 
     def invoke(self, ctx):
         """Manage shared `image_list` and `region` parameters."""
@@ -184,21 +199,22 @@ region_option = click.option(
 )
 crs_option = click.option(
     '-c', '--crs', type=click.STRING, default=None, callback=_crs_cb,
-    help='Reproject image(s) to this CRS (EPSG string or path to WKT text file). [default: use source CRS]'
+    help='CRS to reproject image(s) to (EPSG string or path to WKT text file).  Defaults to the source image CRS.'
 )
 scale_option = click.option(
     '-s', '--scale', type=click.FLOAT, default=None,
-    help='Resample image(s) to this pixel resolution (m). [default: minimum of the source band resolutions]'
+    help='Pixel resolution (scale) to resample image(s) to (m).  Defaults to the minimum resolution of the source '
+         'image bands.'
 )
 dtype_option = click.option(
     '-dt', '--dtype', type=click.Choice(list(dtype_ranges.keys()), case_sensitive=False), default=None,
-    help='Convert image(s) to this data type.  [default: use a minimal data type that can represent the range of '
-         'pixel values]'
+    help='Data type to convert image(s) to.  Defaults to the smallest data type able to represent the '
+         'range of pixel values.'
 )
 mask_option = click.option(
-    '-m/-nm', '--mask/--no-mask', default=MaskedImage._default_mask,
+    '-m/-nm', '--mask/--no-mask', default=MaskedImage._default_mask, show_default=True,
     help='Whether to apply cloud/shadow mask(s); or fill mask(s), in the case of images without '
-         'support for cloud/shadow masking.  [default: --no-mask]'
+         'support for cloud/shadow masking.'
 )
 resampling_option = click.option(
     '-rs', '--resampling', type=click.Choice([rm.value for rm in ResamplingMethod], case_sensitive=True),
@@ -225,14 +241,13 @@ def cli(ctx, verbose, quiet):
 # config command
 @click.command(cls=ChainedCommand, context_settings=dict(auto_envvar_prefix='GEEDIM'))
 @click.option(
-    '-mc/-nmc', '--mask-cirrus/--no-mask-cirrus', default=True,
+    '-mc/-nmc', '--mask-cirrus/--no-mask-cirrus', default=True, show_default=True,
     help='Whether to mask cirrus clouds.  Valid for Landsat 8-9 images, and, for Sentinel-2 images with '
-         'the `qa` mask-method.  '
-         '[default: --mask-cirrus]'
+         'the `qa` :option:`--mask-method`.'
 )
 @click.option(
-    '-ms/-nms', '--mask-shadows/--no-mask-shadows', default=True,
-    help='Whether to mask cloud shadows. [default: --mask-shadows]'
+    '-ms/-nms', '--mask-shadows/--no-mask-shadows', default=True, show_default=True,
+    help='Whether to mask cloud shadows.'
 )
 @click.option(
     '-mm', '--mask-method', type=click.Choice([cmm.value for cmm in CloudMaskMethod], case_sensitive=True),
@@ -241,7 +256,7 @@ def cli(ctx, verbose, quiet):
 )  # TODO: add an explanation for these options
 @click.option(
     '-p', '--prob', type=click.FloatRange(min=0, max=100), default=60, show_default=True,
-    help='Cloud probability threshold (%). Valid for Sentinel-2 images with the `cloud-prob` mask-method'
+    help='Cloud probability threshold (%). Valid for Sentinel-2 images with the `cloud-prob` :option:`--mask-method`'
 )
 @click.option(
     '-d', '--dark', type=click.FloatRange(min=0, max=1), default=.15, show_default=True,
@@ -258,13 +273,13 @@ def cli(ctx, verbose, quiet):
 )
 @click.option(
     '-cdi', '--cdi-thresh', type=click.FloatRange(min=-1, max=1), default=None,
-    help='Cloud Displacement Index threshold. Values below this threshold are considered potential clouds.  If this '
-         'parameter is not specified, the index is not used.  Valid for Sentinel-2 images.  [default: None]'
+    help='Cloud Displacement Index (CDI) threshold.  Values below this threshold are considered potential clouds.  '
+         'Valid for Sentinel-2 images.  By default, the CDI is not used.'
 )
 @click.option(
     '-mcd', '--max-cloud-dist', type=click.INT, default=5000, show_default=True,
-    help='Maximum distance (m) to look for clouds.  Used to form the cloud distance band for `q-mosaic` '
-         'compositing.  Valid for Sentinel-2 images.'
+    help='Maximum distance (m) to look for clouds.  Used to form the cloud distance band for the `q-mosaic` '
+         'compositing ``--method``.  Valid for Sentinel-2 images.'
 )
 @click.pass_context
 def config(ctx, mask_cirrus, mask_shadows, mask_method, prob, dark, shadow_dist, buffer, cdi_thresh, max_cloud_dist):
@@ -275,11 +290,11 @@ def config(ctx, mask_cirrus, mask_shadows, mask_method, prob, dark, shadow_dist,
     A sensible default configuration is used if this command is not specified.
 
     Cloud/shadow masking is supported for the collections:
-
     \b
-        =============  =======================
+
+        ==============  ======================
         geedim name     EE name
-        =============  =======================
+        ==============  ======================
         sentinel2-sr    COPERNICUS/S2_SR
         sentinel2-toa   COPERNICUS/S2
         landsat9-c2-l2  LANDSAT/LC09/C02/T1_L2
@@ -288,14 +303,13 @@ def config(ctx, mask_cirrus, mask_shadows, mask_method, prob, dark, shadow_dist,
         landsat5-c2-l2  LANDSAT/LT05/C02/T1_L2
         landsat4-c2-l2  LANDSAT/LT04/C02/T1_L2
         ==============  ======================
-
     \b
-    --------
+
     Examples
     --------
 
     Search the Sentinel-2 SR collection for images with a cloudless portion of at least 60%, where cloud/shadow is
-    identified with the ``qa`` mask-method::
+    identified with the `qa` ``mask-method`` ::
 
         $ geedim config --mask-method qa search -c sentinel2-sr --cloudless-portion 60 -s 2022-01-01 -e 2022-01-14 --bbox 24 -34 24.5 -33.5
 
@@ -322,13 +336,13 @@ cli.add_command(config)
     '-s', '--start-date', type=click.DateTime(), required=True, help='Start date (UTC).'
 )
 @click.option(
-    '-e', '--end-date', type=click.DateTime(), required=False, help='End date (UTC).  \n[default: start_date + 1 day]'
+    '-e', '--end-date', type=click.DateTime(), required=True, help='End date (UTC).'
 )
 @bbox_option
 @click.option(
     '-r', '--region', type=click.Path(exists=True, dir_okay=False, allow_dash=True), callback=_region_cb,
-    help='Region defined by geojson polygon or raster file. Use "-" to read geojson from stdin.  [One of --bbox or '
-         '--region is required]'
+    help='Region defined by geojson polygon or raster file. Use "-" to read geojson from stdin.  One of '
+         ':option:`--bbox` or :option:`--region` is required.'
 )
 @click.option(
     '-fp', '--fill-portion', type=click.FloatRange(min=0, max=100), default=0, show_default=True,
@@ -336,25 +350,27 @@ cli.add_command(config)
 )
 @click.option(
     '-cp', '--cloudless-portion', type=click.FloatRange(min=0, max=100), default=0, show_default=True,
-    help='Lower limit on the cloud/shadow free portion of the region (%).'
+    help='Lower limit on the cloud/shadow free portion of the region (%).  If cloud/shadow masking is not supported '
+         'for the specified :option:`--collection`, :option:`--cloudless-portion` will operate like '
+         ':option:`--fill-portion`.'
 )
 @click.option(
     '-o', '--output', type=click.Path(exists=False, dir_okay=False, writable=True), default=None,
-    help='Write search results to this json file.'
+    help='JSON file to write search results to.'
 )
 @click.pass_obj
 def search(obj, collection, start_date, end_date, bbox, region, fill_portion, cloudless_portion, output):
     """
     Search for images.
 
-    Search a Google Earth Engine image collection for images, filtered by date, region and optionally, the portion of
-    filled (valid) pixels.  The following cloud/shadow mask supported collections can also be filtered by the cloudless
-    (cloud/shadow-free) portion:
-
+    Search a Google Earth Engine image collection for images, filtering by date, region and portion of
+    filled, and/or cloud/shadow-free pixels.  Cloud/shadow-free (cloudless) filtering is supported on the following
+    collections:
     \b
-        =============  =======================
+
+        ==============  ======================
         geedim name     EE name
-        =============  =======================
+        ==============  ======================
         sentinel2-sr    COPERNICUS/S2_SR
         sentinel2-toa   COPERNICUS/S2
         landsat9-c2-l2  LANDSAT/LC09/C02/T1_L2
@@ -366,12 +382,9 @@ def search(obj, collection, start_date, end_date, bbox, region, fill_portion, cl
 
     A search region must be specified with either the ``--bbox`` or ``--region`` option.
 
-    If cloud/shadow masking is not supported for the searched collection the ``--cloudless-portion`` option will filter
-    on the portion of filled (valid) pixels i.e. the same as ``--fill-portion``.  Note that filled/cloudless portions are
-    found for the specified search region, not entire image granules.
-
+    Note that filled/cloudless portions are found for the specified search region, not entire image granules.
     \b
-    --------
+
     Examples
     --------
 
@@ -427,7 +440,8 @@ cli.add_command(search)
 @region_option
 @click.option(
     '-dd', '--download-dir', type=click.Path(exists=True, file_okay=False, dir_okay=True, writable=True),
-    default=os.getcwd(), help='Directory to download image file(s) into.  [default: cwd]'
+    default=None,
+    help='Directory to download image file(s) into.  Defaults to the current working directory.'
 )
 @crs_option
 @scale_option
@@ -436,7 +450,7 @@ cli.add_command(search)
 @resampling_option
 @click.option(
     '-o', '--overwrite', is_flag=True, default=False,
-    help='Overwrite the destination file if it exists.  [default: don\'t overwrite]'
+    help='Overwrite the destination file if it exists.'
 )
 @click.pass_obj
 def download(obj, image_id, bbox, region, download_dir, mask, overwrite, **kwargs):
@@ -449,11 +463,11 @@ def download(obj, image_id, bbox, region, download_dir, mask, overwrite, **kwarg
 
     This command can be chained after the ``composite`` command, to download the composite image.  It can also be
     chained after the ``search`` command, in which case the search result images will be downloaded, without the need
-    to specify image IDs with ``--id``, or region with ``--bbox`` or ``--region``.
+    to specify image IDs with ``--id``, or region with ``--bbox`` / ``--region``.
 
     The following auxiliary bands are added to images from collections with support for cloud/shadow masking:
-
     \b
+
         ==============  =========================================
         Band name       Description
         ==============  =========================================
@@ -466,12 +480,12 @@ def download(obj, image_id, bbox, region, download_dir, mask, overwrite, **kwarg
 
     Images from other collections, will contain the FILL_MASK band only.
 
-    If neither ``--bbox`` or ``--region`` are specified, the entire image granule will be downloaded.
+    If neither ``--bbox`` or ``--region`` are specified, the entire image granule
+    will be downloaded.
 
     Image filenames are derived from their Earth Engine ID.
-
     \b
-    --------
+
     Examples
     --------
 
@@ -484,6 +498,7 @@ def download(obj, image_id, bbox, region, download_dir, mask, overwrite, **kwarg
         $ geedim search -c MODIS/006/MCD43A4 -s 2022-01-01 -e 2022-01-03 --bbox 23 -34 24 -33 download --crs EPSG:3857 --scale 500
     """
     logger.info('\nDownloading:\n')
+    download_dir = download_dir or os.getcwd()
     image_list = _prepare_image_list(obj, mask=mask)
     for im in image_list:
         filename = pathlib.Path(download_dir).joinpath(im.name + '.tif')
@@ -501,8 +516,8 @@ cli.add_command(download)
 @bbox_option
 @region_option
 @click.option(
-    '-df', '--drive-folder', type=click.STRING, default='',
-    help='Google Drive folder to export image(s) to. [default: root]'
+    '-df', '--drive-folder', type=click.STRING, default=None,
+    help='Google Drive folder to export image(s) to.  Defaults to the root folder.'
 )
 @crs_option
 @scale_option
@@ -510,7 +525,7 @@ cli.add_command(download)
 @mask_option
 @resampling_option
 @click.option(
-    '-w/-nw', '--wait/--no-wait', default=True, help='Whether to wait for the export to complete.  [default: --wait]'
+    '-w/-nw', '--wait/--no-wait', default=True, show_default=True, help='Whether to wait for the export to complete.'
 )
 @click.pass_obj
 def export(obj, image_id, bbox, region, drive_folder, mask, wait, **kwargs):
@@ -522,11 +537,11 @@ def export(obj, image_id, bbox, region, drive_folder, mask, wait, **kwargs):
 
     This command can be chained after the ``composite`` command, to export the composite image.  It can also be
     chained after the ``search`` command, in which case the search result images will be exported, without the need
-    to specify image IDs with ``--id``, or region with ``--bbox`` or ``--region``.
+    to specify image IDs with ``--id``, or region with ``--bbox`` / ``--region``.
 
     The following auxiliary bands are added to images from collections with support for cloud/shadow masking:
-
     \b
+
         ==============  =========================================
         Band name       Description
         ==============  =========================================
@@ -539,12 +554,12 @@ def export(obj, image_id, bbox, region, drive_folder, mask, wait, **kwargs):
 
     Images from other collections, will contain the FILL_MASK band only.
 
-    If neither ``--bbox`` or ``--region`` are specified, the entire image granule will be exported.
+    If neither `--bbox` or `--region` are specified, the entire image granule
+    will be downloaded.
 
     Image filenames are derived from their Earth Engine ID.
-
     \b
-    --------
+
     Examples
     --------
 
@@ -578,33 +593,35 @@ cli.add_command(export)
     '-i', '--id', 'image_id', type=click.STRING, multiple=True, help='Earth Engine image ID(s) to include in composite.'
 )
 @click.option(
-    '-cm', '--method', type=click.Choice([cm.value for cm in CompositeMethod], case_sensitive=False),
+    '-cm', '--method', 'method', type=click.Choice([cm.value for cm in CompositeMethod], case_sensitive=False),
     default=None, callback=_comp_method_cb,
-    help='Compositing method to use.  [default: ``q_mosaic`` for supported collections, otherwise ``mosaic`` ]'
+    help='Compositing method to use.  Defaults to `q-mosaic` for cloud/shadow mask supported collections, '
+         '`mosaic` otherwise.'
 )
 @click.option(
-    '-m/-nm', '--mask/--no-mask', default=True,
+    '-m/-nm', '--mask/--no-mask', default=True, show_default=True,
     help='Whether to apply cloud/shadow (or fill) masks to input images before compositing.  Fill masks are used for '
-         'images without support for cloud/shadow masking [default: --mask]'
+         'images without support for cloud/shadow masking.'
 )
 @click.option(
     '-rs', '--resampling', type=click.Choice([rm.value for rm in ResamplingMethod], case_sensitive=True),
-    default=BaseImage._default_resampling.value, show_default=True, callback=_resampling_method_cb,
-    help='Use this method to resample input images before compositing.',
+    default=BaseImage._default_resampling.value, callback=_resampling_method_cb, show_default=True,
+    help='Resample images with this method before compositing.',
 )
 @click.option(
     '-b', '--bbox', type=click.FLOAT, nargs=4, default=None, callback=_bbox_cb,
     help='Give preference to images with the highest cloudless (or filled) portion inside this bounding box (left, '
-         'bottom, right, top). [Valid for ``mosaic`` and ``q-mosaic`` methods.]'
+         'bottom, right, top).  Valid for `mosaic` and `q-mosaic` compositing :option:`--method`.'
 )
 @click.option(
     '-r', '--region', type=click.Path(exists=True, dir_okay=False, allow_dash=True), default=None, callback=_region_cb,
     help='Give preference to images with the highest cloudless (or filled) portion inside this geojson polygon '
-         'region, or raster file. [Valid for ``mosaic`` and ``q-mosaic`` methods.]'
+         'region, or raster file.  Valid for `mosaic` and `q-mosaic` compositing :option:`--method`.'
 )
 @click.option(
     '-d', '--date', type=click.DateTime(),
-    help='Give preference to images closest to this date (UTC).  [Valid for ``mosaic`` and ``q-mosaic`` methods.]'
+    help='Give preference to images closest to this date (UTC).    Valid for `mosaic` and `q-mosaic` compositing '
+         ':option:`--method`.'
 )
 @click.pass_obj
 def composite(obj, image_id, mask, method, resampling, bbox, region, date):
@@ -614,46 +631,48 @@ def composite(obj, image_id, mask, method, resampling, bbox, region, date):
     Create cloud/shadow-free and other composite image(s) from specified input images.
 
     ``download`` or ``export`` commands can be chained after the ``composite`` command to download/export the composite
-    image. ``composite`` can also be chained after ``search``, ``download`` or ``composite``, in which case it will composite
-    the output image(s) from the previous command.  Images specified with the ``--id`` option will be added to any
-    existing chained images i.e. images output from previous chained commands.
+    image. ``composite`` can also be chained after ``search``, ``download`` or ``composite``, in which case it will
+    composite the output image(s) from the previous command.  Images specified with the ``--id`` option will be added
+    to any existing chained images i.e. images output from previous chained commands.
 
     ``--method`` specifies the method for finding a composite pixel from corresponding input image pixels.  The
     following options are available:
-
     \b
-        ============  ========================================================
-        Method        Description
-        ============  ========================================================
-        ``q_mosaic``  Use the unmasked pixel with the highest cloud distance.
-                      Where more than one pixel has the same cloud distance,
-                      the first one is selected.
-        ``mosaic``    Use the first unmasked pixel.
-        * ``medoid``  Use the medoid of the unmasked pixels i.e. the pixels
-                      of the image with minimum summed difference (across
-                      bands) to the median over the input images.  Maintains
-                      relationship between bands.
-        ``median``    Use the median of the unmasked pixels.
-        ``mode``      Use the mode of the unmasked pixels.
-        ``mean``      Use the mean of the unmasked pixels.
-        ============  ========================================================
 
-    For the ``mosaic`` and ``q_mosaic`` methods there are three ways of prioritising input images for selection:
+        ==========  ========================================================
+        Method      Description
+        ==========  ========================================================
+        `q-mosaic`  | Use the unmasked pixel with the highest cloud distance.
+                    | Where more than one pixel has the same cloud distance,
+                    | the first one is selected.
+        `mosaic`    Use the first unmasked pixel.
+        `medoid`    | Use the medoid of the unmasked pixels i.e. the pixels
+                    | of the image with minimum summed difference (across
+                    | bands) to the median over the input images.
+                    | Maintains relationship between bands.
+        `median`    Use the median of the unmasked pixels.
+        `mode`      Use the mode of the unmasked pixels.
+        `mean`      Use the mean of the unmasked pixels.
+        ==========  ========================================================
 
-        * If ``--date`` is specified, images are sorted by the absolute difference of their capture time from this date.
+    For the `mosaic` and `q-mosaic` methods there are three ways of prioritising input images for selection:
+    \b
 
-        * If either ``--region`` or ``--bbox`` are specified, images are sorted by their cloudless (or filled) portion inside this region.
-
-        * If none of the above options are specified, images are sorted by their capture time.
+        * | If ``--date`` is specified, images are sorted by the absolute
+          | difference of their capture time from this date.
+        * | If either ``--region`` or ``--bbox`` are specified, images are sorted
+          | by their cloudless (or filled) portion inside this region.
+        * | If none of the above options are specified, images are sorted by their
+          | capture time.
 
     By default, input images are masked before compositing.  This means that only cloud/shadow-free (or filled) pixels
-    are used to make the composite.  You can turn off this behaviour with the ``--no-mask`` option.
-
+    are used to make the composite.  You can turn off this behaviour with the `--no-mask` option.
     \b
-    --------
+
     Examples
     --------
     Composite two Landsat-7 images using the default options and download the result::
+    \b
 
         $ geedim composite -i LANDSAT/LE07/C02/T1_L2/LE07_173083_20100203 -i LANDSAT/LE07/C02/T1_L2/LE07_173083_20100219 download --bbox 22 -33.1 22.1 -33 --crs EPSG:3857 --scale 30
 

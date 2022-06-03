@@ -527,7 +527,7 @@ class BaseImage:
             else:
                 raise IOError(f"Export failed \n{status}")
 
-    def export(self, filename, folder='', wait=True, **kwargs):
+    def export(self, filename, folder=None, wait=True, **kwargs):
         """
         Export the encapsulated image to Google Drive.
 
