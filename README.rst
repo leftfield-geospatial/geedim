@@ -1,11 +1,16 @@
 |Tests| |codecov| |PyPI version| |Anaconda-Server Badge| |License|
 
+
 ``geedim``
 ==========
+
+.. short_descr_start
 
 Search, composite, and download `Google Earth
 Engine <https://earthengine.google.com/>`__ imagery, without size
 limits.
+
+.. description_start
 
 Description
 -----------
@@ -18,8 +23,12 @@ can be downloaded, or exported to Google Drive. Images larger than the
 EE size limit are split and downloaded as separate tiles, then
 re-assembled into a single GeoTIFF.
 
+.. description_end
+
 Supported imagery
 ~~~~~~~~~~~~~~~~~
+
+.. supp_im_start
 
 Any EE imagery can be searched, composited and downloaded by ``geedim``.
 Cloud / shadow masking is supported for on the following collections:
@@ -75,6 +84,8 @@ Cloud / shadow masking is supported for on the following collections:
 |                   | /COPERNICUS_S2_SR>`__ |                          |
 +-------------------+-----------------------+--------------------------+
 
+.. supp_im_end
+
 Requirements
 ------------
 
@@ -85,7 +96,11 @@ Installation
 ------------
 
 ``geedim`` is available via ``pip`` and ``conda``. Under Windows, using
-``conda`` is the easiest way to resolve binary dependencies. ### conda
+``conda`` is the easiest way to resolve binary dependencies.
+
+conda
+~~~~~
+
 The `Miniconda <https://docs.conda.io/en/latest/miniconda.html>`__
 installation provides a minimal ``conda``.
 
@@ -106,11 +121,15 @@ Following installation, Earth Engine should be authenticated:
 
    earthengine authenticate
 
+.. install_end
+
 Getting started
 ---------------
 
 Command line interface
 ~~~~~~~~~~~~~~~~~~~~~~
+
+.. cli_start
 
 ``geedim`` command line functionality is accessed through the commands:
 
@@ -187,11 +206,14 @@ Search for Sentinel-2 SR images with a cloudless portion of at least
 
    geedim config --mask-method qa search -c sentinel2-sr --cloudless-portion 60 -s 2022-01-01 -e 2022-01-14 --bbox 24 -34 24.5 -33.5
 
+.. cli_end
+
 API
 ~~~
-
 Example
 ^^^^^^^
+
+.. api_example_start
 
 .. code:: python
 
@@ -219,6 +241,8 @@ Example
    # composite search results and download
    comp_image = gd_collection.composite()
    comp_image.download('s2_comp_image.tif', region=region, crs='EPSG:32735', scale=30)
+
+.. api_example_end
 
 License
 -------

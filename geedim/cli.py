@@ -55,23 +55,22 @@ class ChainedCommand(click.Command):
     """
     def get_help(self, ctx):
         """
-        Strip some RST markup from the help for CLI display.  Assumes no grid tables.
+        Strip some RST markup from the help text for CLI display.  Assumes no grid tables.
         """
-        click_wrap_text = click.formatting.wrap_text
+        if not hasattr(self, 'click_wrap_text'):
+            self.click_wrap_text = click.formatting.wrap_text
         sub_strings = {
-            '\b\n': '\n\b',             # convert to click literal (unwrapped) block marker
+            '\b\n': '\n\b',             # convert from RST friendly to click literal (unwrapped) block marker
             ':option:': '',             # strip ':option:'
             '\| ': '',                  # strip RST literal (unwrapped) marker in e.g. tables and bullet lists
-            '\n\.\. _.*:\n': '',        # strip RST ref marker '\n.. <name>:\n'
+            '\n\.\. _.*:\n': '',        # strip RST ref directive '\n.. <name>:\n'
             '`(.*)<(.*)>`_': '\g<1>',   # convert from RST cross-ref '`<name> <<link>>`_' to 'name'
             '::':':'                    # convert from RST '::' to ':'
         }
         def reformat_text(text, width, **kwargs):
             for sub_key, sub_value in sub_strings.items():
                 text = re.sub(sub_key, sub_value, text, flags=re.DOTALL)
-            return click_wrap_text(text, width, **kwargs)
-        # TODO: if this gets called more than once on the same instance, it will start recursing itself
-        #  cannot we not do this some other way, like provide our own formatter?
+            return self.click_wrap_text(text, width, **kwargs)
         click.formatting.wrap_text = reformat_text
         return click.Command.get_help(self, ctx)
 

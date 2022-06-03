@@ -1,8 +1,21 @@
 API
 ===
 
+Getting started
+---------------
+
+Example
+~~~~~~~
+
+.. include:: ../README.rst
+    :start-after: api_example_start
+    :end-before: api_example_end
+
+Usage
+-----
+
 geedim.MaskedImage
-------------------
+~~~~~~~~~~~~~~~~~~
 
 .. currentmodule:: geedim.mask
 
@@ -15,7 +28,7 @@ geedim.MaskedImage
 
 
 geedim.BaseImage
-----------------
+~~~~~~~~~~~~~~~~
 
 .. currentmodule:: geedim.download
 

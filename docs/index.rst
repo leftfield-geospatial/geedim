@@ -3,14 +3,16 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to geedim's documentation!
-==================================
-.. include:: ../README.rst
+geedim
+======
+
+.. include:: readme_sections.rst
 
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
 
+   readme_sections
    cli
    api
 

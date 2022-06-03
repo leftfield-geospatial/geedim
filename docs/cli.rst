@@ -1,5 +1,15 @@
 CLI
-===
+---
+
+Getting started
+~~~~~~~~~~~~~~~
+
+.. include:: ../README.rst
+    :start-after: cli_start
+    :end-before: cli_end
+
+Usage
+~~~~~
 
 .. click:: geedim.cli:cli
   :prog: geedim
