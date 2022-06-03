@@ -409,7 +409,7 @@ class MaskedCollection:
     def composite(
         self, method=None, mask=True, resampling=BaseImage._default_resampling, date=None,
         region=None, **kwargs
-    ):
+    ):  # TODO copy the latest CLI help across
         """
         Create a composite image from the encapsulated image collection.
 

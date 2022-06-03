@@ -20,6 +20,7 @@ import pathlib
 import sys
 from types import SimpleNamespace
 from typing import List
+import re
 
 import click
 import rasterio.crs as rio_crs
@@ -54,14 +55,20 @@ class ChainedCommand(click.Command):
     """
     def get_help(self, ctx):
         """
-        Modify help string to allow sphinx-click RST formatting inside \b blocks.
+        Strip some RST markup from the help for CLI display.  Assumes no grid tables.
         """
         click_wrap_text = click.formatting.wrap_text
-        # assumes no grid tables
-        repl_strings = {'\b\n': '\n\b', ':option:': '', '| ': ''}
+        sub_strings = {
+            '\b\n': '\n\b',             # convert to click literal (unwrapped) block marker
+            ':option:': '',             # strip ':option:'
+            '\| ': '',                  # strip RST literal (unwrapped) marker in e.g. tables and bullet lists
+            '\n\.\. _.*:\n': '',        # strip RST ref marker '\n.. <name>:\n'
+            '`(.*)<(.*)>`_': '\g<1>',   # convert from RST cross-ref '`<name> <<link>>`_' to 'name'
+            '::':':'                    # convert from RST '::' to ':'
+        }
         def reformat_text(text, width, **kwargs):
-            for repl_key, repl_value in repl_strings.items():
-                text = text.replace(repl_key, repl_value)
+            for sub_key, sub_value in sub_strings.items():
+                text = re.sub(sub_key, sub_value, text, flags=re.DOTALL)
             return click_wrap_text(text, width, **kwargs)
         # TODO: if this gets called more than once on the same instance, it will start recursing itself
         #  cannot we not do this some other way, like provide our own formatter?
@@ -203,7 +210,7 @@ crs_option = click.option(
 )
 scale_option = click.option(
     '-s', '--scale', type=click.FLOAT, default=None,
-    help='Pixel resolution (scale) to resample image(s) to (m).  Defaults to the minimum resolution of the source '
+    help='Pixel scale (size) to resample image(s) to (m).  Defaults to the minimum scale of the source '
          'image bands.'
 )
 dtype_option = click.option(
@@ -329,8 +336,8 @@ cli.add_command(config)
 # search command
 @click.command(cls=ChainedCommand)
 @click.option(
-    '-c', '--collection', type=click.STRING, default='landsat8-c2-l2', show_default=True, callback=_collection_cb,
-    help=f'Earth Engine image collection to search. geedim or EE collection names can be used.'
+    '-c', '--collection', type=click.STRING, required=True, callback=_collection_cb,
+    help=f'Earth Engine image collection to search. ``geedim`` or EE collection names can be used.'
 )
 @click.option(
     '-s', '--start-date', type=click.DateTime(), required=True, help='Start date (UTC).'
@@ -351,8 +358,7 @@ cli.add_command(config)
 @click.option(
     '-cp', '--cloudless-portion', type=click.FloatRange(min=0, max=100), default=0, show_default=True,
     help='Lower limit on the cloud/shadow free portion of the region (%).  If cloud/shadow masking is not supported '
-         'for the specified :option:`--collection`, :option:`--cloudless-portion` will operate like '
-         ':option:`--fill-portion`.'
+         'for the specified collection, :option:`--cloudless-portion` will operate like :option:`--fill-portion`.'
 )
 @click.option(
     '-o', '--output', type=click.Path(exists=False, dir_okay=False, writable=True), default=None,
@@ -364,8 +370,10 @@ def search(obj, collection, start_date, end_date, bbox, region, fill_portion, cl
     Search for images.
 
     Search a Google Earth Engine image collection for images, filtering by date, region and portion of
-    filled, and/or cloud/shadow-free pixels.  Cloud/shadow-free (cloudless) filtering is supported on the following
+    filled pixels.  Cloud/shadow-free (cloudless) portion filtering is supported on the following
     collections:
+
+    .. _csmask_collections:
     \b
 
         ==============  ======================
@@ -382,7 +390,7 @@ def search(obj, collection, start_date, end_date, bbox, region, fill_portion, cl
 
     A search region must be specified with either the ``--bbox`` or ``--region`` option.
 
-    Note that filled/cloudless portions are found for the specified search region, not entire image granules.
+    Note that filled/cloudless portions are portions of the specified search region, not the entire image granule.
     \b
 
     Examples
@@ -458,7 +466,8 @@ def download(obj, image_id, bbox, region, download_dir, mask, overwrite, **kwarg
     Download image(s).
 
     Download Earth Engine image(s) to GeoTIFF file(s), allowing optional region of interest, and other image
-    formatting options to be specified.  Images larger than the Earth Engine size limit are split and downloaded as
+    formatting options to be specified.  Images larger than the `Earth Engine size limit
+    <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`_ are split and downloaded as
     separate tiles, then re-assembled into a single GeoTIFF.
 
     This command can be chained after the ``composite`` command, to download the composite image.  It can also be
@@ -554,7 +563,7 @@ def export(obj, image_id, bbox, region, drive_folder, mask, wait, **kwargs):
 
     Images from other collections, will contain the FILL_MASK band only.
 
-    If neither `--bbox` or `--region` are specified, the entire image granule
+    If neither ``--bbox`` or ``--region`` are specified, the entire image granule
     will be downloaded.
 
     Image filenames are derived from their Earth Engine ID.
@@ -635,17 +644,18 @@ def composite(obj, image_id, mask, method, resampling, bbox, region, date):
     composite the output image(s) from the previous command.  Images specified with the ``--id`` option will be added
     to any existing chained images i.e. images output from previous chained commands.
 
-    ``--method`` specifies the method for finding a composite pixel from corresponding input image pixels.  The
-    following options are available:
+    ``--method`` specifies the method for finding a composite pixel from the stack of corresponding input image
+    pixels.  The following options are available:
     \b
 
         ==========  ========================================================
         Method      Description
         ==========  ========================================================
         `q-mosaic`  | Use the unmasked pixel with the highest cloud distance.
-                    | Where more than one pixel has the same cloud distance,
-                    | the first one is selected.
-        `mosaic`    Use the first unmasked pixel.
+                    | (i.e. distance to nearest cloud).  Where more than one
+                    | pixel has the same cloud distance, the first one in the
+                    | stack is selected.
+        `mosaic`    Use the first unmasked pixel in the stack.
         `medoid`    | Use the medoid of the unmasked pixels i.e. the pixels
                     | of the image with minimum summed difference (across
                     | bands) to the median over the input images.
@@ -655,13 +665,13 @@ def composite(obj, image_id, mask, method, resampling, bbox, region, date):
         `mean`      Use the mean of the unmasked pixels.
         ==========  ========================================================
 
-    For the `mosaic` and `q-mosaic` methods there are three ways of prioritising input images for selection:
+    For the `mosaic` and `q-mosaic` methods there are three ways of ordering (i.e. prioritising) images in the stack:
     \b
 
         * | If ``--date`` is specified, images are sorted by the absolute
           | difference of their capture time from this date.
         * | If either ``--region`` or ``--bbox`` are specified, images are sorted
-          | by their cloudless (or filled) portion inside this region.
+          | by their cloudless/filled portion inside this region.
         * | If none of the above options are specified, images are sorted by their
           | capture time.
 
@@ -672,7 +682,6 @@ def composite(obj, image_id, mask, method, resampling, bbox, region, date):
     Examples
     --------
     Composite two Landsat-7 images using the default options and download the result::
-    \b
 
         $ geedim composite -i LANDSAT/LE07/C02/T1_L2/LE07_173083_20100203 -i LANDSAT/LE07/C02/T1_L2/LE07_173083_20100219 download --bbox 22 -33.1 22.1 -33 --crs EPSG:3857 --scale 30
 

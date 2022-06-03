@@ -546,7 +546,7 @@ class BaseImage:
                 Reproject image(s) to this EPSG or WKT CRS.  Where image bands have different CRSs, all are
                 re-projected to this CRS [default: CRS of the minimum scale band].
             scale : float, optional
-                Resample image(s) to this pixel resolution / scale (m).  Where image bands have different scales,
+                Resample image(s) to this pixel scale (size) (m).  Where image bands have different scales,
                 all are resampled to this scale. [default: minimum scale of image bands].
             resampling : ResamplingMethod, optional
                 Resampling method ('near'|'bilinear'|'bicubic') [default: 'near'].
@@ -591,7 +591,7 @@ class BaseImage:
                 Reproject image(s) to this EPSG or WKT CRS.  Where image bands have different CRSs, all are
                 re-projected to this CRS [default: CRS of the minimum scale band].
             scale : float, optional
-                Resample image(s) to this pixel resolution / scale (m).  Where image bands have different scales,
+                Resample image(s) to this pixel scale (size) (m).  Where image bands have different scales,
                 all are resampled to this scale. [default: minimum scale of image bands].
             resampling : ResamplingMethod, optional
                 Resampling method ('near'|'bilinear'|'bicubic') [default: 'near'].
