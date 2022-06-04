@@ -205,17 +205,16 @@ region_option = click.option(
 )
 crs_option = click.option(
     '-c', '--crs', type=click.STRING, default=None, callback=_crs_cb,
-    help='CRS to reproject image(s) to (EPSG string or path to WKT text file).  Defaults to the source image CRS.'
+    show_default='source image CRS.', help='CRS to reproject image(s) to (EPSG string or path to WKT text file).'
 )
 scale_option = click.option(
     '-s', '--scale', type=click.FLOAT, default=None,
-    help='Pixel scale (size) to resample image(s) to (m).  Defaults to the minimum scale of the source '
-         'image bands.'
+    show_default='minimum scale of the source image bands.', help='Pixel scale (size) to resample image(s) to (m).'
 )
 dtype_option = click.option(
     '-dt', '--dtype', type=click.Choice(list(dtype_ranges.keys()), case_sensitive=False), default=None,
-    help='Data type to convert image(s) to.  Defaults to the smallest data type able to represent the '
-         'range of pixel values.'
+    show_default='smallest data type able to represent the range of pixel values.',
+    help='Data type to convert image(s) to.'
 )
 mask_option = click.option(
     '-m/-nm', '--mask/--no-mask', default=MaskedImage._default_mask, show_default=True,
@@ -310,6 +309,11 @@ def config(ctx, mask_cirrus, mask_shadows, mask_method, prob, dark, shadow_dist,
         landsat4-c2-l2  LANDSAT/LT04/C02/T1_L2
         ==============  ======================
     \b
+
+    For Sentinel-2 collections, ``--mask-method`` for cloud masking can be one of:
+
+        * `cloud-prob`: Use a threshold on the corresponding Sentinel-2 cloud probability image.
+        * `qa`: Use the Sentinel-2 `QA60` quality band.
 
     Examples
     --------
@@ -447,8 +451,7 @@ cli.add_command(search)
 @region_option
 @click.option(
     '-dd', '--download-dir', type=click.Path(exists=True, file_okay=False, dir_okay=True, writable=True),
-    default=None,
-    help='Directory to download image file(s) into.  Defaults to the current working directory.'
+    default=None, show_default='current working directory.', help='Directory to download image file(s) into.'
 )
 @crs_option
 @scale_option
@@ -456,8 +459,7 @@ cli.add_command(search)
 @mask_option
 @resampling_option
 @click.option(
-    '-o', '--overwrite', is_flag=True, default=False,
-    help='Overwrite the destination file if it exists.'
+    '-o', '--overwrite', is_flag=True, default=False, help='Overwrite the destination file if it exists.'
 )
 @click.pass_obj
 def download(obj, image_id, bbox, region, download_dir, mask, overwrite, **kwargs):
@@ -466,8 +468,9 @@ def download(obj, image_id, bbox, region, download_dir, mask, overwrite, **kwarg
 
     Download Earth Engine image(s) to GeoTIFF file(s), allowing optional region of interest, and other image
     formatting options to be specified.  Images larger than the `Earth Engine size limit
-    <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`_ are split and downloaded as
-    separate tiles, then re-assembled into a single GeoTIFF.
+    <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`_ are split and downloaded as separate
+    tiles, then re-assembled into a single GeoTIFF.  Downloaded image files are populated with relevant metadata from
+    the source Earth Engine image and associated STAC.
 
     This command can be chained after the ``composite`` command, to download the composite image.  It can also be
     chained after the ``search`` command, in which case the search result images will be downloaded, without the need
@@ -524,8 +527,8 @@ cli.add_command(download)
 @bbox_option
 @region_option
 @click.option(
-    '-df', '--drive-folder', type=click.STRING, default=None,
-    help='Google Drive folder to export image(s) to.  Defaults to the root folder.'
+    '-df', '--drive-folder', type=click.STRING, default=None, show_default='root folder.',
+    help='Google Drive folder to export image(s) to.',
 )
 @crs_option
 @scale_option
@@ -603,8 +606,8 @@ cli.add_command(export)
 @click.option(
     '-cm', '--method', 'method', type=click.Choice([cm.value for cm in CompositeMethod], case_sensitive=False),
     default=None, callback=_comp_method_cb,
-    help='Compositing method to use.  Defaults to `q-mosaic` for cloud/shadow mask supported collections, '
-         '`mosaic` otherwise.'
+    show_default='`q-mosaic` for cloud/shadow mask supported collections, `mosaic` otherwise.',
+    help='Compositing method to use.'
 )
 @click.option(
     '-m/-nm', '--mask/--no-mask', default=True, show_default=True,
@@ -628,7 +631,7 @@ cli.add_command(export)
 )
 @click.option(
     '-d', '--date', type=click.DateTime(),
-    help='Give preference to images closest to this date (UTC).    Valid for `mosaic` and `q-mosaic` compositing '
+    help='Give preference to images closest to this date (UTC).  Valid for `mosaic` and `q-mosaic` compositing '
          ':option:`--method`.'
 )
 @click.pass_obj

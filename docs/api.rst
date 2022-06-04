@@ -23,18 +23,23 @@ geedim.MaskedImage
     :toctree: generated/
 
     MaskedImage.from_id
-    MaskedImage.set_region_stats
     MaskedImage.mask_clouds
+    MaskedImage.download
+    MaskedImage.export
+    MaskedImage.set_region_stats
 
 
-geedim.BaseImage
-~~~~~~~~~~~~~~~~
+geedim.MaskedCollection
+~~~~~~~~~~~~~~~~~~~~~~~
 
-.. currentmodule:: geedim.download
+.. currentmodule:: geedim.collection
 
 .. autosummary::
     :toctree: generated/
 
-    BaseImage.from_id
-    BaseImage.download
-    BaseImage.export
+    MaskedCollection.__init__
+    MaskedCollection.from_list
+    MaskedCollection.search
+    MaskedCollection.properties
+    MaskedCollection.properties_table
+    MaskedCollection.schema_table

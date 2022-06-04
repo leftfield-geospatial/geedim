@@ -19,9 +19,7 @@ Description
 compositing and downloading satellite imagery from Google Earth Engine
 (EE). It optionally performs cloud / shadow masking, and cloud /
 shadow-free compositing on supported collections. Images and composites
-can be downloaded, or exported to Google Drive. Images larger than the
-EE size limit are split and downloaded as separate tiles, then
-re-assembled into a single GeoTIFF.
+can be downloaded, or exported to Google Drive. Relevant metadata is included in downloaded files. Images larger than the EE size limit are split and downloaded as separate tiles, then re-assembled into a single GeoTIFF.
 
 .. description_end
 
@@ -31,7 +29,7 @@ Supported imagery
 .. supp_im_start
 
 Any EE imagery can be searched, composited and downloaded by ``geedim``.
-Cloud / shadow masking is supported for on the following collections:
+Cloud / shadow masking is supported on the following collections:
 
 +-------------------+-----------------------+--------------------------+
 | ``geedim`` name   | EE name               | Description              |
