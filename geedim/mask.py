@@ -17,10 +17,10 @@ import logging
 
 import ee
 
+import geedim.schema
 from geedim.download import BaseImage
 from geedim.enums import CloudMaskMethod
 from geedim.utils import split_id, get_projection
-import geedim.schema
 
 logger = logging.getLogger(__name__)
 
@@ -31,46 +31,43 @@ logger = logging.getLogger(__name__)
 class MaskedImage(BaseImage):
     _default_mask = False
 
-    def __init__(self, ee_image, mask=_default_mask, region=None, **kwargs):
+    def __init__(self, ee_image: ee.Image, mask: bool = _default_mask, region: dict = None, **kwargs):
         """
-        Base class for encapsulating and masking any Earth Engine image.
+        Class for masking and downloading an Earth Engine image.
 
         Parameters
         ----------
         ee_image: ee.Image
-            The Earth Engine image to encapsulate.
+            Earth Engine image to encapsulate.
         mask: bool, optional
-            Whether to mask the image [default: False].
+            Whether to mask the image.
         region: dict, optional
             A geojson polygon inside of which to find statistics for the image.  These values are stored in the image
-            properties [default: don't find statistics].
-        kwargs: optional
-            Any cloud/shadow masking parameters supported for the encapsulated image.
-
-            mask_cirrus: Whether to mask cirrus clouds.  Valid for Landsat 8-9 images, and,for Sentinel-2 images
-                with method=`qa`.
-            mask_shadows: Whether to mask cloud shadows.
-            mask_method : CloudMaskMethod, optional
-                Method used to mask clouds.  Valid for Sentinel-2 images.
-                Available options:
-                    - 'cloud-prob' : Use S2 cloud probability.
-                    - 'qa' : Use Quality Assessment band.
-            prob : float, optional
-                Cloud probability threshold (%). Valid for Sentinel-2 images with the `cloud-prob` mask-method.
-            dark : float, optional
-                NIR threshold [0-1]. NIR values below this threshold are potential cloud shadows.  Valid for Sentinel-2
-                images.
-            shadow_dist : int, optional
-                Maximum distance (m) to look for cloud shadows from cloud edges.  Valid for Sentinel-2 images.
-            buffer : int, optional
-                Distance (m) to dilate cloud/shadow.  Valid for Sentinel-2 images.
-            cdi_thresh : float, optional
-                Cloud Displacement Index threshold. Values below this threshold are considered potential clouds.
-                If this parameter is not specified (=None), the index is not used.  Valid for Sentinel-2 images.
-                See https://developers.google.com/earth-engine/apidocs/ee-algorithms-sentinel2-cdi for details.
-            max_cloud_dist: int, optional
-                Maximum distance (m) to look for clouds when forming the `cloud distance` band.  Valid for
-                Sentinel-2 images.
+            properties. If None, statistics are not found (the default).
+        mask_cirrus: bool, optional
+            Whether to mask cirrus clouds.  Valid for Landsat 8-9 images, and for Sentinel-2 images with
+            the `qa` ``mask_method``.
+        mask_shadows: bool, optional
+            Whether to mask cloud shadows.
+        mask_method: CloudMaskMethod, str, optional
+            Method used to mask clouds.  Valid for Sentinel-2 images.  See :class:`geedim.enums.CloudMaskMethod` for
+            details.
+        prob: float, optional
+            Cloud probability threshold (%). Valid for Sentinel-2 images with the `cloud-prob` ``mask-method``.
+        dark: float, optional
+            NIR threshold [0-1]. NIR values below this threshold are potential cloud shadows.  Valid for Sentinel-2
+            images.
+        shadow_dist: int, optional
+            Maximum distance (m) to look for cloud shadows from cloud edges.  Valid for Sentinel-2 images.
+        buffer: int, optional
+            Distance (m) to dilate cloud/shadow.  Valid for Sentinel-2 images.
+        cdi_thresh: float, optional
+            Cloud Displacement Index threshold. Values below this threshold are considered potential clouds.
+            If this parameter is not specified (=None), the index is not used.  Valid for Sentinel-2 images.
+            See https://developers.google.com/earth-engine/apidocs/ee-algorithms-sentinel2-cdi for details.
+        max_cloud_dist: int, optional
+            Maximum distance (m) to look for clouds when forming the 'cloud distance' band.  Valid for
+            Sentinel-2 images.
         """
         # TODO: consider adding proj_scale parameter here, rather than in set_region_stats, then it can be re-used in
         #  S2 cloud masking and distance
@@ -84,19 +81,18 @@ class MaskedImage(BaseImage):
     @staticmethod
     def from_id(image_id: str, **kwargs) -> 'MaskedImage':
         """
-        Given an Earth Engine image ID, create an instance of MaskedImage, or the appropriate sub-class
+        Given an Earth Engine image ID, create a MaskedImage instance.
 
         Parameters
         ----------
         image_id: str
-            The ID of the Earth Engine image to encapsulate.
-        kwargs: optional
-            Any arguments to pass through to the class __init__() method.
-            See the MaskedImage.__init__() documentation for more detail.
+            ID of the Earth Engine image to encapsulate.
+        **kwargs
+            Optional keyword arguments to pass to :meth:`__init__`.
 
         Returns
         -------
-        gd_image: MaskedImage
+        MaskedImage
             A MaskedImage, or sub-class instance.
         """
 
@@ -122,7 +118,7 @@ class MaskedImage(BaseImage):
     def set_region_stats(self, region=None, scale=None):
         """
         Set FILL_PORTION on the encapsulated image for the specified region.  Derived classes should override this
-        method and add a true CLOUDLESS_PORTION and/or other statistics they support.
+        method and add a CLOUDLESS_PORTION and/or other statistics they support.
 
         Parameters
         ----------
@@ -163,8 +159,7 @@ class MaskedImage(BaseImage):
 
     def mask_clouds(self):
         """
-        Mask cloud/shadow in the encapsulated image.  For MaskedImage, cloud/shadow masking is not supported,
-        so this just applies the Earth Engine derived FILL_MASK.
+        Mask filled pixels or cloud/shadow, as supported for the encapsulated image.
         """
         self.ee_image = self.ee_image.updateMask(self.ee_image.select('FILL_MASK'))
 
@@ -312,34 +307,34 @@ class Sentinel2ClImage(CloudMaskedImage):
         s2_toa : bool, optional
             S2 TOA/SR collection.  Set to True if this image is from COPERNICUS/S2, or False if it is from
             COPERNICUS/S2_SR.
-        mask_cirrus: Whether to mask cirrus clouds.  Valid for Landsat 8-9 images, and,for Sentinel-2 images
-            with method=`qa`.
-        mask_shadows: Whether to mask cloud shadows.
-        mask_method : CloudMaskMethod, optional
-            Method used to mask clouds.  Valid for Sentinel-2 images.
-            Available options:
-                - 'cloud-prob' : Use S2 cloud probability.
-                - 'qa' : Use Quality Assessment band.
-        prob : float, optional
-            Cloud probability threshold (%). Valid for Sentinel-2 images with the `cloud-prob` mask-method.
-        dark : float, optional
+        mask_cirrus: bool, optional
+            Whether to mask cirrus clouds.  Valid for Landsat 8-9 images, and for Sentinel-2 images with
+            the `qa` ``mask_method``.
+        mask_shadows: bool, optional
+            Whether to mask cloud shadows.
+        mask_method: CloudMaskMethod, str, optional
+            Method used to mask clouds.  Valid for Sentinel-2 images.  See :class:`geedim.enums.CloudMaskMethod` for
+            details.
+        prob: float, optional
+            Cloud probability threshold (%). Valid for Sentinel-2 images with the `cloud-prob` ``mask-method``.
+        dark: float, optional
             NIR threshold [0-1]. NIR values below this threshold are potential cloud shadows.  Valid for Sentinel-2
             images.
-        shadow_dist : int, optional
+        shadow_dist: int, optional
             Maximum distance (m) to look for cloud shadows from cloud edges.  Valid for Sentinel-2 images.
-        buffer : int, optional
+        buffer: int, optional
             Distance (m) to dilate cloud/shadow.  Valid for Sentinel-2 images.
-        cdi_thresh : float, optional
+        cdi_thresh: float, optional
             Cloud Displacement Index threshold. Values below this threshold are considered potential clouds.
             If this parameter is not specified (=None), the index is not used.  Valid for Sentinel-2 images.
             See https://developers.google.com/earth-engine/apidocs/ee-algorithms-sentinel2-cdi for details.
         max_cloud_dist: int, optional
-            Maximum distance (m) to look for clouds when forming the `cloud distance` band.  Valid for
+            Maximum distance (m) to look for clouds when forming the 'cloud distance' band.  Valid for
             Sentinel-2 images.
 
         Returns
         -------
-        aux_image: ee.Image
+        ee.Image
             An Earth Engine image containing *_MASK and CLOUD_DIST bands.
         """
         mask_method = CloudMaskMethod(mask_method)
@@ -432,12 +427,14 @@ class Sentinel2ClImage(CloudMaskedImage):
 
 class Sentinel2SrClImage(Sentinel2ClImage):
     """ Class for cloud/shadow masking of Sentinel-2 SR (COPERNICUS/S2_SR) images. """
+
     def _aux_image(self, s2_toa=False, **kwargs):
         return Sentinel2ClImage._aux_image(self, s2_toa=False, **kwargs)
 
 
 class Sentinel2ToaClImage(Sentinel2ClImage):
     """ Class for cloud/shadow masking of Sentinel-2 TOA (COPERNICUS/S2) images. """
+
     def _aux_image(self, s2_toa=False, **kwargs):
         return Sentinel2ClImage._aux_image(self, s2_toa=True, **kwargs)
 

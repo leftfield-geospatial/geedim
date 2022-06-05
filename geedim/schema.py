@@ -16,7 +16,6 @@
 # schema definitions for MaskedImage.from_id(), geedim <-> EE collection names, and search properties
 import geedim.mask
 
-
 default_prop_schema = {
     'system:id': {'abbrev': 'ID', 'description': 'Earth Engine image id'},
     'system:time_start': {'abbrev': 'DATE', 'description': 'Image capture date/time (UTC)'},

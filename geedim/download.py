@@ -47,7 +47,6 @@ class BaseImage:
     _float_nodata = float('nan')
     _desc_width = 70
     _default_resampling = ResamplingMethod.near
-    _supported_collection_ids = ['*']
 
     def __init__(self, ee_image):
         """
@@ -57,7 +56,7 @@ class BaseImage:
         Parameters
         ----------
         ee_image: ee.Image
-            The Earth Engine image to encapsulate.
+            Earth Engine image to encapsulate.
         """
         if not isinstance(ee_image, ee.Image):
             raise TypeError('`ee_image` must be an instance of ee.Image.')
@@ -80,7 +79,7 @@ class BaseImage:
         Returns
         -------
         gd_image: BaseImage
-            The BaseImage instance.
+            BaseImage instance.
         """
         ee_image = ee.Image(image_id)
         gd_image = cls(ee_image)
@@ -89,7 +88,7 @@ class BaseImage:
 
     @property
     def ee_image(self) -> ee.Image:
-        """The encapsulated EE image."""
+        """ Encapsulated EE image. """
         return self._ee_image
 
     @ee_image.setter
@@ -101,7 +100,7 @@ class BaseImage:
 
     @property
     def id(self) -> Union[str, None]:
-        """The EE image ID."""
+        """ EE image ID. """
         if self._id:  # avoid a call to getInfo() if _id is set
             return self._id
         else:
@@ -109,7 +108,7 @@ class BaseImage:
 
     @property
     def date(self) -> Union[datetime, None]:
-        """The image capture date & time."""
+        """ Image capture date & time. """
         if 'system:time_start' in self.properties:
             return datetime.utcfromtimestamp(self.properties['system:time_start'] / 1000)
         else:
@@ -117,24 +116,24 @@ class BaseImage:
 
     @property
     def name(self) -> Union[str, None]:
-        """The image name (the ID with slashes replaces by dashes)."""
+        """ Image name (the :attr:`id` with slashes replaced by dashes). """
         return self.id.replace('/', '-') if self.id else None
 
     @property
-    def ee_info(self) -> Union[Dict, None]:
-        """The EE image metadata in a dict."""
+    def ee_info(self) -> Dict:
+        """ EE image metadata. """
         if self._ee_info is None:
             self._ee_info = self._ee_image.getInfo()
         return self._ee_info
 
     @property
     def properties(self) -> Dict:
-        """The EE image properties in a dict."""
+        """ EE image properties. """
         return self.ee_info['properties'] if 'properties' in self.ee_info else {}
 
     @property
-    def min_projection(self) -> Union[Dict, None]:
-        """A dict of the projection information corresponding to the minimum scale band."""
+    def min_projection(self) -> Dict:
+        """ Projection information corresponding to the minimum scale band. """
         if not self._min_projection:
             self._min_projection = self._get_projection(self.ee_info, min_scale=True)
         return self._min_projection
@@ -142,52 +141,48 @@ class BaseImage:
     @property
     def crs(self) -> Union[str, None]:
         """
-        The image CRS corresponding to minimum scale band, as an EPSG string.
-        Will return None if the image has no fixed projection.
+        Image CRS corresponding to minimum scale band, as an EPSG string. None if the image has no fixed projection.
         """
         return self.min_projection['crs']
 
     @property
     def scale(self) -> Union[float, None]:
-        """The scale (m) corresponding to minimum scale band. Will return None if the image has no fixed projection."""
+        """ Scale (m) corresponding to minimum scale band. None if the image has no fixed projection. """
         return self.min_projection['scale']
 
     @property
     def shape(self) -> Union[Tuple[int, int], None]:
-        """
-        The (row, column) dimensions of the minimum scale band.
-        Will return None if the image has no fixed projection.
-        """
+        """ (row, column) dimensions of the minimum scale band. None if the image has no fixed projection. """
         return self.min_projection['shape']
 
     @property
-    def count(self) -> Union[int, None]:
-        """The number of image bands."""
+    def count(self) -> int:
+        """ Number of image bands. """
         return len(self.ee_info['bands']) if 'bands' in self.ee_info else None
 
     @property
     def transform(self) -> Union[rio.Affine, None]:
         """
-        The geo-transform of the minimum scale band, as a rasterio Affine transform.
-        Will return None if the image has no fixed projection.
+        Geo-transform of the minimum scale band, as a rasterio Affine transform.
+        None if the image has no fixed projection.
         """
         return self.min_projection['transform']
 
     @property
     def has_fixed_projection(self) -> bool:
-        """True if the image has a fixed projection, otherwise False."""
+        """ True if the image has a fixed projection, otherwise False. """
         return self.scale is not None
 
     @property
     def dtype(self) -> str:
-        """The minimal size data type required to represent the values in this image (as a string)."""
+        """ Minimal size data type required to represent the values in this image. """
         if not self._min_dtype:
             self._min_dtype = self._get_min_dtype(self.ee_info)
         return self._min_dtype
 
     @property
-    def size_in_bytes(self) -> int:
-        """The size in bytes of this image."""
+    def size(self) -> int:
+        """ Image size in bytes. """
         if not self.shape:
             return None
         dtype_size = np.dtype(self.dtype).itemsize
@@ -195,19 +190,19 @@ class BaseImage:
 
     @property
     def footprint(self) -> Union[Dict, None]:
-        """A geojson polygon of the image extent."""
+        """ Geojson polygon of the image extent.  None if the image is a composite. """
         if ('properties' not in self.ee_info) or ('system:footprint' not in self.ee_info['properties']):
             return None
         return self.ee_info['properties']['system:footprint']
 
     @property
-    def stac(self) -> StacItem:
-        """ STAC container corresponding to this image. """
+    def stac(self) -> Union[StacItem, None]:
+        """ STAC info, if any. """
         return StacCatalog().get_item(self.id)
 
     @property
     def band_props(self) -> List[Dict]:
-        """ List of dicts describing the image bands. """
+        """ Band properties. """
         return self._get_band_props()
 
     @staticmethod
@@ -236,7 +231,7 @@ class BaseImage:
 
     @staticmethod
     def _get_min_dtype(ee_info: Dict) -> str:
-        """Return the minimal size data type corresponding to a given EE image info dictionary."""
+        """Return the minimal size data type corresponding to a given EE image info dictionary. """
         dtype = None
         if 'bands' in ee_info:
             precisions = np.array([bd['data_type']['precision'] for bd in ee_info['bands']])
@@ -287,7 +282,7 @@ class BaseImage:
         return conv_dict[dtype](ee_image)
 
     def _get_band_props(self) -> List[Dict]:
-        """Return band metadata for this image."""
+        """Return band metadata for this image. """
         band_ids = [bd['id'] for bd in self.ee_info['bands']]
         if self.stac:
             stac_bands_props = self.stac.band_props
@@ -304,24 +299,23 @@ class BaseImage:
         Parameters
         ----------
         region : dict, geojson, ee.Geometry, optional
-            Region of interest (WGS84) to export [default: export the entire image if it has a footprint].
+            Region of interest (WGS84) to export.  Defaults tp export the entire image if it has a footprint.
         crs : str, optional
             WKT, EPSG etc specification of CRS to export to.  Where image bands have different CRSs, all are
-            re-projected to this CRS.
-            [default: use the CRS of the minimum scale band if available].
+            re-projected to this CRS. Defaults to use the CRS of the minimum scale band if available.
         scale : float, optional
             Pixel scale (m) to export to.  Where image bands have different scales, all are re-projected to this scale.
-            [default: use the minimum scale of image bands if available].
+            Defaults to use the minimum scale of image bands if available.
         resampling : ResamplingMethod, optional
-            Resampling method: ('near'|'bilinear'|'bicubic') [default: 'near']
+            Resampling method: ('near'|'bilinear'|'bicubic'|'average')
         dtype: str, optional
             Data type to export to ('uint8'|'int8'|'uint16'|'int16'|'uint32'|'int32'|'float32'|'float64')
-            [default: auto select a minimal type]
+            Defaults to auto select a minimal type that can represent the range of pixel values.
 
         Returns
         -------
         exp_image: BaseImage
-            The prepared image.
+            Prepared image.
         """
 
         if not region or not crs or not scale:
@@ -407,7 +401,7 @@ class BaseImage:
         # find the total number of tiles the image must be divided into to satisfy max_download_size
         image_shape = np.array(exp_image.shape, dtype='int64')
         dtype_size = np.dtype(exp_image.dtype).itemsize
-        image_size = exp_image.size_in_bytes
+        image_size = exp_image.size
         if exp_image.dtype.endswith('int8'):
             # workaround for GEE overestimate of *int8 dtype download sizes
             dtype_size *= 2
@@ -431,7 +425,7 @@ class BaseImage:
 
     @staticmethod
     def _build_overviews(dataset: rio.io.DatasetWriter, max_num_levels=8, min_ovw_pixels=256):
-        """Build internal overviews, downsampled by successive powers of 2, for an open rasterio dataset."""
+        """Build internal overviews, downsampled by successive powers of 2, for an open rasterio dataset. """
         if dataset.closed:
             raise IOError('Image dataset is closed')
 
@@ -444,7 +438,7 @@ class BaseImage:
         dataset.build_overviews(ovw_levels, RioResampling.average)
 
     def _write_metadata(self, dataset: rio.io.DatasetWriter):
-        """Write EE and geedim image metadata to an open rasterio dataset."""
+        """Write EE and geedim image metadata to an open rasterio dataset. """
         if dataset.closed:
             raise IOError('Image dataset is closed')
 
@@ -467,10 +461,10 @@ class BaseImage:
         Parameters
         ----------
         exp_image: BaseImage
-            The image to tile.
+            Image to tile.
         tile_shape: Tuple[int, int], optional
-            The (row, column) tile shape to use (pixels) [default: calculate an auto tile shape that satisfies the EE
-            download size limit.]
+            (row, column) tile shape to use (pixels). Defaults to calculate an auto tile shape that satisfies the EE
+            download size limit.
 
         Yields
         -------
@@ -490,7 +484,7 @@ class BaseImage:
             yield Tile(exp_image, tile_window)
 
     @staticmethod
-    def monitor_export_task(task, label=None):
+    def monitor_export(task, label=None):
         """
         Monitor and display the progress of an export task.
 
@@ -499,7 +493,7 @@ class BaseImage:
         task : ee.batch.Task
             EE task to monitor.
         label: str, optional
-            Optional label for progress display [default: use task description].
+            Optional label for progress display.  Defaults to task description.
         """
         pause = 0.1
         status = ee.data.getOperation(task.name)
@@ -534,31 +528,30 @@ class BaseImage:
         Parameters
         ----------
         filename : str
-            The name of the task and destination file.
+            Name of the task and destination file.
         folder : str, optional
-            Google Drive folder to export to [default: root].
+            Google Drive folder to export to. Defaults to root.
         wait : bool
-            Wait for the export to complete before returning [default: True].
-        kwargs: optional
-            region : dict, ee.Geometry, optional
-                Region defined by geojson polygon in WGS84 [default: entire image granule].
-            crs : str, optional
-                Reproject image(s) to this EPSG or WKT CRS.  Where image bands have different CRSs, all are
-                re-projected to this CRS [default: CRS of the minimum scale band].
-            scale : float, optional
-                Resample image(s) to this pixel scale (size) (m).  Where image bands have different scales,
-                all are resampled to this scale. [default: minimum scale of image bands].
-            resampling : ResamplingMethod, optional
-                Resampling method ('near'|'bilinear'|'bicubic') [default: 'near'].
-            dtype: str, optional
-                Convert to this data type( 'uint8'|'int8'|'uint16'|'int16'|'uint32'|'int32'|'float32'|'float64')
-                [default: auto select a minimal type that can represent the range of pixel values].
+            Wait for the export to complete before returning.
+        region : dict, ee.Geometry, optional
+            Region defined by geojson polygon in WGS84. Defaults to the entire image granule.
+        crs : str, optional
+            Reproject image(s) to this EPSG or WKT CRS.  Where image bands have different CRSs, all are
+            re-projected to this CRS. Defaults to the CRS of the minimum scale band.
+        scale : float, optional
+            Resample image(s) to this pixel scale (size) (m).  Where image bands have different scales,
+            all are resampled to this scale. Defaults to the minimum scale of image bands.
+        resampling : ResamplingMethod, optional
+            Resampling method - see :class:`geedim.enums.ResamplingMethod` for available options.
+        dtype: str, optional
+           Convert to this data type (`uint8`, `int8`, `uint16`, `int16`, `uint32`, `int32`, `float32`
+           or `float64`). Defaults to auto select a minimal type that can represent the range of pixel values.
         """
 
         exp_image = self._prepare_for_export(**kwargs)
 
         if logger.getEffectiveLevel() <= logging.DEBUG:
-            logger.debug(f'Uncompressed size: {self._str_format_size(exp_image.size_in_bytes)}')
+            logger.debug(f'Uncompressed size: {self._str_format_size(exp_image.size)}')
 
         # create export task and start
         task = ee.batch.Export.image.toDrive(
@@ -566,38 +559,39 @@ class BaseImage:
         )
         task.start()
         if wait:  # wait for completion
-            self.monitor_export_task(task)
+            self.monitor_export(task)
         return task
 
     def download(self, filename: pathlib.Path, overwrite=False, num_threads=None, **kwargs):
         """
         Download the encapsulated image to a GeoTiff file.
 
-        Images larger than the EE size limit are split and downloaded as separate tiles, then re-assembled into a
-        single GeoTIFF
+        Images larger than the `Earth Engine size limit
+        <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`_ are split and downloaded as
+        separate tiles, then re-assembled into a single GeoTIFF.  Downloaded image files are populated with relevant
+        metadata from the source Earth Engine image and associated STAC.
 
         Parameters
         ----------
         filename: pathlib.Path, str
             Name of the destination file.
         overwrite : bool, optional
-            Overwrite the destination file if it exists, otherwise prompt the user [default: True].
+            Overwrite the destination file if it exists, otherwise prompt the user.
         num_threads: int, optional
-            Number of tiles to download concurrently [default: use a sensible auto value].
-        kwargs: optional
-            region : dict, ee.Geometry, optional
-                Region defined by geojson polygon in WGS84 [default: entire image granule].
-            crs : str, optional
-                Reproject image(s) to this EPSG or WKT CRS.  Where image bands have different CRSs, all are
-                re-projected to this CRS [default: CRS of the minimum scale band].
-            scale : float, optional
-                Resample image(s) to this pixel scale (size) (m).  Where image bands have different scales,
-                all are resampled to this scale. [default: minimum scale of image bands].
-            resampling : ResamplingMethod, optional
-                Resampling method ('near'|'bilinear'|'bicubic') [default: 'near'].
-            dtype: str, optional
-                Convert to this data type( 'uint8'|'int8'|'uint16'|'int16'|'uint32'|'int32'|'float32'|'float64')
-                [default: auto select a minimal type that can represent the range of pixel values].
+            Number of tiles to download concurrently Defaults to use a sensible auto value.
+        region : dict, ee.Geometry, optional
+            Region defined by geojson polygon in WGS84 Defaults to the entire image granule.
+        crs : str, optional
+            Reproject image(s) to this EPSG or WKT CRS.  Where image bands have different CRSs, all are
+            re-projected to this CRS Defaults to the CRS of the minimum scale band.
+        scale : float, optional
+            Resample image(s) to this pixel scale (size) (m).  Where image bands have different scales,
+            all are resampled to this scale. Defaults to the minimum scale of image bands.
+        resampling : ResamplingMethod, optional
+            Resampling method - see :class:`geedim.enums.ResamplingMethod` for available options.
+        dtype: str, optional
+            Convert to this data type (`uint8`, `int8`, `uint16`, `int16`, `uint32`, `int32`, `float32`
+            or `float64`). Defaults to auto select a minimal type that can represent the range of pixel values.
         """
 
         max_threads = num_threads or min(32, (os.cpu_count() or 1) + 4)
@@ -617,7 +611,7 @@ class BaseImage:
 
         # find raw size of the download data (less than the actual download size as the image data is zipped in a
         # compressed geotiff)
-        raw_download_size = exp_image.size_in_bytes
+        raw_download_size = exp_image.size
         if logger.getEffectiveLevel() <= logging.DEBUG:
             dtype_size = np.dtype(exp_image.dtype).itemsize
             raw_tile_size = tile_shape[0] * tile_shape[1] * exp_image.count * dtype_size
@@ -650,7 +644,7 @@ class BaseImage:
 
         with redir_tqdm, rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), out_ds, bar:
             def download_tile(tile):
-                """Download a tile and write into the destination GeoTIFF."""
+                """Download a tile and write into the destination GeoTIFF. """
                 tile_array = tile.download(session=session, bar=bar)
                 with out_lock:
                     out_ds.write(tile_array, window=tile.window)

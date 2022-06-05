@@ -43,7 +43,7 @@ class BaseImageLike:
         self.dtype = dtype
         self.transform = transform
         dtype_size = np.dtype(dtype).itemsize
-        self.size_in_bytes = shape[0] * shape[1] * count * dtype_size
+        self.size = shape[0] * shape[1] * count * dtype_size
 
 
 @pytest.fixture(scope='session')
@@ -103,7 +103,7 @@ def test_user_props(user_base_image: BaseImage):
     assert user_base_image.transform is None
     assert user_base_image.shape is None
     assert user_base_image.date is None
-    assert user_base_image.size_in_bytes is None
+    assert user_base_image.size is None
     assert user_base_image.footprint is None
     assert user_base_image.dtype == 'uint8'
     assert user_base_image.count == 3
@@ -116,7 +116,7 @@ def test_fix_user_props(user_fix_base_image: BaseImage):
     assert user_fix_base_image.transform is not None
     assert user_fix_base_image.shape is None
     assert user_fix_base_image.date is None
-    assert user_fix_base_image.size_in_bytes is None
+    assert user_fix_base_image.size is None
     assert user_fix_base_image.footprint is None
     assert user_fix_base_image.dtype == 'uint8'
     assert user_fix_base_image.count == 3
@@ -130,7 +130,7 @@ def test_s2_props(s2_sr_base_image: BaseImage):
     assert s2_sr_base_image.transform == Affine(*min_band_info['crs_transform'])
     assert s2_sr_base_image.shape == min_band_info['dimensions'][::-1]
     assert s2_sr_base_image.date == datetime.utcfromtimestamp(s2_sr_base_image.properties['system:time_start'] / 1000)
-    assert s2_sr_base_image.size_in_bytes is not None
+    assert s2_sr_base_image.size is not None
     assert s2_sr_base_image.footprint is not None
     assert s2_sr_base_image.dtype == 'uint32'
     assert s2_sr_base_image.count == len(s2_sr_base_image.ee_info['bands'])
@@ -315,7 +315,7 @@ def test_tile_shape():
             assert all(np.array(tile_shape) <= np.array(exp_shape))
             assert all(np.array(tile_shape) <= max_grid_dimension)
             tile_image = BaseImageLike(shape=tile_shape)
-            assert tile_image.size_in_bytes <= max_download_size
+            assert tile_image.size <= max_download_size
 
 
 @pytest.mark.parametrize(
@@ -424,7 +424,7 @@ def test_export(user_fix_base_image: BaseImage, region_25ha: Dict):
     assert task.status()['state'] == 'READY'
 
 # TODO:
-# -  export(): test an export of small file (with wait ? - it kind of has to be to test monitor_export_task() )
+# -  export(): test an export of small file (with wait ? - it kind of has to be to test monitor_export() )
 # - different generic collection images are downloaded ok (perhaps this goes with MaskedImage more than BaseImage)
 # - test float mask/nodata in downloaded image
 # - test mult tile download has no discontinuities

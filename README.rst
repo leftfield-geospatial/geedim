@@ -113,6 +113,9 @@ pip
 
    pip install geedim
 
+Authentication
+~~~~~~~~~~~~~~
+
 Following installation, Earth Engine should be authenticated:
 
 .. code:: shell

@@ -25,20 +25,17 @@ from tqdm import tqdm
 
 
 class Tile:
-    """
-    Class for encapsulating and downloading an Earth Engine image tile (a rectangular region of interest in the image).
-    """
-
     def __init__(self, exp_image, window: Window):
         """
-        Create a Tile instance.
+        Class for encapsulating and downloading an Earth Engine image tile (a rectangular region of interest in the
+        image).
 
         Parameters
         ----------
         exp_image: BaseImage
-            A BaseImage instance to derive the tile from.
+            BaseImage instance to derive the tile from.
         window: Window
-            A rasterio window into `exp_image`, specifying the region of interest for this tile.
+            rasterio window into `exp_image`, specifying the region of interest for this tile.
         """
         self._exp_image = exp_image
         self._window = window
@@ -48,11 +45,11 @@ class Tile:
 
     @property
     def window(self) -> Window:
-        """rasterio tile window into the source image."""
+        """ rasterio tile window into the source image. """
         return self._window
 
     def _get_download_url_response(self, session=None):
-        """Get tile download url and response."""
+        """ Get tile download url and response. """
         session = session if session else requests
         url = self._exp_image.ee_image.getDownloadURL(
             dict(
@@ -69,16 +66,16 @@ class Tile:
         Parameters
         ----------
         session: requests.Session, optional
-            A requests session to use for downloading
+            requests session to use for downloading
         response: requests.Response, optional
-            A response to a get request on the tile download url.
+            Response to a get request on the tile download url.
         bar: tqdm, optional
-            A tqdm propgress bar instance to update with incremental (0-1) download progress.
+            tqdm propgress bar instance to update with incremental (0-1) download progress.
 
         Returns
         -------
         array: numpy.ndarray
-            A 3D numpy array of the tile pixel data with bands down the first dimension.
+            3D numpy array of the tile pixel data with bands down the first dimension.
         """
 
         # get image download url and response

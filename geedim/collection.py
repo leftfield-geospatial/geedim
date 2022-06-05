@@ -76,6 +76,7 @@ class MaskedCollection:
     Class for encapsulating, searching and compositing an Earth Engine image collection, with support for
     cloud/shadow masking.
     """
+
     def __init__(self, ee_collection):
         """
         Create a MaskedCollection instance.
@@ -83,7 +84,7 @@ class MaskedCollection:
         Parameters
         ----------
         ee_collection : ee.ImageCollection
-            The Earth Engine image collection to encapsulate.
+            Earth Engine image collection to encapsulate.
         """
         if not isinstance(ee_collection, ee.ImageCollection):
             raise TypeError(f'`ee_collection` must be an instance of ee.ImageCollection')
@@ -97,19 +98,19 @@ class MaskedCollection:
         self._stats_scale = None
 
     @classmethod
-    def from_name(cls, name):
+    def from_name(cls, name: str) -> 'MaskedCollection':
         """
         Create a MaskedCollection instance from an Earth Engine image collection name.
 
         Parameters
         ----------
         name: str
-            The name of the Earth Engine image collection to create.
+            Name of the Earth Engine image collection to create.
 
         Returns
         -------
-        gd_collection: MaskedCollection
-            The MaskedCollection instance.
+        MaskedCollection
+            A MaskedCollection instance.
         """
         # this is separate from __init__ for consistency with MaskedImage.from_id()
         if (name == 'COPERNICUS/S2') or (name == 'COPERNICUS/S2_SR'):
@@ -127,25 +128,26 @@ class MaskedCollection:
         return gd_collection
 
     @classmethod
-    def from_list(cls, image_list):
+    def from_list(cls, image_list: List[Union[str, MaskedImage, ee.Image]]) -> 'MaskedCollection':
         """
         Create a MaskedCollection instance from a list of EE image ID strings, ee.Image objects and/or MaskedImage
         objects.
 
-        Any ee.Image objects (including those encapsulated by MaskedImage) must have `system:id` and
+        Any ee.Image instances in the list (including those encapsulated by MaskedImage) must have `system:id` and
         `system:time_start` properties.  This is always the case for images from the EE data catalog, and images
-        returned from MaskedCollection.composite(), but user-created images passed to from_list() should have these
+        returned from MaskedCollection.composite().  Any user-created images passed to from_list() should have these
         properties set.
 
         Parameters
         ----------
         image_list : list
-            A list of images to include in the collection (must all be from the same EE collection).
+            List of images to include in the collection (must all be from the same EE collection).  List items can be
+            ID strings, instances of MaskedImage, or instances of ee.Image.
 
         Returns
         -------
-        gd_collection: MaskedCollection
-            The MaskedCollection instance.
+        MaskedCollection
+            A MaskedCollection instance.
         """
         # build lists of EE images and IDs from image_list
         if len(image_list) == 0:
@@ -188,7 +190,7 @@ class MaskedCollection:
 
     @property
     def ee_collection(self) -> ee.ImageCollection:
-        """ The encapsulated Earth Engine image collection. """
+        """ Encapsulated Earth Engine image collection. """
         return self._ee_collection
 
     @property
@@ -201,7 +203,7 @@ class MaskedCollection:
 
     @property
     def image_type(self) -> type:
-        """ geedim class to encapsulate images from `ee_collection`. """
+        """ :class:`geedim.mask.MaskedImage` sub-class to encapsulate images from :attr:`ee_collection`. """
         if not self._image_type:
             self._image_type = class_from_id(self.name)
         return self._image_type
@@ -219,12 +221,12 @@ class MaskedCollection:
 
     @property
     def properties_table(self) -> str:
-        """ `properties` formatted as a table. """
+        """ :attr:`properties` formatted as a printable table string. """
         return self._get_properties_table(self.properties)
 
     @property
     def schema(self) -> Dict:
-        """ Abbreviations and descriptions for `properties`. """
+        """ Abbreviations and descriptions for :attr:`properties`. """
         if not self._schema:
             if self.name in schema.collection_schema:
                 self._schema = schema.collection_schema[self.name]['prop_schema']
@@ -234,20 +236,20 @@ class MaskedCollection:
 
     @property
     def schema_table(self) -> str:
-        """ `collection_schema` formatted as a table. """
+        """ :attr:`schema` formatted as a printable table string. """
         headers = {key: key.upper() for key in list(self.schema.values())[0].keys()}
         return tabulate.tabulate(self.schema.values(), headers=headers, floatfmt='.2f', tablefmt=_table_fmt)
 
     @property
     def stac(self) -> Union[StacItem, None]:
-        """ EE STAC container corresponding to this collection.  """
+        """ STAC info, if any.  """
         if not self._stac and (self.name in StacCatalog().url_dict):
             self._stac = StacCatalog().get_item(self.name)
         return self._stac
 
     @property
     def stats_scale(self) -> Union[float, None]:
-        """ A scale to use for re-projections when finding region statistics. """
+        """ Scale to use for re-projections when finding region statistics. """
         if not self.stac:
             return None
         if not self._stats_scale:
@@ -259,7 +261,7 @@ class MaskedCollection:
 
     @property
     def refl_bands(self) -> Union[List[str], None]:
-        """ A list of spectral / reflectance bands, if any. """
+        """ List of spectral / reflectance bands, if any. """
         if not self.stac:
             return None
         return [bname for bname, bdict in self.stac.band_props.items() if 'center_wavelength' in bdict]
@@ -284,8 +286,8 @@ class MaskedCollection:
 
     def _get_properties_table(self, properties: Dict, schema: Dict = None) -> str:
         """
-        Format the given properties into a table.  Orders properties (columns) according `collection_schema` and replaces
-        long form property names with abbreviations.
+        Format the given properties into a table.  Orders properties (columns) according `collection_schema` and
+        replaces long form property names with abbreviations.
         """
         if not schema:
             schema = self.schema
@@ -356,29 +358,32 @@ class MaskedCollection:
 
         return ee_collection
 
-    def search(self, start_date, end_date, region, fill_portion=None, cloudless_portion=None, **kwargs):
+    def search(
+        self, start_date: datetime, end_date: datetime, region: dict, fill_portion: float = None,
+        cloudless_portion: float = None, **kwargs
+    ) -> 'MaskedCollection':
         """
         Search for images based on date, region and cloudless portion criteria.
 
         Parameters
         ----------
-        start_date : datetime.datetime
+        start_date : datetime
             Start date (UTC).
-        end_date : datetime.datetime, optional
-            End date (UTC). [default: start_date + 1 day]
+        end_date : datetime, optional
+            End date (UTC).  If None, ``end_date`` is set to a day after ``start_date``.
         region : dict, ee.Geometry
             Polygon in WGS84 specifying a region that images should intersect.
         fill_portion: float, optional
             Minimum portion (%) of valid/filled image pixels.
         cloudless_portion: float, optional
             Minimum portion (%) of cloud/shadow free image pixels.
-        kwargs: optional
-            Cloud/shadow masking parameters - see MaskedImage.__init__() for details.
+        **kwargs
+            Optional cloud/shadow masking parameters - see :meth:`geedim.MaskedImage.__init__` for details.
 
         Returns
         -------
-        gd_collection: MaskedCollection
-            A new MaskedCollection instance containing the search filtered images.
+        MaskedCollection
+            Filtered MaskedCollection instance containing the search result image(s).
         """
         if end_date is None:
             end_date = start_date + timedelta(days=1)
@@ -407,50 +412,41 @@ class MaskedCollection:
         return gd_collection
 
     def composite(
-        self, method=None, mask=True, resampling=BaseImage._default_resampling, date=None,
-        region=None, **kwargs
-    ):  # TODO copy the latest CLI help across
+        self, method: CompositeMethod = None, mask: bool = True,
+        resampling: ResamplingMethod = BaseImage._default_resampling, date: datetime = None, region: dict = None,
+        **kwargs
+    ) -> MaskedImage:
         """
         Create a composite image from the encapsulated image collection.
 
         Parameters
         ----------
         method: CompositeMethod, optional
-            Method for finding each composite pixel from the collection of corresponding input image pixels.  One of:
-                `q_mosaic`: Use the unmasked pixel with the highest quality (i.e. distance to nearest cloud). When more
-                    than one pixel shares the highest quality value, the first of the competing pixels is used. Valid
-                    for cloud/shadow maskable image collections only (Sentinel-2 TOA and SR, and Landsat4-9 level 2
-                    collection 2).
-                `mosaic`: Use the first unmasked pixel.
-                `medoid`: Use the medoid of the unmasked pixels.  The medoid selects the image pixel (across
-                    bands) from the image having the minimum summed diff (across bands) from the median of the
-                    collection images. Maintains the original relationship between bands.
-                    See https://www.mdpi.com/2072-4292/5/12/6481 for detail.
-                `median`: Use the median of the unmasked pixels.
-                `mode`: Use the mode of the unmasked pixels.
-                `mean`: use the mean of the unmasked pixels.
+            Method for finding each composite pixel from the stack of corresponding input image pixels. See
+            :class:`geedim.enums.CompositeMethod` for available options.  By default, `q-mosaic` is used for
+            cloud/shadow mask supported collections, `mosaic` otherwise.
         mask: bool, optional
             Whether to apply the cloud/shadow mask, or fill (valid pixel) mask, in the case of images without
-            support for cloud/shadow masking.  [default: True].
+            support for cloud/shadow masking.
         resampling: ResamplingMethod, optional
-            The resampling method to use on collection images prior to compositing.  If 'near', no resampling is done
-            [default: 'near'].
+            Resampling method to use on collection images prior to compositing.  If 'near', no resampling is done (
+            the default).
         date: datetime.datetime, optional
             Sort collection images by their absolute difference in capture time from this date.  Useful for
             prioritising pixels from images closest to this date.  Valid for the `q-mosaic`
-            and `mosaic` methods only.  If None, no time difference sorting is done. [default: None].
+            and `mosaic` methods only.  If None, no time difference sorting is done (the default).
         region: dict, optional
             Sort collection images by their cloudless portion inside this geojson polygon (only if `date` is not
             specified).  This is useful to prioritise pixels from the least cloudy image(s).  Valid for the `q-mosaic`
             and `mosaic` methods.  If `date` and `region` are not specified, collection images are sorted by their
             capture date.
-        kwargs: optional
-            Cloud/shadow masking parameters - see MaskedImage.__init__() for details.
+        **kwargs
+            Optional cloud/shadow masking parameters - see :meth:`geedim.MaskedImage.__init__` for details.
 
         Returns
         -------
-        comp_image: MaskedImage
-            The composite image.
+        :class:`geedim.mask.MaskedImage`
+            Composite image.
         """
 
         if isinstance(date, str):

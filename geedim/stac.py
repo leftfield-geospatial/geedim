@@ -26,13 +26,9 @@ root_stac_url = 'https://earthengine-stac.storage.googleapis.com/catalog/catalog
 
 
 class StacItem:
-    """
-    Image/collection STAC container class.  Provides access to band properties and root property descriptions.
-    """
-
     def __init__(self, name: str, item_dict: Dict):
         """
-        Create a StacItem instance.
+        Image/collection STAC container class.  Provides access to band properties and root property descriptions.
 
         Parameters
         ----------
@@ -117,10 +113,11 @@ class StacItem:
         else:
             return None
 
+
 @singleton
 class StacCatalog:
-    """ Singleton class to interface to the EE STAC, and retrieve image/collection STAC data. """
     def __init__(self):
+        """ Singleton class to interface to the EE STAC, and retrieve image/collection STAC data. """
         self._filename = root_path.joinpath('geedim/data/ee_stac_urls.json')
         self._session = retry_session()
         self._url_dict = None
@@ -174,19 +171,19 @@ class StacCatalog:
         url_dict = {}
         self._url_dict = self._traverse_stac(root_stac_url, url_dict)
 
-    def get_item_dict(self, name):
+    def get_item_dict(self, name: str):
         """
         Get the raw STAC dict for a given an image/collection name/ID.
 
         Parameters
         ----------
         name: str
-            The ID/name of the image/collection whose STAC data to retrieve.
+            ID/name of the image/collection whose STAC data to retrieve.
 
         Returns
         -------
-        item_dict: dict
-            image/collection STAC data in a dict, if it exists, otherwise None.
+        dict
+            Image/collection STAC data in a dict, if it exists, otherwise None.
         """
         coll_name = split_id(name)[0]
         if coll_name in self.url_dict:
@@ -202,7 +199,7 @@ class StacCatalog:
                 self._cache[name] = response.json()
         return self._cache[name]
 
-    def get_item(self, name):
+    def get_item(self, name: str) -> StacItem:
         """
         Get a STAC container instance for a given an image/collection name/ID.
 
@@ -213,7 +210,7 @@ class StacCatalog:
 
         Returns
         -------
-        stac_item: StacItem
+        StacItem
             image/collection STAC container, if it exists, otherwise None.
         """
         coll_name = split_id(name)[0]

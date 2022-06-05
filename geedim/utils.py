@@ -51,7 +51,7 @@ def singleton(cls):
     return getinstance
 
 
-def split_id(image_id):
+def split_id(image_id: str) -> Tuple[str, str]:
     """
     Split Earth Engine image ID into collection and index components.
 
@@ -62,7 +62,7 @@ def split_id(image_id):
 
     Returns
     -------
-    : Tuple[str, str]
+    tuple(str, str)
         A tuple of strings: (collection name, image index).
     """
     if not image_id:
@@ -72,7 +72,7 @@ def split_id(image_id):
     return ee_coll_name, index
 
 
-def get_bounds(filename, expand=5):  # pragma coverage
+def get_bounds(filename: pathlib.Path, expand: float = 5):
     """
     Get a geojson polygon representing the bounds of an image.
 
@@ -124,7 +124,7 @@ def get_projection(image, min_scale=True):
     Parameters
     ----------
     image : ee.Image
-            The image whose min/max projection to retrieve.
+            Image whose min/max projection to retrieve.
     min_scale: bool, optional
          Retrieve the projection corresponding to the band with the minimum (True) or maximum (False) scale.
          (default: True)
@@ -132,7 +132,7 @@ def get_projection(image, min_scale=True):
     Returns
     -------
     ee.Projection
-        The requested projection.
+        Requested projection.
     """
     if not isinstance(image, ee.Image):
         raise TypeError('image is not an instance of ee.Image')
@@ -158,11 +158,9 @@ def get_projection(image, min_scale=True):
 
 
 class Spinner(Thread):
-    """ Thread class to run a non-blocking spinner. """
-
     def __init__(self, label='', interval=0.2, leave=True, **kwargs):
         """
-        Create Spinner instance.
+        Thread sub-class to run a non-blocking spinner.
 
         Parameters
         ----------
@@ -224,21 +222,21 @@ class Spinner(Thread):
 def resample(ee_image: ee.Image, method: ResamplingMethod) -> ee.Image:
     """
     Resample an ee.Image. Extends ee.Image.resample by only resampling when the image has a fixed projection, and by
-    providing an additional 'average' method for downsampling.
+    providing an additional 'average' method for downsampling.  This logic is performed server-side.
 
     See https://developers.google.com/earth-engine/guides/resample for more info.
 
     Parameters
     ----------
     ee_image: ee.Image
-        The image to resample.
+        Image to resample.
     method: ResamplingMethod
-        The resampling method to use.
+        Resampling method to use.
 
     Returns
     -------
     ee_image: ee.Image
-        The resampled image.
+        Resampled image.
     """
     method = ResamplingMethod(method)
     if method == ResamplingMethod.near:
@@ -262,7 +260,7 @@ def retry_session(
     retries: int = 3, backoff_factor: float = 0.3, status_forcelist: Tuple = (429, 500, 502, 503, 504),
     session: requests.Session = None
 ) -> requests.Session:
-    """ A requests session configured for retries. """
+    """ requests session configured for retries. """
     session = session or requests.Session()
     retry = Retry(
         total=retries, read=retries, connect=retries, backoff_factor=backoff_factor,

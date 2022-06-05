@@ -17,10 +17,10 @@ import json
 import logging
 import os
 import pathlib
+import re
 import sys
 from types import SimpleNamespace
 from typing import List
-import re
 
 import click
 import rasterio.crs as rio_crs
@@ -53,6 +53,7 @@ class ChainedCommand(click.Command):
     """
     click Command sub-class for managing parameters shared between chained commands.
     """
+
     def get_help(self, ctx):
         """
         Strip some RST markup from the help text for CLI display.  Assumes no grid tables.
@@ -67,10 +68,12 @@ class ChainedCommand(click.Command):
             '`(.*)<(.*)>`_': '\g<1>',   # convert from RST cross-ref '`<name> <<link>>`_' to 'name'
             '::':':'                    # convert from RST '::' to ':'
         }
+
         def reformat_text(text, width, **kwargs):
             for sub_key, sub_value in sub_strings.items():
                 text = re.sub(sub_key, sub_value, text, flags=re.DOTALL)
             return self.click_wrap_text(text, width, **kwargs)
+
         click.formatting.wrap_text = reformat_text
         return click.Command.get_help(self, ctx)
 
@@ -592,7 +595,7 @@ def export(obj, image_id, bbox, region, drive_folder, mask, wait, **kwargs):
 
     if wait:
         for task in export_tasks:
-            BaseImage.monitor_export_task(task)
+            BaseImage.monitor_export(task)
 
 
 cli.add_command(export)
