@@ -1,7 +1,7 @@
 API
 ===
 
-The main ``geedim`` classes are :class:`geedim.mask.MaskedImage` and :class:`geedim.collection.MaskedCollection`.
+The main ``geedim`` classes are :class:`~geedim.mask.MaskedImage` and :class:`~geedim.collection.MaskedCollection`.
 
 Getting started
 ---------------
@@ -17,15 +17,13 @@ Example
 Usage
 -----
 
-geedim.MaskedImage
-^^^^^^^^^^^^^^^^^^
+MaskedImage
+^^^^^^^^^^^
 
 .. currentmodule:: geedim.mask
 
-.. autosummary::
-    :toctree: _generated
-
-    MaskedImage
+.. autoclass:: MaskedImage
+    :special-members: __init__
 
 .. rubric:: Methods
 
@@ -38,6 +36,7 @@ geedim.MaskedImage
     ~MaskedImage.export
     ~MaskedImage.monitor_export
 
+
 .. rubric:: Attributes
 
 .. autosummary::
@@ -46,30 +45,28 @@ geedim.MaskedImage
     ~MaskedImage.ee_image
     ~MaskedImage.id
     ~MaskedImage.date
-    ~MaskedImage.footprint
     ~MaskedImage.crs
-    ~MaskedImage.transform
     ~MaskedImage.scale
+    ~MaskedImage.footprint
+    ~MaskedImage.transform
     ~MaskedImage.shape
     ~MaskedImage.count
     ~MaskedImage.dtype
     ~MaskedImage.size
     ~MaskedImage.has_fixed_projection
-    ~MaskedImage.properties
     ~MaskedImage.name
-    ~MaskedImage.stac
-    ~MaskedImage.band_props
+    ~MaskedImage.properties
+    ~MaskedImage.band_properties
 
 
-geedim.MaskedCollection
-^^^^^^^^^^^^^^^^^^^^^^^^
+MaskedCollection
+^^^^^^^^^^^^^^^^
 
 .. currentmodule:: geedim.collection
 
-.. autosummary::
-    :toctree: _generated/
+.. autoclass:: MaskedCollection
+    :special-members: __init__
 
-    MaskedCollection
 
 .. rubric:: Methods
 
@@ -80,6 +77,7 @@ geedim.MaskedCollection
     ~MaskedCollection.from_list
     ~MaskedCollection.search
     ~MaskedCollection.composite
+
 
 .. rubric:: Attributes
 
@@ -93,8 +91,6 @@ geedim.MaskedCollection
     ~MaskedCollection.properties_table
     ~MaskedCollection.schema
     ~MaskedCollection.schema_table
-    ~MaskedCollection.stac
-    ~MaskedCollection.stats_scale
     ~MaskedCollection.refl_bands
 
 

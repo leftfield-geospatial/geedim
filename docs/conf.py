@@ -62,7 +62,7 @@ html_static_path = ['_static']
 # see https://www.sphinx-doc.org/en/master/usage/extensions/autodoc.html
 # autodoc_mock_imports = ['rasterio', 'click']
 autosummary_generate = True
-autoclass_content = 'init'
+autoclass_content = 'class'
 autodoc_class_signature = 'mixed'
 autodoc_member_order = 'bysource'
 autodoc_typehints = 'both'

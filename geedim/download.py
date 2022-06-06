@@ -50,8 +50,9 @@ class BaseImage:
 
     def __init__(self, ee_image):
         """
-        Create a BaseImage instance for encapsulating an Earth Engine image.  Allows download and export without size
-        limits, and provides client-side access to image metadata.
+        An object for describing and downloading an Earth Engine image.
+
+        Allows download and export without size limits, and provides client-side access to image properties.
 
         Parameters
         ----------
@@ -61,9 +62,9 @@ class BaseImage:
         if not isinstance(ee_image, ee.Image):
             raise TypeError('`ee_image` must be an instance of ee.Image.')
         self._ee_image = ee_image
-        self._ee_info = None
+        self.__ee_info = None
         self._id = None
-        self._min_projection = None
+        self.__min_projection = None
         self._min_dtype = None
 
     @classmethod
@@ -87,14 +88,33 @@ class BaseImage:
         return gd_image
 
     @property
+    def _ee_info(self) -> Dict:
+        """ EE image metadata. """
+        if self.__ee_info is None:
+            self.__ee_info = self._ee_image.getInfo()
+        return self.__ee_info
+
+    @property
+    def _min_projection(self) -> Dict:
+        """ Projection information corresponding to the minimum scale band. """
+        if not self.__min_projection:
+            self.__min_projection = self._get_projection(self._ee_info, min_scale=True)
+        return self.__min_projection
+
+    @property
+    def _stac(self) -> Union[StacItem, None]:
+        """ STAC info, if any. """
+        return StacCatalog().get_item(self.id)
+
+    @property
     def ee_image(self) -> ee.Image:
         """ Encapsulated EE image. """
         return self._ee_image
 
     @ee_image.setter
     def ee_image(self, value: ee.Image):
-        self._ee_info = None
-        self._min_projection = None
+        self.__ee_info = None
+        self.__min_projection = None
         self._min_dtype = None
         self._ee_image = value
 
@@ -104,7 +124,7 @@ class BaseImage:
         if self._id:  # avoid a call to getInfo() if _id is set
             return self._id
         else:
-            return self.ee_info['id'] if 'id' in self.ee_info else None
+            return self._ee_info['id'] if 'id' in self._ee_info else None
 
     @property
     def date(self) -> Union[datetime, None]:
@@ -120,45 +140,33 @@ class BaseImage:
         return self.id.replace('/', '-') if self.id else None
 
     @property
-    def ee_info(self) -> Dict:
-        """ EE image metadata. """
-        if self._ee_info is None:
-            self._ee_info = self._ee_image.getInfo()
-        return self._ee_info
-
-    @property
-    def properties(self) -> Dict:
-        """ EE image properties. """
-        return self.ee_info['properties'] if 'properties' in self.ee_info else {}
-
-    @property
-    def min_projection(self) -> Dict:
-        """ Projection information corresponding to the minimum scale band. """
-        if not self._min_projection:
-            self._min_projection = self._get_projection(self.ee_info, min_scale=True)
-        return self._min_projection
-
-    @property
     def crs(self) -> Union[str, None]:
         """
         Image CRS corresponding to minimum scale band, as an EPSG string. None if the image has no fixed projection.
         """
-        return self.min_projection['crs']
+        return self._min_projection['crs']
 
     @property
     def scale(self) -> Union[float, None]:
         """ Scale (m) corresponding to minimum scale band. None if the image has no fixed projection. """
-        return self.min_projection['scale']
+        return self._min_projection['scale']
+
+    @property
+    def footprint(self) -> Union[Dict, None]:
+        """ Geojson polygon of the image extent.  None if the image is a composite. """
+        if ('properties' not in self._ee_info) or ('system:footprint' not in self._ee_info['properties']):
+            return None
+        return self._ee_info['properties']['system:footprint']
 
     @property
     def shape(self) -> Union[Tuple[int, int], None]:
         """ (row, column) dimensions of the minimum scale band. None if the image has no fixed projection. """
-        return self.min_projection['shape']
+        return self._min_projection['shape']
 
     @property
     def count(self) -> int:
         """ Number of image bands. """
-        return len(self.ee_info['bands']) if 'bands' in self.ee_info else None
+        return len(self._ee_info['bands']) if 'bands' in self._ee_info else None
 
     @property
     def transform(self) -> Union[rio.Affine, None]:
@@ -166,18 +174,13 @@ class BaseImage:
         Geo-transform of the minimum scale band, as a rasterio Affine transform.
         None if the image has no fixed projection.
         """
-        return self.min_projection['transform']
-
-    @property
-    def has_fixed_projection(self) -> bool:
-        """ True if the image has a fixed projection, otherwise False. """
-        return self.scale is not None
+        return self._min_projection['transform']
 
     @property
     def dtype(self) -> str:
-        """ Minimal size data type required to represent the values in this image. """
+        """ Minimum size data type able to represent the image values. """
         if not self._min_dtype:
-            self._min_dtype = self._get_min_dtype(self.ee_info)
+            self._min_dtype = self._get_min_dtype(self._ee_info)
         return self._min_dtype
 
     @property
@@ -189,21 +192,19 @@ class BaseImage:
         return self.shape[0] * self.shape[1] * self.count * dtype_size
 
     @property
-    def footprint(self) -> Union[Dict, None]:
-        """ Geojson polygon of the image extent.  None if the image is a composite. """
-        if ('properties' not in self.ee_info) or ('system:footprint' not in self.ee_info['properties']):
-            return None
-        return self.ee_info['properties']['system:footprint']
+    def has_fixed_projection(self) -> bool:
+        """ True if the image has a fixed projection, otherwise False. """
+        return self.scale is not None
 
     @property
-    def stac(self) -> Union[StacItem, None]:
-        """ STAC info, if any. """
-        return StacCatalog().get_item(self.id)
+    def properties(self) -> Dict:
+        """ EE image properties. """
+        return self._ee_info['properties'] if 'properties' in self._ee_info else {}
 
     @property
-    def band_props(self) -> List[Dict]:
-        """ Band properties. """
-        return self._get_band_props()
+    def band_properties(self) -> List[Dict]:
+        """ Merged STAC and EE band properties. """
+        return self._get_band_properties()
 
     @staticmethod
     def _get_projection(ee_info: Dict, min_scale=True) -> Dict:
@@ -281,11 +282,11 @@ class BaseImage:
 
         return conv_dict[dtype](ee_image)
 
-    def _get_band_props(self) -> List[Dict]:
+    def _get_band_properties(self) -> List[Dict]:
         """Return band metadata for this image. """
-        band_ids = [bd['id'] for bd in self.ee_info['bands']]
-        if self.stac:
-            stac_bands_props = self.stac.band_props
+        band_ids = [bd['id'] for bd in self._ee_info['bands']]
+        if self._stac:
+            stac_bands_props = self._stac.band_props
             band_props = [stac_bands_props[bid] if bid in stac_bands_props else dict(name=bid) for bid in band_ids]
         else:  # just use the image band IDs
             band_props = [dict(name=bid) for bid in band_ids]
@@ -443,16 +444,16 @@ class BaseImage:
             raise IOError('Image dataset is closed')
 
         dataset.update_tags(**self.properties)
-        if self.stac:
-            dataset.update_tags(TERMS_OF_USE=self.stac.terms)
+        if self._stac:
+            dataset.update_tags(TERMS_OF_USE=self._stac.terms)
         # populate band metadata
-        for band_i, band_dict in enumerate(self.band_props):
+        for band_i, band_dict in enumerate(self.band_properties):
             if 'name' in band_dict:
                 dataset.set_band_description(band_i + 1, band_dict['name'])
             dataset.update_tags(band_i + 1, **band_dict)
 
     @staticmethod
-    def tiles(exp_image, tile_shape=None):
+    def _tiles(exp_image: 'BaseImage', tile_shape: Tuple[int, int] = None) -> Tile:
         """
         Iterator over downloadable image tiles.
 
@@ -542,7 +543,7 @@ class BaseImage:
             Resample image(s) to this pixel scale (size) (m).  Where image bands have different scales,
             all are resampled to this scale. Defaults to the minimum scale of image bands.
         resampling : ResamplingMethod, optional
-            Resampling method - see :class:`geedim.enums.ResamplingMethod` for available options.
+            Resampling method - see :class:`~geedim.enums.ResamplingMethod` for available options.
         dtype: str, optional
            Convert to this data type (`uint8`, `int8`, `uint16`, `int16`, `uint32`, `int32`, `float32`
            or `float64`). Defaults to auto select a minimal type that can represent the range of pixel values.
@@ -588,7 +589,7 @@ class BaseImage:
             Resample image(s) to this pixel scale (size) (m).  Where image bands have different scales,
             all are resampled to this scale. Defaults to the minimum scale of image bands.
         resampling : ResamplingMethod, optional
-            Resampling method - see :class:`geedim.enums.ResamplingMethod` for available options.
+            Resampling method - see :class:`~geedim.enums.ResamplingMethod` for available options.
         dtype: str, optional
             Convert to this data type (`uint8`, `int8`, `uint16`, `int16`, `uint32`, `int32`, `float32`
             or `float64`). Defaults to auto select a minimal type that can represent the range of pixel values.
@@ -651,7 +652,7 @@ class BaseImage:
 
             with ThreadPoolExecutor(max_workers=max_threads) as executor:
                 # Run the tile downloads in a thread pool
-                tiles = self.tiles(exp_image, tile_shape=tile_shape)
+                tiles = self._tiles(exp_image, tile_shape=tile_shape)
                 futures = [executor.submit(download_tile, tile) for tile in tiles]
                 try:
                     for future in as_completed(futures):

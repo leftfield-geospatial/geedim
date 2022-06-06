@@ -92,7 +92,7 @@ def test_id_name(user_base_image: BaseImage, s2_sr_base_image: BaseImage):
     assert user_base_image.id is None
     assert user_base_image.name is None
     # check that BaseImage.from_id() sets id without a getInfo
-    assert (s2_sr_base_image.id is not None) and (s2_sr_base_image._ee_info is None)
+    assert (s2_sr_base_image._id is not None)
     assert s2_sr_base_image.name == s2_sr_base_image.id.replace('/', '-')
 
 
@@ -124,7 +124,7 @@ def test_fix_user_props(user_fix_base_image: BaseImage):
 
 def test_s2_props(s2_sr_base_image: BaseImage):
     """ Test fixed projection S2 image properties (other than id and has_fixed_projection). """
-    min_band_info = s2_sr_base_image.ee_info['bands'][1]
+    min_band_info = s2_sr_base_image._ee_info['bands'][1]
     assert s2_sr_base_image.crs == min_band_info['crs']
     assert s2_sr_base_image.scale == min_band_info['crs_transform'][0]
     assert s2_sr_base_image.transform == Affine(*min_band_info['crs_transform'])
@@ -133,7 +133,7 @@ def test_s2_props(s2_sr_base_image: BaseImage):
     assert s2_sr_base_image.size is not None
     assert s2_sr_base_image.footprint is not None
     assert s2_sr_base_image.dtype == 'uint32'
-    assert s2_sr_base_image.count == len(s2_sr_base_image.ee_info['bands'])
+    assert s2_sr_base_image.count == len(s2_sr_base_image._ee_info['bands'])
 
 
 @pytest.mark.parametrize(
@@ -142,12 +142,12 @@ def test_s2_props(s2_sr_base_image: BaseImage):
     ]
 )
 def test_band_props(base_image: str, request: pytest.FixtureRequest):
-    """ Test `band_props` completeness for generic/user/reflectance images. """
+    """ Test `band_properties` completeness for generic/user/reflectance images. """
     base_image: BaseImage = request.getfixturevalue(base_image)
-    assert base_image.band_props is not None
-    assert [bd['name'] for bd in base_image.band_props] == [bd['id'] for bd in base_image.ee_info['bands']]
+    assert base_image.band_properties is not None
+    assert [bd['name'] for bd in base_image.band_properties] == [bd['id'] for bd in base_image._ee_info['bands']]
     for key in ['gsd', 'description']:
-        has_key = [key in bd for bd in base_image.band_props]
+        has_key = [key in bd for bd in base_image.band_properties]
         assert all(has_key)
 
 
@@ -328,7 +328,7 @@ def test_tile_shape():
 def test_tiles(image_shape: Tuple, tile_shape: Tuple, image_transform: Affine):
     """ Test continuity and coverage of tiles. """
     exp_image = BaseImageLike(shape=image_shape, transform=image_transform)
-    tiles = [tile for tile in BaseImage.tiles(exp_image, tile_shape=tile_shape)]
+    tiles = [tile for tile in BaseImage._tiles(exp_image, tile_shape=tile_shape)]
 
     # test window coverage, and window & transform continuity
     prev_tile = tiles[0]

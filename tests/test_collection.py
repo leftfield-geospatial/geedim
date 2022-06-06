@@ -356,9 +356,9 @@ def test_composite_s2_cloud_mask_params(s2_sr_image_list, region_10000ha):
     """
     gd_collection = MaskedCollection.from_list(s2_sr_image_list)
     comp_im_prob80 = gd_collection.composite(prob=80)
-    comp_im_prob80.set_region_stats(region_10000ha, scale=gd_collection.stats_scale)
+    comp_im_prob80._set_region_stats(region_10000ha, scale=gd_collection._stats_scale)
     comp_im_prob40 = gd_collection.composite(prob=40)
-    comp_im_prob40.set_region_stats(region_10000ha, scale=gd_collection.stats_scale)
+    comp_im_prob40._set_region_stats(region_10000ha, scale=gd_collection._stats_scale)
     prob80_portion = comp_im_prob80.properties['CLOUDLESS_PORTION']
     prob40_portion = comp_im_prob40.properties['CLOUDLESS_PORTION']
     assert prob80_portion > prob40_portion
@@ -371,9 +371,9 @@ def test_composite_landsat_cloud_mask_params(l8_9_image_list, region_10000ha):
     """
     gd_collection = MaskedCollection.from_list(l8_9_image_list)
     comp_im_wshadows = gd_collection.composite(mask_shadows=False)
-    comp_im_wshadows.set_region_stats(region_10000ha, scale=gd_collection.stats_scale)
+    comp_im_wshadows._set_region_stats(region_10000ha, scale=gd_collection._stats_scale)
     comp_im_woshadows = gd_collection.composite(mask_shadows=True)
-    comp_im_woshadows.set_region_stats(region_10000ha, scale=gd_collection.stats_scale)
+    comp_im_woshadows._set_region_stats(region_10000ha, scale=gd_collection._stats_scale)
     with_shadows_portion = comp_im_wshadows.properties['CLOUDLESS_PORTION']
     without_shadows_portion = comp_im_woshadows.properties['CLOUDLESS_PORTION']
     assert with_shadows_portion > without_shadows_portion
@@ -411,7 +411,7 @@ def test_composite(image_list, method, mask, region, date, cloud_kwargs, request
     region: Dict = request.getfixturevalue(region) if region else None
     gd_collection = MaskedCollection.from_list(image_list)
     comp_im = gd_collection.composite(method=method, mask=mask, region=region, date=date, **cloud_kwargs)
-    assert comp_im.ee_info is not None and len(comp_im.ee_info) > 0
+    assert comp_im._ee_info is not None and len(comp_im._ee_info) > 0
     assert 'COMPONENT_IMAGES' in comp_im.properties
 
 

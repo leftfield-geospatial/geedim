@@ -27,8 +27,7 @@ from tqdm import tqdm
 class Tile:
     def __init__(self, exp_image, window: Window):
         """
-        Class for encapsulating and downloading an Earth Engine image tile (a rectangular region of interest in the
-        image).
+        Class for downloading an Earth Engine image tile (a rectangular region of interest in the image).
 
         Parameters
         ----------

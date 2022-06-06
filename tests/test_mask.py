@@ -77,9 +77,9 @@ def test_cloud_mask_aux_bands_exist(masked_image: str, request: pytest.FixtureRe
     ]
 )
 def test_set_region_stats(masked_image: str, region_100ha, request: pytest.FixtureRequest):
-    """ Test MaskedImage.set_region_stats() generates the expected properties and that these are in the valid range. """
+    """ Test MaskedImage._set_region_stats() generates the expected properties and that these are in the valid range. """
     masked_image: MaskedImage = request.getfixturevalue(masked_image)
-    masked_image.set_region_stats(region_100ha)
+    masked_image._set_region_stats(region_100ha)
     for stat_name in ['FILL_PORTION', 'CLOUDLESS_PORTION']:
         assert stat_name in masked_image.properties
         assert masked_image.properties[stat_name] >= 0 and masked_image.properties[stat_name] <= 100
@@ -93,7 +93,7 @@ def test_landsat_cloudless_portion(image_id: str, request: pytest.FixtureRequest
     """ Test `geedim` CLOUDLESS_PORTION for the whole image against related Landsat CLOUD_COVER property. """
     image_id: MaskedImage = request.getfixturevalue(image_id)
     masked_image = MaskedImage.from_id(image_id, mask_shadows=False, mask_cirrus=False)
-    masked_image.set_region_stats()
+    masked_image._set_region_stats()
     # the `geedim` cloudless portion inside the filled portion
     cloudless_portion = 100 * masked_image.properties['CLOUDLESS_PORTION'] / masked_image.properties['FILL_PORTION']
     # landsat provided cloudless portion
@@ -108,7 +108,7 @@ def test_s2_cloudless_portion(image_id: str, request: pytest.FixtureRequest):
     """ Test `geedim` CLOUDLESS_PORTION for the whole image against CLOUDY_PIXEL_PERCENTAGE Sentinel-2 property. """
     image_id: str = request.getfixturevalue(image_id)
     masked_image = MaskedImage.from_id(image_id, mask_method='qa', mask_shadows=False, mask_cirrus=False)
-    masked_image.set_region_stats()
+    masked_image._set_region_stats()
     # S2 provided cloudless portion
     s2_cloudless_portion = 100 - float(masked_image.properties['CLOUDY_PIXEL_PERCENTAGE'])
     # CLOUDLESS_MASK is eroded and dilated, so allow 10% difference to account for that
@@ -122,15 +122,15 @@ def test_landsat_cloudmask_params(image_id: str, request: pytest.FixtureRequest)
     """ Test Landsat cloud/shadow masking `mask_shadows` and `mask_cirrus` parameters. """
     image_id: str = request.getfixturevalue(image_id)
     masked_image = MaskedImage.from_id(image_id, mask_shadows=False, mask_cirrus=False)
-    masked_image.set_region_stats()
+    masked_image._set_region_stats()
     # cloud-free portion
     cloud_only_portion = 100 * masked_image.properties['CLOUDLESS_PORTION'] / masked_image.properties['FILL_PORTION']
     masked_image = MaskedImage.from_id(image_id, mask_shadows=True, mask_cirrus=False)
-    masked_image.set_region_stats()
+    masked_image._set_region_stats()
     # cloud and shadow-free portion
     cloud_shadow_portion = 100 * masked_image.properties['CLOUDLESS_PORTION'] / masked_image.properties['FILL_PORTION']
     masked_image = MaskedImage.from_id(image_id, mask_shadows=True, mask_cirrus=True)
-    masked_image.set_region_stats()
+    masked_image._set_region_stats()
     # cloud, cirrus and shadow-free portion
     cloudless_portion = 100 * masked_image.properties['CLOUDLESS_PORTION'] / masked_image.properties['FILL_PORTION']
 
@@ -146,11 +146,11 @@ def test_s2_cloudmask_mask_shadows(image_id: str, region_10000ha: Dict, request:
     """ Test S2 cloud/shadow masking `mask_shadows` parameter. """
     image_id: str = request.getfixturevalue(image_id)
     masked_image = MaskedImage.from_id(image_id, mask_shadows=False)
-    masked_image.set_region_stats(region_10000ha)
+    masked_image._set_region_stats(region_10000ha)
     # cloud-free portion
     cloud_only_portion = 100 * masked_image.properties['CLOUDLESS_PORTION'] / masked_image.properties['FILL_PORTION']
     masked_image = MaskedImage.from_id(image_id, mask_shadows=True)
-    masked_image.set_region_stats(region_10000ha)
+    masked_image._set_region_stats(region_10000ha)
     # cloud and shadow-free portion
     cloudless_portion = 100 * masked_image.properties['CLOUDLESS_PORTION'] / masked_image.properties['FILL_PORTION']
     assert cloud_only_portion > cloudless_portion
@@ -163,10 +163,10 @@ def test_s2_cloudmask_prob(image_id: str, region_10000ha: Dict, request: pytest.
     """ Test S2 cloud/shadow masking `prob` parameter. """
     image_id: str = request.getfixturevalue(image_id)
     masked_image = MaskedImage.from_id(image_id, mask_shadows=True, prob=80)
-    masked_image.set_region_stats(region_10000ha)
+    masked_image._set_region_stats(region_10000ha)
     prob80_portion = 100 * masked_image.properties['CLOUDLESS_PORTION'] / masked_image.properties['FILL_PORTION']
     masked_image = MaskedImage.from_id(image_id, mask_shadows=True, prob=40)
-    masked_image.set_region_stats(region_10000ha)
+    masked_image._set_region_stats(region_10000ha)
     prob40_portion = 100 * masked_image.properties['CLOUDLESS_PORTION'] / masked_image.properties['FILL_PORTION']
     # test there is more cloud (less CLOUDLESS_PORTION) with prob=40 as compared to prob=80
     assert prob80_portion > prob40_portion
@@ -179,10 +179,10 @@ def test_s2_cloudmask_method(image_id: str, region_10000ha: Dict, request: pytes
     """ Test S2 cloud/shadow masking `mask_method` parameter. """
     image_id: str = request.getfixturevalue(image_id)
     masked_image = MaskedImage.from_id(image_id, mask_method='cloud-prob')
-    masked_image.set_region_stats(region_10000ha)
+    masked_image._set_region_stats(region_10000ha)
     cloud_prob_portion = 100 * masked_image.properties['CLOUDLESS_PORTION'] / masked_image.properties['FILL_PORTION']
     masked_image = MaskedImage.from_id(image_id, mask_method='qa')
-    masked_image.set_region_stats(region_10000ha)
+    masked_image._set_region_stats(region_10000ha)
     qa_portion = 100 * masked_image.properties['CLOUDLESS_PORTION'] / masked_image.properties['FILL_PORTION']
     # test `mask_method` changes CLOUDLESS_PORTION but not by too much
     assert cloud_prob_portion != qa_portion
@@ -197,10 +197,10 @@ def test_s2_cloudmask_mask_cirrus(image_id: str, region_10000ha: Dict, request: 
     image_id: str = request.getfixturevalue(image_id)
     masked_image = MaskedImage.from_id(image_id, mask_method='qa', mask_cirrus=False)
     # cloud and shadow free portion
-    masked_image.set_region_stats(region_10000ha)
+    masked_image._set_region_stats(region_10000ha)
     non_cirrus_portion = 100 * masked_image.properties['CLOUDLESS_PORTION'] / masked_image.properties['FILL_PORTION']
     masked_image = MaskedImage.from_id(image_id, mask_method='qa', mask_cirrus=True)
-    masked_image.set_region_stats(region_10000ha)
+    masked_image._set_region_stats(region_10000ha)
     # cloud, cirrus and shadow free portion
     cirrus_portion = 100 * masked_image.properties['CLOUDLESS_PORTION'] / masked_image.properties['FILL_PORTION']
     assert non_cirrus_portion >= cirrus_portion
@@ -213,10 +213,10 @@ def test_s2_cloudmask_dark(image_id: str, region_10000ha: Dict, request: pytest.
     """ Test S2 cloud/shadow masking `dark` parameter. """
     image_id: str = request.getfixturevalue(image_id)
     masked_image = MaskedImage.from_id(image_id, dark=0.5)
-    masked_image.set_region_stats(region_10000ha)
+    masked_image._set_region_stats(region_10000ha)
     dark_pt5_portion = 100 * masked_image.properties['CLOUDLESS_PORTION'] / masked_image.properties['FILL_PORTION']
     masked_image = MaskedImage.from_id(image_id, dark=0.1)
-    masked_image.set_region_stats(region_10000ha)
+    masked_image._set_region_stats(region_10000ha)
     datk_pt1_portion = 100 * masked_image.properties['CLOUDLESS_PORTION'] / masked_image.properties['FILL_PORTION']
     # test that increasing `dark` results in an increase in detected shadow and corresponding decrease in
     # CLOUDLESS_PORTION
@@ -230,10 +230,10 @@ def test_s2_cloudmask_shadow_dist(image_id: str, region_10000ha: Dict, request: 
     """ Test S2 cloud/shadow masking `shadow_dist` parameter. """
     image_id: str = request.getfixturevalue(image_id)
     masked_image = MaskedImage.from_id(image_id, shadow_dist=200)
-    masked_image.set_region_stats(region_10000ha)
+    masked_image._set_region_stats(region_10000ha)
     sd200_portion = 100 * masked_image.properties['CLOUDLESS_PORTION'] / masked_image.properties['FILL_PORTION']
     masked_image = MaskedImage.from_id(image_id, shadow_dist=1000)
-    masked_image.set_region_stats(region_10000ha)
+    masked_image._set_region_stats(region_10000ha)
     sd1000_portion = 100 * masked_image.properties['CLOUDLESS_PORTION'] / masked_image.properties['FILL_PORTION']
     # test that increasing `shadow_dist` results in an increase in detected shadow and corresponding decrease in
     # CLOUDLESS_PORTION
@@ -247,10 +247,10 @@ def test_s2_cloudmask_cdi_thresh(image_id: str, region_10000ha: Dict, request: p
     """ Test S2 cloud/shadow masking `cdi_thresh` parameter. """
     image_id: str = request.getfixturevalue(image_id)
     masked_image = MaskedImage.from_id(image_id, cdi_thresh=.5)
-    masked_image.set_region_stats(region_10000ha)
+    masked_image._set_region_stats(region_10000ha)
     cdi_pt5_portion = 100 * masked_image.properties['CLOUDLESS_PORTION'] / masked_image.properties['FILL_PORTION']
     masked_image = MaskedImage.from_id(image_id, cdi_thresh=-.5)
-    masked_image.set_region_stats(region_10000ha)
+    masked_image._set_region_stats(region_10000ha)
     cdi_negpt5_portion = 100 * masked_image.properties['CLOUDLESS_PORTION'] / masked_image.properties['FILL_PORTION']
     # test that increasing `cdi_thresh` results in an increase in detected cloud and corresponding decrease in
     # CLOUDLESS_PORTION

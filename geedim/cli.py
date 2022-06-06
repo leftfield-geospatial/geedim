@@ -55,9 +55,7 @@ class ChainedCommand(click.Command):
     """
 
     def get_help(self, ctx):
-        """
-        Strip some RST markup from the help text for CLI display.  Assumes no grid tables.
-        """
+        """ Strip some RST markup from the help text for CLI display.  Assumes no grid tables. """
         if not hasattr(self, 'click_wrap_text'):
             self.click_wrap_text = click.formatting.wrap_text
         sub_strings = {
@@ -682,6 +680,9 @@ def composite(obj, image_id, mask, method, resampling, bbox, region, date):
 
     By default, input images are masked before compositing.  This means that only cloud/shadow-free (or filled) pixels
     are used to make the composite.  You can turn off this behaviour with the `--no-mask` option.
+
+    Images from spectrally compatible Landsat collections can be composited together i.e. Landsat-4 with Landsat-5,
+    and Landsat-8 with Landsat-9.
     \b
 
     Examples

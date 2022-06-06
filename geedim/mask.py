@@ -33,7 +33,7 @@ class MaskedImage(BaseImage):
 
     def __init__(self, ee_image: ee.Image, mask: bool = _default_mask, region: dict = None, **kwargs):
         """
-        Class for masking and downloading an Earth Engine image.
+        A class for describing, masking and downloading an Earth Engine image.
 
         Parameters
         ----------
@@ -44,13 +44,15 @@ class MaskedImage(BaseImage):
         region: dict, optional
             A geojson polygon inside of which to find statistics for the image.  These values are stored in the image
             properties. If None, statistics are not found (the default).
+
+        **kwargs:
         mask_cirrus: bool, optional
             Whether to mask cirrus clouds.  Valid for Landsat 8-9 images, and for Sentinel-2 images with
             the `qa` ``mask_method``.
         mask_shadows: bool, optional
             Whether to mask cloud shadows.
         mask_method: CloudMaskMethod, str, optional
-            Method used to mask clouds.  Valid for Sentinel-2 images.  See :class:`geedim.enums.CloudMaskMethod` for
+            Method used to mask clouds.  Valid for Sentinel-2 images.  See :class:`~geedim.enums.CloudMaskMethod` for
             details.
         prob: float, optional
             Cloud probability threshold (%). Valid for Sentinel-2 images with the `cloud-prob` ``mask-method``.
@@ -69,19 +71,19 @@ class MaskedImage(BaseImage):
             Maximum distance (m) to look for clouds when forming the 'cloud distance' band.  Valid for
             Sentinel-2 images.
         """
-        # TODO: consider adding proj_scale parameter here, rather than in set_region_stats, then it can be re-used in
+        # TODO: consider adding proj_scale parameter here, rather than in _set_region_stats, then it can be re-used in
         #  S2 cloud masking and distance
         BaseImage.__init__(self, ee_image)
         self._add_aux_bands(**kwargs)  # add any mask and cloud distance bands
         if region:
-            self.set_region_stats(region)
+            self._set_region_stats(region)
         if mask:
             self.mask_clouds()
 
     @staticmethod
     def from_id(image_id: str, **kwargs) -> 'MaskedImage':
         """
-        Given an Earth Engine image ID, create a MaskedImage instance.
+        Create a MaskedImage instance from an Earth Engine image ID.
 
         Parameters
         ----------
@@ -115,7 +117,7 @@ class MaskedImage(BaseImage):
         cond = ee.Number(self.ee_image.bandNames().contains('FILL_MASK'))
         self.ee_image = ee.Image(ee.Algorithms.If(cond, self.ee_image, self.ee_image.addBands(aux_image)))
 
-    def set_region_stats(self, region=None, scale=None):
+    def _set_region_stats(self, region=None, scale=None):
         """
         Set FILL_PORTION on the encapsulated image for the specified region.  Derived classes should override this
         method and add a CLOUDLESS_PORTION and/or other statistics they support.
@@ -197,7 +199,7 @@ class CloudMaskedImage(MaskedImage):
         # download.
         return cloud_dist.toUint32().rename('CLOUD_DIST')
 
-    def set_region_stats(self, region=None, scale=None):
+    def _set_region_stats(self, region=None, scale=None):
         """
         Set FILL_ and CLOUDLESS_PORTION on the encapsulated image for the specified region.
 
@@ -313,7 +315,7 @@ class Sentinel2ClImage(CloudMaskedImage):
         mask_shadows: bool, optional
             Whether to mask cloud shadows.
         mask_method: CloudMaskMethod, str, optional
-            Method used to mask clouds.  Valid for Sentinel-2 images.  See :class:`geedim.enums.CloudMaskMethod` for
+            Method used to mask clouds.  Valid for Sentinel-2 images.  See :class:`~geedim.enums.CloudMaskMethod` for
             details.
         prob: float, optional
             Cloud probability threshold (%). Valid for Sentinel-2 images with the `cloud-prob` ``mask-method``.

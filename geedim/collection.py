@@ -72,14 +72,11 @@ def compatible_collections(names: List[str]) -> bool:
 
 
 class MaskedCollection:
-    """
-    Class for encapsulating, searching and compositing an Earth Engine image collection, with support for
-    cloud/shadow masking.
-    """
 
     def __init__(self, ee_collection):
         """
-        Create a MaskedCollection instance.
+        A class for describing, searching and compositing an Earth Engine image collection, with support for
+        cloud/shadow masking.
 
         Parameters
         ----------
@@ -94,8 +91,8 @@ class MaskedCollection:
         self._filtered = False
         self._ee_collection = ee_collection
         self._image_type = None
-        self._stac = None
-        self._stats_scale = None
+        self.__stac = None
+        self.__stats_scale = None
 
     @classmethod
     def from_name(cls, name: str) -> 'MaskedCollection':
@@ -132,6 +129,9 @@ class MaskedCollection:
         """
         Create a MaskedCollection instance from a list of EE image ID strings, ee.Image objects and/or MaskedImage
         objects.
+
+        Images from spectrally compatible Landsat collections can be combined i.e. Landsat-4 with Landsat-5,
+        and Landsat-8 with Landsat-9.  Otherwise, images should all belong to the same collection.
 
         Any ee.Image instances in the list (including those encapsulated by MaskedImage) must have `system:id` and
         `system:time_start` properties.  This is always the case for images from the EE data catalog, and images
@@ -189,6 +189,25 @@ class MaskedCollection:
         return gd_collection
 
     @property
+    def _stac(self) -> Union[StacItem, None]:
+        """ STAC info, if any.  """
+        if not self.__stac and (self.name in StacCatalog().url_dict):
+            self.__stac = StacCatalog().get_item(self.name)
+        return self.__stac
+
+    @property
+    def _stats_scale(self) -> Union[float, None]:
+        """ Scale to use for re-projections when finding region statistics. """
+        if not self._stac:
+            return None
+        if not self.__stats_scale:
+            gsds = [float(band_dict['gsd']) for band_dict in self._stac.band_props.values()]
+            max_gsd = max(gsds)
+            min_gsd = min(gsds)
+            self.__stats_scale = min_gsd if (max_gsd > 10 * min_gsd) and (min_gsd > 0) else max_gsd
+        return self.__stats_scale
+
+    @property
     def ee_collection(self) -> ee.ImageCollection:
         """ Encapsulated Earth Engine image collection. """
         return self._ee_collection
@@ -203,7 +222,7 @@ class MaskedCollection:
 
     @property
     def image_type(self) -> type:
-        """ :class:`geedim.mask.MaskedImage` sub-class to encapsulate images from :attr:`ee_collection`. """
+        """ :class:`~geedim.mask.MaskedImage` sub-class to encapsulate images from :attr:`ee_collection`. """
         if not self._image_type:
             self._image_type = class_from_id(self.name)
         return self._image_type
@@ -241,30 +260,11 @@ class MaskedCollection:
         return tabulate.tabulate(self.schema.values(), headers=headers, floatfmt='.2f', tablefmt=_table_fmt)
 
     @property
-    def stac(self) -> Union[StacItem, None]:
-        """ STAC info, if any.  """
-        if not self._stac and (self.name in StacCatalog().url_dict):
-            self._stac = StacCatalog().get_item(self.name)
-        return self._stac
-
-    @property
-    def stats_scale(self) -> Union[float, None]:
-        """ Scale to use for re-projections when finding region statistics. """
-        if not self.stac:
-            return None
-        if not self._stats_scale:
-            gsds = [float(band_dict['gsd']) for band_dict in self.stac.band_props.values()]
-            max_gsd = max(gsds)
-            min_gsd = min(gsds)
-            self._stats_scale = min_gsd if (max_gsd > 10 * min_gsd) and (min_gsd > 0) else max_gsd
-        return self._stats_scale
-
-    @property
     def refl_bands(self) -> Union[List[str], None]:
         """ List of spectral / reflectance bands, if any. """
-        if not self.stac:
+        if not self._stac:
             return None
-        return [bname for bname, bdict in self.stac.band_props.items() if 'center_wavelength' in bdict]
+        return [bname for bname, bdict in self._stac.band_props.items() if 'center_wavelength' in bdict]
 
     def _get_properties(self, ee_collection: ee.ImageCollection) -> Dict:
         """ Retrieve properties of images in a given Earth Engine image collection. """
@@ -336,7 +336,7 @@ class MaskedCollection:
 
             gd_image = self.image_type(ee_image, **kwargs)
             if region and (method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic]):
-                gd_image.set_region_stats(region=region, scale=self.stats_scale)
+                gd_image._set_region_stats(region=region, scale=self._stats_scale)
             if mask:
                 gd_image.mask_clouds()
             return resample(gd_image.ee_image, resampling)
@@ -393,7 +393,7 @@ class MaskedCollection:
         def set_region_stats(ee_image: ee.Image):
             """ Find filled and cloud/shadow free portions inside the search region for a given image.  """
             gd_image = self.image_type(ee_image, **kwargs)
-            gd_image.set_region_stats(region, scale=self.stats_scale)
+            gd_image._set_region_stats(region, scale=self._stats_scale)
             return gd_image.ee_image
 
         # filter the image collection, finding cloud/shadow masks and region stats
@@ -423,7 +423,7 @@ class MaskedCollection:
         ----------
         method: CompositeMethod, optional
             Method for finding each composite pixel from the stack of corresponding input image pixels. See
-            :class:`geedim.enums.CompositeMethod` for available options.  By default, `q-mosaic` is used for
+            :class:`~geedim.enums.CompositeMethod` for available options.  By default, `q-mosaic` is used for
             cloud/shadow mask supported collections, `mosaic` otherwise.
         mask: bool, optional
             Whether to apply the cloud/shadow mask, or fill (valid pixel) mask, in the case of images without
@@ -445,7 +445,7 @@ class MaskedCollection:
 
         Returns
         -------
-        :class:`geedim.mask.MaskedImage`
+        MaskedImage
             Composite image.
         """
 
