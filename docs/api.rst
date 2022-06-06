@@ -94,14 +94,30 @@ MaskedCollection
     ~MaskedCollection.refl_bands
 
 
-geedim.enums
-^^^^^^^^^^^^
+enums
+^^^^^
+
+CompositeMethod
+~~~~~~~~~~~~~~~
 
 .. currentmodule:: geedim.enums
 
-.. autosummary::
-    :toctree: _generated/
+.. autoclass:: CompositeMethod
+    :members:
 
-    CompositeMethod
-    CloudMaskMethod
-    ResamplingMethod
+CloudMaskMethod
+~~~~~~~~~~~~~~~
+
+.. currentmodule:: geedim.enums
+
+.. autoclass:: CloudMaskMethod
+    :members:
+
+ResamplingMethod
+~~~~~~~~~~~~~~~~~
+
+.. currentmodule:: geedim.enums
+
+.. autoclass:: ResamplingMethod
+    :members:
+
