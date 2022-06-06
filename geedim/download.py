@@ -24,7 +24,7 @@ import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from itertools import product
-from typing import Tuple, Dict, List, Union
+from typing import Tuple, Dict, List, Union, Iterator
 
 import ee
 import numpy as np
@@ -48,9 +48,9 @@ class BaseImage:
     _desc_width = 70
     _default_resampling = ResamplingMethod.near
 
-    def __init__(self, ee_image):
+    def __init__(self, ee_image: ee.Image):
         """
-        An object for describing and downloading an Earth Engine image.
+        A class for describing and downloading an Earth Engine image.
 
         Allows download and export without size limits, and provides client-side access to image properties.
 
@@ -68,9 +68,9 @@ class BaseImage:
         self._min_dtype = None
 
     @classmethod
-    def from_id(cls, image_id):
+    def from_id(cls, image_id: str) -> 'BaseImage':
         """
-        Create a BaseImage instance from an EE image ID.
+        Create a BaseImage instance from an Earth Engine image ID.
 
         Parameters
         ----------
@@ -79,7 +79,7 @@ class BaseImage:
 
         Returns
         -------
-        gd_image: BaseImage
+        BaseImage
             BaseImage instance.
         """
         ee_image = ee.Image(image_id)
@@ -89,7 +89,7 @@ class BaseImage:
 
     @property
     def _ee_info(self) -> Dict:
-        """ EE image metadata. """
+        """ Earth Engine image metadata. """
         if self.__ee_info is None:
             self.__ee_info = self._ee_image.getInfo()
         return self.__ee_info
@@ -103,12 +103,12 @@ class BaseImage:
 
     @property
     def _stac(self) -> Union[StacItem, None]:
-        """ STAC info, if any. """
+        """ Image STAC info.  None if there is no Earth Engine STAC entry for the image / image's collection. """
         return StacCatalog().get_item(self.id)
 
     @property
     def ee_image(self) -> ee.Image:
-        """ Encapsulated EE image. """
+        """ Encapsulated Earth Engine image. """
         return self._ee_image
 
     @ee_image.setter
@@ -120,7 +120,7 @@ class BaseImage:
 
     @property
     def id(self) -> Union[str, None]:
-        """ EE image ID. """
+        """ Earth Engine image ID.  None if the image ``system:id`` property is not set. """
         if self._id:  # avoid a call to getInfo() if _id is set
             return self._id
         else:
@@ -128,7 +128,7 @@ class BaseImage:
 
     @property
     def date(self) -> Union[datetime, None]:
-        """ Image capture date & time. """
+        """ Image capture date & time.  None if the image ``system:time_start`` property is not set. """
         if 'system:time_start' in self.properties:
             return datetime.utcfromtimestamp(self.properties['system:time_start'] / 1000)
         else:
@@ -160,7 +160,7 @@ class BaseImage:
 
     @property
     def shape(self) -> Union[Tuple[int, int], None]:
-        """ (row, column) dimensions of the minimum scale band. None if the image has no fixed projection. """
+        """ (row, column) pixel dimensions of the minimum scale band. None if the image has no fixed projection. """
         return self._min_projection['shape']
 
     @property
@@ -170,10 +170,7 @@ class BaseImage:
 
     @property
     def transform(self) -> Union[rio.Affine, None]:
-        """
-        Geo-transform of the minimum scale band, as a rasterio Affine transform.
-        None if the image has no fixed projection.
-        """
+        """ Geo-transform of the minimum scale band. None if the image has no fixed projection. """
         return self._min_projection['transform']
 
     @property
@@ -185,7 +182,7 @@ class BaseImage:
 
     @property
     def size(self) -> int:
-        """ Image size in bytes. """
+        """ Image size in bytes.  None if the image has no fixed projection. """
         if not self.shape:
             return None
         dtype_size = np.dtype(self.dtype).itemsize
@@ -198,18 +195,18 @@ class BaseImage:
 
     @property
     def properties(self) -> Dict:
-        """ EE image properties. """
+        """ Earth Engine image properties. """
         return self._ee_info['properties'] if 'properties' in self._ee_info else {}
 
     @property
     def band_properties(self) -> List[Dict]:
-        """ Merged STAC and EE band properties. """
+        """ Merged STAC and Earth Engine band properties. """
         return self._get_band_properties()
 
     @staticmethod
     def _get_projection(ee_info: Dict, min_scale=True) -> Dict:
         """
-        Return the projection information corresponding to the min/max scale band of a given an EE image info
+        Return the projection information corresponding to the min/max scale band of a given Earth Engine image info
         dictionary.
         """
         projection_info = dict(crs=None, transform=None, shape=None, scale=None)
@@ -232,7 +229,7 @@ class BaseImage:
 
     @staticmethod
     def _get_min_dtype(ee_info: Dict) -> str:
-        """Return the minimal size data type corresponding to a given EE image info dictionary. """
+        """ Return the minimum size data type corresponding to a given Earth Engine image info dictionary. """
         dtype = None
         if 'bands' in ee_info:
             precisions = np.array([bd['data_type']['precision'] for bd in ee_info['bands']])
@@ -256,7 +253,7 @@ class BaseImage:
     @staticmethod
     def _str_format_size(byte_size: float, units=['bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB']) -> str:
         """
-        Returns a human readable string representation of bytes.
+        Returns a human readable string representation of a given byte size.
         Adapted from https://stackoverflow.com/questions/1094841/get-human-readable-version-of-file-size.
         """
         if byte_size < 1000:
@@ -266,7 +263,7 @@ class BaseImage:
 
     @staticmethod
     def _convert_dtype(ee_image: ee.Image, dtype: str) -> ee.Image:
-        """ Convert the data type of an EE image to a specified type. """
+        """ Convert the data type of an Earth Engine image to a specified type. """
         conv_dict = dict(
             float32=ee.Image.toFloat,
             float64=ee.Image.toDouble,
@@ -283,7 +280,7 @@ class BaseImage:
         return conv_dict[dtype](ee_image)
 
     def _get_band_properties(self) -> List[Dict]:
-        """Return band metadata for this image. """
+        """ Merge Earth Engine and STAC band properties for this image. """
         band_ids = [bd['id'] for bd in self._ee_info['bands']]
         if self._stac:
             stac_bands_props = self._stac.band_props
@@ -292,7 +289,10 @@ class BaseImage:
             band_props = [dict(name=bid) for bid in band_ids]
         return band_props
 
-    def _prepare_for_export(self, region=None, crs=None, scale=None, resampling=_default_resampling, dtype=None):
+    def _prepare_for_export(
+        self, region: Dict = None, crs: str = None, scale: float = None,
+        resampling: ResamplingMethod = _default_resampling, dtype: str = None
+    ) -> 'BaseImage':
         """
         Prepare the encapsulated image for export/download.  Will reproject, resample, clip and convert the image
         according to the provided parameters.
@@ -308,14 +308,14 @@ class BaseImage:
             Pixel scale (m) to export to.  Where image bands have different scales, all are re-projected to this scale.
             Defaults to use the minimum scale of image bands if available.
         resampling : ResamplingMethod, optional
-            Resampling method: ('near'|'bilinear'|'bicubic'|'average')
+            Resampling method - see :class:`~geedim.enums.ResamplingMethod` for available options.
         dtype: str, optional
-            Data type to export to ('uint8'|'int8'|'uint16'|'int16'|'uint32'|'int32'|'float32'|'float64')
-            Defaults to auto select a minimal type that can represent the range of pixel values.
+           Convert to this data type (`uint8`, `int8`, `uint16`, `int16`, `uint32`, `int32`, `float32`
+           or `float64`). Defaults to auto select a minimal type that can represent the range of pixel values.
 
         Returns
         -------
-        exp_image: BaseImage
+        BaseImage
             Prepared image.
         """
 
@@ -363,7 +363,7 @@ class BaseImage:
         ee_image, _ = ee_image.prepare_for_export(export_args)
         return BaseImage(ee_image)
 
-    def _prepare_for_download(self, set_nodata=True, **kwargs) -> ('BaseImage', Dict):
+    def _prepare_for_download(self, set_nodata: bool = True, **kwargs) -> ('BaseImage', Dict):
         """
         Prepare the encapsulated image for tiled GeoTIFF download. Will reproject, resample, clip and convert the image
         according to the provided parameters.
@@ -392,7 +392,7 @@ class BaseImage:
 
     @staticmethod
     def _get_tile_shape(
-        exp_image: 'BaseImage', max_download_size=32 << 20, max_grid_dimension=10000
+        exp_image: 'BaseImage', max_download_size: int = 32 << 20, max_grid_dimension: int = 10000
     ) -> (Tuple[int, int], int):
         """
         Return a tile shape and number of tiles for a given BaseImage, such that the tile shape satisfies GEE
@@ -425,8 +425,8 @@ class BaseImage:
         return tile_shape, num_tiles
 
     @staticmethod
-    def _build_overviews(dataset: rio.io.DatasetWriter, max_num_levels=8, min_ovw_pixels=256):
-        """Build internal overviews, downsampled by successive powers of 2, for an open rasterio dataset. """
+    def _build_overviews(dataset: rio.io.DatasetWriter, max_num_levels: int = 8, min_ovw_pixels: int = 256):
+        """ Build internal overviews, downsampled by successive powers of 2, for an open rasterio dataset. """
         if dataset.closed:
             raise IOError('Image dataset is closed')
 
@@ -439,7 +439,7 @@ class BaseImage:
         dataset.build_overviews(ovw_levels, RioResampling.average)
 
     def _write_metadata(self, dataset: rio.io.DatasetWriter):
-        """Write EE and geedim image metadata to an open rasterio dataset. """
+        """ Write Earth Engine and STAC metadata to an open rasterio dataset. """
         if dataset.closed:
             raise IOError('Image dataset is closed')
 
@@ -453,7 +453,7 @@ class BaseImage:
             dataset.update_tags(band_i + 1, **band_dict)
 
     @staticmethod
-    def _tiles(exp_image: 'BaseImage', tile_shape: Tuple[int, int] = None) -> Tile:
+    def _tiles(exp_image: 'BaseImage', tile_shape: Tuple[int, int] = None) -> Iterator[Tile]:
         """
         Iterator over downloadable image tiles.
 
@@ -464,12 +464,12 @@ class BaseImage:
         exp_image: BaseImage
             Image to tile.
         tile_shape: Tuple[int, int], optional
-            (row, column) tile shape to use (pixels). Defaults to calculate an auto tile shape that satisfies the EE
-            download size limit.
+            (row, column) tile shape to use (pixels). Defaults to calculate an auto tile shape that satisfies the
+            Earth Engine download size limit.
 
         Yields
         -------
-        tile: Tile
+        Tile
             An image tile that can be downloaded.
         """
         if not tile_shape:
@@ -485,14 +485,14 @@ class BaseImage:
             yield Tile(exp_image, tile_window)
 
     @staticmethod
-    def monitor_export(task, label=None):
+    def monitor_export(task: ee.batch.Task, label: str = None):
         """
         Monitor and display the progress of an export task.
 
         Parameters
         ----------
         task : ee.batch.Task
-            EE task to monitor.
+            Earth Engine task to monitor (as returned by :meth:`export`).
         label: str, optional
             Optional label for progress display.  Defaults to task description.
         """
@@ -522,7 +522,7 @@ class BaseImage:
             else:
                 raise IOError(f"Export failed \n{status}")
 
-    def export(self, filename, folder=None, wait=True, **kwargs):
+    def export(self, filename: str, folder: str = None, wait: bool = True, **kwargs) -> ee.batch.Task:
         """
         Export the encapsulated image to Google Drive.
 
@@ -531,7 +531,7 @@ class BaseImage:
         filename : str
             Name of the task and destination file.
         folder : str, optional
-            Google Drive folder to export to. Defaults to root.
+            Google Drive folder to export to. Defaults to the root.
         wait : bool
             Wait for the export to complete before returning.
         region : dict, ee.Geometry, optional
@@ -547,6 +547,11 @@ class BaseImage:
         dtype: str, optional
            Convert to this data type (`uint8`, `int8`, `uint16`, `int16`, `uint32`, `int32`, `float32`
            or `float64`). Defaults to auto select a minimal type that can represent the range of pixel values.
+
+        Returns
+        -------
+        ee.batch.Task
+            The Earth Engine export task, started if ``wait`` is False, or completed if ``wait`` is True.
         """
 
         exp_image = self._prepare_for_export(**kwargs)
@@ -563,36 +568,36 @@ class BaseImage:
             self.monitor_export(task)
         return task
 
-    def download(self, filename: pathlib.Path, overwrite=False, num_threads=None, **kwargs):
+    def download(self, filename: pathlib.Path, overwrite: bool = False, num_threads: int = None, **kwargs):
         """
         Download the encapsulated image to a GeoTiff file.
 
         Images larger than the `Earth Engine size limit
         <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`_ are split and downloaded as
         separate tiles, then re-assembled into a single GeoTIFF.  Downloaded image files are populated with relevant
-        metadata from the source Earth Engine image and associated STAC.
+        metadata from the Earth Engine image and associated STAC.
 
         Parameters
         ----------
         filename: pathlib.Path, str
             Name of the destination file.
         overwrite : bool, optional
-            Overwrite the destination file if it exists, otherwise prompt the user.
+            Overwrite the destination file if it exists.
         num_threads: int, optional
-            Number of tiles to download concurrently Defaults to use a sensible auto value.
+            Number of tiles to download concurrently.  Defaults to a sensible auto value.
         region : dict, ee.Geometry, optional
-            Region defined by geojson polygon in WGS84 Defaults to the entire image granule.
+            Region defined by geojson polygon in WGS84.  Defaults to the entire image granule.
         crs : str, optional
             Reproject image(s) to this EPSG or WKT CRS.  Where image bands have different CRSs, all are
-            re-projected to this CRS Defaults to the CRS of the minimum scale band.
+            re-projected to this CRS.  Defaults to the CRS of the minimum scale band.
         scale : float, optional
             Resample image(s) to this pixel scale (size) (m).  Where image bands have different scales,
-            all are resampled to this scale. Defaults to the minimum scale of image bands.
+            all are resampled to this scale.  Defaults to the minimum scale of image bands.
         resampling : ResamplingMethod, optional
             Resampling method - see :class:`~geedim.enums.ResamplingMethod` for available options.
         dtype: str, optional
             Convert to this data type (`uint8`, `int8`, `uint16`, `int16`, `uint32`, `int32`, `float32`
-            or `float64`). Defaults to auto select a minimal type that can represent the range of pixel values.
+            or `float64`).  Defaults to auto select a minimum size type that can represent the range of pixel values.
         """
 
         max_threads = num_threads or min(32, (os.cpu_count() or 1) + 4)

@@ -73,7 +73,7 @@ def compatible_collections(names: List[str]) -> bool:
 
 class MaskedCollection:
 
-    def __init__(self, ee_collection):
+    def __init__(self, ee_collection: ee.ImageCollection):
         """
         A class for describing, searching and compositing an Earth Engine image collection, with support for
         cloud/shadow masking.
@@ -127,22 +127,24 @@ class MaskedCollection:
     @classmethod
     def from_list(cls, image_list: List[Union[str, MaskedImage, ee.Image]]) -> 'MaskedCollection':
         """
-        Create a MaskedCollection instance from a list of EE image ID strings, ee.Image objects and/or MaskedImage
-        objects.
+        Create a MaskedCollection instance from a list of Earth Engine image ID strings, ``ee.Image`` instances and/or
+        :class:`~geedim.mask.MaskedImage` instances.  The list may include composite images, as created with
+        :meth:`composite`.
 
         Images from spectrally compatible Landsat collections can be combined i.e. Landsat-4 with Landsat-5,
         and Landsat-8 with Landsat-9.  Otherwise, images should all belong to the same collection.
 
-        Any ee.Image instances in the list (including those encapsulated by MaskedImage) must have `system:id` and
-        `system:time_start` properties.  This is always the case for images from the EE data catalog, and images
-        returned from MaskedCollection.composite().  Any user-created images passed to from_list() should have these
-        properties set.
+        Any ``ee.Image`` instances in the list (including those encapsulated by :class:`~geedim.mask.MaskedImage`)
+        must have ``system:id`` and ``system:time_start`` properties.  This is always the case for images from the
+        Earth Engine catalog, and images returned from :meth:`composite`).  Any other user-created
+        images passed to :meth:`from_list` should have these properties set.
 
         Parameters
         ----------
         image_list : list
-            List of images to include in the collection (must all be from the same EE collection).  List items can be
-            ID strings, instances of MaskedImage, or instances of ee.Image.
+            List of images to include in the collection (must all be from the same, or compatible Earth Engine
+            collections). List items can be ID strings, instances of :class:`~geedim.mask.MaskedImage`, or instances of
+            ``ee.Image``.
 
         Returns
         -------
@@ -209,7 +211,7 @@ class MaskedCollection:
 
     @property
     def ee_collection(self) -> ee.ImageCollection:
-        """ Encapsulated Earth Engine image collection. """
+        """ Earth Engine image collection. """
         return self._ee_collection
 
     @property
@@ -286,7 +288,7 @@ class MaskedCollection:
 
     def _get_properties_table(self, properties: Dict, schema: Dict = None) -> str:
         """
-        Format the given properties into a table.  Orders properties (columns) according `collection_schema` and
+        Format the given properties into a table.  Orders properties (columns) according :attr:`schema` and
         replaces long form property names with abbreviations.
         """
         if not schema:
@@ -306,11 +308,11 @@ class MaskedCollection:
         return tabulate.tabulate(abbrev_props, headers='keys', floatfmt='.2f', tablefmt=_table_fmt)
 
     def _prepare_for_composite(
-        self, method=None, mask=True, resampling=BaseImage._default_resampling, date=None,
-        region=None, **kwargs
-    ):
+        self, method: CompositeMethod = None, mask: bool = True,
+        resampling: ResamplingMethod = BaseImage._default_resampling, date: str = None, region: Dict = None, **kwargs
+    ) -> ee.ImageCollection:
         """
-        Prepare the Earth Engine collection for compositing. See MaskedCollection.composite() for
+        Prepare the Earth Engine collection for compositing. See :meth:`~MaskedCollection.composite` for
         parameter descriptions.
         """
 
@@ -329,7 +331,7 @@ class MaskedCollection:
             )
 
         def prepare_image(ee_image: ee.Image):
-            """ Prepare an EE image for use in compositing. """
+            """ Prepare an Earth Engine image for use in compositing. """
             if date and (method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic]):
                 date_dist = ee.Number(ee_image.get('system:time_start')).subtract(ee.Date(date).millis()).abs()
                 ee_image = ee_image.set('DATE_DIST', date_dist)
@@ -374,11 +376,11 @@ class MaskedCollection:
         region : dict, ee.Geometry
             Polygon in WGS84 specifying a region that images should intersect.
         fill_portion: float, optional
-            Minimum portion (%) of valid/filled image pixels.
+            Minimum portion (%) of filled (valid) image pixels.
         cloudless_portion: float, optional
             Minimum portion (%) of cloud/shadow free image pixels.
         **kwargs
-            Optional cloud/shadow masking parameters - see :meth:`geedim.MaskedImage.__init__` for details.
+            Optional cloud/shadow masking parameters - see :meth:`geedim.mask.MaskedImage.__init__` for details.
 
         Returns
         -------
@@ -426,22 +428,22 @@ class MaskedCollection:
             :class:`~geedim.enums.CompositeMethod` for available options.  By default, `q-mosaic` is used for
             cloud/shadow mask supported collections, `mosaic` otherwise.
         mask: bool, optional
-            Whether to apply the cloud/shadow mask, or fill (valid pixel) mask, in the case of images without
+            Whether to apply the cloud/shadow mask; or fill (valid pixel) mask, in the case of images without
             support for cloud/shadow masking.
         resampling: ResamplingMethod, optional
-            Resampling method to use on collection images prior to compositing.  If 'near', no resampling is done (
-            the default).
-        date: datetime.datetime, optional
+            Resampling method to use on collection images prior to compositing.  If `near`, no resampling is done
+            (the default).  See :class:`~geedim.enums.ResamplingMethod` for available options.
+        date: datetime, optional
             Sort collection images by their absolute difference in capture time from this date.  Useful for
             prioritising pixels from images closest to this date.  Valid for the `q-mosaic`
-            and `mosaic` methods only.  If None, no time difference sorting is done (the default).
+            and `mosaic` ``method`` only.  If None, no time difference sorting is done (the default).
         region: dict, optional
-            Sort collection images by their cloudless portion inside this geojson polygon (only if `date` is not
+            Sort collection images by their cloudless portion inside this geojson polygon (only if ``date`` is not
             specified).  This is useful to prioritise pixels from the least cloudy image(s).  Valid for the `q-mosaic`
-            and `mosaic` methods.  If `date` and `region` are not specified, collection images are sorted by their
+            and `mosaic` methods.  If ``date`` and ``region`` are not specified, collection images are sorted by their
             capture date.
         **kwargs
-            Optional cloud/shadow masking parameters - see :meth:`geedim.MaskedImage.__init__` for details.
+            Optional cloud/shadow masking parameters - see :meth:`geedim.mask.MaskedImage.__init__` for details.
 
         Returns
         -------

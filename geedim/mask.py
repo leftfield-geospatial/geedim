@@ -14,6 +14,7 @@
     limitations under the License.
 """
 import logging
+from typing import Dict
 
 import ee
 
@@ -83,7 +84,7 @@ class MaskedImage(BaseImage):
     @staticmethod
     def from_id(image_id: str, **kwargs) -> 'MaskedImage':
         """
-        Create a MaskedImage instance from an Earth Engine image ID.
+        Create a MaskedImage, or sub-class, instance from an Earth Engine image ID.
 
         Parameters
         ----------
@@ -112,15 +113,15 @@ class MaskedImage(BaseImage):
         return self.ee_image.mask().reduce(ee.Reducer.allNonZero()).rename('FILL_MASK')
 
     def _add_aux_bands(self, **kwargs):
-        """Add auxiliary bands to the encapsulated image, if they are not present already."""
+        """ Add auxiliary bands to the encapsulated image, if they are not present already. """
         aux_image = self._aux_image(**kwargs)
         cond = ee.Number(self.ee_image.bandNames().contains('FILL_MASK'))
         self.ee_image = ee.Image(ee.Algorithms.If(cond, self.ee_image, self.ee_image.addBands(aux_image)))
 
-    def _set_region_stats(self, region=None, scale=None):
+    def _set_region_stats(self, region: Dict = None, scale: float = None):
         """
-        Set FILL_PORTION on the encapsulated image for the specified region.  Derived classes should override this
-        method and add a CLOUDLESS_PORTION and/or other statistics they support.
+        Set FILL_PORTION and CLOUDLESS_PORTION on the encapsulated image for the specified region.  Derived classes
+        should override this method and set CLOUDLESS_PORTION, and/or other statistics they support.
 
         Parameters
         ----------
@@ -160,26 +161,22 @@ class MaskedImage(BaseImage):
         self.ee_image = self.ee_image.set('CLOUDLESS_PORTION', means.get('FILL_PORTION'))
 
     def mask_clouds(self):
-        """
-        Mask filled pixels or cloud/shadow, as supported for the encapsulated image.
-        """
+        """ Apply the cloud/shadow mask if supported, otherwise apply the fill mask. """
         self.ee_image = self.ee_image.updateMask(self.ee_image.select('FILL_MASK'))
 
 
 class CloudMaskedImage(MaskedImage):
-    """
-    Base class for encapsulating supported cloud/shadow masked images.
-    """
+    """ A base class for encapsulating cloud/shadow masked images. """
 
-    def _cloud_dist(self, cloudless_mask=None, max_cloud_dist=5000) -> ee.Image:
-        """Get the cloud/shadow distance for encapsulated image."""
+    def _cloud_dist(self, cloudless_mask: ee.Image = None, max_cloud_dist: float = 5000) -> ee.Image:
+        """ Find the cloud/shadow distance. """
         if not cloudless_mask:
             cloudless_mask = self.ee_image.select('CLOUDLESS_MASK')
         proj = get_projection(self.ee_image, min_scale=False)  # use maximum scale projection to save processing time
 
         # Note that initial *MASK bands before any call to mask_clouds(), are themselves masked, so this cloud/shadow
         # mask excludes (i.e. masks) already masked pixels.  This avoids finding distance to e.g. scanline errors in
-        # Landsat7.
+        # Landsat-7.
         cloud_shadow_mask = cloudless_mask.Not()
         cloud_pix = ee.Number(max_cloud_dist).divide(proj.nominalScale()).round()  # cloud_dist in pixels
 
@@ -199,9 +196,9 @@ class CloudMaskedImage(MaskedImage):
         # download.
         return cloud_dist.toUint32().rename('CLOUD_DIST')
 
-    def _set_region_stats(self, region=None, scale=None):
+    def _set_region_stats(self, region: Dict = None, scale: float = None):
         """
-        Set FILL_ and CLOUDLESS_PORTION on the encapsulated image for the specified region.
+        Set FILL_PORTION and CLOUDLESS_PORTION on the encapsulated image for the specified region.
 
         Parameters
         ----------
@@ -237,9 +234,7 @@ class CloudMaskedImage(MaskedImage):
         self.ee_image = self.ee_image.set(means)
 
     def mask_clouds(self):
-        """
-        Mask cloud/shadow in the encapsulated image.
-        """
+        """ Apply the cloud/shadow mask. """
         self.ee_image = self.ee_image.updateMask(self.ee_image.select('CLOUDLESS_MASK'))
 
 
@@ -255,7 +250,7 @@ class LandsatImage(CloudMaskedImage):
     * LANDSAT/LC09/C02/T1_L2
     """
 
-    def _aux_image(self, mask_shadows=True, mask_cirrus=True) -> ee.Image:
+    def _aux_image(self, mask_shadows: bool = True, mask_cirrus: bool = True) -> ee.Image:
         """
         Retrieve the auxiliary image containing cloud/shadow masks and cloud distance.
 
@@ -268,7 +263,7 @@ class LandsatImage(CloudMaskedImage):
 
         Returns
         -------
-        aux_image: ee.Image
+        ee.Image
             An Earth Engine image containing *_MASK and CLOUD_DIST bands.
         """
         ee_image = self._ee_image
@@ -293,16 +288,17 @@ class LandsatImage(CloudMaskedImage):
 
 
 class Sentinel2ClImage(CloudMaskedImage):
-    """Base class for cloud/shadow masking of Sentinel-2 TOA and SR (surface reflectance) images."""
+    """ Base class for cloud/shadow masking of Sentinel-2 TOA and SR images. """
 
     def _aux_image(
-        self, s2_toa=False, mask_cirrus=True, mask_shadows=True, mask_method=CloudMaskMethod.cloud_prob, prob=60,
-        dark=0.15, shadow_dist=1000, buffer=50, cdi_thresh=None, max_cloud_dist=5000
-    ):
+        self, s2_toa: bool = False, mask_cirrus: bool = True, mask_shadows: bool = True,
+        mask_method: CloudMaskMethod = CloudMaskMethod.cloud_prob, prob: float = 60, dark: float = 0.15,
+        shadow_dist: int = 1000, buffer: int = 50, cdi_thresh: float = None, max_cloud_dist: int = 5000
+    ) -> ee.Image:
         """
         Derive cloud, shadow and validity masks for the encapsulated image.
 
-        Adapted from https://github.com/r-earthengine/ee_extra, under Apache 2.0 license
+        Adapted from https://github.com/r-earthengine/ee_extra, under Apache 2.0 license.
 
         Parameters
         ----------
@@ -430,19 +426,19 @@ class Sentinel2ClImage(CloudMaskedImage):
 class Sentinel2SrClImage(Sentinel2ClImage):
     """ Class for cloud/shadow masking of Sentinel-2 SR (COPERNICUS/S2_SR) images. """
 
-    def _aux_image(self, s2_toa=False, **kwargs):
+    def _aux_image(self, s2_toa: bool = False, **kwargs) -> ee.Image:
         return Sentinel2ClImage._aux_image(self, s2_toa=False, **kwargs)
 
 
 class Sentinel2ToaClImage(Sentinel2ClImage):
     """ Class for cloud/shadow masking of Sentinel-2 TOA (COPERNICUS/S2) images. """
 
-    def _aux_image(self, s2_toa=False, **kwargs):
+    def _aux_image(self, s2_toa: bool = False, **kwargs) -> ee.Image:
         return Sentinel2ClImage._aux_image(self, s2_toa=True, **kwargs)
 
 
 def class_from_id(image_id: str) -> type:
-    """Return the *Image class that corresponds to the provided EE image/collection ID."""
+    """ Return the *Image class that corresponds to the provided Earth Engine image/collection ID. """
     ee_coll_name, _ = split_id(image_id)
     if image_id in geedim.schema.collection_schema:
         return geedim.schema.collection_schema[image_id]['image_type']
