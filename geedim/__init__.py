@@ -18,17 +18,22 @@ import os
 
 import ee
 
-from .collection import MaskedCollection
-from .mask import MaskedImage
+from geedim.collection import MaskedCollection
+from geedim.mask import MaskedImage
+from geedim.enums import CloudMaskMethod, CompositeMethod, ResamplingMethod
 
 
-def _ee_init():
+def Initialize():
     """
-    Initialise earth engine using service account pvt key if it exists (i.e. for GitHub CI).
-    Adpated from https://gis.stackexchange.com/questions/380664/how-to-de-authenticate-from-earth-engine-api.
+    Initialise Earth Engine though the `high volume endpoint
+    <https://developers.google.com/earth-engine/cloud/highvolume>`_.
+
+    Credentials will be read from the `EE_SERVICE_ACC_PRIVATE_KEY` environment variable, if it exists.  This is
+    useful for integrating with e.g. GitHub actions.
     """
 
     if not ee.data._credentials:
+        # Adpated from https://gis.stackexchange.com/questions/380664/how-to-de-authenticate-from-earth-engine-api.
         env_key = 'EE_SERVICE_ACC_PRIVATE_KEY'
 
         if env_key in os.environ:

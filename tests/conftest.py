@@ -19,13 +19,13 @@ from typing import Dict, List
 import ee
 import pytest
 
-from geedim import _ee_init, MaskedImage
+from geedim import Initialize, MaskedImage
 from geedim.utils import root_path
 
 
 @pytest.fixture(scope='session', autouse=True)
 def ee_init() -> None:
-    _ee_init()
+    Initialize()
     return None
 
 

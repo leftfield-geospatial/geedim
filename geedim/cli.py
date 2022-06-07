@@ -28,7 +28,7 @@ from click.core import ParameterSource
 from rasterio.dtypes import dtype_ranges
 from rasterio.errors import CRSError
 
-from geedim import collection as coll_api, schema, _ee_init, version
+from geedim import schema, Initialize, version
 from geedim.collection import MaskedCollection
 from geedim.download import BaseImage
 from geedim.enums import CloudMaskMethod, CompositeMethod, ResamplingMethod
@@ -79,7 +79,7 @@ class ChainedCommand(click.Command):
         """Manage shared `image_list` and `region` parameters."""
 
         # initialise earth engine (do it here, rather than in cli() so that it does not delay --help)
-        _ee_init()
+        Initialize()
 
         # combine `region` and `bbox` into a single region in the context object
         region = ctx.params['region'] if 'region' in ctx.params else None
@@ -311,7 +311,7 @@ def config(ctx, mask_cirrus, mask_shadows, mask_method, prob, dark, shadow_dist,
         ==============  ======================
     \b
 
-    For Sentinel-2 collections, ``--mask-method`` for cloud masking can be one of:
+    For Sentinel-2 collections, ``--mask-method`` can be one of:
 
         * `cloud-prob`: Use a threshold on the corresponding Sentinel-2 cloud probability image.
         * `qa`: Use the Sentinel-2 `QA60` quality band.
@@ -341,7 +341,7 @@ cli.add_command(config)
 @click.command(cls=ChainedCommand)
 @click.option(
     '-c', '--collection', type=click.STRING, required=True, callback=_collection_cb,
-    help=f'Earth Engine image collection to search. ``geedim`` or EE collection names can be used.'
+    help=f'Earth Engine image collection to search. geedim or EE collection names can be used.'
 )
 @click.option(
     '-s', '--start-date', type=click.DateTime(), required=True, help='Start date (UTC).'
@@ -412,7 +412,7 @@ def search(obj, collection, start_date, end_date, bbox, region, fill_portion, cl
         raise click.BadOptionUsage('region', 'Either pass --region or --bbox')
 
     # create collection wrapper and search
-    gd_collection = coll_api.MaskedCollection.from_name(collection)
+    gd_collection = MaskedCollection.from_name(collection)
     logger.info('')
     label = (
         f'Searching for {collection} images between {start_date.strftime("%Y-%m-%d")} and '
@@ -647,6 +647,9 @@ def composite(obj, image_id, mask, method, resampling, bbox, region, date):
     composite the output image(s) from the previous command.  Images specified with the ``--id`` option will be added
     to any existing chained images i.e. images output from previous chained commands.
 
+    In general, input images should belong to the same collection.  In the specific case of Landsat, images from
+    spectrally compatible collections can be combined i.e. Landsat-4 with Landsat-5, and Landsat-8 with Landsat-9.
+
     ``--method`` specifies the method for finding a composite pixel from the stack of corresponding input image
     pixels.  The following options are available:
     \b
@@ -680,9 +683,6 @@ def composite(obj, image_id, mask, method, resampling, bbox, region, date):
 
     By default, input images are masked before compositing.  This means that only cloud/shadow-free (or filled) pixels
     are used to make the composite.  You can turn off this behaviour with the `--no-mask` option.
-
-    Images from spectrally compatible Landsat collections can be composited together i.e. Landsat-4 with Landsat-5,
-    and Landsat-8 with Landsat-9.
     \b
 
     Examples

@@ -218,10 +218,9 @@ Example
 
 .. code:: python
 
-   import ee
-   from geedim import MaskedImage, MaskedCollection
+   import geedim as gd
 
-   ee.Initialize()  # initialise earth engine
+   gd.Initialize()  # initialise earth engine
 
    # geojson region to search / download
    region = {
@@ -230,18 +229,18 @@ Example
    }
 
    # make collection and search
-   gd_collection = MaskedCollection.from_name('COPERNICUS/S2_SR')
-   gd_collection = gd_collection.search('2019-01-10', '2019-01-21', region)
-   print(gd_collection.schema_table)
-   print(gd_collection.properties_table)
+   coll = gd.MaskedCollection.from_name('COPERNICUS/S2_SR')
+   coll = coll.search('2019-01-10', '2019-01-21', region)
+   print(coll.schema_table)
+   print(coll.properties_table)
 
    # create and download an image
-   im = MaskedImage.from_id('COPERNICUS/S2_SR/20190115T080251_20190115T082230_T35HKC')
+   im = gd.MaskedImage.from_id('COPERNICUS/S2_SR/20190115T080251_20190115T082230_T35HKC')
    im.download('s2_image.tif', region=region)
 
    # composite search results and download
-   comp_image = gd_collection.composite()
-   comp_image.download('s2_comp_image.tif', region=region, crs='EPSG:32735', scale=30)
+   comp_im = coll.composite()
+   comp_im.download('s2_comp_image.tif', region=region, crs='EPSG:32735', scale=30)
 
 .. api_example_end
 
