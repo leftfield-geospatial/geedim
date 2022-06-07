@@ -32,7 +32,7 @@ class CompositeMethod(str, Enum):
 
     medoid = 'medoid'
     """
-    Use the medoid of the unmasked pixel.  This is the pixel from the image having the minimum summed difference (
+    Use the medoid of the unmasked pixels.  This is the pixel from the image having the minimum summed difference (
     across bands) from the median of the image stack. Maintains the original relationship between bands. See 
     https://www.mdpi.com/2072-4292/5/12/6481 for detail.    
     """

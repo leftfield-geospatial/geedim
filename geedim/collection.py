@@ -440,8 +440,8 @@ class MaskedCollection:
         region: dict, optional
             Sort collection images by their cloudless portion inside this geojson polygon (only if ``date`` is not
             specified).  This is useful to prioritise pixels from the least cloudy image(s).  Valid for the `q-mosaic`
-            and `mosaic` methods.  If ``date`` and ``region`` are not specified, collection images are sorted by their
-            capture date.
+            and `mosaic` ``method`` only.  If None, no cloudless portion sorting is done (the default). If ``date`` and
+            ``region`` are not specified, collection images are sorted by their capture date.
         **kwargs
             Optional cloud/shadow masking parameters - see :meth:`geedim.mask.MaskedImage.__init__` for details.
 

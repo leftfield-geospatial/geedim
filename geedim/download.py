@@ -203,6 +203,13 @@ class BaseImage:
         """ Merged STAC and Earth Engine band properties. """
         return self._get_band_properties()
 
+    @property
+    def refl_bands(self) -> Union[List[str], None]:
+        """ List of spectral / reflectance bands, if any. """
+        if not self._stac:
+            return None
+        return [bname for bname, bdict in self._stac.band_props.items() if 'center_wavelength' in bdict]
+
     @staticmethod
     def _get_projection(ee_info: Dict, min_scale=True) -> Dict:
         """
