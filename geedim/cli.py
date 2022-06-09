@@ -59,12 +59,12 @@ class ChainedCommand(click.Command):
         if not hasattr(self, 'click_wrap_text'):
             self.click_wrap_text = click.formatting.wrap_text
         sub_strings = {
-            '\b\n': '\n\b',             # convert from RST friendly to click literal (unwrapped) block marker
-            ':option:': '',             # strip ':option:'
-            '\| ': '',                  # strip RST literal (unwrapped) marker in e.g. tables and bullet lists
-            '\n\.\. _.*:\n': '',        # strip RST ref directive '\n.. <name>:\n'
-            '`(.*)<(.*)>`_': '\g<1>',   # convert from RST cross-ref '`<name> <<link>>`_' to 'name'
-            '::':':'                    # convert from RST '::' to ':'
+            '\b\n': '\n\b',  # convert from RST friendly to click literal (unwrapped) block marker
+            ':option:': '',  # strip ':option:'
+            '\| ': '',  # strip RST literal (unwrapped) marker in e.g. tables and bullet lists
+            '\n\.\. _.*:\n': '',  # strip RST ref directive '\n.. <name>:\n'
+            '`(.*)<(.*)>`_': '\g<1>',  # convert from RST cross-ref '`<name> <<link>>`_' to 'name'
+            '::': ':'  # convert from RST '::' to ':'
         }
 
         def reformat_text(text, width, **kwargs):
@@ -289,6 +289,7 @@ def cli(ctx, verbose, quiet):
 )
 @click.pass_context
 def config(ctx, mask_cirrus, mask_shadows, mask_method, prob, dark, shadow_dist, buffer, cdi_thresh, max_cloud_dist):
+    # @formatter:off
     """
     Configure cloud/shadow masking.
 
@@ -328,6 +329,7 @@ def config(ctx, mask_cirrus, mask_shadows, mask_method, prob, dark, shadow_dist,
 
         $ geedim config --no-mask-shadows download -i LANDSAT/LC08/C02/T1_L2/LC08_172083_20220104 --mask --bbox 24.25 -34 24.5 -33.75
     """
+    # @formatter:on
     # store commandline configuration (only) in the context object for use by other commands
     for key, val in ctx.params.items():
         if ctx.get_parameter_source(key) == ParameterSource.COMMANDLINE:
@@ -370,6 +372,7 @@ cli.add_command(config)
 )
 @click.pass_obj
 def search(obj, collection, start_date, end_date, bbox, region, fill_portion, cloudless_portion, output):
+    # @formatter:off
     """
     Search for images.
 
@@ -408,6 +411,7 @@ def search(obj, collection, start_date, end_date, bbox, region, fill_portion, cl
 
         $ geedim search -c landsat9-c2-l2 -s 2022-01-01 -e 2022-03-01 --bbox 23 -34 23.2 -33.8 --cloudless-portion 50
     """
+    # @formatter:on
     if not obj.region:
         raise click.BadOptionUsage('region', 'Either pass --region or --bbox')
 
@@ -464,6 +468,7 @@ cli.add_command(search)
 )
 @click.pass_obj
 def download(obj, image_id, bbox, region, download_dir, mask, overwrite, **kwargs):
+    # @formatter:off
     """
     Download image(s).
 
@@ -509,6 +514,7 @@ def download(obj, image_id, bbox, region, download_dir, mask, overwrite, **kwarg
 
         $ geedim search -c MODIS/006/MCD43A4 -s 2022-01-01 -e 2022-01-03 --bbox 23 -34 24 -33 download --crs EPSG:3857 --scale 500
     """
+    # @formatter:on
     logger.info('\nDownloading:\n')
     download_dir = download_dir or os.getcwd()
     image_list = _prepare_image_list(obj, mask=mask)
@@ -541,6 +547,7 @@ cli.add_command(download)
 )
 @click.pass_obj
 def export(obj, image_id, bbox, region, drive_folder, mask, wait, **kwargs):
+    # @formatter:off
     """
     Export image(s) to Google Drive.
 
@@ -583,6 +590,7 @@ def export(obj, image_id, bbox, region, drive_folder, mask, wait, **kwargs):
 
         $ geedim search -c MODIS/006/MCD43A4 -s 2022-01-01 -e 2022-01-03 --bbox 23 -34 24 -33 export --crs EPSG:3857 --scale 500 -df geedim
     """
+    # @formatter:on
     logger.info('\nExporting:\n')
     image_list = _prepare_image_list(obj, mask=mask)
     export_tasks = []
@@ -637,6 +645,7 @@ cli.add_command(export)
 )
 @click.pass_obj
 def composite(obj, image_id, mask, method, resampling, bbox, region, date):
+    # @formatter:off
     """
     Create a composite image.
 
@@ -699,6 +708,7 @@ def composite(obj, image_id, mask, method, resampling, bbox, region, date):
 
         $ geedim search -c sentinel2-sr -s 2021-01-12 -e 2021-01-23 --bbox 23 -33.5 23.1 -33.4 composite -cm q-mosaic download --crs EPSG:3857 --scale 10
     """
+    # @formatter:on
 
     # get image ids from command line or chained search command
     if len(obj.image_list) == 0:
