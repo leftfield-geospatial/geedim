@@ -23,5 +23,5 @@ class UnfilteredError(GeedimError):
     """ Raised when attempting to retrieve the properties of an unfiltered image collection. """
 
 
-class ComponentImageError(GeedimError):
+class InputImageError(GeedimError):
     """ Raised when there is a problem with the images making up a collection. """

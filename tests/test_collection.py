@@ -22,7 +22,7 @@ import pytest
 
 from geedim.collection import MaskedCollection
 from geedim.enums import CompositeMethod, ResamplingMethod
-from geedim.errors import UnfilteredError, ComponentImageError
+from geedim.errors import UnfilteredError, InputImageError
 from geedim.mask import MaskedImage
 from geedim.utils import split_id, get_projection
 from geedim import schema
@@ -116,11 +116,11 @@ def test_unfiltered_error(s2_sr_image_id):
 
 def test_from_list_errors(landsat_image_ids, s2_image_ids, user_masked_image):
     """ Test MaskedCollection.from_list() various error cases. """
-    with pytest.raises(ComponentImageError):
+    with pytest.raises(InputImageError):
         # test an error is raised when an image has no 'id'/'system:time_start' property
         MaskedCollection.from_list([landsat_image_ids[0], user_masked_image])
 
-    with pytest.raises(ComponentImageError):
+    with pytest.raises(InputImageError):
         # test an error is raised when images are not from compatible collections
         MaskedCollection.from_list([*landsat_image_ids])
 

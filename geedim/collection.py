@@ -27,7 +27,7 @@ from tabulate import TableFormat, Line, DataRow
 from geedim import schema, medoid
 from geedim.download import BaseImage
 from geedim.enums import ResamplingMethod, CompositeMethod
-from geedim.errors import UnfilteredError, ComponentImageError
+from geedim.errors import UnfilteredError, InputImageError
 from geedim.mask import MaskedImage, class_from_id
 from geedim.stac import StacCatalog, StacItem
 from geedim.utils import split_id, resample
@@ -45,7 +45,7 @@ _table_fmt = TableFormat(
     headerrow=DataRow("", " ", ""),
     datarow=DataRow("", " ", ""),
     padding=0,
-    with_header_hide=["lineabove", "linebelow"],
+    with_header_hide=["lineabove", "linebelow"]
 )
 
 
@@ -173,12 +173,12 @@ class MaskedCollection:
 
         # check all images have IDs and capture dates
         if any([(im_dict['id'] is None) or (not im_dict['has_date']) for im_dict in im_dict_list]):
-            raise ComponentImageError('Image(s) must have "id" and "system:time_start" properties.')
+            raise InputImageError('Image(s) must have "id" and "system:time_start" properties.')
 
         # check the images all come from the same or compatible collections
         ee_coll_names = [split_id(im_dict['id'])[0] for im_dict in im_dict_list]
         if not compatible_collections(ee_coll_names):
-            raise ComponentImageError(
+            raise InputImageError(
                 'All images must belong to the same, or spectrally compatible, collections.'
             )
 
