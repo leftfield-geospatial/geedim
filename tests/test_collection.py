@@ -98,8 +98,9 @@ def test_from_name_s2(name: str, request):
     # check ee_collection is not the full unfiltered collection
     assert gd_collection.ee_collection != ee.ImageCollection(name)
     # check one of the problem images is not in the collection
-    # 0220122T081241_20220122T083135_T34HEJ, 20220226T080909_20220226T083100_T34HEH are other options
-    filt = ee.Filter.eq('system:index', '20220305T075809_20220305T082125_T35HKD')
+    # 20220305T075809_20220305T082125_T35HKD, 0220122T081241_20220122T083135_T34HEJ,
+    # 20220226T080909_20220226T083100_T34HEH are other options
+    filt = ee.Filter.eq('system:index', '0220122T081241_20220122T083135_T34HEJ')
     filt_collection = gd_collection.ee_collection.filter(filt)
     assert filt_collection.size().getInfo() == 0
 
