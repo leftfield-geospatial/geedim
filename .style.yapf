@@ -15,10 +15,10 @@ allow_multiline_dictionary_keys=False
 allow_multiline_lambdas=False
 
 # Allow splitting before a default / named assignment in an argument list.
-allow_split_before_default_or_named_assigns=False
+allow_split_before_default_or_named_assigns=True
 
 # Allow splits before the dictionary value.
-allow_split_before_dict_value=True
+allow_split_before_dict_value=False
 
 #   Let spacing indicate operator precedence. For example:
 #
@@ -79,7 +79,7 @@ blank_line_before_nested_class_or_def=True
 #        'key1': 'value1',
 #        'key2': 'value2',
 #    })
-coalesce_brackets=True
+coalesce_brackets=False
 
 # The column limit.
 column_limit=120
@@ -331,7 +331,6 @@ split_before_expression_after_opening_paren=True
 
 # If an argument / parameter list is going to be split, then split before
 # the first argument.
-# [my note: this seems to have no effect]
 split_before_first_argument=True
 
 # Set to True to prefer splitting before 'and' or 'or' rather than
@@ -358,7 +357,7 @@ split_before_named_assigns=False
 split_complex_comprehension=False
 
 # The penalty for splitting right after the opening bracket.
-split_penalty_after_opening_bracket=0
+split_penalty_after_opening_bracket=300
 
 # The penalty for splitting the line after a unary operator.
 split_penalty_after_unary_operator=10000
@@ -383,6 +382,7 @@ split_penalty_excess_character=7000
 
 # The penalty incurred by adding a line split to the logical line. The
 # more line splits added the higher the penalty.
+# [my note: prev 30]
 split_penalty_for_added_line_split=0
 
 # The penalty of splitting a list of "import as" names. For example:

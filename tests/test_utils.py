@@ -66,7 +66,7 @@ def test_spinner():
     assert not spinner._run
     assert not spinner.is_alive()
 
-
+# yapf: disable
 @pytest.mark.parametrize(
     'image_id, method, std_scale', [
         ('l9_image_id', ResamplingMethod.bilinear, 30),
@@ -74,6 +74,7 @@ def test_spinner():
         ('modis_nbar_image_id', ResamplingMethod.bicubic, 500),
     ]
 )
+# yapf: enable
 def test_resample_fixed(
     image_id: str, method: ResamplingMethod, std_scale: float, region_10000ha: Dict, request: pytest.FixtureRequest
 ):

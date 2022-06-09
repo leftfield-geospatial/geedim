@@ -82,9 +82,7 @@ def landsat_ndvi_base_image(landsat_ndvi_image_id: str) -> BaseImage:
 @pytest.fixture(scope='session')
 def modis_nbar_base_image(modis_nbar_image_id: str, region_100ha: Dict) -> BaseImage:
     """ A BaseImage instance encapsulating a MODIS NBAR image.  Covers `region_*ha`.  """
-    return BaseImage(
-        ee.Image(modis_nbar_image_id).clip(region_100ha).reproject(crs='EPSG:3857', scale=500)
-    )
+    return BaseImage(ee.Image(modis_nbar_image_id).clip(region_100ha).reproject(crs='EPSG:3857', scale=500))
 
 
 def test_id_name(user_base_image: BaseImage, s2_sr_base_image: BaseImage):
@@ -137,9 +135,7 @@ def test_s2_props(s2_sr_base_image: BaseImage):
 
 
 @pytest.mark.parametrize(
-    'base_image', [
-        'landsat_ndvi_base_image', 's2_sr_base_image', 'l9_base_image', 'modis_nbar_base_image'
-    ]
+    'base_image', ['landsat_ndvi_base_image', 's2_sr_base_image', 'l9_base_image', 'modis_nbar_base_image']
 )
 def test_band_props(base_image: str, request: pytest.FixtureRequest):
     """ Test `band_properties` completeness for generic/user/reflectance images. """
@@ -158,22 +154,20 @@ def test_has_fixed_projection(user_base_image: BaseImage, user_fix_base_image: B
     assert s2_sr_base_image.has_fixed_projection
 
 
+# yapf: disable
 @pytest.mark.parametrize(
     'ee_data_type_list, exp_dtype', [
-        ([{'precision': 'int', 'min': 10, 'max': 11},
-          {'precision': 'int', 'min': 100, 'max': 101}], 'uint8'),
-        ([{'precision': 'int', 'min': -128, 'max': -100},
-          {'precision': 'int', 'min': 0, 'max': 127}], 'int8'),
+        ([{'precision': 'int', 'min': 10, 'max': 11}, {'precision': 'int', 'min': 100, 'max': 101}], 'uint8'),
+        ([{'precision': 'int', 'min': -128, 'max': -100}, {'precision': 'int', 'min': 0, 'max': 127}], 'int8'),
         ([{'precision': 'int', 'min': 256, 'max': 257}], 'uint16'),
         ([{'precision': 'int', 'min': -32768, 'max': 32767}], 'int16'),
         ([{'precision': 'int', 'min': 2 << 15, 'max': 2 << 32}], 'uint32'),
         ([{'precision': 'int', 'min': -2 << 31, 'max': 2 << 31}], 'int32'),
-        ([{'precision': 'float', 'min': 0, 'max': 1e9},
-          {'precision': 'float', 'min': 0, 'max': 1}], 'float32'),
-        ([{'precision': 'int', 'min': 0, 'max': 255},
-          {'precision': 'double', 'min': -1e100, 'max': 1e100}], 'float64'),
+        ([{'precision': 'float', 'min': 0, 'max': 1e9}, {'precision': 'float', 'min': 0, 'max': 1}], 'float32'),
+        ([{'precision': 'int', 'min': 0, 'max': 255}, {'precision': 'double', 'min': -1e100, 'max': 1e100}], 'float64'),
     ]
 )
+# yapf: enable
 def test_min_dtype(ee_data_type_list: List, exp_dtype: str):
     """ Test BasicImage.__get_min_dtype() with emulated EE info dicts.  """
     ee_info = dict(bands=[])
@@ -215,6 +209,7 @@ def test_prepare_exceptions(user_base_image: BaseImage, user_fix_base_image: Bas
         )
 
 
+# yapf: disable
 @pytest.mark.parametrize(
     'src_image, tgt_image', [
         ('s2_sr_base_image', 's2_sr_base_image'),
@@ -234,6 +229,7 @@ def test_prepare_exceptions(user_base_image: BaseImage, user_fix_base_image: Bas
         ('user_fix_base_image', 'modis_nbar_base_image'),
     ]
 )
+# yapf: enable
 def test_prepare_for_export(src_image: str, tgt_image: str, request: pytest.FixtureRequest):
     """ Test BaseImage._prepare_for_export() sets properties of export image as expected.  """
     src_image: BaseImage = request.getfixturevalue(src_image)
@@ -259,16 +255,13 @@ def test_prepare_for_export(src_image: str, tgt_image: str, request: pytest.Fixt
     assert exp_bounds == pytest.approx(tgt_bounds, rel=.05)
     # test exp_bounds contain tgt_bounds
     assert (
-        (exp_bounds[0] <= tgt_bounds[0]) and (exp_bounds[1] <= tgt_bounds[1]) and
-        (exp_bounds[2] >= tgt_bounds[2]) and (exp_bounds[3] >= tgt_bounds[3])
+        (exp_bounds[0] <= tgt_bounds[0]) and (exp_bounds[1] <= tgt_bounds[1]) and (exp_bounds[2] >= tgt_bounds[2]) and
+        (exp_bounds[3] >= tgt_bounds[3])
     )
 
 
 @pytest.mark.parametrize(
-    'src_image, tgt_image', [
-        ('s2_sr_base_image', 's2_sr_base_image'),
-        ('user_base_image', 's2_sr_base_image'),
-    ]
+    'src_image, tgt_image', [('s2_sr_base_image', 's2_sr_base_image'), ('user_base_image', 's2_sr_base_image'), ]
 )
 def test_prepare_for_download(src_image: str, tgt_image: str, region_25ha: Dict, request: pytest.FixtureRequest):
     """ Test BaseImage._prepare_for_download() sets rasterio profile as expected.  """
@@ -288,8 +281,8 @@ def test_prepare_for_download(src_image: str, tgt_image: str, region_25ha: Dict,
 
 @pytest.mark.parametrize(
     'dtype, exp_nodata', [
-        ('uint8', 0), ('int8', -2 ** 7), ('uint16', 0), ('int16', -2 ** 15), ('uint32', 0),
-        ('int32', -2 ** 31), ('float32', float('nan')), ('float64', float('nan'))
+        ('uint8', 0), ('int8', -2**7), ('uint16', 0), ('int16', -2**15), ('uint32', 0), ('int32', -2**31),
+        ('float32', float('nan')), ('float64', float('nan'))
     ]
 )
 def test_prepare_nodata(user_fix_base_image: BaseImage, region_25ha: Dict, dtype: str, exp_nodata: float):
@@ -318,6 +311,7 @@ def test_tile_shape():
             assert tile_image.size <= max_download_size
 
 
+# yapf: disable
 @pytest.mark.parametrize(
     'image_shape, tile_shape, image_transform', [
         ((1000, 500), (101, 101), Affine.identity()),
@@ -325,6 +319,7 @@ def test_tile_shape():
         ((1000, 102), (101, 101), Affine.scale(1.23) * Affine.translation(12, 34)),
     ]
 )
+# yapf: enable
 def test_tiles(image_shape: Tuple, tile_shape: Tuple, image_transform: Affine):
     """ Test continuity and coverage of tiles. """
     exp_image = BaseImageLike(shape=image_shape, transform=image_transform)
@@ -351,6 +346,7 @@ def test_tiles(image_shape: Tuple, tile_shape: Tuple, image_transform: Affine):
     assert (accum_window.height, accum_window.width) == exp_image.shape
 
 
+# yapf: disable
 @pytest.mark.parametrize(
     'base_image, region', [
         ('user_base_image', 'region_25ha'),
@@ -360,6 +356,7 @@ def test_tiles(image_shape: Tuple, tile_shape: Tuple, image_transform: Affine):
         # ('modis_nbar_base_image', 'region_25ha'),
     ]
 )
+# yapf: enable
 def test_download(base_image: str, region: Dict, tmp_path: pathlib.Path, request: pytest.FixtureRequest):
     """ Test downloaded file properties and pixel data.  """
     base_image = request.getfixturevalue(base_image)
@@ -381,8 +378,8 @@ def test_download(base_image: str, region: Dict, tmp_path: pathlib.Path, request
         assert ds.transform.yoff >= exp_bounds.top  # 'EPSG:3857' has y -ve
         ds_bounds = ds.bounds
         assert (
-            (ds_bounds[0] <= exp_bounds[0]) and (ds_bounds[1] <= exp_bounds[1]) and
-            (ds_bounds[2] >= exp_bounds[2]) and (ds_bounds[3] >= exp_bounds[3])
+            (ds_bounds[0] <= exp_bounds[0]) and (ds_bounds[1] <= exp_bounds[1]) and (ds_bounds[2] >= exp_bounds[2]) and
+            (ds_bounds[3] >= exp_bounds[3])
         )
         if ds.count < 4:
             array = ds.read()
@@ -417,11 +414,10 @@ def test_metadata(landsat_ndvi_base_image: BaseImage, region_25ha: Dict, tmp_pat
 
 def test_export(user_fix_base_image: BaseImage, region_25ha: Dict):
     """ Test start of a small export. """
-    task = user_fix_base_image.export(
-        'test_export.tif', folder='geedim', scale=30, region=region_25ha, wait=False
-    )
+    task = user_fix_base_image.export('test_export.tif', folder='geedim', scale=30, region=region_25ha, wait=False)
     assert task.active()
     assert task.status()['state'] == 'READY'
+
 
 # TODO:
 # -  export(): test an export of small file (with wait ? - it kind of has to be to test monitor_export() )

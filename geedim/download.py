@@ -249,7 +249,7 @@ class BaseImage:
                 dtype_max = max(0, int(dtype_minmax[:, 1].max()))  # maximum image pixel value
 
                 # determine the number of integer bits required to represent the value range
-                bits = 2 ** np.ceil(np.log2(np.log2(dtype_max - dtype_min)))
+                bits = 2**np.ceil(np.log2(np.log2(dtype_max - dtype_min)))
                 bits = min(max(bits, 8), 32)  # clamp bits to allowed values
                 dtype = f'{"u" if dtype_min >= 0 else ""}int{int(bits)}'
             elif any(precisions == 'double'):
@@ -273,14 +273,8 @@ class BaseImage:
     def _convert_dtype(ee_image: ee.Image, dtype: str) -> ee.Image:
         """ Convert the data type of an Earth Engine image to a specified type. """
         conv_dict = dict(
-            float32=ee.Image.toFloat,
-            float64=ee.Image.toDouble,
-            uint8=ee.Image.toUint8,
-            int8=ee.Image.toInt8,
-            uint16=ee.Image.toUint16,
-            int16=ee.Image.toInt16,
-            uint32=ee.Image.toUint32,
-            int32=ee.Image.toInt32
+            float32=ee.Image.toFloat, float64=ee.Image.toDouble, uint8=ee.Image.toUint8, int8=ee.Image.toInt8,
+            uint16=ee.Image.toUint16, int16=ee.Image.toInt16, uint32=ee.Image.toUint32, int32=ee.Image.toInt32
         )
         if dtype not in conv_dict:
             raise TypeError(f'Unsupported dtype: {dtype}')
@@ -380,28 +374,29 @@ class BaseImage:
         """
         # resample, convert, clip and reproject image according to download params
         exp_image = self._prepare_for_export(**kwargs)
+        # see float nodata workaround note in Tile.download(...)
         nodata_dict = dict(
-            float32=self._float_nodata,  # see workaround note in Tile.download(...)
-            float64=self._float_nodata,  # ditto
+            float32=self._float_nodata,
+            float64=self._float_nodata,
             uint8=0,
             int8=np.iinfo('int8').min,
             uint16=0,
             int16=np.iinfo('int16').min,
             uint32=0,
             int32=np.iinfo('int32').min
-        )
+        ) # yapf: disable
         nodata = nodata_dict[exp_image.dtype] if set_nodata else None
         profile = dict(
-            driver='GTiff', dtype=exp_image.dtype, nodata=nodata, width=exp_image.shape[1],
-            height=exp_image.shape[0], count=exp_image.count, crs=CRS.from_string(exp_image.crs),
-            transform=exp_image.transform, compress='deflate', interleave='band', tiled=True
+            driver='GTiff', dtype=exp_image.dtype, nodata=nodata, width=exp_image.shape[1], height=exp_image.shape[0],
+            count=exp_image.count, crs=CRS.from_string(exp_image.crs), transform=exp_image.transform,
+            compress='deflate', interleave='band', tiled=True
         )
         return exp_image, profile
 
     @staticmethod
     def _get_tile_shape(
         exp_image: 'BaseImage', max_download_size: int = 32 << 20, max_grid_dimension: int = 10000
-    ) -> (Tuple[int, int], int):
+    ) -> (Tuple[int, int], int): # yapf: disable
         """
         Return a tile shape and number of tiles for a given BaseImage, such that the tile shape satisfies GEE
         download limits, and is 'square-ish'.
@@ -443,7 +438,7 @@ class BaseImage:
         max_ovw_levels = int(np.min(np.log2(dataset.shape)))
         min_level_shape_pow2 = int(np.log2(min_ovw_pixels))
         num_ovw_levels = np.min([max_num_levels, max_ovw_levels - min_level_shape_pow2])
-        ovw_levels = [2 ** m for m in range(1, num_ovw_levels + 1)]
+        ovw_levels = [2**m for m in range(1, num_ovw_levels + 1)]
         dataset.build_overviews(ovw_levels, RioResampling.average)
 
     def _write_metadata(self, dataset: rio.io.DatasetWriter):
@@ -657,6 +652,7 @@ class BaseImage:
         out_ds = rio.open(filename, 'w', **profile)  # create output geotiff
 
         with redir_tqdm, rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), out_ds, bar:
+
             def download_tile(tile):
                 """Download a tile and write into the destination GeoTIFF. """
                 tile_array = tile.download(session=session, bar=bar)

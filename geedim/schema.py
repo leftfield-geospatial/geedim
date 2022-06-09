@@ -44,7 +44,6 @@ s2_prop_schema = {
     'MEAN_INCIDENCE_AZIMUTH_ANGLE_B1': {'abbrev': 'VAA', 'description': 'View (B1) azimuth angle (deg)'},
     'MEAN_INCIDENCE_ZENITH_ANGLE_B1': {'abbrev': 'VZA', 'description': 'View (B1) zenith angle (deg)'}
 }
-# yapf: enable
 
 collection_schema = {
     'LANDSAT/LT04/C02/T1_L2': {
@@ -88,6 +87,7 @@ collection_schema = {
         'image_type': geedim.mask.MaskedImage,
     }
 }
+# yapf: enable
 
 # Dict to convert from geedim to Earth Engine collection names
 ee_to_gd = dict([(k, v['gd_coll_name']) for k, v in collection_schema.items()])

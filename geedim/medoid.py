@@ -22,11 +22,11 @@
     SOFTWARE.
 """
 import ee
-
 """
     This module contains Medoid related functionality copied from 'Google Earth Engine tools' under MIT license.
     See https://github.com/gee-community/gee_tools.
 """
+
 
 # yapf: disable
 def enumerate(collection):

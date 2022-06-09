@@ -25,7 +25,6 @@ from geedim.utils import split_id, get_projection
 
 logger = logging.getLogger(__name__)
 
-
 ##
 
 
@@ -144,7 +143,7 @@ class MaskedImage(BaseImage):
         # the region, but the mean over the part of the region covered by the image.
         stats_image = ee.Image(
             [self.ee_image.select('FILL_MASK').rename('FILL_PORTION').unmask(), ee.Image(1).rename('REGION_SUM')]
-        )
+        ) # yapf: disable
         # Note: sometimes proj has no EPSG in crs(), hence use crs=proj and not crs=proj.crs() below
         sums_dict = stats_image.reduceRegion(
             reducer="sum", geometry=region, crs=proj, scale=scale, bestEffort=True, maxPixels=1e6
@@ -180,14 +179,13 @@ class CloudMaskedImage(MaskedImage):
         cloud_shadow_mask = cloudless_mask.Not()
         cloud_pix = ee.Number(max_cloud_dist).divide(proj.nominalScale()).round()  # cloud_dist in pixels
 
-        # Find distance to nearest cloud/shadow (m).  Reproject is necessary to force calculation at correct scale.
-        cloud_dist = (
-            cloud_shadow_mask.fastDistanceTransform(
-                neighborhood=cloud_pix, units='pixels', metric='squared_euclidean'
-            ).sqrt().multiply(proj.nominalScale()).rename('CLOUD_DIST').reproject(
-                crs=proj, scale=proj.nominalScale()
-            )
-        )
+        # Find distance to nearest cloud/shadow (m).
+        cloud_dist = cloud_shadow_mask.fastDistanceTransform(
+            neighborhood=cloud_pix, units='pixels', metric='squared_euclidean'
+        ).sqrt().multiply(proj.nominalScale())
+
+        # Reproject to force calculation at correct scale.
+        cloud_dist = cloud_dist.reproject(crs=proj, scale=proj.nominalScale()).rename('CLOUD_DIST')
 
         # Clip cloud_dist to max_cloud_dist.
         cloud_dist = cloud_dist.where(cloud_dist.gt(ee.Image(max_cloud_dist)), max_cloud_dist)
@@ -221,7 +219,7 @@ class CloudMaskedImage(MaskedImage):
         # the region, but the mean over the part of the region covered by the image.
         stats_image = ee.Image(
             [self.ee_image.select(['FILL_MASK', 'CLOUDLESS_MASK']).unmask(), ee.Image(1).rename('REGION_SUM')]
-        )
+        ) # yapf: disable
         sums = stats_image.reduceRegion(
             reducer="sum", geometry=region, crs=proj, scale=scale, bestEffort=True, maxPixels=1e6
         ).rename(['FILL_MASK', 'CLOUDLESS_MASK'], ['FILL_PORTION', 'CLOUDLESS_PORTION'])
@@ -250,9 +248,7 @@ class LandsatImage(CloudMaskedImage):
     * LANDSAT/LC09/C02/T1_L2
     """
 
-    def _aux_image(
-        self, mask_shadows: bool = True, mask_cirrus: bool = True, max_cloud_dist: int = 5000
-        ) -> ee.Image:
+    def _aux_image(self, mask_shadows: bool = True, mask_cirrus: bool = True, max_cloud_dist: int = 5000) -> ee.Image:
         """
         Retrieve the auxiliary image containing cloud/shadow masks and cloud distance.
 
@@ -347,10 +343,9 @@ class Sentinel2ClImage(CloudMaskedImage):
 
         def get_cloud_prob(ee_im):
             """Get the cloud probability image from COPERNICUS/S2_CLOUD_PROBABILITY that corresponds to `ee_im`."""
-            idx = ee_im.get('system:index')
-            return ee.ImageCollection('COPERNICUS/S2_CLOUD_PROBABILITY').filter(
-                ee.Filter.eq('system:index', idx)
-            ).first().rename('CLOUD_PROB')
+            filt = ee.Filter.eq('system:index', ee_im.get('system:index'))
+            cloud_prob = ee.ImageCollection('COPERNICUS/S2_CLOUD_PROBABILITY').filter(filt).first()
+            return cloud_prob.rename('CLOUD_PROB')
 
         def get_cloud_mask(ee_im, cloud_prob=None):
             """Get the cloud mask for ee_im"""
@@ -389,14 +384,11 @@ class Sentinel2ClImage(CloudMaskedImage):
             shadow_azimuth = ee.Number(90).subtract(ee.Number(ee_im.get('MEAN_SOLAR_AZIMUTH_ANGLE')))
             proj_pixels = ee.Number(shadow_dist).divide(proj.nominalScale()).round()
             # Project the cloud mask in the direction of the shadows it will cast.
+            cloud_cast_proj = cloud_mask.directionalDistanceTransform(shadow_azimuth, proj_pixels).select('distance')
             # The reproject is necessary to force calculation at the correct scale - the coarse proj scale is used to
             # improve processing times.
-            proj_cloud_mask = (
-                cloud_mask.directionalDistanceTransform(shadow_azimuth, proj_pixels).reproject(
-                    crs=proj.crs(), scale=proj.nominalScale()
-                ).select('distance').mask()
-            )
-            return proj_cloud_mask.And(dark_mask).rename('SHADOW_MASK')
+            cloud_cast_mask = cloud_cast_proj.mask().reproject(crs=proj.crs(), scale=proj.nominalScale())
+            return cloud_cast_mask.And(dark_mask).rename('SHADOW_MASK')
 
         # gather and combine the various masks
         ee_image = self.ee_image

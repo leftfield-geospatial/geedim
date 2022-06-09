@@ -26,6 +26,7 @@ root_stac_url = 'https://earthengine-stac.storage.googleapis.com/catalog/catalog
 
 
 class StacItem:
+
     def __init__(self, name: str, item_dict: Dict):
         """
         Image/collection STAC container class.  Provides access to band properties and root property descriptions.
@@ -116,6 +117,7 @@ class StacItem:
 
 @singleton
 class StacCatalog:
+
     def __init__(self):
         """ Singleton class to interface to the EE STAC, and retrieve image/collection STAC data. """
         self._filename = root_path.joinpath('geedim/data/ee_stac_urls.json')
@@ -146,10 +148,8 @@ class StacCatalog:
         if 'type' in response_dict:
             if (response_dict['type'].lower() == 'collection'):
                 # we have reached a leaf node
-                if (
-                    ('gee:type' in response_dict) and
-                    (response_dict['gee:type'].lower() in ['image_collection', 'image'])
-                ):
+                if (('gee:type' in response_dict) and
+                    (response_dict['gee:type'].lower() in ['image_collection', 'image'])):
                     # we have reached an image / image collection leaf node
                     with self._lock:
                         url_dict[response_dict['id']] = url

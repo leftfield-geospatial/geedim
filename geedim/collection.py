@@ -46,7 +46,7 @@ _table_fmt = TableFormat(
     datarow=DataRow("", " ", ""),
     padding=0,
     with_header_hide=["lineabove", "linebelow"]
-)
+) # yapf: disable
 
 
 def compatible_collections(names: List[str]) -> bool:
@@ -178,15 +178,11 @@ class MaskedCollection:
         # check the images all come from the same or compatible collections
         ee_coll_names = [split_id(im_dict['id'])[0] for im_dict in im_dict_list]
         if not compatible_collections(ee_coll_names):
-            raise InputImageError(
-                'All images must belong to the same, or spectrally compatible, collections.'
-            )
+            raise InputImageError('All images must belong to the same, or spectrally compatible, collections.')
 
         # create the collection object, using the name of the first collection in ee_coll_names.
         gd_collection = cls.from_name(ee_coll_names[0])
-        gd_collection._ee_collection = ee.ImageCollection(
-            ee.List([im_dict['ee_image'] for im_dict in im_dict_list])
-        )
+        gd_collection._ee_collection = ee.ImageCollection(ee.List([im_dict['ee_image'] for im_dict in im_dict_list]))
         gd_collection._filtered = True
         return gd_collection
 

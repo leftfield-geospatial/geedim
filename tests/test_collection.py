@@ -55,8 +55,7 @@ def s2_sr_image_list() -> List[Union[str, MaskedImage]]:
 def gedi_image_list() -> List[Union[str, MaskedImage]]:
     """ A list of GEDI canopy top height IDs/ MaskedImage's """
     return [
-        'LARSE/GEDI/GEDI02_A_002_MONTHLY/202009_018E_036S',
-        'LARSE/GEDI/GEDI02_A_002_MONTHLY/202010_018E_036S',
+        'LARSE/GEDI/GEDI02_A_002_MONTHLY/202009_018E_036S', 'LARSE/GEDI/GEDI02_A_002_MONTHLY/202010_018E_036S',
         MaskedImage.from_id('LARSE/GEDI/GEDI02_A_002_MONTHLY/202112_018E_036S')
     ]
 
@@ -281,10 +280,8 @@ def test_composite_region_date_ordering(image_list, method, region, date, reques
 
 @pytest.mark.parametrize(
     'image_list, method, mask', [
-        ('s2_sr_image_list', CompositeMethod.q_mosaic, True),
-        ('s2_sr_image_list', CompositeMethod.mosaic, False),
-        ('l8_9_image_list', CompositeMethod.medoid, True),
-        ('l8_9_image_list', CompositeMethod.median, False),
+        ('s2_sr_image_list', CompositeMethod.q_mosaic, True), ('s2_sr_image_list', CompositeMethod.mosaic, False),
+        ('l8_9_image_list', CompositeMethod.medoid, True), ('l8_9_image_list', CompositeMethod.median, False),
     ]
 )
 def test_composite_mask(image_list, method, mask, region_100ha, request):
@@ -303,9 +300,7 @@ def test_composite_mask(image_list, method, mask, region_100ha, request):
     def count_masked_pixels(ee_image: ee.Image, count_list: ee.List):
         """ Return the pixel count (area) of the EE mask / valid image area.  """
         ee_mask = ee_image.select('SR_B.*|B.*|rh.*').mask().reduce(ee.Reducer.allNonZero()).rename('EE_MASK')
-        count = ee_mask.reduceRegion(
-            reducer='sum', crs=proj.crs(), scale=proj.nominalScale(), geometry=region_100ha
-        )
+        count = ee_mask.reduceRegion(reducer='sum', crs=proj.crs(), scale=proj.nominalScale(), geometry=region_100ha)
         return ee.List(count_list).add(count.get('EE_MASK'))
 
     # get the mask pixel counts for the component images
@@ -325,12 +320,9 @@ def test_composite_mask(image_list, method, mask, region_100ha, request):
 
 @pytest.mark.parametrize(
     'image_list, resampling, std_scale', [
-        ('s2_sr_image_list', ResamplingMethod.bilinear, 60),
-        ('s2_sr_image_list', ResamplingMethod.bicubic, 60),
-        ('s2_sr_image_list', ResamplingMethod.average, 120),
-        ('l8_9_image_list', ResamplingMethod.bilinear, 30),
-        ('l8_9_image_list', ResamplingMethod.bicubic, 30),
-        ('l8_9_image_list', ResamplingMethod.average, 120),
+        ('s2_sr_image_list', ResamplingMethod.bilinear, 60), ('s2_sr_image_list', ResamplingMethod.bicubic, 60),
+        ('s2_sr_image_list', ResamplingMethod.average, 120), ('l8_9_image_list', ResamplingMethod.bilinear, 30),
+        ('l8_9_image_list', ResamplingMethod.bicubic, 30), ('l8_9_image_list', ResamplingMethod.average, 120),
     ]
 )
 def test_composite_resampling(
@@ -386,19 +378,20 @@ def test_composite_landsat_cloud_mask_params(l8_9_image_list, region_10000ha):
         ('s2_sr_image_list', CompositeMethod.mosaic, True, None, '2021-10-01', {}),
         ('s2_sr_image_list', CompositeMethod.medoid, False, None, None, {}),
         (
-            's2_sr_image_list', CompositeMethod.median, True, None, None, dict(
+            's2_sr_image_list', CompositeMethod.median, True, None, None,
+            dict(
                 mask_method='qa', mask_cirrus=False, mask_shadows=False, prob=60, dark=0.2, shadow_dist=500, buffer=500,
                 cdi_thresh=None, max_cloud_dist=2000
             )
-        ),
-        ('l8_9_image_list', CompositeMethod.q_mosaic, True, 'region_100ha', None, {}),
+        ), ('l8_9_image_list', CompositeMethod.q_mosaic, True, 'region_100ha', None, {}),
         ('l8_9_image_list', CompositeMethod.mosaic, False, None, '2022-03-01', {}),
         ('l8_9_image_list', CompositeMethod.medoid, True, None, None, dict(mask_cirrus=False, mask_shadows=False)),
         ('l8_9_image_list', CompositeMethod.median, True, None, None, {}),
         ('l4_5_image_list', CompositeMethod.q_mosaic, False, 'region_100ha', None, {}),
-        ('l4_5_image_list', CompositeMethod.mosaic, True, None, '1988-01-01',
-         dict(mask_cirrus=False, mask_shadows=False)),
-        ('l4_5_image_list', CompositeMethod.medoid, True, None, None, {}),
+        (
+            'l4_5_image_list', CompositeMethod.mosaic, True, None, '1988-01-01',
+            dict(mask_cirrus=False, mask_shadows=False)
+        ), ('l4_5_image_list', CompositeMethod.medoid, True, None, None, {}),
         ('l4_5_image_list', CompositeMethod.median, True, None, None, {}),
         ('gedi_image_list', CompositeMethod.mosaic, True, 'region_100ha', None, {}),
         ('gedi_image_list', CompositeMethod.mosaic, True, None, '2020-09-01', {}),

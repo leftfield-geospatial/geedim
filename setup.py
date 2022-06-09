@@ -18,7 +18,6 @@ import sys
 from pathlib import Path
 
 from setuptools import setup, find_packages
-
 """
  Build and upload to testpypi:
      conda install -c conda-forge build twine
@@ -33,29 +32,36 @@ from setuptools import setup, find_packages
 """
 
 this_directory = Path(__file__).parent
-long_description = (this_directory / "README.rst").read_text()
+long_description = (this_directory / 'README.rst').read_text()
 
 sys.path[0:0] = ['geedim']
 from version import __version__
 
 setup(
-    name="geedim",
+    name='geedim',
     version=__version__,
-    description="Search, composite and download Google Earth Engine imagery.",
+    description='Search, composite and download Google Earth Engine imagery.',
     long_description=long_description,
     long_description_content_type='text/markdown',
-    author="Dugal Harris",
-    author_email="dugalh@gmail.com",
-    url="https://github.com/dugalh/geedim",
-    license="Apache-2.0",
+    author='Dugal Harris',
+    author_email='dugalh@gmail.com',
+    url='https://github.com/dugalh/geedim',
+    license='Apache-2.0',
     packages=find_packages(exclude=['tests', 'data'], include=['geedim']),
-    install_requires=["numpy>=1.19", "rasterio>=1.1", "click>=8", "tqdm>=4.6", "earthengine-api>=0.1.2",
-                      "requests>=2.2", "tabulate>=0.8"],
-    python_requires=">=3.6",
-    classifiers=[
-        "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: Apache Software License",
-        "Operating System :: OS Independent",
+    install_requires=[
+        'numpy>=1.19',
+        'rasterio>=1.1',
+        'click>=8',
+        'tqdm>=4.6',
+        'earthengine-api>=0.1.2',
+        'requests>=2.2',
+        'tabulate>=0.8',
     ],
-    entry_points={"console_scripts": ["geedim=geedim.cli:cli"]}
-)
+    python_requires='>=3.6',
+    classifiers=[
+        'Programming Language :: Python :: 3',
+        'License :: OSI Approved :: Apache Software License',
+        'Operating System :: OS Independent',
+    ],
+    entry_points={'console_scripts': ['geedim=geedim.cli:cli']}
+) # yapf: disable

@@ -123,8 +123,8 @@ def _test_downloaded_file(
     ]
 )
 def test_search(
-    name, start_date: str, end_date: str, region: str, fill_portion: float, cloudless_portion: float,
-    is_csmask: bool, tmp_path: pathlib.Path, runner: CliRunner, request: pytest.FixtureRequest
+    name, start_date: str, end_date: str, region: str, fill_portion: float, cloudless_portion: float, is_csmask: bool,
+    tmp_path: pathlib.Path, runner: CliRunner, request: pytest.FixtureRequest
 ):
     """
     Test search command gives valid results for different cloud/shadow maskable, and generic collections.
@@ -250,14 +250,12 @@ def test_raster_region_search(const_image_25ha_file, region_25ha_file, runner: C
 
 @pytest.mark.parametrize(
     'image_id, region_file', [
-        ('l8_image_id', 'region_25ha_file'),
-        ('s2_sr_image_id', 'region_25ha_file'),
+        ('l8_image_id', 'region_25ha_file'), ('s2_sr_image_id', 'region_25ha_file'),
         ('gedi_cth_image_id', 'region_25ha_file'),
     ]
 )
 def test_download_defaults(
-    image_id: str, region_file: pathlib.Path, tmp_path: pathlib.Path, runner: CliRunner,
-    request
+    image_id: str, region_file: pathlib.Path, tmp_path: pathlib.Path, runner: CliRunner, request
 ):
     """ Test image download with default crs, scale, dtype etc.  """
     image_id = request.getfixturevalue(image_id)

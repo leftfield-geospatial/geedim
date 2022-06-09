@@ -158,6 +158,7 @@ def get_projection(image, min_scale=True):
 
 
 class Spinner(Thread):
+
     def __init__(self, label='', interval=0.2, leave=True, **kwargs):
         """
         Thread sub-class to run a non-blocking spinner.
@@ -263,8 +264,7 @@ def retry_session(
     """ requests session configured for retries. """
     session = session or requests.Session()
     retry = Retry(
-        total=retries, read=retries, connect=retries, backoff_factor=backoff_factor,
-        status_forcelist=status_forcelist
+        total=retries, read=retries, connect=retries, backoff_factor=backoff_factor, status_forcelist=status_forcelist
     )
     adapter = HTTPAdapter(max_retries=retry)
     session.mount('http://', adapter)
