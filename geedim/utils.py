@@ -29,7 +29,7 @@ import requests
 from rasterio.warp import transform_geom
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 from geedim.enums import ResamplingMethod
 

@@ -21,7 +21,7 @@ import numpy as np
 import requests
 from rasterio import Affine, MemoryFile
 from rasterio.windows import Window
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 
 class Tile:

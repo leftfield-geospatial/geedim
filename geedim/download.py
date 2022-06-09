@@ -32,7 +32,8 @@ import rasterio as rio
 from rasterio.crs import CRS
 from rasterio.enums import Resampling as RioResampling
 from rasterio.windows import Window
-from tqdm import TqdmWarning, tqdm
+from tqdm.auto import tqdm
+from tqdm import TqdmWarning
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 from geedim.enums import ResamplingMethod
