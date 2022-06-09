@@ -285,7 +285,7 @@ def cli(ctx, verbose, quiet):
 @click.option(
     '-mcd', '--max-cloud-dist', type=click.INT, default=5000, show_default=True,
     help='Maximum distance (m) to look for clouds.  Used to form the cloud distance band for the `q-mosaic` '
-         'compositing ``--method``.  Valid for Sentinel-2 images.'
+         'compositing ``--method``.'
 )
 @click.pass_context
 def config(ctx, mask_cirrus, mask_shadows, mask_method, prob, dark, shadow_dist, buffer, cdi_thresh, max_cloud_dist):

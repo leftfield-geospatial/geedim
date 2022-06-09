@@ -250,7 +250,9 @@ class LandsatImage(CloudMaskedImage):
     * LANDSAT/LC09/C02/T1_L2
     """
 
-    def _aux_image(self, mask_shadows: bool = True, mask_cirrus: bool = True) -> ee.Image:
+    def _aux_image(
+        self, mask_shadows: bool = True, mask_cirrus: bool = True, max_cloud_dist: int = 5000
+        ) -> ee.Image:
         """
         Retrieve the auxiliary image containing cloud/shadow masks and cloud distance.
 
@@ -260,6 +262,9 @@ class LandsatImage(CloudMaskedImage):
             Whether to mask cloud shadows.
         mask_cirrus: bool, optional
             Whether to mask cirrus clouds.  Valid for Landsat 8-9 images.
+        max_cloud_dist: int, optional
+            Maximum distance (m) to look for clouds when forming the 'cloud distance' band.  Valid for
+            Sentinel-2 images.
 
         Returns
         -------
@@ -280,10 +285,13 @@ class LandsatImage(CloudMaskedImage):
             cloud_mask = qa_pixel.bitwiseAnd(0b1000).neq(0).rename('CLOUD_MASK')
 
         # combine cloud, shadow and fill masks into cloudless mask
-        cloudless_mask = (cloud_mask.Or(shadow_mask)).Not() if mask_shadows else cloud_mask.Not()
-        cloudless_mask = cloudless_mask.And(fill_mask).rename('CLOUDLESS_MASK')
-        # copy cloud distance from existing ST_CDIST band
-        cloud_dist = ee_image.select('ST_CDIST').rename('CLOUD_DIST')
+        cloud_shadow_mask = (cloud_mask.Or(shadow_mask)) if mask_shadows else cloud_mask
+        cloudless_mask = cloud_shadow_mask.Not().And(fill_mask).rename('CLOUDLESS_MASK')
+
+        # copy cloud distance from existing ST_CDIST band, scale to meters, and clip to max_cloud_dist
+        cloud_dist = ee_image.select('ST_CDIST').rename('CLOUD_DIST').multiply(10).toUint32()
+        cloud_dist = cloud_dist.where(cloud_dist.gt(ee.Image(max_cloud_dist)), max_cloud_dist)
+
         return ee.Image([fill_mask, cloud_mask, shadow_mask, cloudless_mask, cloud_dist])
 
 
