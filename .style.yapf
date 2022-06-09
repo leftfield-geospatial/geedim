@@ -9,7 +9,7 @@ align_closing_bracket_with_visual_indent=False
 #        'this is the second element of a tuple'):
 #            value,
 #   }
-allow_multiline_dictionary_keys=True
+allow_multiline_dictionary_keys=False
 
 # Allow lambdas to be formatted on more than one line.
 allow_multiline_lambdas=False
@@ -79,10 +79,10 @@ blank_line_before_nested_class_or_def=True
 #        'key1': 'value1',
 #        'key2': 'value2',
 #    })
-coalesce_brackets=False
+coalesce_brackets=True
 
 # The column limit.
-column_limit=80
+column_limit=120
 
 # The style for continuation alignment. Possible values are:
 #
@@ -114,11 +114,11 @@ continuation_indent_width=4
 #       start_ts=now()-timedelta(days=3),
 #       end_ts=now(),
 #   )        # <--- this bracket is dedented and on a separate line
-dedent_closing_brackets=False
+dedent_closing_brackets=True
 
 # Disable the heuristic which places each list element on a separate line
 # if the list is comma-terminated.
-disable_ending_comma_heuristic=False
+disable_ending_comma_heuristic=True
 
 # Place each dictionary entry onto its own line.
 each_dict_entry_on_separate_line=True
@@ -174,7 +174,7 @@ indent_closing_brackets=False
 indent_dictionary_value=True
 
 # The number of columns to use for indentation.
-indent_width=2
+indent_width=4
 
 # Join short lines into one line. E.g., single line 'if' statements.
 join_multiple_lines=False
@@ -273,7 +273,7 @@ spaces_before_comment=2
 
 # Insert a space between the ending comma and closing bracket of a list,
 # etc.
-space_between_ending_comma_and_closing_bracket=False
+space_between_ending_comma_and_closing_bracket=True
 
 # Use spaces inside brackets, braces, and parentheses.  For example:
 #
@@ -291,6 +291,7 @@ split_all_top_level_comma_separated_values=False
 
 # Split before arguments if the argument list is terminated by a
 # comma.
+# [my note: this only works if disable_ending_comma_heuristic=True]
 split_arguments_when_comma_terminated=False
 
 # Set to True to prefer splitting before '+', '-', '*', '/', '//', or '@'
@@ -299,7 +300,7 @@ split_before_arithmetic_operator=False
 
 # Set to True to prefer splitting before '&', '|' or '^' rather than
 # after.
-split_before_bitwise_operator=True
+split_before_bitwise_operator=False
 
 # Split before the closing bracket if a list or dict literal doesn't fit on
 # a single line.
@@ -322,7 +323,7 @@ split_before_dict_set_generator=False
 #
 #   foo = ('This is a really long string: {}, {}, {}, {}'
 #          .format(a, b, c, d))
-split_before_dot=True
+split_before_dot=False
 
 # Split after the opening paren which surrounds an expression if it doesn't
 # fit on a single line.
@@ -330,14 +331,15 @@ split_before_expression_after_opening_paren=True
 
 # If an argument / parameter list is going to be split, then split before
 # the first argument.
-split_before_first_argument=False
+# [my note: this seems to have no effect]
+split_before_first_argument=True
 
 # Set to True to prefer splitting before 'and' or 'or' rather than
 # after.
 split_before_logical_operator=False
 
 # Split named assignments onto individual lines.
-split_before_named_assigns=True
+split_before_named_assigns=False
 
 # Set to True to split list comprehensions and generators that have
 # non-trivial expressions and multiple clauses before each of these
@@ -353,10 +355,10 @@ split_before_named_assigns=True
 #       a_long_var + 100
 #       for a_long_var in xrange(1000)
 #       if a_long_var % 10]
-split_complex_comprehension=True
+split_complex_comprehension=False
 
 # The penalty for splitting right after the opening bracket.
-split_penalty_after_opening_bracket=300
+split_penalty_after_opening_bracket=0
 
 # The penalty for splitting the line after a unary operator.
 split_penalty_after_unary_operator=10000
@@ -381,7 +383,7 @@ split_penalty_excess_character=7000
 
 # The penalty incurred by adding a line split to the logical line. The
 # more line splits added the higher the penalty.
-split_penalty_for_added_line_split=30
+split_penalty_for_added_line_split=0
 
 # The penalty of splitting a list of "import as" names. For example:
 #

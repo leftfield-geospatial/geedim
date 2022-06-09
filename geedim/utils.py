@@ -98,7 +98,7 @@ def get_bounds(filename: pathlib.Path, expand: float = 5):
                 expand_x = (bbox.right - bbox.left) * expand / 100.0
                 expand_y = (bbox.top - bbox.bottom) * expand / 100.0
                 bbox_expand = rio.coords.BoundingBox(
-                    bbox.left - expand_x, bbox.bottom - expand_y, bbox.right + expand_x, bbox.top + expand_y,
+                    bbox.left - expand_x, bbox.bottom - expand_y, bbox.right + expand_x, bbox.top + expand_y
                 )
             else:
                 bbox_expand = bbox

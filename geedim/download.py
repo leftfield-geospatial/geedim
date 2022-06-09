@@ -280,7 +280,7 @@ class BaseImage:
             uint16=ee.Image.toUint16,
             int16=ee.Image.toInt16,
             uint32=ee.Image.toUint32,
-            int32=ee.Image.toInt32,
+            int32=ee.Image.toInt32
         )
         if dtype not in conv_dict:
             raise TypeError(f'Unsupported dtype: {dtype}')

@@ -15,7 +15,7 @@
 """
 # schema definitions for MaskedImage.from_id(), geedim <-> EE collection names, and search properties
 import geedim.mask
-
+# yapf: disable
 default_prop_schema = {
     'system:id': {'abbrev': 'ID', 'description': 'Earth Engine image id'},
     'system:time_start': {'abbrev': 'DATE', 'description': 'Image capture date/time (UTC)'},
@@ -44,6 +44,7 @@ s2_prop_schema = {
     'MEAN_INCIDENCE_AZIMUTH_ANGLE_B1': {'abbrev': 'VAA', 'description': 'View (B1) azimuth angle (deg)'},
     'MEAN_INCIDENCE_ZENITH_ANGLE_B1': {'abbrev': 'VZA', 'description': 'View (B1) zenith angle (deg)'}
 }
+# yapf: enable
 
 collection_schema = {
     'LANDSAT/LT04/C02/T1_L2': {

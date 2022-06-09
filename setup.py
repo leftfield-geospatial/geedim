@@ -57,5 +57,5 @@ setup(
         "License :: OSI Approved :: Apache Software License",
         "Operating System :: OS Independent",
     ],
-    entry_points={"console_scripts": ["geedim=geedim.cli:cli"]},
+    entry_points={"console_scripts": ["geedim=geedim.cli:cli"]}
 )

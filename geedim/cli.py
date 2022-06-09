@@ -225,7 +225,7 @@ mask_option = click.option(
 resampling_option = click.option(
     '-rs', '--resampling', type=click.Choice([rm.value for rm in ResamplingMethod], case_sensitive=True),
     default=BaseImage._default_resampling.value, show_default=True, callback=_resampling_method_cb,
-    help='Resampling method.',
+    help='Resampling method.'
 )
 
 
@@ -529,7 +529,7 @@ cli.add_command(download)
 @region_option
 @click.option(
     '-df', '--drive-folder', type=click.STRING, default=None, show_default='root folder.',
-    help='Google Drive folder to export image(s) to.',
+    help='Google Drive folder to export image(s) to.'
 )
 @crs_option
 @scale_option
@@ -618,7 +618,7 @@ cli.add_command(export)
 @click.option(
     '-rs', '--resampling', type=click.Choice([rm.value for rm in ResamplingMethod], case_sensitive=True),
     default=BaseImage._default_resampling.value, callback=_resampling_method_cb, show_default=True,
-    help='Resample images with this method before compositing.',
+    help='Resample images with this method before compositing.'
 )
 @click.option(
     '-b', '--bbox', type=click.FLOAT, nargs=4, default=None, callback=_bbox_cb,

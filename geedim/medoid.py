@@ -28,7 +28,7 @@ import ee
     See https://github.com/gee-community/gee_tools.
 """
 
-
+# yapf: disable
 def enumerate(collection):
     """ Create a list of lists in which each element of the list is:
     [index, element]. For example, if you parse a FeatureCollection with 3
@@ -359,3 +359,4 @@ def medoid(collection, bands=None, discard_zeros=True):
     comp = medcol.qualityMosaic('sumdist')
     final = removeBands(comp, ['sumdist'])
     return final
+# yapf: enable
