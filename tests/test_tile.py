@@ -20,7 +20,7 @@ import numpy as np
 import pytest
 from rasterio import Affine
 from rasterio.windows import Window
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 from geedim.tile import Tile
 from geedim.utils import retry_session
