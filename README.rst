@@ -253,8 +253,7 @@ License <LICENSE>`__.
 Contributing
 ------------
 
-Contributions are welcome. Report bugs or contact me with questions
-`here <https://github.com/dugalh/geedim/issues>`__.
+Contributions are welcome, see the `documentation <docs/contributing.rst>`__ for details.
 
 Credits
 -------

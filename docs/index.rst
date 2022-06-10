@@ -15,7 +15,7 @@ geedim
    readme_sections
    cli
    api
-
+   contributing
 
 
 Indices and tables
