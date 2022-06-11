@@ -106,8 +106,10 @@ class MaskedImage(BaseImage):
 
     def _aux_image(self, **kwargs) -> ee.Image:
         """
-        Retrieve the auxiliary image (MaskedImage provides FILL_MASK only). Derived classes should override this
-        method and return whatever additional mask etc bands they support.
+        Retrieve the auxiliary image (MaskedImage provides an image with a FILL_MASK band only).
+
+        Derived classes should override this method and return an image with FILL_MASK and any other auxiliary bands
+        they support.
         """
         return self.ee_image.mask().reduce(ee.Reducer.allNonZero()).rename('FILL_MASK')
 
@@ -230,6 +232,15 @@ class CloudMaskedImage(MaskedImage):
         means = sums.select(['FILL_PORTION', 'CLOUDLESS_PORTION']).map(region_percentage)
         # set the encapsulated image properties
         self.ee_image = self.ee_image.set(means)
+
+    def _aux_image(self, **kwargs) -> ee.Image:
+        """
+        Retrieve the auxiliary image containing cloud/shadow masks and cloud distance.  The returned image should
+        contain at least FILL_MASK, CLOUDLESS_MASK and CLOUD_DIST bands.
+
+        See :meth:`LandsatImage._aux_image` for an example.
+        """
+        raise NotImplementedError('This virtual method should be overridden by derived classes.')
 
     def mask_clouds(self):
         """ Apply the cloud/shadow mask. """
