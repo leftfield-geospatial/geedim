@@ -114,10 +114,20 @@ class MaskedImage(BaseImage):
         return self.ee_image.mask().reduce(ee.Reducer.allNonZero()).rename('FILL_MASK')
 
     def _add_aux_bands(self, **kwargs):
-        """ Add auxiliary bands to the encapsulated image, if they are not present already. """
+        """
+        Add auxiliary bands to the encapsulated image. Existing auxiliary bands are overwritten, unless the image has
+        no fixed projection and existing auxiliary bands (i.e. is likely a MaskedCollection composite image).
+        """
         aux_image = self._aux_image(**kwargs)
-        cond = ee.Number(self.ee_image.bandNames().contains('FILL_MASK'))
-        self.ee_image = ee.Image(ee.Algorithms.If(cond, self.ee_image, self.ee_image.addBands(aux_image)))
+        proj = self.ee_image.select(0).projection()
+        has_fixed_scale = proj.nominalScale().toInt64().neq(111319) # 1 deg in meters
+        has_no_aux_bands = ee.Number(self.ee_image.bandNames().indexOf('FILL_MASK').lt(0))
+        # overwrite unless it is a composite image with existing aux bands
+        overwrite = has_no_aux_bands.Or(has_fixed_scale)
+        self.ee_image = ee.Image(
+            ee.Algorithms.If(overwrite, self.ee_image.addBands(aux_image, overwrite=True), self.ee_image)
+        )
+
 
     def _set_region_stats(self, region: Dict = None, scale: float = None):
         """
