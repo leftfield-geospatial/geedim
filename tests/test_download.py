@@ -14,7 +14,6 @@
     limitations under the License.
 """
 import pathlib
-import re
 from datetime import datetime
 from typing import Dict, Tuple, List
 

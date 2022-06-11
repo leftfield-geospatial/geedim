@@ -9,7 +9,7 @@ geedim
 .. include:: readme_sections.rst
 
 .. toctree::
-   :maxdepth: 10
+   :maxdepth: 2
    :caption: Contents:
 
    readme_sections
