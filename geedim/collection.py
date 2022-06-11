@@ -17,7 +17,7 @@
 import logging
 import re
 from collections import OrderedDict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Union
 
 import ee
@@ -332,6 +332,10 @@ class MaskedCollection:
                 date_dist = ee.Number(ee_image.get('system:time_start')).subtract(ee.Date(date).millis()).abs()
                 ee_image = ee_image.set('DATE_DIST', date_dist)
 
+            # TODO: there is a design flaw here, if composite() is called >1x, but with different kwargs,
+            #  only the first kwargs are applied. similarly if composite is called on a searched collection,
+            #  only the search kwargs get applied.  this was done so that composite images could be wrapped in
+            #  MaskedImage w/o trying to find the masks again.  urgh.
             gd_image = self.image_type(ee_image, **kwargs)
             if region and (method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic]):
                 gd_image._set_region_stats(region=region, scale=self._stats_scale)
@@ -384,7 +388,10 @@ class MaskedCollection:
             Filtered MaskedCollection instance containing the search result image(s).
         """
         if end_date is None:
-            end_date = start_date + timedelta(days=1)
+            # set end_date a day later than start_date
+            end_date = datetime.strptime(start_date, '%Y-%m-%d') + timedelta(days=1)
+            end_date = end_date.strftime('%Y-%m-%d')
+
         if end_date <= start_date:
             raise ValueError('`end_date` must be at least a day later than `start_date`')
 
@@ -483,9 +490,10 @@ class MaskedCollection:
         if len(props) == 0:
             raise ValueError('The collection is empty.')
         props_str = self._get_properties_table(props)
-        comp_image = comp_image.set('COMPONENT_IMAGES', 'TABLE:\n' + props_str)
+        comp_image = comp_image.set('INPUT_IMAGES', 'TABLE:\n' + props_str)
 
         # construct an ID for the composite
+        # TODO: these dates are being shifted from capture dates, something with time zone is confused
         dates = [datetime.utcfromtimestamp(item['system:time_start'] / 1000) for item in props.values()]
         start_date = min(dates).strftime('%Y_%m_%d')
         end_date = max(dates).strftime('%Y_%m_%d')
@@ -498,9 +506,10 @@ class MaskedCollection:
         comp_image = comp_image.set('system:id', comp_id)  # sets root 'id' property
         comp_image = comp_image.set('system:index', comp_id)  # sets 'properties'->'system:index'
 
-        # set the composite capture time to the capture time of the first component image (sets
-        # 'properties'->'system:time_start')
-        comp_image = comp_image.set('system:time_start', min(dates).timestamp() * 1000)
+        # set the composite capture time to the capture time of the first input image.
+        # note that we must specify the timezone as utc, otherwise .timestamp() assumes local time.
+        timestamp = min(dates).replace(tzinfo=timezone.utc).timestamp() * 1000
+        comp_image = comp_image.set('system:time_start', timestamp)
         gd_comp_image = self.image_type(comp_image)
         gd_comp_image._id = comp_id  # avoid getInfo() for id property
         return gd_comp_image
