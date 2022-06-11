@@ -13,7 +13,7 @@
     See the License for the specific language governing permissions and
     limitations under the License.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Union, Dict
 
 import ee
@@ -235,6 +235,21 @@ def test_empty_search(region_100ha):
     assert searched_collection.properties_table is not None
 
 
+def test_search_no_end_date(region_100ha):
+    """ Test MaskedCollection.search() with ``end_date=None`` searches for a day from ``start_date`. """
+    gd_collection = MaskedCollection.from_name('LANDSAT/LC09/C02/T1_L2')
+    searched_collection = gd_collection.search('2022-01-03', None, region_100ha)
+
+    start_date = datetime.strptime('2022-01-03', '%Y-%m-%d')
+    end_date = datetime.strptime('2022-01-04', '%Y-%m-%d')
+    properties = searched_collection.properties
+    im_dates = np.array(
+        [datetime.utcfromtimestamp(im_props['system:time_start'] / 1000) for im_props in properties.values()]
+    )
+    assert len(properties) > 0
+    assert np.all(im_dates >= start_date) and np.all(im_dates < end_date)
+
+
 def test_search_date_error(region_100ha):
     """ Test MaskedCollection.search() raises an error when end date is on or before start date. """
     gd_collection = MaskedCollection.from_name('LANDSAT/LC09/C02/T1_L2')
@@ -398,7 +413,7 @@ def test_composite_landsat_cloud_mask_params(l8_9_image_list, region_10000ha):
         ('gedi_image_list', CompositeMethod.medoid, True, None, None, {}),
         ('gedi_image_list', CompositeMethod.median, True, None, None, {}),
     ]
-)
+)  # yapf: disabl;e
 def test_composite(image_list, method, mask, region, date, cloud_kwargs, request):
     """ Test MaskedCollection.composite() runs successfully with a variety of `method` and other parameters. """
     image_list: List = request.getfixturevalue(image_list)
@@ -406,7 +421,7 @@ def test_composite(image_list, method, mask, region, date, cloud_kwargs, request
     gd_collection = MaskedCollection.from_list(image_list)
     comp_im = gd_collection.composite(method=method, mask=mask, region=region, date=date, **cloud_kwargs)
     assert comp_im._ee_info is not None and len(comp_im._ee_info) > 0
-    assert 'COMPONENT_IMAGES' in comp_im.properties
+    assert 'INPUT_IMAGES' in comp_im.properties
 
 
 def test_composite_errors(gedi_image_list, region_100ha):
@@ -425,3 +440,15 @@ def test_composite_errors(gedi_image_list, region_100ha):
         # composite of empty collection
         empty_collection = gedi_collection.search('2000-01-01', '2000-01-02', region_100ha, 100)
         empty_collection.composite(method=CompositeMethod.mosaic)
+
+
+@pytest.mark.parametrize('image_list', ['s2_sr_image_list', 'l8_9_image_list'])
+def test_composite_date(image_list: str, request: pytest.FixtureRequest):
+    """ Test the composite date is the same as the first input image date. """
+
+    image_list: List = request.getfixturevalue(image_list)
+    gd_collection = MaskedCollection.from_list(image_list)
+    # assumes the image_list's are in date order
+    first_date = datetime.utcfromtimestamp(gd_collection.ee_collection.first().get('system:time_start').getInfo() / 1000)
+    comp_im = gd_collection.composite()
+    assert comp_im.date == first_date
