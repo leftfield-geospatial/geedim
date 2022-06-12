@@ -1,3 +1,4 @@
 sphinx
 sphinx-click
 sphinx-rtd-theme
+nbsphinx
