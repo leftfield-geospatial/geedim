@@ -15,8 +15,9 @@ geedim
    readme_sections
    cli
    api
+   tutorials
    contributing
-   examples/l7_composite.ipynb
+
 
 
 Indices and tables
