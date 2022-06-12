@@ -16,6 +16,7 @@ geedim
    cli
    api
    contributing
+   examples/l7_composite.ipynb
 
 
 Indices and tables
