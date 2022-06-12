@@ -257,6 +257,29 @@ def test_search_date_error(region_100ha):
         _ = gd_collection.search('2022-01-02', '2022-01-01', region_100ha)
 
 
+def test_search_mult_kwargs(region_100ha):
+    """
+    When a search filtered collection is searched again, test that masks change with different cloud/shadow kwargs.
+    """
+    start_date = '2022-01-01'
+    end_date = '2022-01-10'
+    gd_collection = MaskedCollection.from_name('COPERNICUS/S2_SR')
+
+    def get_cloudless_portion(properties: Dict) -> List[float]:
+        return [prop_dict['CLOUDLESS_PORTION'] for prop_dict in properties.values()]
+
+    filt_collection = gd_collection.search(start_date, end_date, region_100ha, prob=80)
+    filt_coll_prob80 = filt_collection.search(start_date, end_date, region_100ha, prob=80)
+    filt_coll_prob40 = filt_collection.search(start_date, end_date, region_100ha, prob=40)
+
+    cp_ref = get_cloudless_portion(filt_collection.properties)
+    cp_prob80 = get_cloudless_portion(filt_coll_prob80.properties)
+    cp_prob40 = get_cloudless_portion(filt_coll_prob40.properties)
+
+    assert cp_ref == pytest.approx(cp_prob80, abs=1e-3)
+    assert cp_ref != pytest.approx(cp_prob40, abs=1e-1)
+
+
 @pytest.mark.parametrize(
     'image_list, method, region, date', [
         ('s2_sr_image_list', CompositeMethod.q_mosaic, 'region_10000ha', None),
@@ -452,3 +475,22 @@ def test_composite_date(image_list: str, request: pytest.FixtureRequest):
     first_date = datetime.utcfromtimestamp(gd_collection.ee_collection.first().get('system:time_start').getInfo() / 1000)
     comp_im = gd_collection.composite()
     assert comp_im.date == first_date
+
+
+def test_composite_mult_kwargs(region_100ha):
+    """
+    When a search filtered collection is composited, test that masks change with different cloud/shadow kwargs i.e.
+    test that image *_MASK bands are overwritten in the encapsulated collection.
+    """
+    gd_collection = MaskedCollection.from_name('COPERNICUS/S2_SR')
+    filt_collection = gd_collection.search('2022-01-01', '2022-01-10', region_100ha)
+
+    comp_im_prob80 = filt_collection.composite(prob=80)
+    comp_im_prob80._set_region_stats(region_100ha, scale=filt_collection._stats_scale)
+    comp_im_prob40 = filt_collection.composite(prob=40)
+    comp_im_prob40._set_region_stats(region_100ha, scale=filt_collection._stats_scale)
+
+    cp_prob80 = comp_im_prob80.properties['CLOUDLESS_PORTION']
+    cp_prob40 = comp_im_prob40.properties['CLOUDLESS_PORTION']
+
+    assert cp_prob80 != pytest.approx(cp_prob40, abs=1e-1)

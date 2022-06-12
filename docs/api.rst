@@ -14,8 +14,8 @@ Example
     :end-before: api_example_end
 
 
-Usage
------
+Reference
+---------
 
 MaskedImage
 ^^^^^^^^^^^
