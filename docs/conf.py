@@ -68,3 +68,15 @@ autodoc_class_signature = 'mixed'
 autodoc_member_order = 'bysource'
 autodoc_typehints = 'both'
 # autodoc_typehints_format = 'short'
+
+# -- Options for nbsphinx --------------------------------------------------
+# Taken from https://github.com/aazuspan/wxee/blob/main/docs/conf.py under
+#
+nbsphinx_prolog = """
+{% set docname = env.doc2path(env.docname, base=None) %}
+
+.. note::
+
+   This page was generated from a Jupyter notebook. You can download the notebook from `GitHub 
+   <https://github.com/dugalh/geedim/blob/feature_docs/docs/{{ docname }}>`_ .
+"""

@@ -3,4 +3,3 @@ sphinx-click
 sphinx-rtd-theme
 nbsphinx
 ipykernel
-geemap
