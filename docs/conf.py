@@ -70,13 +70,13 @@ autodoc_typehints = 'both'
 # autodoc_typehints_format = 'short'
 
 # -- Options for nbsphinx --------------------------------------------------
-# Taken from https://github.com/aazuspan/wxee/blob/main/docs/conf.py under
-#
+# env.docname will be e.g. examples/l7_composite.ipynb.  The `../` is to reference it from itself.
+# preferable to link to actual version of the file at the time of the doc build, than a hyperlink to
+# github.
+# see https://github.com/aazuspan/wxee/blob/main/docs/conf.py for other examples
 nbsphinx_prolog = """
-{% set docname = env.doc2path(env.docname, base=None) %}
-
 .. note::
 
-   This page was generated from a Jupyter notebook. You can download the notebook from `GitHub 
-   <https://github.com/dugalh/geedim/blob/feature_docs/docs/{{ docname }}>`_ .
+   This page was generated from a Jupyter notebook. If you want to run and interact with it locally, 
+   you can download it :download:`here <../{{ env.docname }}.ipynb>`.
 """
