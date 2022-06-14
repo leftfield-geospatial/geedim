@@ -577,8 +577,8 @@ class BaseImage:
 
         Images larger than the `Earth Engine size limit
         <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`_ are split and downloaded as
-        separate tiles, then re-assembled into a single GeoTIFF.  Downloaded image files are populated with relevant
-        metadata from the Earth Engine image and associated STAC.
+        separate tiles, then re-assembled into a single GeoTIFF.  Downloaded image files are populated with metadata
+        from the Earth Engine image and STAC.
 
         Parameters
         ----------

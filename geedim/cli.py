@@ -394,7 +394,8 @@ def search(obj, collection, start_date, end_date, bbox, region, fill_portion, cl
 
     A search region must be specified with either the ``--bbox`` or ``--region`` option.
 
-    Note that filled/cloudless portions are portions of the specified search region, not the entire image granule.
+    Note that filled/cloudless portions are not taken from the granule metadata, but are calculated as portions of the
+    specified search region for better accuracy.
     \b
 
     Examples
@@ -468,8 +469,8 @@ def download(obj, image_id, bbox, region, download_dir, mask, overwrite, **kwarg
     Download Earth Engine image(s) to GeoTIFF file(s), allowing optional region of interest, and other image
     formatting options to be specified.  Images larger than the `Earth Engine size limit
     <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`_ are split and downloaded as separate
-    tiles, then re-assembled into a single GeoTIFF.  Downloaded image files are populated with relevant metadata from
-    the source Earth Engine image and associated STAC.
+    tiles, then re-assembled into a single GeoTIFF.  Downloaded image files are populated with metadata from the Earth
+    Engine image and STAC.
 
     This command can be chained after the ``composite`` command, to download the composite image.  It can also be
     chained after the ``search`` command, in which case the search result images will be downloaded, without the need

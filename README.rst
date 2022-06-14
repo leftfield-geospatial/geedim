@@ -19,7 +19,7 @@ Description
 compositing and downloading satellite imagery from Google Earth Engine
 (EE). It optionally performs cloud / shadow masking, and cloud /
 shadow-free compositing on supported collections. Images and composites
-can be downloaded, or exported to Google Drive. Relevant metadata is included in downloaded files. Images larger than the EE size limit are split and downloaded as separate tiles, then re-assembled into a single GeoTIFF.
+can be downloaded, or exported to Google Drive. Images larger than the EE size limit are split and downloaded as separate tiles, then re-assembled into a single GeoTIFF.
 
 .. description_end
 

@@ -13,6 +13,7 @@
 import os
 import sys
 sys.path.insert(0, os.path.abspath('..'))
+from geedim.version import __version__
 
 
 # -- Project information -----------------------------------------------------
@@ -22,7 +23,7 @@ copyright = '2022, Dugal Harris'
 author = 'Dugal Harris'
 
 # The full version, including alpha/beta/rc tags
-release = '1.0.1'
+release = __version__
 
 
 # -- General configuration ---------------------------------------------------
@@ -70,13 +71,14 @@ autodoc_typehints = 'both'
 # autodoc_typehints_format = 'short'
 
 # -- Options for nbsphinx --------------------------------------------------
-# env.docname will be e.g. examples/l7_composite.ipynb.  The `../` is to reference it from itself.
-# preferable to link to actual version of the file at the time of the doc build, than a hyperlink to
-# github.
+# env.docname will be e.g. examples/l7_composite.ipynb.  The `../` is to
+# reference it from itself. preferable to link to actual version of the file
+# at the time of the doc build, than a hyperlink to github.
 # see https://github.com/aazuspan/wxee/blob/main/docs/conf.py for other examples
 nbsphinx_prolog = """
 .. note::
 
-   This page was generated from a Jupyter notebook. If you want to run and interact with it locally, 
-   you can download it :download:`here <../{{ env.docname }}.ipynb>`.
+   This page was generated from a Jupyter notebook. If you want to run and 
+   interact with it, you can download it 
+   :download:`here <../{{ env.docname }}.ipynb>`.
 """
