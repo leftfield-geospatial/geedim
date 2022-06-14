@@ -571,7 +571,7 @@ class BaseImage:
             self.monitor_export(task)
         return task
 
-    def download(self, filename: pathlib.Path, overwrite: bool = False, num_threads: int = None, **kwargs):
+    def download(self, filename: Union[pathlib.Path, str], overwrite: bool = False, num_threads: int = None, **kwargs):
         """
         Download the encapsulated image to a GeoTiff file.
 

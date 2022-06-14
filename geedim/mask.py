@@ -45,7 +45,8 @@ class MaskedImage(BaseImage):
             A geojson polygon inside of which to find statistics for the image.  These values are stored in the image
             properties. If None, statistics are not found (the default).
 
-        **kwargs:
+        **kwargs
+            Cloud/shadow masking configuration - see below.
         mask_cirrus: bool, optional
             Whether to mask cirrus clouds.  Valid for Landsat 8-9 images, and for Sentinel-2 images with
             the `qa` ``mask_method``.
