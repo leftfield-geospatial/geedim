@@ -23,10 +23,13 @@ can be downloaded, or exported to Google Drive. Images larger than the EE size l
 
 .. description_end
 
+See the documentation site for more detail: `<https://geedim.readthedocs.io/>`_.
+
+.. supp_im_start
+
 Supported imagery
 ~~~~~~~~~~~~~~~~~
 
-.. supp_im_start
 
 Any EE imagery can be searched, composited and downloaded by ``geedim``.
 Cloud / shadow masking is supported on the following collections:
@@ -243,6 +246,7 @@ Example
    comp_im.download('s2_comp_image.tif', region=region, crs='EPSG:32735', scale=30)
 
 .. api_example_end
+
 
 License
 -------
