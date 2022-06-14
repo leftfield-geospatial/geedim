@@ -4,8 +4,8 @@ Contributing
 Contributions are welcome.  Please report bugs and make feature requests with the github `issue tracker
 <https://github.com/dugalh/geedim/issues>`_.
 
-Environment setup
------------------
+Development environment
+-----------------------
 
 ``geedim`` uses the `rasterio <https://github.com/rasterio/rasterio>`_ package, which has binary dependencies.  Under
 Windows, it is easiest to resolve these dependencies by working in a ``conda`` environment.  You can set this up with:
@@ -16,9 +16,8 @@ Windows, it is easiest to resolve these dependencies by working in a ``conda`` e
     conda activate <environment name>
     conda install -c conda-forge earthengine-api rasterio click requests tqdm tabulate pytest
 
-Skip the above steps if you are using ``pip``.
-
-Once you have a python environment set up, create a fork of the ``geedim`` github repository, and clone it:
+If you are using Linux, or macOS, you may want to create a clean virtual python environment.  Once the environment is
+set up, create a fork of the ``geedim`` github repository, and clone it:
 
 .. code:: shell
 
@@ -75,8 +74,3 @@ the included `.style.yapf <https://github.com/dugalh/geedim/blob/feature_docs/.s
 
     yapf --style .style.yapf -i <file path>
 
-``git``
-^^^^^^^
-
-Make changes on your own feature branch, push those to your forked github repository, and submit pull-requests from
-there.

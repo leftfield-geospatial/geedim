@@ -42,10 +42,10 @@ else:
 
 def Initialize():
     """
-    Initialise Earth Engine though the `high volume endpoint
+    Initialise Earth Engine through the `high volume endpoint
     <https://developers.google.com/earth-engine/cloud/highvolume>`_.
 
-    Credentials will be read from the `EE_SERVICE_ACC_PRIVATE_KEY` environment variable, if it exists
+    Credentials will be read from the `EE_SERVICE_ACC_PRIVATE_KEY` environment variable if it exists
     (useful for integrating with e.g. GitHub actions).
     """
 

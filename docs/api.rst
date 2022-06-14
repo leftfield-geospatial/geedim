@@ -70,9 +70,9 @@ pass the Earth Engine image ID to :meth:`.MaskedImage.from_id` to create the ima
 Compositing
 ^^^^^^^^^^^
 
-Let's form a cloud/shadow free composite of the search result images, using the *q-mosaic* method, then download
-the result.  By specifying the ``region`` parameter to :meth:`.MaskedCollection.composite`, we prioritise the least
-cloudy images.
+Let's form a cloud/shadow-free composite of the search result images, using the *q-mosaic* method, then download
+the result.  By specifying the ``region`` parameter to :meth:`.MaskedCollection.composite`, we prioritise selection
+of pixels from the least cloudy images when forming the composite.
 
 .. note::
     When downloading composite images, the ``region``, ``crs`` and ``scale`` parameters must be specified, as the image
@@ -104,7 +104,7 @@ Image metadata
 ^^^^^^^^^^^^^^
 
 ``geedim`` populates downloaded files with metadata from the source Earth Engine image, and the associated STAC entry.
-The next snippet uses `rasterio <https://github.com/rasterio/rasterio>`_ to read the metadata of the downloaded
+The next code snippet uses `rasterio <https://github.com/rasterio/rasterio>`_ to read the metadata of the downloaded
 Sentinel-2 image.
 
 .. literalinclude:: examples/api_getting_started.py
