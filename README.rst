@@ -257,7 +257,7 @@ License <LICENSE>`__.
 Contributing
 ------------
 
-See the :doc:`documentation <docs/contributing.rst>` for details.
+See the `documentation <docs/contributing.rst>`__ for details.
 
 Credits
 -------
