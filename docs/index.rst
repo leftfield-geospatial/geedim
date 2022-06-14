@@ -15,7 +15,6 @@ geedim
    readme_sections
    cli
    api
-   tutorials
    contributing
 
 
