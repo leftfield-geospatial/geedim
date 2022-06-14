@@ -22,6 +22,7 @@ import sys
 import time
 from threading import Thread
 from typing import Tuple
+import json
 
 import ee
 import rasterio as rio
@@ -37,6 +38,28 @@ if '__file__' in globals():
     root_path = pathlib.Path(__file__).absolute().parents[1]
 else:
     root_path = pathlib.Path(os.getcwd())
+
+
+def Initialize():
+    """
+    Initialise Earth Engine though the `high volume endpoint
+    <https://developers.google.com/earth-engine/cloud/highvolume>`_.
+
+    Credentials will be read from the `EE_SERVICE_ACC_PRIVATE_KEY` environment variable, if it exists
+    (useful for integrating with e.g. GitHub actions).
+    """
+
+    if not ee.data._credentials:
+        # Adpated from https://gis.stackexchange.com/questions/380664/how-to-de-authenticate-from-earth-engine-api.
+        env_key = 'EE_SERVICE_ACC_PRIVATE_KEY'
+
+        if env_key in os.environ:
+            # authenticate with service account
+            key_dict = json.loads(os.environ[env_key])
+            credentials = ee.ServiceAccountCredentials(key_dict['client_email'], key_data=key_dict['private_key'])
+            ee.Initialize(credentials, opt_url='https://earthengine-highvolume.googleapis.com')
+        else:
+            ee.Initialize(opt_url='https://earthengine-highvolume.googleapis.com')
 
 
 def singleton(cls):

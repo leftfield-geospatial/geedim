@@ -13,33 +13,7 @@
     See the License for the specific language governing permissions and
     limitations under the License.
 """
-import json
-import os
-
-import ee
-
+from geedim.utils import Initialize
 from geedim.collection import MaskedCollection
 from geedim.mask import MaskedImage
 from geedim.enums import CloudMaskMethod, CompositeMethod, ResamplingMethod
-
-
-def Initialize():
-    """
-    Initialise Earth Engine though the `high volume endpoint
-    <https://developers.google.com/earth-engine/cloud/highvolume>`_.
-
-    Credentials will be read from the `EE_SERVICE_ACC_PRIVATE_KEY` environment variable, if it exists.  This is
-    useful for integrating with e.g. GitHub actions.
-    """
-
-    if not ee.data._credentials:
-        # Adpated from https://gis.stackexchange.com/questions/380664/how-to-de-authenticate-from-earth-engine-api.
-        env_key = 'EE_SERVICE_ACC_PRIVATE_KEY'
-
-        if env_key in os.environ:
-            # authenticate with service account
-            key_dict = json.loads(os.environ[env_key])
-            credentials = ee.ServiceAccountCredentials(key_dict['client_email'], key_data=key_dict['private_key'])
-            ee.Initialize(credentials, opt_url='https://earthengine-highvolume.googleapis.com')
-        else:
-            ee.Initialize(opt_url='https://earthengine-highvolume.googleapis.com')
