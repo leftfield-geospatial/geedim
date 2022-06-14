@@ -4,7 +4,7 @@ API
 Getting started
 ---------------
 
-This section gives a quick overview of the API.  You can also take
+This section gives a quick overview of the API.  You can also take a look at the :ref:`tutorial <tutorial>`.
 
 Initialisation
 ^^^^^^^^^^^^^^
@@ -240,8 +240,10 @@ Initialize
 .. autofunction:: Initialize
 
 
-Tutorials
----------
+.. _tutorial:
+
+Tutorial
+--------
 
 .. toctree::
     :maxdepth: 1
