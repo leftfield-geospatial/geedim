@@ -70,6 +70,15 @@ def compatible_collections(names: List[str]) -> bool:
         name_matches.append(name_match)
     return all(name_matches)
 
+def parse_date(date: Union[datetime, str], var_name=None) -> datetime:
+    """ Convert a string to a datetime, raising an exception if it is in the wrong format. """
+    var_name = var_name or 'date'
+    if isinstance(date, str):
+        try:
+            date = datetime.strptime(date, '%Y-%m-%d')
+        except ValueError:
+            raise ValueError(f'{var_name} should be a datetime instance or a string with format: "%Y-%m-%d"')
+    return date
 
 class MaskedCollection:
 
@@ -304,13 +313,15 @@ class MaskedCollection:
         return tabulate.tabulate(abbrev_props, headers='keys', floatfmt='.2f', tablefmt=_table_fmt)
 
     def _prepare_for_composite(
-        self, method: CompositeMethod = None, mask: bool = True,
-        resampling: ResamplingMethod = BaseImage._default_resampling, date: str = None, region: Dict = None, **kwargs
+        self, method: CompositeMethod, mask: bool = True, resampling: Union[ResamplingMethod, str] = None,
+        date: str = None, region: Dict = None, **kwargs
     ) -> ee.ImageCollection:
         """
         Prepare the Earth Engine collection for compositing. See :meth:`~MaskedCollection.composite` for
         parameter descriptions.
         """
+
+        date = parse_date(date, 'date')
 
         if not self._filtered:
             raise UnfilteredError(
@@ -361,18 +372,19 @@ class MaskedCollection:
         return ee_collection
 
     def search(
-        self, start_date: datetime, end_date: datetime, region: dict, fill_portion: float = None,
-        cloudless_portion: float = None, **kwargs
+        self, start_date: Union[datetime, str], end_date: Union[datetime, str], region: dict,
+        fill_portion: float = None, cloudless_portion: float = None, **kwargs
     ) -> 'MaskedCollection':
         """
-        Search for images based on date, region and cloudless portion criteria.
+        Search for images based on date, region and filled/cloudless portion criteria.
 
         Parameters
         ----------
-        start_date : datetime
-            Start date (UTC).
-        end_date : datetime, optional
-            End date (UTC).  If None, ``end_date`` is set to a day after ``start_date``.
+        start_date : datetime, str
+            Start date (UTC).  In '%Y-%m-%d' format if a string.
+        end_date : datetime, str, optional
+            End date (UTC).  In '%Y-%m-%d' format if a string.  If None, ``end_date`` is set to a day after
+            ``start_date``.
         region : dict, ee.Geometry
             Polygon in WGS84 specifying a region that images should intersect.
         fill_portion: float, optional
@@ -387,10 +399,13 @@ class MaskedCollection:
         MaskedCollection
             Filtered MaskedCollection instance containing the search result image(s).
         """
+        start_date = parse_date(start_date, 'start_date')
+
         if end_date is None:
             # set end_date a day later than start_date
-            end_date = datetime.strptime(start_date, '%Y-%m-%d') + timedelta(days=1)
-            end_date = end_date.strftime('%Y-%m-%d')
+            end_date = start_date + timedelta(days=1)
+        else:
+            end_date = parse_date(end_date, 'end_date')
 
         if end_date <= start_date:
             raise ValueError('`end_date` must be at least a day later than `start_date`')
@@ -417,26 +432,26 @@ class MaskedCollection:
         return gd_collection
 
     def composite(
-        self, method: CompositeMethod = None, mask: bool = True,
-        resampling: ResamplingMethod = BaseImage._default_resampling, date: datetime = None, region: dict = None,
-        **kwargs
+        self, method: Union[CompositeMethod, str] = None, mask: bool = True,
+        resampling: Union[ResamplingMethod, str] = None, date: Union[datetime, str] = None,
+        region: dict = None, **kwargs
     ) -> MaskedImage:
         """
         Create a composite image from the encapsulated image collection.
 
         Parameters
         ----------
-        method: CompositeMethod, optional
+        method: CompositeMethod, str, optional
             Method for finding each composite pixel from the stack of corresponding input image pixels. See
             :class:`~geedim.enums.CompositeMethod` for available options.  By default, `q-mosaic` is used for
             cloud/shadow mask supported collections, `mosaic` otherwise.
         mask: bool, optional
             Whether to apply the cloud/shadow mask; or fill (valid pixel) mask, in the case of images without
             support for cloud/shadow masking.
-        resampling: ResamplingMethod, optional
-            Resampling method to use on collection images prior to compositing.  If `near`, no resampling is done
+        resampling: ResamplingMethod, str, optional
+            Resampling method to use on collection images prior to compositing.  If None, `near` resampling is used
             (the default).  See :class:`~geedim.enums.ResamplingMethod` for available options.
-        date: datetime, optional
+        date: datetime, str, optional
             Sort collection images by their absolute difference in capture time from this date.  Useful for
             prioritising pixels from images closest to this date.  Valid for the `q-mosaic`
             and `mosaic` ``method`` only.  If None, no time difference sorting is done (the default).
