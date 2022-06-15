@@ -1,109 +1,86 @@
 |Tests| |codecov| |PyPI version| |Anaconda-Server Badge| |License|
 
-
 ``geedim``
 ==========
 
 .. short_descr_start
 
-Search, composite, and download `Google Earth
-Engine <https://earthengine.google.com/>`__ imagery, without size
-limits.
+Search, composite, and download `Google Earth Engine <https://earthengine.google.com/>`__ imagery, without size limits.
+
+.. short_descr_end
 
 .. description_start
 
 Description
 -----------
 
-``geedim`` provides a command line interface and API for searching,
-compositing and downloading satellite imagery from Google Earth Engine
-(EE). It optionally performs cloud / shadow masking, and cloud /
-shadow-free compositing on supported collections. Images and composites
-can be downloaded, or exported to Google Drive. Images larger than the EE size limit are split and downloaded as separate tiles, then re-assembled into a single GeoTIFF.
+``geedim`` provides a command line interface and API for searching, compositing and downloading satellite imagery from
+Google Earth Engine (EE). It optionally performs cloud / shadow masking, and cloud / shadow-free compositing on
+supported collections. Images and composites can be downloaded, or exported to Google Drive. Images larger than the EE
+size limit are split and downloaded as separate tiles, then re-assembled into a single GeoTIFF.
 
 .. description_end
 
-See the documentation site for more detail: `<https://geedim.readthedocs.io/>`_.
+See the documentation site for more detail: https://geedim.readthedocs.io/.
 
 .. supp_im_start
 
 Supported imagery
 ~~~~~~~~~~~~~~~~~
 
+Any EE imagery can be searched, composited and downloaded by ``geedim``. Cloud / shadow masking is supported on the
+following collections:
 
-Any EE imagery can be searched, composited and downloaded by ``geedim``.
-Cloud / shadow masking is supported on the following collections:
-
-+-------------------+-----------------------+--------------------------+
-| ``geedim`` name   | EE name               | Description              |
-+===================+=======================+==========================+
-| landsat4-c2-l2    | `LANDS                | Landsat 4, collection 2, |
-|                   | AT/LT04/C02/T1_L2 <ht | tier 1, level 2 surface  |
-|                   | tps://developers.goog | reflectance              |
-|                   | le.com/earth-engine/d |                          |
-|                   | atasets/catalog/LANDS |                          |
-|                   | AT_LT04_C02_T1_L2>`__ |                          |
-+-------------------+-----------------------+--------------------------+
-| landsat5-c2-l2    | `LANDS                | Landsat 5, collection 2, |
-|                   | AT/LT05/C02/T1_L2 <ht | tier 1, level 2 surface  |
-|                   | tps://developers.goog | reflectance              |
-|                   | le.com/earth-engine/d |                          |
-|                   | atasets/catalog/LANDS |                          |
-|                   | AT_LT05_C02_T1_L2>`__ |                          |
-+-------------------+-----------------------+--------------------------+
-| landsat7-c2-l2    | `LANDS                | Landsat 7, collection 2, |
-|                   | AT/LE07/C02/T1_L2 <ht | tier 1, level 2 surface  |
-|                   | tps://developers.goog | reflectance              |
-|                   | le.com/earth-engine/d |                          |
-|                   | atasets/catalog/LANDS |                          |
-|                   | AT_LE07_C02_T1_L2>`__ |                          |
-+-------------------+-----------------------+--------------------------+
-| landsat8-c2-l2    | `LANDS                | Landsat 8, collection 2, |
-|                   | AT/LC08/C02/T1_L2 <ht | tier 1, level 2 surface  |
-|                   | tps://developers.goog | reflectance              |
-|                   | le.com/earth-engine/d |                          |
-|                   | atasets/catalog/LANDS |                          |
-|                   | AT_LC08_C02_T1_L2>`__ |                          |
-+-------------------+-----------------------+--------------------------+
-| landsat9-c2-l2    | `LANDS                | Landsat 9, collection 2, |
-|                   | AT/LC09/C02/T1_L2 <ht | tier 1, level 2 surface  |
-|                   | tps://developers.goog | reflectance              |
-|                   | le.com/earth-engine/d |                          |
-|                   | atasets/catalog/LANDS |                          |
-|                   | AT_LC09_C02_T1_L2>`__ |                          |
-+-------------------+-----------------------+--------------------------+
-| sentinel2-toa     | `COPERNIC             | Sentinel-2, level 1C,    |
-|                   | US/S2 <https://develo | top of atmosphere        |
-|                   | pers.google.com/earth | reflectance              |
-|                   | -engine/datasets/cata |                          |
-|                   | log/COPERNICUS_S2>`__ |                          |
-+-------------------+-----------------------+--------------------------+
-| sentinel2-sr      | `COPERNICUS/S2_       | Sentinel-2, level 2A,    |
-|                   | SR <https://developer | surface reflectance      |
-|                   | s.google.com/earth-en |                          |
-|                   | gine/datasets/catalog |                          |
-|                   | /COPERNICUS_S2_SR>`__ |                          |
-+-------------------+-----------------------+--------------------------+
++--------------------------------+----------------------------------------+--------------------------------------------+
+| ``geedim`` name                | EE name                                | Description                                |
++================================+========================================+============================================+
+| landsat4-c2-l2                 | `LANDSAT/LT04/C02/T1_L2 <https://de    | Landsat 4, collection 2, tier 1, level 2   |
+|                                | velopers.google.com/earth-engine/datas | surface reflectance                        |
+|                                | ets/catalog/LANDSAT_LT04_C02_T1_L2>`__ |                                            |
++--------------------------------+----------------------------------------+--------------------------------------------+
+| landsat5-c2-l2                 | `LANDSAT/LT05/C02/T1_L2 <https://de    | Landsat 5, collection 2, tier 1, level 2   |
+|                                | velopers.google.com/earth-engine/datas | surface reflectance                        |
+|                                | ets/catalog/LANDSAT_LT05_C02_T1_L2>`__ |                                            |
++--------------------------------+----------------------------------------+--------------------------------------------+
+| landsat7-c2-l2                 | `LANDSAT/LE07/C02/T1_L2 <https://de    | Landsat 7, collection 2, tier 1, level 2   |
+|                                | velopers.google.com/earth-engine/datas | surface reflectance                        |
+|                                | ets/catalog/LANDSAT_LE07_C02_T1_L2>`__ |                                            |
++--------------------------------+----------------------------------------+--------------------------------------------+
+| landsat8-c2-l2                 | `LANDSAT/LC08/C02/T1_L2 <https://de    | Landsat 8, collection 2, tier 1, level 2   |
+|                                | velopers.google.com/earth-engine/datas | surface reflectance                        |
+|                                | ets/catalog/LANDSAT_LC08_C02_T1_L2>`__ |                                            |
++--------------------------------+----------------------------------------+--------------------------------------------+
+| landsat9-c2-l2                 | `LANDSAT/LC09/C02/T1_L2 <https://de    | Landsat 9, collection 2, tier 1, level 2   |
+|                                | velopers.google.com/earth-engine/datas | surface reflectance                        |
+|                                | ets/catalog/LANDSAT_LC09_C02_T1_L2>`__ |                                            |
++--------------------------------+----------------------------------------+--------------------------------------------+
+| sentinel2-toa                  | `COPERNICUS/S2 <h                      | Sentinel-2, level 1C, top of atmosphere    |
+|                                | ttps://developers.google.com/earth-eng | reflectance                                |
+|                                | ine/datasets/catalog/COPERNICUS_S2>`__ |                                            |
++--------------------------------+----------------------------------------+--------------------------------------------+
+| sentinel2-sr                   | `COPERNICUS/S2_SR <http                | Sentinel-2, level 2A, surface reflectance  |
+|                                | s://developers.google.com/earth-engine |                                            |
+|                                | /datasets/catalog/COPERNICUS_S2_SR>`__ |                                            |
++--------------------------------+----------------------------------------+--------------------------------------------+
 
 .. supp_im_end
 
-Requirements
-------------
-
-``geedim`` is a python 3 library, and requires users to be registered
-with `Google Earth Engine <https://signup.earthengine.google.com>`__.
+.. install_start
 
 Installation
 ------------
 
-``geedim`` is available via ``pip`` and ``conda``. Under Windows, using
-``conda`` is the easiest way to resolve binary dependencies.
+Requirements
+~~~~~~~~~~~~
+
+``geedim`` is a python 3 library, and requires users to be registered with `Google Earth
+Engine <https://signup.earthengine.google.com>`__.
 
 conda
 ~~~~~
 
-The `Miniconda <https://docs.conda.io/en/latest/miniconda.html>`__
-installation provides a minimal ``conda``.
+Under Windows, using ``conda`` is the easiest way to resolve binary dependencies. The
+`Miniconda <https://docs.conda.io/en/latest/miniconda.html>`__ installation provides a minimal ``conda``.
 
 .. code:: shell
 
@@ -133,16 +110,13 @@ Getting started
 Command line interface
 ~~~~~~~~~~~~~~~~~~~~~~
 
-.. cli_start
-
 ``geedim`` command line functionality is accessed through the commands:
 
-* ``search``: Search for images.
-* ``composite``: Create a composite image.
-* ``download``: Download image(s).
-* ``export``: Export image(s) to Google Drive.
-* ``config``: Configure cloud / shadow masking.
-
+-  ``search``: Search for images.
+-  ``composite``: Create a composite image.
+-  ``download``: Download image(s).
+-  ``export``: Export image(s) to Google Drive.
+-  ``config``: Configure cloud / shadow masking.
 
 Get help on ``geedim`` with:
 
@@ -174,17 +148,14 @@ Download a Landsat-8 image with cloud / shadow mask applied.
 Command pipelines
 ~~~~~~~~~~~~~~~~~
 
-Multiple ``geedim`` commands can be chained together in a pipeline where
-image results from the previous command form inputs to the current
-command. For example, if the ``composite`` command is chained with
-``download`` command, the created composite image will be downloaded, or
-if the ``search`` command is chained with the ``composite`` command, the
+Multiple ``geedim`` commands can be chained together in a pipeline where image results from the previous command form
+inputs to the current command. For example, if the ``composite`` command is chained with ``download`` command, the
+created composite image will be downloaded, or if the ``search`` command is chained with the ``composite`` command, the
 search result images will be composited.
 
-Common command options are also piped between chained commands. For
-example, if the ``config`` command is chained with other commands, the
-configuration specified with ``config`` will be applied to subsequent
-commands in the pipeline. Many command combinations are possible.
+Common command options are also piped between chained commands. For example, if the ``config`` command is chained with
+other commands, the configuration specified with ``config`` will be applied to subsequent commands in the pipeline. Many
+command combinations are possible.
 
 .. _examples-1:
 
@@ -203,21 +174,18 @@ Composite the results of a Landsat-8 search and download the result.
 
    geedim search -c landsat8-c2-l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 composite -cm q-mosaic download --scale 30 --crs EPSG:3857
 
-Search for Sentinel-2 SR images with a cloudless portion of at least
-60%, using the ``qa`` mask-method to identify clouds:
+Search for Sentinel-2 SR images with a cloudless portion of at least 60%, using the ``qa`` mask-method to identify
+clouds:
 
 .. code:: shell
 
    geedim config --mask-method qa search -c sentinel2-sr --cloudless-portion 60 -s 2022-01-01 -e 2022-01-14 --bbox 24 -34 24.5 -33.5
 
-.. cli_end
-
 API
 ~~~
+
 Example
 ^^^^^^^
-
-.. api_example_start
 
 .. code:: python
 
@@ -245,14 +213,10 @@ Example
    comp_im = coll.composite()
    comp_im.download('s2_comp_image.tif', region=region, crs='EPSG:32735', scale=30)
 
-.. api_example_end
-
-
 License
 -------
 
-This project is licensed under the terms of the `Apache-2.0
-License <LICENSE>`__.
+This project is licensed under the terms of the `Apache-2.0 License <LICENSE>`__.
 
 Contributing
 ------------
@@ -262,18 +226,12 @@ See the `documentation <docs/contributing.rst>`__ for details.
 Credits
 -------
 
--  Tiled downloading was inspired by the work in
-   `GEES2Downloader <https://github.com/cordmaur/GEES2Downloader>`__
-   under terms of the `MIT
-   license <https://github.com/cordmaur/GEES2Downloader/blob/main/LICENSE>`__.
--  Medoid compositing was adapted from
-   `gee_tools <https://github.com/gee-community/gee_tools>`__ under the
-   terms of the `MIT
-   license <https://github.com/gee-community/gee_tools/blob/master/LICENSE>`__.
--  Sentinel-2 cloud / shadow masking was adapted from
-   `ee_extra <https://github.com/r-earthengine/ee_extra>`__ under terms
-   of the `Apache-2.0
-   license <https://github.com/r-earthengine/ee_extra/blob/master/LICENSE>`__
+-  Tiled downloading was inspired by the work in `GEES2Downloader <https://github.com/cordmaur/GEES2Downloader>`__ under
+   terms of the `MIT license <https://github.com/cordmaur/GEES2Downloader/blob/main/LICENSE>`__.
+-  Medoid compositing was adapted from `gee_tools <https://github.com/gee-community/gee_tools>`__ under the terms of the
+   `MIT license <https://github.com/gee-community/gee_tools/blob/master/LICENSE>`__.
+-  Sentinel-2 cloud / shadow masking was adapted from `ee_extra <https://github.com/r-earthengine/ee_extra>`__ under
+   terms of the `Apache-2.0 license <https://github.com/r-earthengine/ee_extra/blob/master/LICENSE>`__
 
 Author
 ------
