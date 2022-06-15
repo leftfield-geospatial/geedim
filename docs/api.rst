@@ -92,7 +92,9 @@ masking (:meth:`.MaskedImage.from_id`, :meth:`.MaskedCollection.search`, and :me
 take optional cloud/shadow masking ``**kwargs``.  See :meth:`.MaskedImage.__init__` for a description of these
 parameters.
 
-Here, we create and download a cloud/shadow masked Sentinel-2 image, specifying a cloud probability threshold of 30%.
+Here, we create and download a cloud/shadow masked
+`Sentinel-2 image <https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR>`_, specifying a cloud
+probability threshold of 30%.
 
 .. literalinclude:: examples/api_getting_started.py
     :language: python

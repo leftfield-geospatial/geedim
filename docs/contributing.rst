@@ -67,7 +67,7 @@ Style
 ^^^^^
 
 Try to conform to the ``geedim`` code style.  You can auto-format with `yapf <https://github.com/google/yapf>`__ and
-the included `.style.yapf <https://github.com/dugalh/geedim/blob/feature_docs/.style.yapf>`__ configuration file:
+the included `.style.yapf <https://github.com/dugalh/geedim/blob/main/.style.yapf>`__ configuration file:
 
 .. code::
 
