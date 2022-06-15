@@ -110,6 +110,8 @@ Getting started
 Command line interface
 ~~~~~~~~~~~~~~~~~~~~~~
 
+.. cli_start
+
 ``geedim`` command line functionality is accessed through the commands:
 
 -  ``search``: Search for images.
@@ -156,6 +158,8 @@ search result images will be composited.
 Common command options are also piped between chained commands. For example, if the ``config`` command is chained with
 other commands, the configuration specified with ``config`` will be applied to subsequent commands in the pipeline. Many
 command combinations are possible.
+
+.. cli_end
 
 .. _examples-1:
 
