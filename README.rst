@@ -225,7 +225,7 @@ This project is licensed under the terms of the `Apache-2.0 License <LICENSE>`__
 Contributing
 ------------
 
-See the `documentation <docs/contributing.rst>`__ for details.
+See the `documentation <https://geedim.readthedocs.io/en/latest/contributing.html>`__ for details.
 
 Credits
 -------
