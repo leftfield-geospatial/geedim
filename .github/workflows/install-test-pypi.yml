@@ -20,7 +20,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - id: get_geedim_version
         run: |
-          geedim_version=$(cat geedim/version.py | cut -d=  -f2 | tr -d " \'")
+          geedim_version=$(echo ${{ github.event.release.tag_name }} | tr -d "v")
           echo "::set-output name=geedim_version::$geedim_version"
       - name: Install geedim from Test PyPI
         run: |
