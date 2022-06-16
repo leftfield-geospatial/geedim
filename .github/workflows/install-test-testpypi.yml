@@ -21,7 +21,7 @@ jobs:
       - id: get_geedim_version
         run: |
           geedim_version=$(cat geedim/version.py | cut -d=  -f2 | tr -d " \'")
-          echo "::set-output name=geedim_version::geedim_version"
+          echo "::set-output name=geedim_version::$geedim_version"
       - name: Install geedim from Test PyPI
         run: |
           python -m pip install --upgrade pip
