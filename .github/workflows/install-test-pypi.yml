@@ -18,14 +18,10 @@ jobs:
         uses: actions/setup-python@v2
         with:
           python-version: ${{ matrix.python-version }}
-      - id: get_geedim_version
-        run: |
-          geedim_version=$(echo ${{ github.event.release.tag_name }} | tr -d "v")
-          echo "::set-output name=geedim_version::$geedim_version"
       - name: Install geedim from Test PyPI
         run: |
           python -m pip install --upgrade pip
-          python -m pip install geedim==${{steps.get_geedim_version.outputs.geedim_version}}
+          python -m pip install geedim>=1.1.2
       - name: Test geedim CLI
         timeout-minutes: 5
         env:
