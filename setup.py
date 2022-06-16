@@ -42,7 +42,7 @@ setup(
     version=__version__,
     description='Search, composite and download Google Earth Engine imagery.',
     long_description=long_description,
-    long_description_content_type='text/markdown',
+    long_description_content_type='text/x-rst',
     author='Dugal Harris',
     author_email='dugalh@gmail.com',
     url='https://github.com/dugalh/geedim',
