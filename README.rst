@@ -73,7 +73,7 @@ Installation
 Requirements
 ~~~~~~~~~~~~
 
-``geedim`` is a python 3 library, and requires users to be registered with `Google Earth
+``geedim`` is a python 3 package, and requires users to be registered with `Google Earth
 Engine <https://signup.earthengine.google.com>`__.
 
 conda

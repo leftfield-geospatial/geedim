@@ -144,8 +144,8 @@ class MaskedCollection:
         and Landsat-8 with Landsat-9.  Otherwise, images should all belong to the same collection.
 
         Any ``ee.Image`` instances in the list (including those encapsulated by :class:`~geedim.mask.MaskedImage`)
-        must have ``system:id`` and ``system:time_start`` properties.  This is always the case for images from the
-        Earth Engine catalog, and images returned from :meth:`composite`).  Any other user-created
+        must have ``system:id`` and ``system:time_start`` properties.  This is always the case for images
+        obtained from the Earth Engine catalog, and images returned from :meth:`composite`.  Any other user-created
         images passed to :meth:`from_list` should have these properties set.
 
         Parameters
@@ -229,14 +229,17 @@ class MaskedCollection:
 
     @property
     def image_type(self) -> type:
-        """ :class:`~geedim.mask.MaskedImage` sub-class to encapsulate images from :attr:`ee_collection`. """
+        """ :class:`~geedim.mask.MaskedImage` class or sub-class corresponding to images in :attr:`ee_collection`. """
         if not self._image_type:
             self._image_type = class_from_id(self.name)
         return self._image_type
 
     @property
-    def properties(self) -> Dict:
-        """ Properties for each image in the collection. """
+    def properties(self) -> Dict[str, Dict]:
+        """
+        A dictionary of properties for each image in the collection. Dictionary keys are the image IDs, and values
+        are a dictionaries of image properties.
+        """
         if not self._filtered:
             raise UnfilteredError(
                 '`properties` can only be retrieved for collections returned by `search()` and `from_list()`'
@@ -251,8 +254,11 @@ class MaskedCollection:
         return self._get_properties_table(self.properties)
 
     @property
-    def schema(self) -> Dict:
-        """ Abbreviations and descriptions for :attr:`properties`. """
+    def schema(self) -> Dict[str, Dict]:
+        """
+        A dictionary of abbreviations and descriptions for :attr:`properties`. Keys are the EE property names,
+        and values are dictionaries of abbreviations and descriptions.
+        """
         if not self._schema:
             if self.name in schema.collection_schema:
                 self._schema = schema.collection_schema[self.name]['prop_schema']
@@ -268,7 +274,7 @@ class MaskedCollection:
 
     @property
     def refl_bands(self) -> Union[List[str], None]:
-        """ List of spectral / reflectance bands, if any. """
+        """ List of spectral / reflectance band names, if any. """
         if not self._stac:
             return None
         return [bname for bname, bdict in self._stac.band_props.items() if 'center_wavelength' in bdict]

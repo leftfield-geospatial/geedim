@@ -149,7 +149,7 @@ class BaseImage:
 
     @property
     def scale(self) -> Union[float, None]:
-        """ Scale (m) corresponding to minimum scale band. None if the image has no fixed projection. """
+        """ Minimum scale (m) of image bands. None if the image has no fixed projection. """
         return self._min_projection['scale']
 
     @property
@@ -183,7 +183,7 @@ class BaseImage:
 
     @property
     def size(self) -> int:
-        """ Image size in bytes.  None if the image has no fixed projection. """
+        """ Image size (bytes).  None if the image has no fixed projection. """
         if not self.shape:
             return None
         dtype_size = np.dtype(self.dtype).itemsize

@@ -68,7 +68,7 @@ autoclass_content = 'class'
 autodoc_class_signature = 'mixed'
 autodoc_member_order = 'bysource'
 autodoc_typehints = 'both'
-autodoc_typehints_format = 'short'
+# autodoc_typehints_format = 'short'
 
 # -- Options for nbsphinx --------------------------------------------------
 # env.docname will be e.g. examples/l7_composite.ipynb.  The `../` is to

@@ -314,9 +314,12 @@ def config(ctx, mask_cirrus, mask_shadows, mask_method, prob, dark, shadow_dist,
     \b
 
     For Sentinel-2 collections, ``--mask-method`` can be one of:
+    \b
 
-        * `cloud-prob`: Use a threshold on the corresponding Sentinel-2 cloud probability image.
-        * `qa`: Use the Sentinel-2 `QA60` quality band.
+        * | `cloud-prob`: Use a threshold on the corresponding Sentinel-2 cloud
+          | probability image.
+        * | `qa`: Use the Sentinel-2 `QA60` quality band.
+    \b
 
     Examples
     --------
@@ -376,8 +379,6 @@ def search(obj, collection, start_date, end_date, bbox, region, fill_portion, cl
     Search a Google Earth Engine image collection for images, filtering by date, region and portion of
     filled pixels.  Cloud/shadow-free (cloudless) portion filtering is supported on the following
     collections:
-
-    .. _csmask_collections:
     \b
 
         ==============  ======================
@@ -486,7 +487,7 @@ def download(obj, image_id, bbox, region, download_dir, mask, overwrite, **kwarg
         SHADOW_MASK     Mask of cloud shadows.
         CLOUD_MASK      Mask of clouds.
         CLOUDLESS_MASK  Mask of filled & cloud/shadow-free pixels.
-        CLOUD_DIST      Distance to nearest cloud.
+        CLOUD_DIST      Distance to nearest cloud (m).
         ==============  =========================================
 
     Images from other collections, will contain the FILL_MASK band only.
@@ -627,8 +628,8 @@ cli.add_command(export)
 )
 @click.option(
     '-r', '--region', type=click.Path(exists=True, dir_okay=False, allow_dash=True), default=None, callback=_region_cb,
-    help='Give preference to images with the highest cloudless (or filled) portion inside this geojson polygon '
-    'region, or raster file.  Valid for `mosaic` and `q-mosaic` compositing :option:`--method`.'
+    help='Give preference to images with the highest cloudless (or filled) portion inside this geojson polygon, '
+    'or raster file, region.  Valid for `mosaic` and `q-mosaic` compositing :option:`--method`.'
 )
 @click.option(
     '-d', '--date', type=click.DateTime(),
@@ -658,7 +659,7 @@ def composite(obj, image_id, mask, method, resampling, bbox, region, date):
         ==========  ========================================================
         Method      Description
         ==========  ========================================================
-        `q-mosaic`  | Use the unmasked pixel with the highest cloud distance.
+        `q-mosaic`  | Use the unmasked pixel with the highest cloud distance
                     | (i.e. distance to nearest cloud).  Where more than one
                     | pixel has the same cloud distance, the first one in the
                     | stack is selected.
@@ -683,7 +684,7 @@ def composite(obj, image_id, mask, method, resampling, bbox, region, date):
           | capture time.
 
     By default, input images are masked before compositing.  This means that only cloud/shadow-free (or filled) pixels
-    are used to make the composite.  You can turn off this behaviour with the `--no-mask` option.
+    are used to make the composite.  You can turn off this behaviour with the ``--no-mask`` option.
     \b
 
     Examples
