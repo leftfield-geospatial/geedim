@@ -14,7 +14,6 @@ jobs:
         os: [ macos-latest, ubuntu-latest ]
         python-version: [ 3.6, 3.7, 3.8, 3.9 ]
     steps:
-      - uses: actions/checkout@v2   # checkout repository with test data
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
