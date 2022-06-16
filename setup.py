@@ -47,7 +47,8 @@ setup(
     author_email='dugalh@gmail.com',
     url='https://github.com/dugalh/geedim',
     license='Apache-2.0',
-    packages=find_packages(exclude=['tests', 'data'], include=['geedim']),
+    packages=find_packages(include=['geedim']),
+    package_data={'geedim': ['data/ee_stac_urls.json']},
     install_requires=[
         'numpy>=1.19',
         'rasterio>=1.1',
