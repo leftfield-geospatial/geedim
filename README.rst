@@ -159,8 +159,6 @@ Common command options are also piped between chained commands. For example, if 
 other commands, the configuration specified with ``config`` will be applied to subsequent commands in the pipeline. Many
 command combinations are possible.
 
-.. cli_end
-
 .. _examples-1:
 
 Examples
@@ -184,6 +182,8 @@ clouds:
 .. code:: shell
 
    geedim config --mask-method qa search -c sentinel2-sr --cloudless-portion 60 -s 2022-01-01 -e 2022-01-14 --bbox 24 -34 24.5 -33.5
+
+.. cli_end
 
 API
 ~~~
