@@ -171,6 +171,13 @@ class StacCatalog:
         url_dict = {}
         self._url_dict = self._traverse_stac(root_stac_url, url_dict)
 
+    def write_url_dict(self, filename=None):
+        """ Write the ``url_dict`` to file. """
+        if filename is None:
+            filename = self._filename
+        with open(filename, 'w') as f:
+            json.dump(self.url_dict, f)
+
     def get_item_dict(self, name: str):
         """
         Get the raw STAC dict for a given an image/collection name/ID.
