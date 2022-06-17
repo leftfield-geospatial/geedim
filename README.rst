@@ -247,7 +247,7 @@ Author
    :target: https://codecov.io/gh/dugalh/geedim
 .. |PyPI version| image:: https://badge.fury.io/py/geedim.svg
    :target: https://badge.fury.io/py/geedim
-.. |conda-forge version| image:: https://img.shields.io/conda/v/conda-forge/geedim.svg
+.. |conda-forge version| image:: https://img.shields.io/conda/vn/conda-forge/geedim
    :target: https://anaconda.org/conda-forge/geedim
 .. |docs| image:: https://readthedocs.org/projects/geedim/badge/?version=latest
     :target: https://geedim.readthedocs.io/en/latest/?badge=latest
