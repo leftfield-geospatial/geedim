@@ -1,4 +1,4 @@
-|Tests| |codecov| |PyPI version| |Anaconda-Server Badge| |License|
+|Tests| |codecov| |PyPI version| |conda-forge version| |docs| |License|
 
 ``geedim``
 ==========
@@ -248,7 +248,9 @@ Author
    :target: https://codecov.io/gh/dugalh/geedim
 .. |PyPI version| image:: https://badge.fury.io/py/geedim.svg
    :target: https://badge.fury.io/py/geedim
-.. |Anaconda-Server Badge| image:: https://anaconda.org/conda-forge/geedim/badges/version.svg
+.. |conda-forge version| image:: https://img.shields.io/conda/v/conda-forge/geedim.svg
    :target: https://anaconda.org/conda-forge/geedim
+.. |docs| image:: https://readthedocs.org/projects/geedim/badge/?version=latest
+    :target: https://geedim.readthedocs.io/en/latest/?badge=latest
 .. |License| image:: https://img.shields.io/badge/License-Apache%202.0-blue.svg
    :target: https://opensource.org/licenses/Apache-2.0
