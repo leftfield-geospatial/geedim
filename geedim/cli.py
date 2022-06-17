@@ -260,7 +260,7 @@ def cli(ctx, verbose, quiet):
     '-mm', '--mask-method', type=click.Choice([cmm.value for cmm in CloudMaskMethod], case_sensitive=True),
     default=CloudMaskMethod.cloud_prob.value, show_default=True, callback=_mask_method_cb,
     help='Method used to mask clouds.  Valid for Sentinel-2 images. '
-)  # TODO: add an explanation for these options
+)
 @click.option(
     '-p', '--prob', type=click.FloatRange(min=0, max=100), default=60, show_default=True,
     help='Cloud probability threshold (%). Valid for Sentinel-2 images with the `cloud-prob` :option:`--mask-method`'

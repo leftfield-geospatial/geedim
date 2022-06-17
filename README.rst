@@ -14,8 +14,8 @@ Search, composite, and download `Google Earth Engine <https://earthengine.google
 Description
 -----------
 
-``geedim`` provides a command line interface and API for searching, compositing and downloading satellite imagery from
-Google Earth Engine (EE). It optionally performs cloud / shadow masking, and cloud / shadow-free compositing on
+``geedim`` provides a command line interface and API for searching, compositing and downloading satellite imagery
+from Google Earth Engine (EE). It optionally performs cloud/shadow masking, and cloud/shadow-free compositing on
 supported collections. Images and composites can be downloaded, or exported to Google Drive. Images larger than the EE
 size limit are split and downloaded as separate tiles, then re-assembled into a single GeoTIFF.
 
@@ -25,11 +25,10 @@ See the documentation site for more detail: https://geedim.readthedocs.io/.
 
 .. supp_im_start
 
-Supported imagery
-~~~~~~~~~~~~~~~~~
+Cloud/shadow support
+~~~~~~~~~~~~~~~~~~~~
 
-Any EE imagery can be searched, composited and downloaded by ``geedim``. Cloud / shadow masking is supported on the
-following collections:
+Any EE imagery can be searched, composited and downloaded by ``geedim``. Cloud/shadow masking, and cloud/shadow-free compositing is supported on the following collections:
 
 +--------------------------------+----------------------------------------+--------------------------------------------+
 | ``geedim`` name                | EE name                                | Description                                |
@@ -118,7 +117,7 @@ Command line interface
 -  ``composite``: Create a composite image.
 -  ``download``: Download image(s).
 -  ``export``: Export image(s) to Google Drive.
--  ``config``: Configure cloud / shadow masking.
+-  ``config``: Configure cloud/shadow masking.
 
 Get help on ``geedim`` with:
 
@@ -141,7 +140,7 @@ Search for Landsat-8 images.
 
    geedim search -c landsat8-c2-l2 -s 2021-06-01 -e 2021-07-01 --bbox 24 -33 24.1 -33.1
 
-Download a Landsat-8 image with cloud / shadow mask applied.
+Download a Landsat-8 image with cloud/shadow mask applied.
 
 .. code:: shell
 
@@ -234,7 +233,7 @@ Credits
    terms of the `MIT license <https://github.com/cordmaur/GEES2Downloader/blob/main/LICENSE>`__.
 -  Medoid compositing was adapted from `gee_tools <https://github.com/gee-community/gee_tools>`__ under the terms of the
    `MIT license <https://github.com/gee-community/gee_tools/blob/master/LICENSE>`__.
--  Sentinel-2 cloud / shadow masking was adapted from `ee_extra <https://github.com/r-earthengine/ee_extra>`__ under
+-  Sentinel-2 cloud/shadow masking was adapted from `ee_extra <https://github.com/r-earthengine/ee_extra>`__ under
    terms of the `Apache-2.0 license <https://github.com/r-earthengine/ee_extra/blob/master/LICENSE>`__
 
 Author

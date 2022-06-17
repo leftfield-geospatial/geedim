@@ -349,10 +349,6 @@ class MaskedCollection:
                 date_dist = ee.Number(ee_image.get('system:time_start')).subtract(ee.Date(date).millis()).abs()
                 ee_image = ee_image.set('DATE_DIST', date_dist)
 
-            # TODO: there is a design flaw here, if composite() is called >1x, but with different kwargs,
-            #  only the first kwargs are applied. similarly if composite is called on a searched collection,
-            #  only the search kwargs get applied.  this was done so that composite images could be wrapped in
-            #  MaskedImage w/o trying to find the masks again.  urgh.
             gd_image = self.image_type(ee_image, **kwargs)
             if region and (method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic]):
                 gd_image._set_region_stats(region=region, scale=self._stats_scale)
@@ -514,7 +510,6 @@ class MaskedCollection:
         comp_image = comp_image.set('INPUT_IMAGES', 'TABLE:\n' + props_str)
 
         # construct an ID for the composite
-        # TODO: these dates are being shifted from capture dates, something with time zone is confused
         dates = [datetime.utcfromtimestamp(item['system:time_start'] / 1000) for item in props.values()]
         start_date = min(dates).strftime('%Y_%m_%d')
         end_date = max(dates).strftime('%Y_%m_%d')
