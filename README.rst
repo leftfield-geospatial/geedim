@@ -248,8 +248,9 @@ Author
 .. |PyPI version| image:: https://badge.fury.io/py/geedim.svg
    :target: https://badge.fury.io/py/geedim
 .. |conda-forge version| image:: https://img.shields.io/conda/vn/conda-forge/geedim
+   :alt: Conda (channel only)
    :target: https://anaconda.org/conda-forge/geedim
 .. |docs| image:: https://readthedocs.org/projects/geedim/badge/?version=latest
-    :target: https://geedim.readthedocs.io/en/latest/?badge=latest
+   :target: https://geedim.readthedocs.io/en/latest/?badge=latest
 .. |License| image:: https://img.shields.io/badge/License-Apache%202.0-blue.svg
    :target: https://opensource.org/licenses/Apache-2.0
