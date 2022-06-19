@@ -31,37 +31,37 @@ Cloud/shadow support
 Any EE imagery can be searched, composited and downloaded by ``geedim``. Cloud/shadow masking, and cloud/shadow-free
 compositing is supported on the following collections:
 
-================  ========================================================  ========================================
-geedim name       EE name                                                   Description
-================  ========================================================  ========================================
-landsat4-c2-l2    `LANDSAT/LT04/C02/T1_L2                                   Landsat 4, collection 2, tier 1, level 2
-                  <https://developers.google.com/earth-
-                  engine/datasets/catalog/LANDSAT_LT04_C02_T1_L2>`_         surface reflectance.
-landsat5-c2-l2    `LANDSAT/LT05/C02/T1_L2                                   Landsat 5, collection 2, tier 1, level 2
-                  <https://developers.google.com/earth-
-                  engine/datasets/catalog/LANDSAT_LT05_C02_T1_L2>`_         surface reflectance.
-landsat7-c2-l2    `LANDSAT/LE07/C02/T1_L2                                   Landsat 7, collection 2, tier 1, level 2
-                  <https://developers.google.com/earth-
-                  engine/datasets/catalog/LANDSAT_LE07_C02_T1_L2>`_         surface reflectance.
-landsat8-c2-l2    `LANDSAT/LC08/C02/T1_L2                                   Landsat 8, collection 2, tier 1, level 2
-                  <https://developers.google.com/earth-
-                  engine/datasets/catalog/LANDSAT_LC08_C02_T1_L2>`_         surface reflectance.
-landsat9-c2-l2    `LANDSAT/LC09/C02/T1_L2                                   Landsat 9, collection 2, tier 1, level 2
-                  <https://developers.google.com/earth-
-                  engine/datasets/catalog/LANDSAT_LC09_C02_T1_L2>`_         surface reflectance.
-sentinel2-toa     `COPERNICUS/S2  <https://developers.google.com/earth-     Sentinel-2, level 1C, top of atmosphere
-                  engine/datasets/catalog/COPERNICUS_S2>`_
-                                                                            reflectance.
-sentinel2-sr      `COPERNICUS/S2_SR  <https://developers.google.com/earth-  Sentinel-2, level 2A, surface
-                  engine/datasets/catalog/COPERNICUS_S2_SR>`_
-                                                                            reflectance.
-sentinel2-toa-hm  `COPERNICUS/S2_HARMONIZED                                 Harmonized Sentinel-2, level 1C, top of
-                  <https://developers.google.com/earth-
-                  engine/datasets/catalog/COPERNICUS_S2_HARMONIZED>`_       atmosphere reflectance.
-sentinel2-sr-hm   `COPERNICUS/S2_SR_HARMONIZED                              Harmonized Sentinel-2, level 2A, surface
-                  <https://developers.google.com/earth-
-                  engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED>`_    reflectance.
-================  ========================================================  ========================================
+===========  ========================================================  ========================================
+geedim name  EE name                                                   Description
+===========  ========================================================  ========================================
+l4-c2-l2     `LANDSAT/LT04/C02/T1_L2                                   Landsat 4, collection 2, tier 1, level 2
+             <https://developers.google.com/earth-
+             engine/datasets/catalog/LANDSAT_LT04_C02_T1_L2>`_         surface reflectance.
+l5-c2-l2     `LANDSAT/LT05/C02/T1_L2                                   Landsat 5, collection 2, tier 1, level 2
+             <https://developers.google.com/earth-
+             engine/datasets/catalog/LANDSAT_LT05_C02_T1_L2>`_         surface reflectance.
+l7-c2-l2     `LANDSAT/LE07/C02/T1_L2                                   Landsat 7, collection 2, tier 1, level 2
+             <https://developers.google.com/earth-
+             engine/datasets/catalog/LANDSAT_LE07_C02_T1_L2>`_         surface reflectance.
+l8-c2-l2     `LANDSAT/LC08/C02/T1_L2                                   Landsat 8, collection 2, tier 1, level 2
+             <https://developers.google.com/earth-
+             engine/datasets/catalog/LANDSAT_LC08_C02_T1_L2>`_         surface reflectance.
+l9-c2-l2     `LANDSAT/LC09/C02/T1_L2                                   Landsat 9, collection 2, tier 1, level 2
+             <https://developers.google.com/earth-
+             engine/datasets/catalog/LANDSAT_LC09_C02_T1_L2>`_         surface reflectance.
+s2-toa       `COPERNICUS/S2  <https://developers.google.com/earth-     Sentinel-2, level 1C, top of atmosphere
+             engine/datasets/catalog/COPERNICUS_S2>`_
+                                                                       reflectance.
+s2-sr        `COPERNICUS/S2_SR  <https://developers.google.com/earth-  Sentinel-2, level 2A, surface
+             engine/datasets/catalog/COPERNICUS_S2_SR>`_
+                                                                       reflectance.
+s2-toa-hm    `COPERNICUS/S2_HARMONIZED                                 Harmonized Sentinel-2, level 1C, top of
+             <https://developers.google.com/earth-
+             engine/datasets/catalog/COPERNICUS_S2_HARMONIZED>`_       atmosphere reflectance.
+s2-sr-hm     `COPERNICUS/S2_SR_HARMONIZED                              Harmonized Sentinel-2, level 2A, surface
+             <https://developers.google.com/earth-
+             engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED>`_    reflectance.
+===========  ========================================================  ========================================
 
 .. supp_im_end
 
@@ -139,7 +139,7 @@ Search for Landsat-8 images.
 
 .. code:: shell
 
-   geedim search -c landsat8-c2-l2 -s 2021-06-01 -e 2021-07-01 --bbox 24 -33 24.1 -33.1
+   geedim search -c l8-c2-l2 -s 2021-06-01 -e 2021-07-01 --bbox 24 -33 24.1 -33.1
 
 Download a Landsat-8 image with cloud/shadow mask applied.
 
@@ -174,14 +174,14 @@ Composite the results of a Landsat-8 search and download the result.
 
 .. code:: shell
 
-   geedim search -c landsat8-c2-l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 composite -cm q-mosaic download --scale 30 --crs EPSG:3857
+   geedim search -c l8-c2-l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 composite -cm q-mosaic download --scale 30 --crs EPSG:3857
 
 Search for Sentinel-2 SR images with a cloudless portion of at least 60%, using the ``qa`` mask-method to identify
 clouds:
 
 .. code:: shell
 
-   geedim config --mask-method qa search -c sentinel2-sr --cloudless-portion 60 -s 2022-01-01 -e 2022-01-14 --bbox 24 -34 24.5 -33.5
+   geedim config --mask-method qa search -c s2-sr --cloudless-portion 60 -s 2022-01-01 -e 2022-01-14 --bbox 24 -34 24.5 -33.5
 
 .. cli_end
 

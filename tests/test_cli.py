@@ -409,7 +409,7 @@ def test_search_composite_x2_download(region_25ha_file, runner: CliRunner, tmp_p
     component image in the second composite.
     """
 
-    cli_search_str = f'search -c landsat7-c2-l2 -s 2022-01-15 -e 2022-04-01 -r {region_25ha_file} -cp 20'
+    cli_search_str = f'search -c l7-c2-l2 -s 2022-01-15 -e 2022-04-01 -r {region_25ha_file} -cp 20'
     cli_comp1_str = f'composite --mask'
     cli_comp2_str = f'composite -i LANDSAT/LE07/C02/T1_L2/LE07_173083_20220103 -cm mosaic --date 2022-04-01 --mask'
     cli_download_str = f'download --crs EPSG:3857 --scale 30 -dd {tmp_path}'

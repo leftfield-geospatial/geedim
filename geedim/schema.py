@@ -50,63 +50,63 @@ s2_prop_schema = {
 
 collection_schema = {
     'LANDSAT/LT04/C02/T1_L2': {
-        'gd_coll_name': 'landsat4-c2-l2',
+        'gd_coll_name': 'l4-c2-l2',
         'prop_schema': landsat_prop_schema,
         'image_type': geedim.mask.LandsatImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT04_C02_T1_L2',
         'description': 'Landsat 4, collection 2, tier 1, level 2 surface reflectance.'
     },
     'LANDSAT/LT05/C02/T1_L2': {
-        'gd_coll_name': 'landsat5-c2-l2',
+        'gd_coll_name': 'l5-c2-l2',
         'prop_schema': landsat_prop_schema,
         'image_type': geedim.mask.LandsatImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT05_C02_T1_L2',
         'description': 'Landsat 5, collection 2, tier 1, level 2 surface reflectance.'
     },
     'LANDSAT/LE07/C02/T1_L2': {
-        'gd_coll_name': 'landsat7-c2-l2',
+        'gd_coll_name': 'l7-c2-l2',
         'prop_schema': landsat_prop_schema,
         'image_type': geedim.mask.LandsatImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LE07_C02_T1_L2',
         'description': 'Landsat 7, collection 2, tier 1, level 2 surface reflectance.'
     },
     'LANDSAT/LC08/C02/T1_L2': {
-        'gd_coll_name': 'landsat8-c2-l2',
+        'gd_coll_name': 'l8-c2-l2',
         'prop_schema': landsat_prop_schema,
         'image_type': geedim.mask.LandsatImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C02_T1_L2',
         'description': 'Landsat 8, collection 2, tier 1, level 2 surface reflectance.'
     },
     'LANDSAT/LC09/C02/T1_L2': {
-        'gd_coll_name': 'landsat9-c2-l2',
+        'gd_coll_name': 'l9-c2-l2',
         'prop_schema': landsat_prop_schema,
         'image_type': geedim.mask.LandsatImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC09_C02_T1_L2',
         'description': 'Landsat 9, collection 2, tier 1, level 2 surface reflectance.'
     },
     'COPERNICUS/S2': {
-        'gd_coll_name': 'sentinel2-toa',
+        'gd_coll_name': 's2-toa',
         'prop_schema': s2_prop_schema,
         'image_type': geedim.mask.Sentinel2ToaClImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2',
         'description': 'Sentinel-2, level 1C, top of atmosphere reflectance.'
     },
     'COPERNICUS/S2_SR': {
-        'gd_coll_name': 'sentinel2-sr',
+        'gd_coll_name': 's2-sr',
         'prop_schema': s2_prop_schema,
         'image_type': geedim.mask.Sentinel2SrClImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR',
         'description': 'Sentinel-2, level 2A, surface reflectance.'
     },
     'COPERNICUS/S2_HARMONIZED': {
-        'gd_coll_name': 'sentinel2-toa-hm',
+        'gd_coll_name': 's2-toa-hm',
         'prop_schema': s2_prop_schema,
         'image_type': geedim.mask.Sentinel2ToaClImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_HARMONIZED',
         'description': 'Harmonized Sentinel-2, level 1C, top of atmosphere reflectance.'
     },
     'COPERNICUS/S2_SR_HARMONIZED': {
-        'gd_coll_name': 'sentinel2-sr-hm',
+        'gd_coll_name': 's2-sr-hm',
         'prop_schema': s2_prop_schema,
         'image_type': geedim.mask.Sentinel2SrClImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED',

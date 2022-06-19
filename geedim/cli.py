@@ -303,19 +303,19 @@ def config(ctx, mask_cirrus, mask_shadows, mask_method, prob, dark, shadow_dist,
     Cloud/shadow masking is supported for the collections:
     \b
 
-        ================  ===========================
-        geedim name       EE name
-        ================  ===========================
-        landsat4-c2-l2    LANDSAT/LT04/C02/T1_L2
-        landsat5-c2-l2    LANDSAT/LT05/C02/T1_L2
-        landsat7-c2-l2    LANDSAT/LE07/C02/T1_L2
-        landsat8-c2-l2    LANDSAT/LC08/C02/T1_L2
-        landsat9-c2-l2    LANDSAT/LC09/C02/T1_L2
-        sentinel2-toa     COPERNICUS/S2
-        sentinel2-sr      COPERNICUS/S2_SR
-        sentinel2-toa-hm  COPERNICUS/S2_HARMONIZED
-        sentinel2-sr-hm   COPERNICUS/S2_SR_HARMONIZED
-        ================  ===========================
+        ===========  ===========================
+        geedim name  EE name
+        ===========  ===========================
+        l4-c2-l2     LANDSAT/LT04/C02/T1_L2
+        l5-c2-l2     LANDSAT/LT05/C02/T1_L2
+        l7-c2-l2     LANDSAT/LE07/C02/T1_L2
+        l8-c2-l2     LANDSAT/LC08/C02/T1_L2
+        l9-c2-l2     LANDSAT/LC09/C02/T1_L2
+        s2-toa       COPERNICUS/S2
+        s2-sr        COPERNICUS/S2_SR
+        s2-toa-hm    COPERNICUS/S2_HARMONIZED
+        s2-sr-hm     COPERNICUS/S2_SR_HARMONIZED
+        ===========  ===========================
     \b
 
     For Sentinel-2 collections, ``--mask-method`` can be one of:
@@ -332,7 +332,7 @@ def config(ctx, mask_cirrus, mask_shadows, mask_method, prob, dark, shadow_dist,
     Search the Sentinel-2 SR collection for images with a cloudless portion of at least 60%, where cloud/shadow is
     identified with the `qa` ``mask-method``::
 
-        $ geedim config --mask-method qa search -c sentinel2-sr --cloudless-portion 60 -s 2022-01-01 -e 2022-01-14 --bbox 24 -34 24.5 -33.5
+        $ geedim config --mask-method qa search -c s2-sr --cloudless-portion 60 -s 2022-01-01 -e 2022-01-14 --bbox 24 -34 24.5 -33.5
 
     Download and cloud/shadow mask a Landsat-8 image, where shadows are excluded from the mask::
 
@@ -386,19 +386,19 @@ def search(obj, collection, start_date, end_date, bbox, region, fill_portion, cl
     collections:
     \b
 
-        ================  ===========================
-        geedim name       EE name
-        ================  ===========================
-        landsat4-c2-l2    LANDSAT/LT04/C02/T1_L2
-        landsat5-c2-l2    LANDSAT/LT05/C02/T1_L2
-        landsat7-c2-l2    LANDSAT/LE07/C02/T1_L2
-        landsat8-c2-l2    LANDSAT/LC08/C02/T1_L2
-        landsat9-c2-l2    LANDSAT/LC09/C02/T1_L2
-        sentinel2-toa     COPERNICUS/S2
-        sentinel2-sr      COPERNICUS/S2_SR
-        sentinel2-toa-hm  COPERNICUS/S2_HARMONIZED
-        sentinel2-sr-hm   COPERNICUS/S2_SR_HARMONIZED
-        ================  ===========================
+        ===========  ===========================
+        geedim name  EE name
+        ===========  ===========================
+        l4-c2-l2     LANDSAT/LT04/C02/T1_L2
+        l5-c2-l2     LANDSAT/LT05/C02/T1_L2
+        l7-c2-l2     LANDSAT/LE07/C02/T1_L2
+        l8-c2-l2     LANDSAT/LC08/C02/T1_L2
+        l9-c2-l2     LANDSAT/LC09/C02/T1_L2
+        s2-toa       COPERNICUS/S2
+        s2-sr        COPERNICUS/S2_SR
+        s2-toa-hm    COPERNICUS/S2_HARMONIZED
+        s2-sr-hm     COPERNICUS/S2_SR_HARMONIZED
+        ===========  ===========================
 
     A search region must be specified with either the ``--bbox`` or ``--region`` option.
 
@@ -415,7 +415,7 @@ def search(obj, collection, start_date, end_date, bbox, region, fill_portion, cl
 
     Search the Landsat-9 collection for images with a cloud/shadow free portion of at least 50%::
 
-        $ geedim search -c landsat9-c2-l2 -s 2022-01-01 -e 2022-03-01 --bbox 23 -34 23.2 -33.8 --cloudless-portion 50
+        $ geedim search -c l9-c2-l2 -s 2022-01-01 -e 2022-03-01 --bbox 23 -34 23.2 -33.8 --cloudless-portion 50
     """
     # @formatter:on
     if not obj.region:
@@ -708,7 +708,7 @@ def composite(obj, image_id, mask, method, resampling, bbox, region, date):
 
     Create and download a cloud/shadow-free composite of Sentinel-2 SR images, by chaining with ``search``::
 
-        $ geedim search -c sentinel2-sr -s 2021-01-12 -e 2021-01-23 --bbox 23 -33.5 23.1 -33.4 composite -cm q-mosaic download --crs EPSG:3857 --scale 10
+        $ geedim search -c s2-sr -s 2021-01-12 -e 2021-01-23 --bbox 23 -33.5 23.1 -33.4 composite -cm q-mosaic download --crs EPSG:3857 --scale 10
     """
     # @formatter:on
 
