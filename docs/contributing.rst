@@ -66,8 +66,10 @@ You can then run the tests from the root of the ``geedim`` repository with:
 Style
 ^^^^^
 
-Try to conform to the ``geedim`` code style.  You can auto-format with `yapf <https://github.com/google/yapf>`__ and
-the included `.style.yapf <https://github.com/dugalh/geedim/blob/main/.style.yapf>`__ configuration file:
+Please include `NumPy docstrings <https://sphinxcontrib-napoleon.readthedocs.io/en/latest/example_numpy.html>`_ with
+your code. Try to conform to the ``geedim`` code style.  You can auto-format with
+`yapf <https://github.com/google/yapf>`__ and the included
+`.style.yapf <https://github.com/dugalh/geedim/blob/main/ .style.yapf>`__ configuration file:
 
 .. code::
 
