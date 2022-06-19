@@ -28,49 +28,40 @@ See the documentation site for more detail: https://geedim.readthedocs.io/.
 Cloud/shadow support
 ~~~~~~~~~~~~~~~~~~~~
 
-Any EE imagery can be searched, composited and downloaded by ``geedim``. Cloud/shadow masking, and cloud/shadow-free compositing is supported on the following collections:
+Any EE imagery can be searched, composited and downloaded by ``geedim``. Cloud/shadow masking, and cloud/shadow-free
+compositing is supported on the following collections:
 
-+--------------------------------+----------------------------------------+--------------------------------------------+
-| ``geedim`` name                | EE name                                | Description                                |
-+================================+========================================+============================================+
-| landsat4-c2-l2                 | `LANDSAT/LT04/C02/T1_L2 <https://de    | Landsat 4, collection 2, tier 1, level 2   |
-|                                | velopers.google.com/earth-engine/datas | surface reflectance                        |
-|                                | ets/catalog/LANDSAT_LT04_C02_T1_L2>`__ |                                            |
-+--------------------------------+----------------------------------------+--------------------------------------------+
-| landsat5-c2-l2                 | `LANDSAT/LT05/C02/T1_L2 <https://de    | Landsat 5, collection 2, tier 1, level 2   |
-|                                | velopers.google.com/earth-engine/datas | surface reflectance                        |
-|                                | ets/catalog/LANDSAT_LT05_C02_T1_L2>`__ |                                            |
-+--------------------------------+----------------------------------------+--------------------------------------------+
-| landsat7-c2-l2                 | `LANDSAT/LE07/C02/T1_L2 <https://de    | Landsat 7, collection 2, tier 1, level 2   |
-|                                | velopers.google.com/earth-engine/datas | surface reflectance                        |
-|                                | ets/catalog/LANDSAT_LE07_C02_T1_L2>`__ |                                            |
-+--------------------------------+----------------------------------------+--------------------------------------------+
-| landsat8-c2-l2                 | `LANDSAT/LC08/C02/T1_L2 <https://de    | Landsat 8, collection 2, tier 1, level 2   |
-|                                | velopers.google.com/earth-engine/datas | surface reflectance                        |
-|                                | ets/catalog/LANDSAT_LC08_C02_T1_L2>`__ |                                            |
-+--------------------------------+----------------------------------------+--------------------------------------------+
-| landsat9-c2-l2                 | `LANDSAT/LC09/C02/T1_L2 <https://de    | Landsat 9, collection 2, tier 1, level 2   |
-|                                | velopers.google.com/earth-engine/datas | surface reflectance                        |
-|                                | ets/catalog/LANDSAT_LC09_C02_T1_L2>`__ |                                            |
-+--------------------------------+----------------------------------------+--------------------------------------------+
-| sentinel2-toa                  | `COPERNICUS/S2 <h                      | Sentinel-2, level 1C, top of atmosphere    |
-|                                | ttps://developers.google.com/earth-eng | reflectance                                |
-|                                | ine/datasets/catalog/COPERNICUS_S2>`__ |                                            |
-+--------------------------------+----------------------------------------+--------------------------------------------+
-| sentinel2-sr                   | `COPERNICUS/S2_SR <http                | Sentinel-2, level 2A, surface reflectance  |
-|                                | s://developers.google.com/earth-engine |                                            |
-|                                | /datasets/catalog/COPERNICUS_S2_SR>`__ |                                            |
-+--------------------------------+----------------------------------------+--------------------------------------------+
-| sentinel2-toa-hm               | `COPERNICUS/S2_HARMONIZED <h           | Harmonized Sentinel-2, level 1C, top of    |
-|                                | ttps://developers.google.com/earth-eng | atmosphere reflectance                     |
-|                                | ine/datasets/catalog/                  |                                            |
-|                                | COPERNICUS_S2_HARMONIZED>`__           |                                            |
-+--------------------------------+----------------------------------------+--------------------------------------------+
-| sentinel2-sr-hm                | `COPERNICUS/S2_SR_HARMONIZED <http     | Harmonized Sentinel-2, level 2A, surface   |
-|                                | s://developers.google.com/earth-engine | reflectance                                |
-|                                | /datasets/catalog/                     |                                            |
-|                                | COPERNICUS_S2_SR_HARMONIZED>`__        |                                            |
-+--------------------------------+----------------------------------------+--------------------------------------------+
+================  ========================================================  ========================================
+geedim name       EE name                                                   Description
+================  ========================================================  ========================================
+landsat4-c2-l2    `LANDSAT/LT04/C02/T1_L2                                   Landsat 4, collection 2, tier 1, level 2
+                  <https://developers.google.com/earth-
+                  engine/datasets/catalog/LANDSAT_LT04_C02_T1_L2>`_         surface reflectance.
+landsat5-c2-l2    `LANDSAT/LT05/C02/T1_L2                                   Landsat 5, collection 2, tier 1, level 2
+                  <https://developers.google.com/earth-
+                  engine/datasets/catalog/LANDSAT_LT05_C02_T1_L2>`_         surface reflectance.
+landsat7-c2-l2    `LANDSAT/LE07/C02/T1_L2                                   Landsat 7, collection 2, tier 1, level 2
+                  <https://developers.google.com/earth-
+                  engine/datasets/catalog/LANDSAT_LE07_C02_T1_L2>`_         surface reflectance.
+landsat8-c2-l2    `LANDSAT/LC08/C02/T1_L2                                   Landsat 8, collection 2, tier 1, level 2
+                  <https://developers.google.com/earth-
+                  engine/datasets/catalog/LANDSAT_LC08_C02_T1_L2>`_         surface reflectance.
+landsat9-c2-l2    `LANDSAT/LC09/C02/T1_L2                                   Landsat 9, collection 2, tier 1, level 2
+                  <https://developers.google.com/earth-
+                  engine/datasets/catalog/LANDSAT_LC09_C02_T1_L2>`_         surface reflectance.
+sentinel2-toa     `COPERNICUS/S2  <https://developers.google.com/earth-     Sentinel-2, level 1C, top of atmosphere
+                  engine/datasets/catalog/COPERNICUS_S2>`_
+                                                                            reflectance.
+sentinel2-sr      `COPERNICUS/S2_SR  <https://developers.google.com/earth-  Sentinel-2, level 2A, surface
+                  engine/datasets/catalog/COPERNICUS_S2_SR>`_
+                                                                            reflectance.
+sentinel2-toa-hm  `COPERNICUS/S2_HARMONIZED                                 Harmonized Sentinel-2, level 1C, top of
+                  <https://developers.google.com/earth-
+                  engine/datasets/catalog/COPERNICUS_S2_HARMONIZED>`_       atmosphere reflectance.
+sentinel2-sr-hm   `COPERNICUS/S2_SR_HARMONIZED                              Harmonized Sentinel-2, level 2A, surface
+                  <https://developers.google.com/earth-
+                  engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED>`_    reflectance.
+================  ========================================================  ========================================
 
 .. supp_im_end
 

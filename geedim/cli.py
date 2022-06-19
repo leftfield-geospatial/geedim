@@ -306,15 +306,15 @@ def config(ctx, mask_cirrus, mask_shadows, mask_method, prob, dark, shadow_dist,
         ================  ===========================
         geedim name       EE name
         ================  ===========================
-        sentinel2-sr      COPERNICUS/S2_SR
-        sentinel2-toa     COPERNICUS/S2
-        sentinel2-sr-hm   COPERNICUS/S2_SR_HARMONIZED
-        sentinel2-toa-hm  COPERNICUS/S2_HARMONIZED
-        landsat9-c2-l2    LANDSAT/LC09/C02/T1_L2
-        landsat8-c2-l2    LANDSAT/LC08/C02/T1_L2
-        landsat7-c2-l2    LANDSAT/LE07/C02/T1_L2
-        landsat5-c2-l2    LANDSAT/LT05/C02/T1_L2
         landsat4-c2-l2    LANDSAT/LT04/C02/T1_L2
+        landsat5-c2-l2    LANDSAT/LT05/C02/T1_L2
+        landsat7-c2-l2    LANDSAT/LE07/C02/T1_L2
+        landsat8-c2-l2    LANDSAT/LC08/C02/T1_L2
+        landsat9-c2-l2    LANDSAT/LC09/C02/T1_L2
+        sentinel2-toa     COPERNICUS/S2
+        sentinel2-sr      COPERNICUS/S2_SR
+        sentinel2-toa-hm  COPERNICUS/S2_HARMONIZED
+        sentinel2-sr-hm   COPERNICUS/S2_SR_HARMONIZED
         ================  ===========================
     \b
 
@@ -330,7 +330,7 @@ def config(ctx, mask_cirrus, mask_shadows, mask_method, prob, dark, shadow_dist,
     --------
 
     Search the Sentinel-2 SR collection for images with a cloudless portion of at least 60%, where cloud/shadow is
-    identified with the `qa` ``mask-method`` ::
+    identified with the `qa` ``mask-method``::
 
         $ geedim config --mask-method qa search -c sentinel2-sr --cloudless-portion 60 -s 2022-01-01 -e 2022-01-14 --bbox 24 -34 24.5 -33.5
 
@@ -389,15 +389,15 @@ def search(obj, collection, start_date, end_date, bbox, region, fill_portion, cl
         ================  ===========================
         geedim name       EE name
         ================  ===========================
-        sentinel2-sr      COPERNICUS/S2_SR
-        sentinel2-toa     COPERNICUS/S2
-        sentinel2-sr-hm   COPERNICUS/S2_SR_HARMONIZED
-        sentinel2-toa-hm  COPERNICUS/S2_HARMONIZED
-        landsat9-c2-l2    LANDSAT/LC09/C02/T1_L2
-        landsat8-c2-l2    LANDSAT/LC08/C02/T1_L2
-        landsat7-c2-l2    LANDSAT/LE07/C02/T1_L2
-        landsat5-c2-l2    LANDSAT/LT05/C02/T1_L2
         landsat4-c2-l2    LANDSAT/LT04/C02/T1_L2
+        landsat5-c2-l2    LANDSAT/LT05/C02/T1_L2
+        landsat7-c2-l2    LANDSAT/LE07/C02/T1_L2
+        landsat8-c2-l2    LANDSAT/LC08/C02/T1_L2
+        landsat9-c2-l2    LANDSAT/LC09/C02/T1_L2
+        sentinel2-toa     COPERNICUS/S2
+        sentinel2-sr      COPERNICUS/S2_SR
+        sentinel2-toa-hm  COPERNICUS/S2_HARMONIZED
+        sentinel2-sr-hm   COPERNICUS/S2_SR_HARMONIZED
         ================  ===========================
 
     A search region must be specified with either the ``--bbox`` or ``--region`` option.
