@@ -303,17 +303,19 @@ def config(ctx, mask_cirrus, mask_shadows, mask_method, prob, dark, shadow_dist,
     Cloud/shadow masking is supported for the collections:
     \b
 
-        ==============  ======================
-        geedim name     EE name
-        ==============  ======================
-        sentinel2-sr    COPERNICUS/S2_SR
-        sentinel2-toa   COPERNICUS/S2
-        landsat9-c2-l2  LANDSAT/LC09/C02/T1_L2
-        landsat8-c2-l2  LANDSAT/LC08/C02/T1_L2
-        landsat7-c2-l2  LANDSAT/LE07/C02/T1_L2
-        landsat5-c2-l2  LANDSAT/LT05/C02/T1_L2
-        landsat4-c2-l2  LANDSAT/LT04/C02/T1_L2
-        ==============  ======================
+        ================  ===========================
+        geedim name       EE name
+        ================  ===========================
+        sentinel2-sr      COPERNICUS/S2_SR
+        sentinel2-toa     COPERNICUS/S2
+        sentinel2-sr-hm   COPERNICUS/S2_SR_HARMONIZED
+        sentinel2-toa-hm  COPERNICUS/S2_HARMONIZED
+        landsat9-c2-l2    LANDSAT/LC09/C02/T1_L2
+        landsat8-c2-l2    LANDSAT/LC08/C02/T1_L2
+        landsat7-c2-l2    LANDSAT/LE07/C02/T1_L2
+        landsat5-c2-l2    LANDSAT/LT05/C02/T1_L2
+        landsat4-c2-l2    LANDSAT/LT04/C02/T1_L2
+        ================  ===========================
     \b
 
     For Sentinel-2 collections, ``--mask-method`` can be one of:
@@ -384,17 +386,19 @@ def search(obj, collection, start_date, end_date, bbox, region, fill_portion, cl
     collections:
     \b
 
-        ==============  ======================
-        geedim name     EE name
-        ==============  ======================
-        sentinel2-sr    COPERNICUS/S2_SR
-        sentinel2-toa   COPERNICUS/S2
-        landsat9-c2-l2  LANDSAT/LC09/C02/T1_L2
-        landsat8-c2-l2  LANDSAT/LC08/C02/T1_L2
-        landsat7-c2-l2  LANDSAT/LE07/C02/T1_L2
-        landsat5-c2-l2  LANDSAT/LT05/C02/T1_L2
-        landsat4-c2-l2  LANDSAT/LT04/C02/T1_L2
-        ==============  ======================
+        ================  ===========================
+        geedim name       EE name
+        ================  ===========================
+        sentinel2-sr      COPERNICUS/S2_SR
+        sentinel2-toa     COPERNICUS/S2
+        sentinel2-sr-hm   COPERNICUS/S2_SR_HARMONIZED
+        sentinel2-toa-hm  COPERNICUS/S2_HARMONIZED
+        landsat9-c2-l2    LANDSAT/LC09/C02/T1_L2
+        landsat8-c2-l2    LANDSAT/LC08/C02/T1_L2
+        landsat7-c2-l2    LANDSAT/LE07/C02/T1_L2
+        landsat5-c2-l2    LANDSAT/LT05/C02/T1_L2
+        landsat4-c2-l2    LANDSAT/LT04/C02/T1_L2
+        ================  ===========================
 
     A search region must be specified with either the ``--bbox`` or ``--region`` option.
 

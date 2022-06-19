@@ -82,6 +82,16 @@ collection_schema = {
         'prop_schema': s2_prop_schema,
         'image_type': geedim.mask.Sentinel2SrClImage,
     },
+    'COPERNICUS/S2_HARMONIZED': {
+        'gd_coll_name': 'sentinel2-toa-hm',
+        'prop_schema': s2_prop_schema,
+        'image_type': geedim.mask.Sentinel2ToaClImage,
+    },
+    'COPERNICUS/S2_SR_HARMONIZED': {
+        'gd_coll_name': 'sentinel2-sr-hm',
+        'prop_schema': s2_prop_schema,
+        'image_type': geedim.mask.Sentinel2SrClImage,
+    },
     'MODIS/006/MCD43A4': {
         'gd_coll_name': 'modis-nbar',
         'prop_schema': default_prop_schema,
