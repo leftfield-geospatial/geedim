@@ -67,7 +67,7 @@ Any EE imagery can be searched, composited and downloaded by ``geedim``. Cloud/s
 |                                | COPERNICUS_S2_HARMONIZED>`__           |                                            |
 +--------------------------------+----------------------------------------+--------------------------------------------+
 | sentinel2-sr-hm                | `COPERNICUS/S2_SR_HARMONIZED <http     | Harmonized Sentinel-2, level 2A, surface   |
-|                                | s://developers.google.com/earth-engine |  reflectance                               |
+|                                | s://developers.google.com/earth-engine | reflectance                                |
 |                                | /datasets/catalog/                     |                                            |
 |                                | COPERNICUS_S2_SR_HARMONIZED>`__        |                                            |
 +--------------------------------+----------------------------------------+--------------------------------------------+
