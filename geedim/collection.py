@@ -436,8 +436,8 @@ class MaskedCollection:
 
     def composite(
         self, method: Union[CompositeMethod, str] = None, mask: bool = True,
-        resampling: Union[ResamplingMethod, str] = None, date: Union[datetime, str] = None,
-        region: dict = None, **kwargs
+        resampling: Union[ResamplingMethod, str] = None, date: Union[datetime, str] = None, region: dict = None,
+        **kwargs
     ) -> MaskedImage:
         """
         Create a composite image from the encapsulated image collection.

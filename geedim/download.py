@@ -248,7 +248,7 @@ class BaseImage:
                 dtype_max = max(0, int(dtype_minmax[:, 1].max()))  # maximum image pixel value
 
                 # determine the number of integer bits required to represent the value range
-                bits = 2 ** np.ceil(np.log2(np.log2(dtype_max - dtype_min)))
+                bits = 2**np.ceil(np.log2(np.log2(dtype_max - dtype_min)))
                 bits = min(max(bits, 8), 32)  # clamp bits to allowed values
                 dtype = f'{"u" if dtype_min >= 0 else ""}int{int(bits)}'
             elif any(precisions == 'double'):
@@ -494,7 +494,7 @@ class BaseImage:
         max_ovw_levels = int(np.min(np.log2(dataset.shape)))
         min_level_shape_pow2 = int(np.log2(min_ovw_pixels))
         num_ovw_levels = np.min([max_num_levels, max_ovw_levels - min_level_shape_pow2])
-        ovw_levels = [2 ** m for m in range(1, num_ovw_levels + 1)]
+        ovw_levels = [2**m for m in range(1, num_ovw_levels + 1)]
         dataset.build_overviews(ovw_levels, RioResampling.average)
 
     def _write_metadata(self, dataset: rio.io.DatasetWriter):

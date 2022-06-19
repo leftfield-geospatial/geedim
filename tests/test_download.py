@@ -277,7 +277,7 @@ def test_prepare_for_download(src_image: str, tgt_image: str, region_25ha: Dict,
 
 @pytest.mark.parametrize(
     'dtype, exp_nodata', [
-        ('uint8', 0), ('int8', -2 ** 7), ('uint16', 0), ('int16', -2 ** 15), ('uint32', 0), ('int32', -2 ** 31),
+        ('uint8', 0), ('int8', -2**7), ('uint16', 0), ('int16', -2**15), ('uint32', 0), ('int32', -2**31),
         ('float32', float('nan')), ('float64', float('nan'))
     ]
 )
@@ -317,7 +317,7 @@ def test_scale_offset(src_image: str, dtype: str, region_100ha: Dict, request: p
         ee_image = base_image.ee_image.select(refl_bands)
         min_max_dict = ee_image.reduceRegion(
             reducer=ee.Reducer.minMax(), geometry=region_100ha, bestEffort=True
-        ).getInfo()
+        ).getInfo() # yapf: disable
         min_dict = {k: v for k, v in min_max_dict.items() if 'min' in k}
         max_dict = {k: v for k, v in min_max_dict.items() if 'max' in k}
         return min_dict, max_dict
@@ -446,6 +446,7 @@ def test_export(user_fix_base_image: BaseImage, region_25ha: Dict):
     task = user_fix_base_image.export('test_export.tif', folder='geedim', scale=30, region=region_25ha, wait=False)
     assert task.active()
     assert task.status()['state'] == 'READY'
+
 
 # TODO:
 # -  export(): test an export of small file (with wait ? - it kind of has to be to test monitor_export() )
