@@ -363,7 +363,7 @@ class BaseImage:
            Convert to this data type (`uint8`, `int8`, `uint16`, `int16`, `uint32`, `int32`, `float32`
            or `float64`). Defaults to auto select a minimal type that can represent the range of pixel values.
         scale_offset: bool, optional
-            Whether to apply any band scales and offsets to the image.
+            Whether to apply any EE band scales and offsets to the image.
 
         Returns
         -------
@@ -607,7 +607,7 @@ class BaseImage:
            Convert to this data type (`uint8`, `int8`, `uint16`, `int16`, `uint32`, `int32`, `float32`
            or `float64`). Defaults to auto select a minimal type that can represent the range of pixel values.
         scale_offset: bool, optional
-            Whether to apply any band scales and offsets to the image.
+            Whether to apply any EE band scales and offsets to the image.
 
         Returns
         -------
@@ -660,7 +660,7 @@ class BaseImage:
             Convert to this data type (`uint8`, `int8`, `uint16`, `int16`, `uint32`, `int32`, `float32`
             or `float64`).  Defaults to auto select a minimum size type that can represent the range of pixel values.
         scale_offset: bool, optional
-            Whether to apply any band scales and offsets to the image.
+            Whether to apply any EE band scales and offsets to the image.
         """
 
         max_threads = num_threads or min(32, (os.cpu_count() or 1) + 4)

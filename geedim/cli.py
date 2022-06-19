@@ -228,7 +228,7 @@ resampling_option = click.option(
 )
 scale_offset_option = click.option(
     '-so/-nso', '--scale-offset/--no-scale-offset', default=False, show_default=True,
-    help='Whether to apply any band scales and offsets to the image.'
+    help='Whether to apply any EE band scales and offsets to the image.'
 )
 
 
