@@ -29,17 +29,16 @@ from typing import Tuple, Dict, List, Union, Iterator
 import ee
 import numpy as np
 import rasterio as rio
-from rasterio.crs import CRS
-from rasterio.enums import Resampling as RioResampling
-from rasterio.windows import Window
-from tqdm.auto import tqdm
-from tqdm import TqdmWarning
-from tqdm.contrib.logging import logging_redirect_tqdm
-
 from geedim import utils
 from geedim.enums import ResamplingMethod
 from geedim.stac import StacCatalog, StacItem
 from geedim.tile import Tile
+from rasterio.crs import CRS
+from rasterio.enums import Resampling as RioResampling
+from rasterio.windows import Window
+from tqdm import TqdmWarning
+from tqdm.auto import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
 
 logger = logging.getLogger(__name__)
 
@@ -249,7 +248,7 @@ class BaseImage:
                 dtype_max = max(0, int(dtype_minmax[:, 1].max()))  # maximum image pixel value
 
                 # determine the number of integer bits required to represent the value range
-                bits = 2**np.ceil(np.log2(np.log2(dtype_max - dtype_min)))
+                bits = 2 ** np.ceil(np.log2(np.log2(dtype_max - dtype_min)))
                 bits = min(max(bits, 8), 32)  # clamp bits to allowed values
                 dtype = f'{"u" if dtype_min >= 0 else ""}int{int(bits)}'
             elif any(precisions == 'double'):
@@ -317,10 +316,10 @@ class BaseImage:
             return ee_image
 
         # make band scale and offset dicts
-        scale_dict = {bp['name']:bp['scale'] if 'scale' in bp else 1. for bp in band_properties}
-        offset_dict = {bp['name']:bp['offset'] if 'offset' in bp else 0. for bp in band_properties}
+        scale_dict = {bp['name']: bp['scale'] if 'scale' in bp else 1. for bp in band_properties}
+        offset_dict = {bp['name']: bp['offset'] if 'offset' in bp else 0. for bp in band_properties}
 
-        if all([s==1 for s in scale_dict.values()]) and all([o==0 for o in offset_dict.values()]):
+        if all([s == 1 for s in scale_dict.values()]) and all([o == 0 for o in offset_dict.values()]):
             # all scales==1 and all offsets==0
             return ee_image
 
@@ -336,14 +335,13 @@ class BaseImage:
         # are additional image bands in `ee_image` not in `band_properties`. Here, these additional bands are added
         # back to the adjusted image.
         adj_im = adj_im.addBands(ee_image.select(non_adj_bands))
-        adj_im = adj_im.select(ee_image.bandNames())    # keep bands in original order
+        adj_im = adj_im.select(ee_image.bandNames())  # keep bands in original order
         # copy original ee_image properties and return
         return ee.Image(adj_im.copyProperties(ee_image, ee_image.propertyNames()))
 
-
     def _prepare_for_export(
         self, region: Dict = None, crs: str = None, scale: float = None,
-        resampling: ResamplingMethod = _default_resampling, dtype: str = None, scale_offset: bool=False
+        resampling: ResamplingMethod = _default_resampling, dtype: str = None, scale_offset: bool = False
     ) -> 'BaseImage':
         """
         Prepare the encapsulated image for export/download.  Will reproject, resample, clip and convert the image
@@ -365,7 +363,7 @@ class BaseImage:
            Convert to this data type (`uint8`, `int8`, `uint16`, `int16`, `uint32`, `int32`, `float32`
            or `float64`). Defaults to auto select a minimal type that can represent the range of pixel values.
         scale_offset: bool, optional
-            Whether to apply any STAC specified scales and offsets to image bands.
+            Whether to apply any band scales and offsets to the image.
 
         Returns
         -------
@@ -442,7 +440,7 @@ class BaseImage:
             int16=np.iinfo('int16').min,
             uint32=0,
             int32=np.iinfo('int32').min
-        ) # yapf: disable
+        )  # yapf: disable
         nodata = nodata_dict[exp_image.dtype] if set_nodata else None
         profile = dict(
             driver='GTiff', dtype=exp_image.dtype, nodata=nodata, width=exp_image.shape[1], height=exp_image.shape[0],
@@ -454,7 +452,7 @@ class BaseImage:
     @staticmethod
     def _get_tile_shape(
         exp_image: 'BaseImage', max_download_size: int = 32 << 20, max_grid_dimension: int = 10000
-    ) -> (Tuple[int, int], int): # yapf: disable
+    ) -> (Tuple[int, int], int):  # yapf: disable
         """
         Return a tile shape and number of tiles for a given BaseImage, such that the tile shape satisfies GEE
         download limits, and is 'square-ish'.
@@ -496,7 +494,7 @@ class BaseImage:
         max_ovw_levels = int(np.min(np.log2(dataset.shape)))
         min_level_shape_pow2 = int(np.log2(min_ovw_pixels))
         num_ovw_levels = np.min([max_num_levels, max_ovw_levels - min_level_shape_pow2])
-        ovw_levels = [2**m for m in range(1, num_ovw_levels + 1)]
+        ovw_levels = [2 ** m for m in range(1, num_ovw_levels + 1)]
         dataset.build_overviews(ovw_levels, RioResampling.average)
 
     def _write_metadata(self, dataset: rio.io.DatasetWriter):
@@ -609,7 +607,7 @@ class BaseImage:
            Convert to this data type (`uint8`, `int8`, `uint16`, `int16`, `uint32`, `int32`, `float32`
            or `float64`). Defaults to auto select a minimal type that can represent the range of pixel values.
         scale_offset: bool, optional
-            Whether to apply any STAC specified scales and offsets to image bands.
+            Whether to apply any band scales and offsets to the image.
 
         Returns
         -------
@@ -662,7 +660,7 @@ class BaseImage:
             Convert to this data type (`uint8`, `int8`, `uint16`, `int16`, `uint32`, `int32`, `float32`
             or `float64`).  Defaults to auto select a minimum size type that can represent the range of pixel values.
         scale_offset: bool, optional
-            Whether to apply any STAC specified scales and offsets to image bands.
+            Whether to apply any band scales and offsets to the image.
         """
 
         max_threads = num_threads or min(32, (os.cpu_count() or 1) + 4)

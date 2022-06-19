@@ -16,7 +16,6 @@
 import re
 
 import pytest
-
 from geedim.stac import StacCatalog, StacItem
 from geedim.utils import split_id
 

@@ -18,7 +18,6 @@ from typing import Dict, List
 
 import ee
 import pytest
-
 from geedim import Initialize, MaskedImage
 from geedim.utils import root_path
 
@@ -35,7 +34,7 @@ def region_25ha() -> Dict:
     return {
         "type": "Polygon",
         "coordinates":
-        [[[21.6389, -33.4520], [21.6389, -33.4474], [21.6442, -33.4474], [21.6442, -33.4520], [21.6389, -33.4520]]]
+            [[[21.6389, -33.4520], [21.6389, -33.4474], [21.6442, -33.4474], [21.6442, -33.4520], [21.6389, -33.4520]]]
     }
 
 
@@ -45,7 +44,7 @@ def region_100ha() -> Dict:
     return {
         "type": "Polygon",
         "coordinates":
-        [[[21.6374, -33.4547], [21.6374, -33.4455], [21.6480, -33.4455], [21.6480, -33.4547], [21.6374, -33.4547]]]
+            [[[21.6374, -33.4547], [21.6374, -33.4455], [21.6480, -33.4455], [21.6480, -33.4547], [21.6374, -33.4547]]]
     }
 
 
@@ -55,7 +54,7 @@ def region_10000ha() -> Dict:
     return {
         "type": "Polygon",
         "coordinates":
-        [[[21.5893, -33.4964], [21.5893, -33.4038], [21.6960, -33.4038], [21.6960, -33.4964], [21.5893, -33.4964]]]
+            [[[21.5893, -33.4964], [21.5893, -33.4038], [21.6960, -33.4038], [21.6960, -33.4964], [21.5893, -33.4964]]]
     }
 
 
@@ -199,8 +198,10 @@ def l9_masked_image(l9_image_id) -> MaskedImage:
 
 
 @pytest.fixture(scope='session')
-def landsat_masked_images(l4_masked_image, l5_masked_image, l7_masked_image, l8_masked_image,
-    l9_masked_image) -> List[MaskedImage]:
+def landsat_masked_images(
+    l4_masked_image, l5_masked_image, l7_masked_image, l8_masked_image,
+    l9_masked_image
+) -> List[MaskedImage]: # yapf: disable
     """ Landsat4-9 MaskedImage's that cover `region_*ha` with partial cloud cover. """
     return [l4_masked_image, l5_masked_image, l7_masked_image, l8_masked_image, l9_masked_image]
 

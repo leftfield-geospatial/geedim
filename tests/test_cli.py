@@ -23,13 +23,12 @@ import numpy as np
 import pytest
 import rasterio as rio
 from click.testing import CliRunner
+from geedim.cli import cli
+from geedim.utils import root_path
 from rasterio.coords import BoundingBox
 from rasterio.crs import CRS
 from rasterio.features import bounds
 from rasterio.warp import transform_geom
-
-from geedim.cli import cli
-from geedim.utils import root_path
 
 
 @pytest.fixture
@@ -119,7 +118,6 @@ def _test_downloaded_file(
             array = ds.read(refl_bands, masked=True)
             assert all(array.min(axis=(1, 2)) >= -0.5)
             assert all(array.max(axis=(1, 2)) <= 1.5)
-
 
 
 @pytest.mark.parametrize(

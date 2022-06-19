@@ -15,6 +15,7 @@
 """
 
 import itertools
+import json
 import logging
 import os
 import pathlib
@@ -22,17 +23,15 @@ import sys
 import time
 from threading import Thread
 from typing import Tuple
-import json
 
 import ee
 import rasterio as rio
 import requests
+from geedim.enums import ResamplingMethod
 from rasterio.warp import transform_geom
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 from tqdm.auto import tqdm
-
-from geedim.enums import ResamplingMethod
 
 if '__file__' in globals():
     root_path = pathlib.Path(__file__).absolute().parents[1]

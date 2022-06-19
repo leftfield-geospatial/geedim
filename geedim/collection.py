@@ -22,8 +22,6 @@ from typing import Dict, List, Union
 
 import ee
 import tabulate
-from tabulate import TableFormat, Line, DataRow
-
 from geedim import schema, medoid
 from geedim.download import BaseImage
 from geedim.enums import ResamplingMethod, CompositeMethod
@@ -31,6 +29,7 @@ from geedim.errors import UnfilteredError, InputImageError
 from geedim.mask import MaskedImage, class_from_id
 from geedim.stac import StacCatalog, StacItem
 from geedim.utils import split_id, resample
+from tabulate import TableFormat, Line, DataRow
 
 logger = logging.getLogger(__name__)
 tabulate.MIN_PADDING = 0
@@ -46,7 +45,7 @@ _table_fmt = TableFormat(
     datarow=DataRow("", " ", ""),
     padding=0,
     with_header_hide=["lineabove", "linebelow"]
-) # yapf: disable
+)  # yapf: disable
 
 
 def compatible_collections(names: List[str]) -> bool:
@@ -70,6 +69,7 @@ def compatible_collections(names: List[str]) -> bool:
         name_matches.append(name_match)
     return all(name_matches)
 
+
 def parse_date(date: Union[datetime, str], var_name=None) -> datetime:
     """ Convert a string to a datetime, raising an exception if it is in the wrong format. """
     var_name = var_name or 'date'
@@ -79,6 +79,7 @@ def parse_date(date: Union[datetime, str], var_name=None) -> datetime:
         except ValueError:
             raise ValueError(f'{var_name} should be a datetime instance or a string with format: "%Y-%m-%d"')
     return date
+
 
 class MaskedCollection:
 

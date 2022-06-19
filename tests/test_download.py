@@ -21,14 +21,13 @@ import ee
 import numpy as np
 import pytest
 import rasterio as rio
+from geedim.download import BaseImage
+from geedim.enums import ResamplingMethod
 from rasterio import Affine
 from rasterio.coords import BoundingBox
 from rasterio.features import bounds
 from rasterio.warp import transform_geom
 from rasterio.windows import union
-
-from geedim.download import BaseImage
-from geedim.enums import ResamplingMethod
 
 
 class BaseImageLike:
@@ -208,7 +207,6 @@ def test_prepare_exceptions(user_base_image: BaseImage, user_fix_base_image: Bas
         )
 
 
-
 @pytest.mark.parametrize(
     'src_image, tgt_image', [
         ('s2_sr_base_image', 's2_sr_base_image'),
@@ -227,7 +225,7 @@ def test_prepare_exceptions(user_base_image: BaseImage, user_fix_base_image: Bas
         ('user_base_image', 'modis_nbar_base_image'),
         ('user_fix_base_image', 'modis_nbar_base_image'),
     ]
-) # yapf: disable
+)  # yapf: disable
 def test_prepare_for_export(src_image: str, tgt_image: str, request: pytest.FixtureRequest):
     """ Test BaseImage._prepare_for_export() sets properties of export image as expected.  """
     src_image: BaseImage = request.getfixturevalue(src_image)
@@ -279,7 +277,7 @@ def test_prepare_for_download(src_image: str, tgt_image: str, region_25ha: Dict,
 
 @pytest.mark.parametrize(
     'dtype, exp_nodata', [
-        ('uint8', 0), ('int8', -2**7), ('uint16', 0), ('int16', -2**15), ('uint32', 0), ('int32', -2**31),
+        ('uint8', 0), ('int8', -2 ** 7), ('uint16', 0), ('int16', -2 ** 15), ('uint32', 0), ('int32', -2 ** 31),
         ('float32', float('nan')), ('float64', float('nan'))
     ]
 )
@@ -299,7 +297,7 @@ def test_prepare_nodata(user_fix_base_image: BaseImage, region_25ha: Dict, dtype
         ('l9_base_image', None),
         ('modis_nbar_base_image', None),
     ]
-) # yapf: disable
+)  # yapf: disable
 def test_scale_offset(src_image: str, dtype: str, region_100ha: Dict, request: pytest.FixtureRequest):
     """ Test BaseImage._prepare_for_export(scale_offset=True) gives expected properties and reflectance ranges. """
 
@@ -315,13 +313,13 @@ def test_scale_offset(src_image: str, dtype: str, region_100ha: Dict, request: p
         band_props = base_image.band_properties
         refl_bands = [
             bp['name'] for bp in band_props if ('center_wavelength' in bp) and (bp['center_wavelength'] < 1)
-        ] # yapf: disable
+        ]  # yapf: disable
         ee_image = base_image.ee_image.select(refl_bands)
         min_max_dict = ee_image.reduceRegion(
             reducer=ee.Reducer.minMax(), geometry=region_100ha, bestEffort=True
         ).getInfo()
-        min_dict = {k:v for k, v in min_max_dict.items() if 'min' in k}
-        max_dict = {k:v for k, v in min_max_dict.items() if 'max' in k}
+        min_dict = {k: v for k, v in min_max_dict.items() if 'min' in k}
+        max_dict = {k: v for k, v in min_max_dict.items() if 'max' in k}
         return min_dict, max_dict
 
     # test the scaled and offset reflectance values lie between -0.5 and 1.5
@@ -346,14 +344,13 @@ def test_tile_shape():
             assert tile_image.size <= max_download_size
 
 
-
 @pytest.mark.parametrize(
     'image_shape, tile_shape, image_transform', [
         ((1000, 500), (101, 101), Affine.identity()),
         ((1000, 100), (101, 101), Affine.scale(1.23)),
         ((1000, 102), (101, 101), Affine.scale(1.23) * Affine.translation(12, 34)),
     ]
-) # yapf: disable
+)  # yapf: disable
 def test_tiles(image_shape: Tuple, tile_shape: Tuple, image_transform: Affine):
     """ Test continuity and coverage of tiles. """
     exp_image = BaseImageLike(shape=image_shape, transform=image_transform)
@@ -388,7 +385,7 @@ def test_tiles(image_shape: Tuple, tile_shape: Tuple, image_transform: Affine):
         # ('l9_base_image', 'region_25ha'),
         # ('modis_nbar_base_image', 'region_25ha'),
     ]
-) # yapf: disable
+)  # yapf: disable
 def test_download(base_image: str, region: Dict, tmp_path: pathlib.Path, request: pytest.FixtureRequest):
     """ Test downloaded file properties and pixel data.  """
     base_image = request.getfixturevalue(base_image)
@@ -449,7 +446,6 @@ def test_export(user_fix_base_image: BaseImage, region_25ha: Dict):
     task = user_fix_base_image.export('test_export.tif', folder='geedim', scale=30, region=region_25ha, wait=False)
     assert task.active()
     assert task.status()['state'] == 'READY'
-
 
 # TODO:
 # -  export(): test an export of small file (with wait ? - it kind of has to be to test monitor_export() )

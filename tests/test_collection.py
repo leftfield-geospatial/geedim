@@ -13,19 +13,19 @@
     See the License for the specific language governing permissions and
     limitations under the License.
 """
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import List, Union, Dict
 
 import ee
 import numpy as np
 import pytest
-
+from geedim import schema
 from geedim.collection import MaskedCollection
 from geedim.enums import CompositeMethod, ResamplingMethod
 from geedim.errors import UnfilteredError, InputImageError
 from geedim.mask import MaskedImage
 from geedim.utils import split_id, get_projection
-from geedim import schema
+
 from .conftest import get_image_std
 
 
@@ -472,7 +472,9 @@ def test_composite_date(image_list: str, request: pytest.FixtureRequest):
     image_list: List = request.getfixturevalue(image_list)
     gd_collection = MaskedCollection.from_list(image_list)
     # assumes the image_list's are in date order
-    first_date = datetime.utcfromtimestamp(gd_collection.ee_collection.first().get('system:time_start').getInfo() / 1000)
+    first_date = datetime.utcfromtimestamp(
+        gd_collection.ee_collection.first().get('system:time_start').getInfo() / 1000
+    ) # yapf: disable
     comp_im = gd_collection.composite()
     assert comp_im.date == first_date
 

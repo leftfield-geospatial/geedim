@@ -13,7 +13,7 @@
     See the License for the specific language governing permissions and
     limitations under the License.
 """
-from geedim.utils import Initialize
 from geedim.collection import MaskedCollection
-from geedim.mask import MaskedImage
 from geedim.enums import CloudMaskMethod, CompositeMethod, ResamplingMethod
+from geedim.mask import MaskedImage
+from geedim.utils import Initialize

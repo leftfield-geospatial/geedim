@@ -19,11 +19,11 @@ from typing import Dict
 
 import ee
 import pytest
-from rasterio.features import bounds
-
 from geedim import MaskedImage
 from geedim.enums import ResamplingMethod
 from geedim.utils import split_id, get_projection, get_bounds, Spinner, resample
+from rasterio.features import bounds
+
 from .conftest import get_image_std
 
 
@@ -65,6 +65,7 @@ def test_spinner():
         time.sleep(0.5)
     assert not spinner._run
     assert not spinner.is_alive()
+
 
 # yapf: disable
 @pytest.mark.parametrize(

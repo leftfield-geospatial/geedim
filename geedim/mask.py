@@ -17,13 +17,13 @@ import logging
 from typing import Dict
 
 import ee
-
 import geedim.schema
 from geedim.download import BaseImage
 from geedim.enums import CloudMaskMethod
 from geedim.utils import split_id, get_projection
 
 logger = logging.getLogger(__name__)
+
 
 ##
 
@@ -121,14 +121,13 @@ class MaskedImage(BaseImage):
         """
         aux_image = self._aux_image(**kwargs)
         proj = self.ee_image.select(0).projection()
-        has_fixed_scale = proj.nominalScale().toInt64().neq(111319) # 1 deg in meters
+        has_fixed_scale = proj.nominalScale().toInt64().neq(111319)  # 1 deg in meters
         has_no_aux_bands = ee.Number(self.ee_image.bandNames().indexOf('FILL_MASK').lt(0))
         # overwrite unless it is a composite image with existing aux bands
         overwrite = has_no_aux_bands.Or(has_fixed_scale)
         self.ee_image = ee.Image(
             ee.Algorithms.If(overwrite, self.ee_image.addBands(aux_image, overwrite=True), self.ee_image)
         )
-
 
     def _set_region_stats(self, region: Dict = None, scale: float = None):
         """
@@ -156,7 +155,7 @@ class MaskedImage(BaseImage):
         # the region, but the mean over the part of the region covered by the image.
         stats_image = ee.Image(
             [self.ee_image.select('FILL_MASK').rename('FILL_PORTION').unmask(), ee.Image(1).rename('REGION_SUM')]
-        ) # yapf: disable
+        )  # yapf: disable
         # Note: sometimes proj has no EPSG in crs(), hence use crs=proj and not crs=proj.crs() below
         sums_dict = stats_image.reduceRegion(
             reducer="sum", geometry=region, crs=proj, scale=scale, bestEffort=True, maxPixels=1e6
@@ -232,7 +231,7 @@ class CloudMaskedImage(MaskedImage):
         # the region, but the mean over the part of the region covered by the image.
         stats_image = ee.Image(
             [self.ee_image.select(['FILL_MASK', 'CLOUDLESS_MASK']).unmask(), ee.Image(1).rename('REGION_SUM')]
-        ) # yapf: disable
+        )  # yapf: disable
         sums = stats_image.reduceRegion(
             reducer="sum", geometry=region, crs=proj, scale=scale, bestEffort=True, maxPixels=1e6
         ).rename(['FILL_MASK', 'CLOUDLESS_MASK'], ['FILL_PORTION', 'CLOUDLESS_PORTION'])

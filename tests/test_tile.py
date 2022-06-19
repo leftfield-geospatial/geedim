@@ -18,12 +18,11 @@ from collections import namedtuple
 import ee
 import numpy as np
 import pytest
+from geedim.tile import Tile
+from geedim.utils import retry_session
 from rasterio import Affine
 from rasterio.windows import Window
 from tqdm.auto import tqdm
-
-from geedim.tile import Tile
-from geedim.utils import retry_session
 
 BaseImageLike = namedtuple('BaseImageLike', ['ee_image', 'crs', 'transform', 'shape', 'count', 'dtype'])
 

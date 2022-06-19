@@ -15,6 +15,7 @@
 """
 # schema definitions for MaskedImage.from_id(), geedim <-> EE collection names, and search properties
 import geedim.mask
+
 # yapf: disable
 default_prop_schema = {
     'system:id': {'abbrev': 'ID', 'description': 'Earth Engine image id'},

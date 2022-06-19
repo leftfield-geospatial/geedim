@@ -19,7 +19,6 @@ import ee
 import numpy as np
 import pytest
 import rasterio as rio
-
 from geedim.mask import MaskedImage, get_projection, class_from_id
 
 
@@ -76,7 +75,9 @@ def test_cloud_mask_aux_bands_exist(masked_image: str, request: pytest.FixtureRe
     ]
 )
 def test_set_region_stats(masked_image: str, region_100ha, request: pytest.FixtureRequest):
-    """ Test MaskedImage._set_region_stats() generates the expected properties and that these are in the valid range. """
+    """
+    Test MaskedImage._set_region_stats() generates the expected properties and that these are in the valid range.
+    """
     masked_image: MaskedImage = request.getfixturevalue(masked_image)
     masked_image._set_region_stats(region_100ha)
     for stat_name in ['FILL_PORTION', 'CLOUDLESS_PORTION']:
