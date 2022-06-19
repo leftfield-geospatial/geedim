@@ -227,6 +227,10 @@ resampling_option = click.option(
     default=BaseImage._default_resampling.value, show_default=True, callback=_resampling_method_cb,
     help='Resampling method.'
 )
+scale_offset_option = click.option(
+    '-so/-nso', '--scale-offset/--no-scale-offset', default=False, show_default=True,
+    help='Whether to apply any band scales and offsets to the image.'
+)
 
 
 # geedim CLI and chained command group
@@ -460,6 +464,7 @@ cli.add_command(search)
 @dtype_option
 @mask_option
 @resampling_option
+@scale_offset_option
 @click.option('-o', '--overwrite', is_flag=True, default=False, help='Overwrite the destination file if it exists.')
 @click.pass_obj
 def download(obj, image_id, bbox, region, download_dir, mask, overwrite, **kwargs):
@@ -535,6 +540,7 @@ cli.add_command(download)
 @dtype_option
 @mask_option
 @resampling_option
+@scale_offset_option
 @click.option(
     '-w/-nw', '--wait/--no-wait', default=True, show_default=True, help='Whether to wait for the export to complete.'
 )

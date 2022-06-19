@@ -13,13 +13,14 @@
     See the License for the specific language governing permissions and
     limitations under the License.
 """
+import ee
 import json
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Union
 
-from geedim.utils import retry_session, root_path, split_id, singleton
+from geedim import utils
 
 logger = logging.getLogger(__name__)
 root_stac_url = 'https://earthengine-stac.storage.googleapis.com/catalog/catalog.json'
@@ -115,13 +116,13 @@ class StacItem:
             return None
 
 
-@singleton
+@utils.singleton
 class StacCatalog:
 
     def __init__(self):
         """ Singleton class to interface to the EE STAC, and retrieve image/collection STAC data. """
-        self._filename = root_path.joinpath('geedim/data/ee_stac_urls.json')
-        self._session = retry_session()
+        self._filename = utils.root_path.joinpath('geedim/data/ee_stac_urls.json')
+        self._session = utils.retry_session()
         self._url_dict = None
         self._cache = {}
         self._lock = threading.Lock()
@@ -192,7 +193,7 @@ class StacCatalog:
         dict
             Image/collection STAC data in a dict, if it exists, otherwise None.
         """
-        coll_name = split_id(name)[0]
+        coll_name = utils.split_id(name)[0]
         if coll_name in self.url_dict:
             name = coll_name
 
@@ -220,7 +221,7 @@ class StacCatalog:
         StacItem
             image/collection STAC container, if it exists, otherwise None.
         """
-        coll_name = split_id(name)[0]
+        coll_name = utils.split_id(name)[0]
         if coll_name in self.url_dict:
             name = coll_name
         item_dict = self.get_item_dict(name)

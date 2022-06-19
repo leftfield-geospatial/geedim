@@ -36,10 +36,10 @@ from tqdm.auto import tqdm
 from tqdm import TqdmWarning
 from tqdm.contrib.logging import logging_redirect_tqdm
 
+from geedim import utils
 from geedim.enums import ResamplingMethod
 from geedim.stac import StacCatalog, StacItem
 from geedim.tile import Tile
-from geedim.utils import Spinner, resample, retry_session
 
 logger = logging.getLogger(__name__)
 
@@ -291,9 +291,59 @@ class BaseImage:
             band_props = [dict(name=bid) for bid in band_ids]
         return band_props
 
+    @staticmethod
+    def _scale_offset(ee_image: ee.Image, band_properties: List[Dict]) -> ee.Image:
+        """
+        Apply any STAC band scales and offsets to an EE image.
+
+        Applying STAC scales and offsets will convert pixel values from representative integer ranges to the floating
+        point ranges of physical quantities (e.g. surface reflectance in the range 0-1).
+
+        Parameters
+        ----------
+        ee_image: ee.Image
+            The EE image to scale and offset.
+        band_properties: list(dict)
+            A list of dictionaries specifying band names and corresponding scale and or offset values e.g.
+            :attr:`BaseImage.band_properties`.
+
+        Returns
+        -------
+        ee.Image
+            The scaled and offset image, with the same bands as ``ee_image``, and in the same order.
+        """
+        if band_properties is None:
+            logger.warning('Cannot scale and offset this image, there is no STAC band information.')
+            return ee_image
+
+        # make band scale and offset dicts
+        scale_dict = {bp['name']:bp['scale'] if 'scale' in bp else 1. for bp in band_properties}
+        offset_dict = {bp['name']:bp['offset'] if 'offset' in bp else 0. for bp in band_properties}
+
+        if all([s==1 for s in scale_dict.values()]) and all([o==0 for o in offset_dict.values()]):
+            # all scales==1 and all offsets==0
+            return ee_image
+
+        adj_bands = ee_image.bandNames().filter(ee.Filter.inList('item', list(scale_dict.keys())))
+        non_adj_bands = ee_image.bandNames().removeAll(adj_bands)
+
+        # apply the scales and offsets
+        scale_im = ee.Dictionary(scale_dict).toImage().select(adj_bands)
+        offset_im = ee.Dictionary(offset_dict).toImage().select(adj_bands)
+        adj_im = ee_image.select(adj_bands).multiply(scale_im).add(offset_im)
+
+        # Typically, `band_properties` will contain items for every band, but there may be cases where there
+        # are additional image bands in `ee_image` not in `band_properties`. Here, these additional bands are added
+        # back to the adjusted image.
+        adj_im = adj_im.addBands(ee_image.select(non_adj_bands))
+        adj_im = adj_im.select(ee_image.bandNames())    # keep bands in original order
+        # copy original ee_image properties and return
+        return ee.Image(adj_im.copyProperties(ee_image, ee_image.propertyNames()))
+
+
     def _prepare_for_export(
         self, region: Dict = None, crs: str = None, scale: float = None,
-        resampling: ResamplingMethod = _default_resampling, dtype: str = None
+        resampling: ResamplingMethod = _default_resampling, dtype: str = None, scale_offset: bool=False
     ) -> 'BaseImage':
         """
         Prepare the encapsulated image for export/download.  Will reproject, resample, clip and convert the image
@@ -314,6 +364,8 @@ class BaseImage:
         dtype: str, optional
            Convert to this data type (`uint8`, `int8`, `uint16`, `int16`, `uint32`, `int32`, `float32`
            or `float64`). Defaults to auto select a minimal type that can represent the range of pixel values.
+        scale_offset: bool, optional
+            Whether to apply any STAC specified scales and offsets to image bands.
 
         Returns
         -------
@@ -348,17 +400,23 @@ class BaseImage:
                 'https://issuetracker.google.com/issues/194561313'
             )
 
+        ee_image = self.ee_image
+        if scale_offset:
+            ee_image = self._scale_offset(ee_image, self.band_properties)
+            im_dtype = 'float64'
+        else:
+            im_dtype = self.dtype
+
         resampling = ResamplingMethod(resampling)
-        ee_image = self._ee_image
         if resampling != self._default_resampling:
             if not self.has_fixed_projection:
                 raise ValueError(
                     'This image has no fixed projection and cannot be resampled.  If this image is a composite, '
                     'you can resample the images used to create the composite.'
                 )
-            ee_image = resample(ee_image, resampling)
+            ee_image = utils.resample(ee_image, resampling)
 
-        ee_image = self._convert_dtype(ee_image, dtype=dtype or self.dtype)
+        ee_image = self._convert_dtype(ee_image, dtype=dtype or im_dtype)
         # TODO: Specify `crs_transform` and `dimensions` (as in tile), so that everything stays on the source grid
         #  where possible i.e. where the export CRS and scale are the same as the source.
         export_args = dict(region=region, crs=crs, scale=scale, fileFormat='GeoTIFF', filePerBand=False)
@@ -507,7 +565,7 @@ class BaseImage:
         label = label if (len(label) < BaseImage._desc_width) else f'*{label[-BaseImage._desc_width:]}'
 
         # poll EE until the export preparation is complete
-        with Spinner(label=f'Preparing {label}: ', leave='done'):
+        with utils.Spinner(label=f'Preparing {label}: ', leave='done'):
             while 'progress' not in status['metadata']:
                 time.sleep(5 * pause)
                 status = ee.data.getOperation(task.name)
@@ -550,6 +608,8 @@ class BaseImage:
         dtype: str, optional
            Convert to this data type (`uint8`, `int8`, `uint16`, `int16`, `uint32`, `int32`, `float32`
            or `float64`). Defaults to auto select a minimal type that can represent the range of pixel values.
+        scale_offset: bool, optional
+            Whether to apply any STAC specified scales and offsets to image bands.
 
         Returns
         -------
@@ -601,6 +661,8 @@ class BaseImage:
         dtype: str, optional
             Convert to this data type (`uint8`, `int8`, `uint16`, `int16`, `uint32`, `int32`, `float32`
             or `float64`).  Defaults to auto select a minimum size type that can represent the range of pixel values.
+        scale_offset: bool, optional
+            Whether to apply any STAC specified scales and offsets to image bands.
         """
 
         max_threads = num_threads or min(32, (os.cpu_count() or 1) + 4)
@@ -646,7 +708,7 @@ class BaseImage:
             desc=desc, total=raw_download_size, bar_format=bar_format, dynamic_ncols=True, unit_scale=True, unit='B'
         )
 
-        session = retry_session(5)
+        session = utils.retry_session(5)
         warnings.filterwarnings('ignore', category=TqdmWarning)
         redir_tqdm = logging_redirect_tqdm([logging.getLogger(__package__)])  # redirect logging through tqdm
         out_ds = rio.open(filename, 'w', **profile)  # create output geotiff

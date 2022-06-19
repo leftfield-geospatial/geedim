@@ -262,13 +262,14 @@ def resample(ee_image: ee.Image, method: ResamplingMethod) -> ee.Image:
     ee_image: ee.Image
         Resampled image.
     """
+    # TODO : use STAC to only resample continuous qty type bands
     method = ResamplingMethod(method)
     if method == ResamplingMethod.near:
         return ee_image
 
     # resample the image, if it has a fixed projection
     proj = ee_image.select(0).projection()
-    has_fixed_proj = proj.crs().compareTo('EPSG:4326').neq(0).Or(proj.nominalScale().neq(111319.49079327357))
+    has_fixed_proj = proj.crs().compareTo('EPSG:4326').neq(0).Or(proj.nominalScale().toInt64().neq(111319))
 
     def _resample(ee_image: ee.Image) -> ee.Image:
         """ Resample the given image, allowing for additional 'average' method. """
