@@ -127,6 +127,8 @@ def _test_downloaded_file(
         ('LANDSAT/LT05/C02/T1_L2', '2005-01-01', '2006-02-01', 'region_100ha_file', 40, 50, True),
         ('COPERNICUS/S2_SR', '2022-01-01', '2022-01-15', 'region_100ha_file', 0, 50, True),
         ('COPERNICUS/S2', '2022-01-01', '2022-01-15', 'region_100ha_file', 50, 40, True),
+        ('COPERNICUS/S2_SR_HARMONIZED', '2022-01-01', '2022-01-15', 'region_100ha_file', 0, 50, True),
+        ('COPERNICUS/S2_HARMONIZED', '2022-01-01', '2022-01-15', 'region_100ha_file', 50, 40, True),
         ('LARSE/GEDI/GEDI02_A_002_MONTHLY', '2021-11-01', '2022-01-01', 'region_100ha_file', 1, 0, False)
     ]
 )
@@ -258,10 +260,11 @@ def test_raster_region_search(const_image_25ha_file, region_25ha_file, runner: C
 
 @pytest.mark.parametrize(
     'image_id, region_file', [
-        ('l8_image_id', 'region_25ha_file'), ('s2_sr_image_id', 'region_25ha_file'),
+        ('l8_image_id', 'region_25ha_file'),
+        ('s2_sr_hm_image_id', 'region_25ha_file'),
         ('gedi_cth_image_id', 'region_25ha_file'),
     ]
-)
+)  # yapf: disable
 def test_download_defaults(
     image_id: str, region_file: pathlib.Path, tmp_path: pathlib.Path, runner: CliRunner, request
 ):

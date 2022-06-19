@@ -22,14 +22,14 @@ import rasterio as rio
 from geedim.mask import MaskedImage, get_projection, class_from_id
 
 
-def test_class_from_id(landsat_image_ids, s2_sr_image_id, s2_toa_image_id, generic_image_ids):
+def test_class_from_id(landsat_image_ids, s2_sr_image_id, s2_toa_hm_image_id, generic_image_ids):
     """  Test class_from_id(). """
     from geedim.mask import LandsatImage, Sentinel2SrClImage, Sentinel2ToaClImage
 
     assert all([class_from_id(im_id) == LandsatImage for im_id in landsat_image_ids])
     assert all([class_from_id(im_id) == MaskedImage for im_id in generic_image_ids])
     assert class_from_id(s2_sr_image_id) == Sentinel2SrClImage
-    assert class_from_id(s2_toa_image_id) == Sentinel2ToaClImage
+    assert class_from_id(s2_toa_hm_image_id) == Sentinel2ToaClImage
 
 
 def test_from_id():
@@ -54,8 +54,8 @@ def test_gen_aux_bands_exist(masked_image: str, request: pytest.FixtureRequest):
 
 @pytest.mark.parametrize(
     'masked_image', [
-        's2_sr_masked_image', 's2_toa_masked_image', 'l9_masked_image', 'l8_masked_image', 'l7_masked_image',
-        'l5_masked_image', 'l4_masked_image'
+        's2_sr_masked_image', 's2_toa_masked_image', 's2_sr_hm_masked_image', 's2_toa_hm_masked_image',
+        'l9_masked_image', 'l8_masked_image', 'l7_masked_image', 'l5_masked_image', 'l4_masked_image'
     ]
 )
 def test_cloud_mask_aux_bands_exist(masked_image: str, request: pytest.FixtureRequest):
@@ -69,9 +69,10 @@ def test_cloud_mask_aux_bands_exist(masked_image: str, request: pytest.FixtureRe
 
 @pytest.mark.parametrize(
     'masked_image', [
-        's2_sr_masked_image', 's2_toa_masked_image', 'l9_masked_image', 'l8_masked_image', 'l7_masked_image',
-        'l5_masked_image', 'l4_masked_image', 'user_masked_image', 'modis_nbar_masked_image', 'gch_masked_image',
-        's1_sar_masked_image', 'gedi_agb_masked_image', 'gedi_cth_masked_image', 'landsat_ndvi_masked_image'
+        's2_sr_masked_image', 's2_toa_masked_image', 's2_sr_hm_masked_image', 's2_toa_hm_masked_image',
+        'l9_masked_image', 'l8_masked_image', 'l7_masked_image', 'l5_masked_image', 'l4_masked_image',
+        'user_masked_image', 'modis_nbar_masked_image', 'gch_masked_image', 's1_sar_masked_image',
+        'gedi_agb_masked_image', 'gedi_cth_masked_image', 'landsat_ndvi_masked_image'
     ]
 )
 def test_set_region_stats(masked_image: str, region_100ha, request: pytest.FixtureRequest):
@@ -99,7 +100,7 @@ def test_landsat_cloudless_portion(image_id: str, request: pytest.FixtureRequest
     assert cloudless_portion == pytest.approx(landsat_cloudless_portion, abs=5)
 
 
-@pytest.mark.parametrize('image_id', ['s2_toa_image_id', 's2_sr_image_id'])
+@pytest.mark.parametrize('image_id', ['s2_toa_image_id', 's2_sr_image_id', 's2_toa_hm_image_id', 's2_sr_hm_image_id'])
 def test_s2_cloudless_portion(image_id: str, request: pytest.FixtureRequest):
     """ Test `geedim` CLOUDLESS_PORTION for the whole image against CLOUDY_PIXEL_PERCENTAGE Sentinel-2 property. """
     image_id: str = request.getfixturevalue(image_id)
@@ -237,7 +238,7 @@ def test_s2_cloudmask_cdi_thresh(image_id: str, region_10000ha: Dict, request: p
     assert cdi_negpt5_portion > cdi_pt5_portion
 
 
-@pytest.mark.parametrize('image_id, max_cloud_dist', [('s2_sr_image_id', 100), ('s2_sr_image_id', 500)])
+@pytest.mark.parametrize('image_id, max_cloud_dist', [('s2_sr_image_id', 100), ('s2_sr_hm_image_id', 500)])
 def test_s2_clouddist_max(image_id: str, max_cloud_dist: int, region_10000ha: Dict, request: pytest.FixtureRequest):
     """ Test S2 cloud distance `max_cloud_dist` parameter. """
 
@@ -282,7 +283,7 @@ def get_mask_stats(masked_image: MaskedImage, region: Dict):
     'masked_image', ['l9_masked_image', 'l8_masked_image', 'l7_masked_image', 'l5_masked_image', 'l4_masked_image']
 )
 def test_landsat_aux_bands(masked_image: str, region_10000ha: Dict, request: pytest.FixtureRequest):
-    """ Test Landsat auxiliary bands by downloading them. """
+    """ Test Landsat auxiliary band values. """
     masked_image: MaskedImage = request.getfixturevalue(masked_image)
     stats = get_mask_stats(masked_image, region_10000ha)
     assert stats['PAN_CLOUD'] > stats['PAN_CLOUDLESS']
@@ -290,9 +291,11 @@ def test_landsat_aux_bands(masked_image: str, region_10000ha: Dict, request: pyt
     assert stats['CDIST_CLOUDLESS'] > stats['CDIST_CLOUD']
 
 
-@pytest.mark.parametrize('masked_image', ['s2_sr_masked_image', 's2_toa_masked_image'])
+@pytest.mark.parametrize('masked_image',
+    ['s2_sr_masked_image', 's2_toa_masked_image', 's2_sr_hm_masked_image', 's2_toa_hm_masked_image']
+)  # yapf:disable
 def test_s2_aux_bands(masked_image: str, region_10000ha: Dict, request: pytest.FixtureRequest):
-    """ Test Sentinel-2 auxiliary bands by downloading them. """
+    """ Test Sentinel-2 auxiliary band values. """
     masked_image: MaskedImage = request.getfixturevalue(masked_image)
     stats = get_mask_stats(masked_image, region_10000ha)
     assert stats['PAN_CLOUD'] > stats['PAN_CLOUDLESS']
