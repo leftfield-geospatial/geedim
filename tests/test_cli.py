@@ -88,7 +88,8 @@ def gedi_image_id_list() -> List[str]:
 
 
 def _test_downloaded_file(
-    filename: pathlib.Path, region: Dict = None, crs: str = None, scale: float = None, dtype: str = None
+    filename: pathlib.Path, region: Dict = None, crs: str = None, scale: float = None, dtype: str = None,
+    scale_offset: bool = None
 ):
     """ Helper function to test image file format against given parameters. """
     with rio.open(filename, 'r') as ds:
@@ -110,6 +111,15 @@ def _test_downloaded_file(
             assert abs(ds.transform[0]) == scale
         if dtype:
             assert ds.dtypes[0] == dtype
+        if scale_offset:
+            refl_bands = [
+                i for i in range(1, ds.count + 1)
+                if ('center_wavelength' in ds.tags(i)) and (float(ds.tags(i)['center_wavelength']) < 1)
+            ]
+            array = ds.read(refl_bands, masked=True)
+            assert all(array.min(axis=(1, 2)) >= -0.5)
+            assert all(array.max(axis=(1, 2)) <= 1.5)
+
 
 
 @pytest.mark.parametrize(
@@ -274,17 +284,18 @@ def test_download_defaults(
 
 
 @pytest.mark.parametrize(
-    'image_id, region_file, crs, scale, dtype, mask, resampling', [
-        ('l5_image_id', 'region_25ha_file', 'EPSG:3857', 30, 'uint16', False, 'near'),
-        ('s2_toa_image_id', 'region_25ha_file', 'EPSG:3857', 10, 'int32', True, 'bilinear'),
-        ('modis_nbar_image_id', 'region_100ha_file', 'EPSG:3857', 500, 'uint32', False, 'bicubic'),
-        ('gedi_cth_image_id', 'region_25ha_file', 'EPSG:3857', 10, 'float32', True, 'bilinear'),
-        ('landsat_ndvi_image_id', 'region_25ha_file', 'EPSG:3857', 30, 'float64', True, 'near'),
+    'image_id, region_file, crs, scale, dtype, mask, resampling, scale_offset', [
+        ('l5_image_id', 'region_25ha_file', 'EPSG:3857', 30, 'uint16', False, 'near', False),
+        ('l9_image_id', 'region_25ha_file', 'EPSG:3857', 30, 'float32', False, 'near', True),
+        ('s2_toa_image_id', 'region_25ha_file', 'EPSG:3857', 10, 'float64', True, 'bilinear', True),
+        ('modis_nbar_image_id', 'region_100ha_file', 'EPSG:3857', 500, 'int32', False, 'bicubic', False),
+        ('gedi_cth_image_id', 'region_25ha_file', 'EPSG:3857', 10, 'float32', True, 'bilinear', False),
+        ('landsat_ndvi_image_id', 'region_25ha_file', 'EPSG:3857', 30, 'float64', True, 'near', False),
     ]
 )
 def test_download_params(
     image_id: str, region_file: str, crs: str, scale: float, dtype: str, mask: bool, resampling: str,
-    tmp_path: pathlib.Path, runner: CliRunner, request: pytest.FixtureRequest
+    scale_offset: bool, tmp_path: pathlib.Path, runner: CliRunner, request: pytest.FixtureRequest
 ):
     """ Test image download, specifying all possible cli params. """
     image_id = request.getfixturevalue(image_id)
@@ -296,6 +307,7 @@ def test_download_params(
         f'--resampling {resampling}'
     )
     cli_str += ' --mask' if mask else ' --no-mask'
+    cli_str += ' --scale-offset' if scale_offset else ' --no-scale-offset'
     result = runner.invoke(cli, cli_str.split())
     assert (result.exit_code == 0)
     assert (out_file.exists())
@@ -303,7 +315,7 @@ def test_download_params(
     with open(region_file) as f:
         region = json.load(f)
     # test downloaded file readability and format
-    _test_downloaded_file(out_file, region=region, crs=crs, scale=scale, dtype=dtype)
+    _test_downloaded_file(out_file, region=region, crs=crs, scale=scale, dtype=dtype, scale_offset=scale_offset)
 
 
 def test_export_params(l8_image_id: str, region_25ha_file: pathlib.Path, runner: CliRunner):

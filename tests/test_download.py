@@ -208,7 +208,7 @@ def test_prepare_exceptions(user_base_image: BaseImage, user_fix_base_image: Bas
         )
 
 
-# yapf: disable
+
 @pytest.mark.parametrize(
     'src_image, tgt_image', [
         ('s2_sr_base_image', 's2_sr_base_image'),
@@ -227,8 +227,7 @@ def test_prepare_exceptions(user_base_image: BaseImage, user_fix_base_image: Bas
         ('user_base_image', 'modis_nbar_base_image'),
         ('user_fix_base_image', 'modis_nbar_base_image'),
     ]
-)
-# yapf: enable
+) # yapf: disable
 def test_prepare_for_export(src_image: str, tgt_image: str, request: pytest.FixtureRequest):
     """ Test BaseImage._prepare_for_export() sets properties of export image as expected.  """
     src_image: BaseImage = request.getfixturevalue(src_image)
@@ -294,6 +293,43 @@ def test_prepare_nodata(user_fix_base_image: BaseImage, region_25ha: Dict, dtype
         assert exp_profile['nodata'] == exp_nodata
 
 
+@pytest.mark.parametrize(
+    'src_image, dtype', [
+        ('s2_sr_base_image', 'float32'),
+        ('l9_base_image', None),
+        ('modis_nbar_base_image', None),
+    ]
+) # yapf: disable
+def test_scale_offset(src_image: str, dtype: str, region_100ha: Dict, request: pytest.FixtureRequest):
+    """ Test BaseImage._prepare_for_export(scale_offset=True) gives expected properties and reflectance ranges. """
+
+    src_image: BaseImage = request.getfixturevalue(src_image)
+    exp_image = src_image._prepare_for_export(scale_offset=True)
+    assert exp_image.crs == src_image.crs
+    assert exp_image.scale == src_image.scale
+    assert exp_image.band_properties == src_image.band_properties
+    assert exp_image.dtype == dtype or 'float64'
+
+    def get_min_max_refl(base_image: BaseImage) -> Dict:
+        """ Get the min & max of each reflectance band of base_image.  """
+        band_props = base_image.band_properties
+        refl_bands = [
+            bp['name'] for bp in band_props if ('center_wavelength' in bp) and (bp['center_wavelength'] < 1)
+        ] # yapf: disable
+        ee_image = base_image.ee_image.select(refl_bands)
+        min_max_dict = ee_image.reduceRegion(
+            reducer=ee.Reducer.minMax(), geometry=region_100ha, bestEffort=True
+        ).getInfo()
+        min_dict = {k:v for k, v in min_max_dict.items() if 'min' in k}
+        max_dict = {k:v for k, v in min_max_dict.items() if 'max' in k}
+        return min_dict, max_dict
+
+    # test the scaled and offset reflectance values lie between -0.5 and 1.5
+    exp_min, exp_max = get_min_max_refl(exp_image)
+    assert all(np.array(list(exp_min.values())) >= -0.5)
+    assert all(np.array(list(exp_max.values())) <= 1.5)
+
+
 def test_tile_shape():
     """ Test BaseImage._get_tile_shape() satisfies the EE download limit for different image shapes. """
     max_download_size = 32 << 20
@@ -310,15 +346,14 @@ def test_tile_shape():
             assert tile_image.size <= max_download_size
 
 
-# yapf: disable
+
 @pytest.mark.parametrize(
     'image_shape, tile_shape, image_transform', [
         ((1000, 500), (101, 101), Affine.identity()),
         ((1000, 100), (101, 101), Affine.scale(1.23)),
         ((1000, 102), (101, 101), Affine.scale(1.23) * Affine.translation(12, 34)),
     ]
-)
-# yapf: enable
+) # yapf: disable
 def test_tiles(image_shape: Tuple, tile_shape: Tuple, image_transform: Affine):
     """ Test continuity and coverage of tiles. """
     exp_image = BaseImageLike(shape=image_shape, transform=image_transform)
@@ -345,7 +380,6 @@ def test_tiles(image_shape: Tuple, tile_shape: Tuple, image_transform: Affine):
     assert (accum_window.height, accum_window.width) == exp_image.shape
 
 
-# yapf: disable
 @pytest.mark.parametrize(
     'base_image, region', [
         ('user_base_image', 'region_25ha'),
@@ -354,8 +388,7 @@ def test_tiles(image_shape: Tuple, tile_shape: Tuple, image_transform: Affine):
         # ('l9_base_image', 'region_25ha'),
         # ('modis_nbar_base_image', 'region_25ha'),
     ]
-)
-# yapf: enable
+) # yapf: disable
 def test_download(base_image: str, region: Dict, tmp_path: pathlib.Path, request: pytest.FixtureRequest):
     """ Test downloaded file properties and pixel data.  """
     base_image = request.getfixturevalue(base_image)
