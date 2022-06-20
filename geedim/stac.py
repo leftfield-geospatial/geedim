@@ -105,14 +105,15 @@ class StacItem:
         return self._band_props
 
     @property
-    def terms(self) -> Union[str, None]:
+    def license(self) -> Union[str, None]:
         """ Terms of use / license. """
-        if 'gee:terms_of_use' in self._item_dict:
-            return self._item_dict['gee:terms_of_use']
-        elif 'license' in self._item_dict:
-            return self._item_dict['license']
-        else:
-            return None
+        url = None
+        if 'links' in self._item_dict:
+            for link in self._item_dict['links']:
+                if ('rel' in link) and (link['rel'] == 'license') and ('href' in link):
+                    url = link['href']
+                    break
+        return url
 
 
 @utils.singleton
