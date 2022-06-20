@@ -14,7 +14,6 @@
     limitations under the License.
 """
 # schema definitions for MaskedImage.from_id(), geedim <-> EE collection names, and search properties
-import csv
 from tabulate import tabulate
 from textwrap import wrap
 import geedim.mask
@@ -104,14 +103,14 @@ collection_schema = {
         'prop_schema': s2_prop_schema,
         'image_type': geedim.mask.Sentinel2ToaClImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_HARMONIZED',
-        'description': 'Harmonized Sentinel-2, level 1C, top of atmosphere reflectance.'
+        'description': 'Harmonised Sentinel-2, level 1C, top of atmosphere reflectance.'
     },
     'COPERNICUS/S2_SR_HARMONIZED': {
         'gd_coll_name': 's2-sr-hm',
         'prop_schema': s2_prop_schema,
         'image_type': geedim.mask.Sentinel2SrClImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED',
-        'description': 'Harmonized Sentinel-2, level 2A, surface reflectance.'
+        'description': 'Harmonised Sentinel-2, level 2A, surface reflectance.'
     },
     'MODIS/006/MCD43A4': {
         'gd_coll_name': 'modis-nbar',
@@ -146,7 +145,7 @@ def basic_cloud_coll_table() -> str:
 
 def ext_cloud_coll_table() -> str:
     """ Return an extended table of cloud/shadow mask supported collections for use in README. """
-    headers = dict(gd_coll_name='geedim name', ee_coll_name='EE name', descr='Description')
+    headers = dict(ee_coll_name='EE name', descr='Description')
     data = []
     # Note there is a compromise that needs to be made between github's and RTD's rst rendering here.
     # - github renders a single line source table into a neat multiline table.  But it renders a \n\n multiline source
@@ -155,15 +154,10 @@ def ext_cloud_coll_table() -> str:
     # multiline source table as a neat html table though...
     for key, val in collection_schema.items():
         if val['image_type'] != geedim.mask.MaskedImage:
-            # ee_coll_name = '\n'.join(wrap(f'`{key} \n<{val["ee_url"]}>`_', width=60))
-            ee_coll_name = f'`{key} \n<{val["ee_url"]}>`_'
-            descr = '\n\n'.join(wrap(val['description'], width=40))   # for RTD multiline table
+            ee_coll_name = '\n'.join(wrap(f'`{key} <{val["ee_url"]}>`_', width=40))
+            # ee_coll_name = f'`{key} \n<{val["ee_url"]}>`_'
+            descr = '\n\n'.join(wrap(val['description'], width=60))   # for RTD multiline table
             # descr = val['description']
-            data.append(dict(gd_coll_name=val['gd_coll_name'], ee_coll_name=ee_coll_name, descr=descr))
+            data.append(dict(ee_coll_name=ee_coll_name, descr=descr))
 
-    with open('docs/cloud_support.csv', mode='w', newline='') as f:
-        wr = csv.writer(f)
-        wr.writerow(headers.values())
-        for row in data:
-            wr.writerow(row.values())
-    return tabulate(data, headers=headers, tablefmt='rst')
+    return tabulate(data, headers=headers, tablefmt='grid')
