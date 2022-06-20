@@ -433,8 +433,8 @@ def test_metadata(landsat_ndvi_base_image: BaseImage, region_25ha: Dict, tmp_pat
     landsat_ndvi_base_image.download(filename, region=region_25ha, crs='EPSG:3857', scale=30)
     assert filename.exists()
     with rio.open(filename, 'r') as ds:
-        assert 'TERMS_OF_USE' in ds.tags()
-        assert len(ds.tags()['TERMS_OF_USE']) > 0
+        assert 'LICENSE' in ds.tags()
+        assert len(ds.tags()['LICENSE']) > 0
         assert 'NDVI' in ds.descriptions
         band_dict = ds.tags(1)
         for key in ['gsd', 'name', 'description']:
