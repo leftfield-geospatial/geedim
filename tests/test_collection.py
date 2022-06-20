@@ -188,7 +188,7 @@ def test_from_list_ee_image(gedi_image_list: List):
         ('LANDSAT/LE07/C02/T1_L2', '2022-01-01', '2022-02-01', 'region_100ha', 0, 0, True),
         ('LANDSAT/LT05/C02/T1_L2', '2005-01-01', '2006-02-01', 'region_100ha', 40, 50, True),
         ('COPERNICUS/S2_SR', '2022-01-01', '2022-01-15', 'region_100ha', 0, 50, True),
-        ('COPERNICUS/S2', '2022-01-01', '2022-01-15', 'region_100ha', 50, 40, True),
+        ('COPERNICUS/S2_HARMONIZED', '2022-01-01', '2022-01-15', 'region_100ha', 50, 40, True),
         ('LARSE/GEDI/GEDI02_A_002_MONTHLY', '2021-11-01', '2022-01-01', 'region_100ha', 1, 0, False)
     ]
 )

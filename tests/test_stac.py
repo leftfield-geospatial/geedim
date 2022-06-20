@@ -77,7 +77,7 @@ def test_unknown_get_item(stac_catalog: StacCatalog):
 @pytest.mark.parametrize(
     'image_id', [
         'l4_image_id', 'l5_image_id', 'l7_image_id', 'l8_image_id', 'l9_image_id', 's2_sr_image_id', 's2_toa_image_id',
-        'modis_nbar_image_id',
+        's2_sr_hm_image_id', 's2_toa_hm_image_id', 'modis_nbar_image_id',
     ]
 )
 def test_refl_stac_item(image_id: str, stac_catalog: StacCatalog, request: pytest.FixtureRequest):
@@ -88,7 +88,7 @@ def test_refl_stac_item(image_id: str, stac_catalog: StacCatalog, request: pytes
     assert stac_item is not None
     if coll_name:
         assert stac_item.name == coll_name
-    assert len(stac_item.terms) > 0
+    assert len(stac_item.license) > 0
     assert stac_item.band_props is not None
     for key in ['gsd', 'description']:
         has_key = [key in bd for bd in stac_item.band_props.values()]
