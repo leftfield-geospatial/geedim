@@ -332,11 +332,11 @@ def config(ctx, mask_cirrus, mask_shadows, mask_method, prob, dark, shadow_dist,
     Search the Sentinel-2 SR collection for images with a cloudless portion of at least 60%, where cloud/shadow is
     identified with the `qa` ``mask-method``::
 
-        $ geedim config --mask-method qa search -c s2-sr --cloudless-portion 60 -s 2022-01-01 -e 2022-01-14 --bbox 24 -34 24.5 -33.5
+        geedim config --mask-method qa search -c s2-sr --cloudless-portion 60 -s 2022-01-01 -e 2022-01-14 --bbox 24 -34 24.5 -33.5
 
     Download and cloud/shadow mask a Landsat-8 image, where shadows are excluded from the mask::
 
-        $ geedim config --no-mask-shadows download -i LANDSAT/LC08/C02/T1_L2/LC08_172083_20220104 --mask --bbox 24.25 -34 24.5 -33.75
+        geedim config --no-mask-shadows download -i LANDSAT/LC08/C02/T1_L2/LC08_172083_20220104 --mask --bbox 24.25 -34 24.5 -33.75
     """
     # @formatter:on
     # store commandline configuration (only) in the context object for use by other commands
@@ -411,11 +411,11 @@ def search(obj, collection, start_date, end_date, bbox, region, fill_portion, cl
 
     Search the GEDI canopy height collection for images with a filled portion of at least 0.5%::
 
-        $ geedim search -c LARSE/GEDI/GEDI02_A_002_MONTHLY -s 2021-12-01 -e 2022-02-01 --bbox 23 -34 23.2 -33.8 --fill-portion 0.5
+        geedim search -c LARSE/GEDI/GEDI02_A_002_MONTHLY -s 2021-12-01 -e 2022-02-01 --bbox 23 -34 23.2 -33.8 --fill-portion 0.5
 
     Search the Landsat-9 collection for images with a cloud/shadow free portion of at least 50%::
 
-        $ geedim search -c l9-c2-l2 -s 2022-01-01 -e 2022-03-01 --bbox 23 -34 23.2 -33.8 --cloudless-portion 50
+        geedim search -c l9-c2-l2 -s 2022-01-01 -e 2022-03-01 --bbox 23 -34 23.2 -33.8 --cloudless-portion 50
     """
     # @formatter:on
     if not obj.region:
@@ -511,11 +511,11 @@ def download(obj, image_id, bbox, region, download_dir, mask, overwrite, **kwarg
 
     Download a region of a Landsat-9 image, applying the cloud/shadow mask and converting to uint16::
 
-        $ geedim download -i LANDSAT/LC09/C02/T1_L2/LC09_173083_20220308 --mask --bbox 21.6 -33.5 21.7 -33.4 --dtype uint16
+        geedim download -i LANDSAT/LC09/C02/T1_L2/LC09_173083_20220308 --mask --bbox 21.6 -33.5 21.7 -33.4 --dtype uint16
 
     Download the results of a MODIS NBAR search, specifying a CRS and scale to reproject to::
 
-        $ geedim search -c MODIS/006/MCD43A4 -s 2022-01-01 -e 2022-01-03 --bbox 23 -34 24 -33 download --crs EPSG:3857 --scale 500
+        geedim search -c MODIS/006/MCD43A4 -s 2022-01-01 -e 2022-01-03 --bbox 23 -34 24 -33 download --crs EPSG:3857 --scale 500
     """
     # @formatter:on
     logger.info('\nDownloading:\n')
@@ -586,11 +586,11 @@ def export(obj, image_id, bbox, region, drive_folder, mask, wait, **kwargs):
 
     Export a region of a Landsat-9 image, applying the cloud/shadow mask and converting to uint16::
 
-        $ geedim export -i LANDSAT/LC09/C02/T1_L2/LC09_173083_20220308 --mask --bbox 21.6 -33.5 21.7 -33.4 --dtype uint16
+        geedim export -i LANDSAT/LC09/C02/T1_L2/LC09_173083_20220308 --mask --bbox 21.6 -33.5 21.7 -33.4 --dtype uint16
 
     Export the results of a MODIS NBAR search to the 'geedim' folder, specifying a CRS and scale to reproject to::
 
-        $ geedim search -c MODIS/006/MCD43A4 -s 2022-01-01 -e 2022-01-03 --bbox 23 -34 24 -33 export --crs EPSG:3857 --scale 500 -df geedim
+        geedim search -c MODIS/006/MCD43A4 -s 2022-01-01 -e 2022-01-03 --bbox 23 -34 24 -33 export --crs EPSG:3857 --scale 500 -df geedim
     """
     # @formatter:on
     logger.info('\nExporting:\n')
@@ -700,15 +700,15 @@ def composite(obj, image_id, mask, method, resampling, bbox, region, date):
     --------
     Composite two Landsat-7 images using the default options and download the result::
 
-        $ geedim composite -i LANDSAT/LE07/C02/T1_L2/LE07_173083_20100203 -i LANDSAT/LE07/C02/T1_L2/LE07_173083_20100219 download --bbox 22 -33.1 22.1 -33 --crs EPSG:3857 --scale 30
+        geedim composite -i LANDSAT/LE07/C02/T1_L2/LE07_173083_20100203 -i LANDSAT/LE07/C02/T1_L2/LE07_173083_20100219 download --bbox 22 -33.1 22.1 -33 --crs EPSG:3857 --scale 30
 
     Create and download a composite of a year of GEDI canopy height data, by chaining with ``search``::
 
-        $ geedim search -c LARSE/GEDI/GEDI02_A_002_MONTHLY -s 2021-01-01 -e 2022-01-01 --bbox 23 -34 23.1 -33.9 --fill-portion 0.1 composite -cm mosaic download --crs EPSG:3857 --scale 25
+        geedim search -c LARSE/GEDI/GEDI02_A_002_MONTHLY -s 2021-01-01 -e 2022-01-01 --bbox 23 -34 23.1 -33.9 --fill-portion 0.1 composite -cm mosaic download --crs EPSG:3857 --scale 25
 
     Create and download a cloud/shadow-free composite of Sentinel-2 SR images, by chaining with ``search``::
 
-        $ geedim search -c s2-sr -s 2021-01-12 -e 2021-01-23 --bbox 23 -33.5 23.1 -33.4 composite -cm q-mosaic download --crs EPSG:3857 --scale 10
+        geedim search -c s2-sr -s 2021-01-12 -e 2021-01-23 --bbox 23 -33.5 23.1 -33.4 composite -cm q-mosaic download --crs EPSG:3857 --scale 10
     """
     # @formatter:on
 
