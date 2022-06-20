@@ -86,7 +86,5 @@ nbsphinx_prolog = """
 
 # -- Generate cloud/shadow supported collection tables for github README and RTD
 # docs
-with open('cloud_coll_gh.rst', 'w') as f:
-    f.write(cloud_coll_table(descr_join='\n'))
 with open('cloud_coll_rtd.rst', 'w') as f:
     f.write(cloud_coll_table(descr_join='\n\n'))

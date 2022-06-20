@@ -134,6 +134,7 @@ coll_names = dict(**gd_to_ee, **ee_to_gd)
 # A list of cloud/shadow mask supported EE collection names
 cloud_coll_names = [k for k, v in collection_schema.items() if v['image_type'] != geedim.mask.MaskedImage]
 
+
 def cli_cloud_coll_table() -> str:
     """ Return a table of cloud/shadow mask supported collections for use in CLI help strings. """
     headers = dict(gd_coll_name='geedim name', ee_coll_name='EE name')
@@ -143,12 +144,17 @@ def cli_cloud_coll_table() -> str:
             data.append(dict(gd_coll_name=val['gd_coll_name'], ee_coll_name=key))
     return tabulate(data, headers=headers, tablefmt='rst')
 
+
 def cloud_coll_table(descr_join='\n') -> str:
     """
     Return a table of cloud/shadow mask supported collections.
-
     * Use descr_join='\n' for github README friendly formatting.
     * Use descr_join='\n\n' for RTD/Sphinx friendly formatting.
+
+    Instructions for adding cloud/shadow supported collections to CLI help and github README:
+    * print(cli_cloud_coll_table()) and paste into cli.search() and  cli.config() command docstrings.
+    * print(cloud_coll_table()) and paste into the README.
+    * The equivalent RTD table is auto-generated in docs/conf.py.
     """
     headers = dict(ee_coll_name='EE name', descr='Description')
     data = []
