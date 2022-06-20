@@ -14,6 +14,7 @@ import os
 import sys
 sys.path.insert(0, os.path.abspath('..'))
 from geedim.version import __version__
+from geedim.schema import cloud_coll_table
 
 
 # -- Project information -----------------------------------------------------
@@ -82,3 +83,10 @@ nbsphinx_prolog = """
    interact with it, you can download it 
    :download:`here <../{{ env.docname }}.ipynb>`.
 """
+
+# -- Generate cloud/shadow supported collection tables for github README and RTD
+# docs
+with open('cloud_coll_gh.rst', 'w') as f:
+    f.write(cloud_coll_table(descr_join='\n'))
+with open('cloud_coll_rtd.rst', 'w') as f:
+    f.write(cloud_coll_table(descr_join='\n\n'))

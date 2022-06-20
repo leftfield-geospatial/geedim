@@ -134,8 +134,8 @@ coll_names = dict(**gd_to_ee, **ee_to_gd)
 # A list of cloud/shadow mask supported EE collection names
 cloud_coll_names = [k for k, v in collection_schema.items() if v['image_type'] != geedim.mask.MaskedImage]
 
-def basic_cloud_coll_table() -> str:
-    """ Return a basic table of cloud/shadow mask supported collections for use in CLI help strings. """
+def cli_cloud_coll_table() -> str:
+    """ Return a table of cloud/shadow mask supported collections for use in CLI help strings. """
     headers = dict(gd_coll_name='geedim name', ee_coll_name='EE name')
     data = []
     for key, val in collection_schema.items():
@@ -143,21 +143,19 @@ def basic_cloud_coll_table() -> str:
             data.append(dict(gd_coll_name=val['gd_coll_name'], ee_coll_name=key))
     return tabulate(data, headers=headers, tablefmt='rst')
 
-def ext_cloud_coll_table() -> str:
-    """ Return an extended table of cloud/shadow mask supported collections for use in README. """
+def cloud_coll_table(descr_join='\n') -> str:
+    """
+    Return a table of cloud/shadow mask supported collections.
+
+    * Use descr_join='\n' for github README friendly formatting.
+    * Use descr_join='\n\n' for RTD/Sphinx friendly formatting.
+    """
     headers = dict(ee_coll_name='EE name', descr='Description')
     data = []
-    # Note there is a compromise that needs to be made between github's and RTD's rst rendering here.
-    # - github renders a single line source table into a neat multiline table.  But it renders a \n\n multiline source
-    # poorly (it adds in the extra newlines).
-    # - RTD renders a single line source table as a single line html table with scroll bars.  It renders a \n\n
-    # multiline source table as a neat html table though...
     for key, val in collection_schema.items():
         if val['image_type'] != geedim.mask.MaskedImage:
-            # ee_coll_name = '\n'.join(wrap(f'`{key} <{val["ee_url"]}>`_', width=40))
-            ee_coll_name = f'`{key} \n<{val["ee_url"]}>`_'
-            descr = '\n\n'.join(wrap(val['description'], width=60))   # for RTD multiline table
-            # descr = val['description']
+            ee_coll_name = '\n'.join(wrap(f'`{key} <{val["ee_url"]}>`_', width=40))
+            descr = descr_join.join(wrap(val['description'], width=60))   # for RTD multiline table
             data.append(dict(ee_coll_name=ee_coll_name, descr=descr))
 
     return tabulate(data, headers=headers, tablefmt='grid')
