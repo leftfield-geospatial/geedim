@@ -154,8 +154,8 @@ def ext_cloud_coll_table() -> str:
     # multiline source table as a neat html table though...
     for key, val in collection_schema.items():
         if val['image_type'] != geedim.mask.MaskedImage:
-            ee_coll_name = '\n'.join(wrap(f'`{key} <{val["ee_url"]}>`_', width=40))
-            # ee_coll_name = f'`{key} \n<{val["ee_url"]}>`_'
+            # ee_coll_name = '\n'.join(wrap(f'`{key} <{val["ee_url"]}>`_', width=40))
+            ee_coll_name = f'`{key} \n<{val["ee_url"]}>`_'
             descr = '\n\n'.join(wrap(val['description'], width=60))   # for RTD multiline table
             # descr = val['description']
             data.append(dict(ee_coll_name=ee_coll_name, descr=descr))
