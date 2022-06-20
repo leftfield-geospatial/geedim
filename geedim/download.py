@@ -502,14 +502,30 @@ class BaseImage:
         if dataset.closed:
             raise IOError('Image dataset is closed')
 
-        dataset.update_tags(**self.properties)
-        if self._stac:
-            dataset.update_tags(TERMS_OF_USE=self._stac.terms)
+        # replace 'system:*' property keys with 'system-*', and remove footprint if its there
+        properties = {k.replace(':', '-'):v for k, v in self.properties.items()}
+        if 'system-footprint' in properties:
+            properties.pop('system-footprint')
+        dataset.update_tags(**properties)
+
+        if self._stac and self._stac.license:
+            dataset.update_tags(LICENSE=self._stac.license)
+
+        def clean_text(text, width=80) -> str:
+            """ Return a shortened tidied string. """
+            if not isinstance(text, str):
+                return text
+            text = text.split('.')[0] if len(text) > width else text
+            text = text.strip()
+            text = '-\n' + text if len(text) > width else text
+            return text
+
         # populate band metadata
         for band_i, band_dict in enumerate(self.band_properties):
+            clean_band_dict = {k.replace(':', '-'): clean_text(v) for k, v in band_dict.items()}
             if 'name' in band_dict:
-                dataset.set_band_description(band_i + 1, band_dict['name'])
-            dataset.update_tags(band_i + 1, **band_dict)
+                dataset.set_band_description(band_i + 1, clean_band_dict['name'])
+            dataset.update_tags(band_i + 1, **clean_band_dict)
 
     @staticmethod
     def _tiles(exp_image: 'BaseImage', tile_shape: Tuple[int, int] = None) -> Iterator[Tile]:
