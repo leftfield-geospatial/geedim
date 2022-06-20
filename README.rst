@@ -32,37 +32,10 @@ Cloud/shadow support
 Any EE imagery can be searched, composited and downloaded by ``geedim``. Cloud/shadow masking, and cloud/shadow-free
 compositing is supported on the following collections:
 
-===========  ========================================================  ========================================
-geedim name  EE name                                                   Description
-===========  ========================================================  ========================================
-l4-c2-l2     `LANDSAT/LT04/C02/T1_L2                                   Landsat 4, collection 2, tier 1, level 2
-             <https://developers.google.com/earth-
-             engine/datasets/catalog/LANDSAT_LT04_C02_T1_L2>`_         surface reflectance.
-l5-c2-l2     `LANDSAT/LT05/C02/T1_L2                                   Landsat 5, collection 2, tier 1, level 2
-             <https://developers.google.com/earth-
-             engine/datasets/catalog/LANDSAT_LT05_C02_T1_L2>`_         surface reflectance.
-l7-c2-l2     `LANDSAT/LE07/C02/T1_L2                                   Landsat 7, collection 2, tier 1, level 2
-             <https://developers.google.com/earth-
-             engine/datasets/catalog/LANDSAT_LE07_C02_T1_L2>`_         surface reflectance.
-l8-c2-l2     `LANDSAT/LC08/C02/T1_L2                                   Landsat 8, collection 2, tier 1, level 2
-             <https://developers.google.com/earth-
-             engine/datasets/catalog/LANDSAT_LC08_C02_T1_L2>`_         surface reflectance.
-l9-c2-l2     `LANDSAT/LC09/C02/T1_L2                                   Landsat 9, collection 2, tier 1, level 2
-             <https://developers.google.com/earth-
-             engine/datasets/catalog/LANDSAT_LC09_C02_T1_L2>`_         surface reflectance.
-s2-toa       `COPERNICUS/S2  <https://developers.google.com/earth-     Sentinel-2, level 1C, top of atmosphere
-             engine/datasets/catalog/COPERNICUS_S2>`_
-                                                                       reflectance.
-s2-sr        `COPERNICUS/S2_SR  <https://developers.google.com/earth-  Sentinel-2, level 2A, surface
-             engine/datasets/catalog/COPERNICUS_S2_SR>`_
-                                                                       reflectance.
-s2-toa-hm    `COPERNICUS/S2_HARMONIZED                                 Harmonized Sentinel-2, level 1C, top of
-             <https://developers.google.com/earth-
-             engine/datasets/catalog/COPERNICUS_S2_HARMONIZED>`_       atmosphere reflectance.
-s2-sr-hm     `COPERNICUS/S2_SR_HARMONIZED                              Harmonized Sentinel-2, level 2A, surface
-             <https://developers.google.com/earth-
-             engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED>`_    reflectance.
-===========  ========================================================  ========================================
+.. csv-table::
+   :file: docs/cloud_support.csv
+   :widths: 20, 30, 50
+   :header-rows: 1
 
 .. supp_im_end
 
