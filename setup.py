@@ -33,7 +33,6 @@ from setuptools import setup, find_packages
 
 this_directory = Path(__file__).parent
 long_description = (this_directory / 'README.rst').read_text()
-
 sys.path[0:0] = ['geedim']
 from version import __version__
 
@@ -63,6 +62,9 @@ setup(
         'Programming Language :: Python :: 3',
         'License :: OSI Approved :: Apache Software License',
         'Operating System :: OS Independent',
+    ],
+    keywords=[
+        'earth engine', 'satellite imagery', 'search', 'download', 'composite', 'cloud', 'shadow',
     ],
     entry_points={'console_scripts': ['geedim=geedim.cli:cli']}
 ) # yapf: disable

@@ -246,7 +246,7 @@ def s2_toa_hm_masked_image(s2_toa_hm_image_id) -> MaskedImage:
 @pytest.fixture(scope='session')
 def s2_masked_images(
     s2_sr_masked_image, s2_toa_masked_image, s2_sr_hm_masked_image, s2_toa_hm_masked_image
-) -> List[MaskedImage]: # yapf:disable
+) -> List[MaskedImage]: # yapf: disable
     """ Sentinel-2 TOA and SR MaskedImage's that cover `region_*ha` with partial cloud cover. """
     return [s2_sr_masked_image, s2_toa_masked_image, s2_sr_hm_masked_image, s2_toa_hm_masked_image]
 

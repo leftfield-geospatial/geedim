@@ -143,7 +143,7 @@ def test_search(
     results_file = tmp_path.joinpath('search_results.json')
     cli_str = (
         f'search -c {name} -s {start_date} -e {end_date} -r {region_file} -fp {fill_portion} '
-        f'-cp {cloudless_portion} -o {results_file}'
+        f'-cp {cloudless_portion} -op {results_file}'
     )
     result = runner.invoke(cli, cli_str.split())
     assert (result.exit_code == 0)
@@ -177,7 +177,7 @@ def test_config_search_s2(region_10000ha_file: pathlib.Path, runner: CliRunner, 
     cl_portion_list = []
     for prob in [40, 80]:
         cli_str = (
-            f'config --prob {prob} search -c {name} -s 2022-01-01 -e 2022-02-01 -r {region_10000ha_file} -o '
+            f'config --prob {prob} search -c {name} -s 2022-01-01 -e 2022-02-01 -r {region_10000ha_file} -op '
             f'{results_file}'
         )
         result = runner.invoke(cli, cli_str.split())
@@ -198,7 +198,7 @@ def test_config_search_l9(region_10000ha_file: pathlib.Path, runner: CliRunner, 
     cl_portion_list = []
     for param in ['--mask-shadows', '--no-mask-shadows']:
         cli_str = (
-            f'config {param} search -c {name} -s 2022-02-15 -e 2022-04-01 -r {region_10000ha_file} -o'
+            f'config {param} search -c {name} -s 2022-02-15 -e 2022-04-01 -r {region_10000ha_file} -op'
             f' {results_file}'
         )
         result = runner.invoke(cli, cli_str.split())
@@ -221,8 +221,8 @@ def test_region_bbox_search(region_100ha_file: pathlib.Path, runner: CliRunner, 
     bbox = bounds(region)
     bbox_str = ' '.join([str(b) for b in bbox])
     cli_strs = [
-        f'search -c LANDSAT/LC09/C02/T1_L2 -s 2022-01-01 -e 2022-02-01 -r {region_100ha_file} -o {results_file}',
-        f'search -c LANDSAT/LC09/C02/T1_L2 -s 2022-01-01 -e 2022-02-01 -b {bbox_str} -o {results_file}'
+        f'search -c LANDSAT/LC09/C02/T1_L2 -s 2022-01-01 -e 2022-02-01 -r {region_100ha_file} -op {results_file}',
+        f'search -c LANDSAT/LC09/C02/T1_L2 -s 2022-01-01 -e 2022-02-01 -b {bbox_str} -op {results_file}'
     ]
 
     props_list = []
@@ -242,8 +242,8 @@ def test_raster_region_search(const_image_25ha_file, region_25ha_file, runner: C
 
     results_file = tmp_path.joinpath('search_results.json')
     cli_strs = [
-        f'search -c LANDSAT/LC09/C02/T1_L2 -s 2022-01-01 -e 2022-02-01 -r {region_25ha_file} -o {results_file}',
-        f'search -c LANDSAT/LC09/C02/T1_L2 -s 2022-01-01 -e 2022-02-01 -r {const_image_25ha_file} -o {results_file}'
+        f'search -c LANDSAT/LC09/C02/T1_L2 -s 2022-01-01 -e 2022-02-01 -r {region_25ha_file} -op {results_file}',
+        f'search -c LANDSAT/LC09/C02/T1_L2 -s 2022-01-01 -e 2022-02-01 -r {const_image_25ha_file} -op {results_file}'
     ]
 
     props_list = []

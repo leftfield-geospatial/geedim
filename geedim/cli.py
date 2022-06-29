@@ -372,7 +372,7 @@ cli.add_command(config)
     'for the specified collection, :option:`--cloudless-portion` will operate like :option:`--fill-portion`.'
 )
 @click.option(
-    '-o', '--output', type=click.Path(exists=False, dir_okay=False, writable=True), default=None,
+    '-op', '--output', type=click.Path(exists=False, dir_okay=False, writable=True), default=None,
     help='JSON file to write search results to.'
 )
 @click.pass_obj
@@ -403,7 +403,7 @@ def search(obj, collection, start_date, end_date, bbox, region, fill_portion, cl
     A search region must be specified with either the ``--bbox`` or ``--region`` option.
 
     Note that filled/cloudless portions are not taken from the granule metadata, but are calculated as portions of the
-    specified search region for better accuracy.
+    specified search region for improved accuracy.
     \b
 
     Examples

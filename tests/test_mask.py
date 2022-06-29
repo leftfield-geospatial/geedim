@@ -293,7 +293,7 @@ def test_landsat_aux_bands(masked_image: str, region_10000ha: Dict, request: pyt
 
 @pytest.mark.parametrize('masked_image',
     ['s2_sr_masked_image', 's2_toa_masked_image', 's2_sr_hm_masked_image', 's2_toa_hm_masked_image']
-)  # yapf:disable
+)  # yapf: disable
 def test_s2_aux_bands(masked_image: str, region_10000ha: Dict, request: pytest.FixtureRequest):
     """ Test Sentinel-2 auxiliary band values. """
     masked_image: MaskedImage = request.getfixturevalue(masked_image)
