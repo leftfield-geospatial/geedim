@@ -445,7 +445,7 @@ class BaseImage:
         profile = dict(
             driver='GTiff', dtype=exp_image.dtype, nodata=nodata, width=exp_image.shape[1], height=exp_image.shape[0],
             count=exp_image.count, crs=CRS.from_string(exp_image.crs), transform=exp_image.transform,
-            compress='deflate', interleave='band', tiled=True
+            compress='deflate', interleave='band', tiled=True, photometric=None,
         )
         return exp_image, profile
 
