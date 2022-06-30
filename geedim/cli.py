@@ -57,6 +57,7 @@ class ChainedCommand(click.Command):
         """ Strip some RST markup from the help text for CLI display.  Assumes no grid tables. """
         if not hasattr(self, 'click_wrap_text'):
             self.click_wrap_text = click.formatting.wrap_text
+        # TODO: copy homonim sub_strings
         sub_strings = {
             '\b\n': '\n\b',  # convert from RST friendly to click literal (unwrapped) block marker
             ':option:': '',  # strip ':option:'
@@ -246,7 +247,7 @@ def cli(ctx, verbose, quiet):
 
 
 # TODO: add clear docs on what is piped out of or into each command.
-
+# TODO: use cloup and linear help layout.  move lists of option values from command docting to corresponding option help
 
 # config command
 @click.command(cls=ChainedCommand, context_settings=dict(auto_envvar_prefix='GEEDIM'))
