@@ -66,5 +66,9 @@ setup(
     keywords=[
         'earth engine', 'satellite imagery', 'search', 'download', 'composite', 'cloud', 'shadow',
     ],
-    entry_points={'console_scripts': ['geedim=geedim.cli:cli']}
-) # yapf: disable
+    entry_points={'console_scripts': ['geedim=geedim.cli:cli']},
+    project_urls={
+        'Documentation': 'https://geedim.readthedocs.io',
+        'Source': 'https://github.com/dugalh/geedim',
+    },
+)  # yapf: disable
