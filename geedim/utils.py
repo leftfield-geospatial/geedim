@@ -29,8 +29,7 @@ import rasterio as rio
 import requests
 from geedim.enums import ResamplingMethod
 from rasterio.warp import transform_geom
-from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
+from requests.adapters import HTTPAdapter, Retry
 from tqdm.auto import tqdm
 
 if '__file__' in globals():
