@@ -22,6 +22,7 @@ from typing import Dict, List, Union
 
 import ee
 import tabulate
+import textwrap as wrap
 from geedim import schema, medoid
 from geedim.download import BaseImage
 from geedim.enums import ResamplingMethod, CompositeMethod
@@ -81,9 +82,25 @@ def parse_date(date: Union[datetime, str], var_name=None) -> datetime:
     return date
 
 
+def abbreviate(name: str) -> str:
+    """ Return an acronym for a string in camel or snake case. """
+    name = name.strip()
+    if len(name) <= 5:
+        return name
+    abbrev = ''
+    prev = '_'
+    for curr in name:
+        if curr.isdigit():
+            abbrev += curr
+        elif (prev == '_' and curr.isalnum()) or (prev.islower() and curr.isupper()):
+            abbrev += curr.upper()
+        prev = curr
+    return abbrev if len(abbrev) >= 2 else name
+
+
 class MaskedCollection:
 
-    def __init__(self, ee_collection: ee.ImageCollection):
+    def __init__(self, ee_collection: ee.ImageCollection, add_props: List[str] = None):
         """
         A class for describing, searching and compositing an Earth Engine image collection, with support for
         cloud/shadow masking.
@@ -92,6 +109,8 @@ class MaskedCollection:
         ----------
         ee_collection : ee.ImageCollection
             Earth Engine image collection to encapsulate.
+        add_props: list of str, optional
+            Additional Earth Engine image properties to include in :attr:`properties`.
         """
         if not isinstance(ee_collection, ee.ImageCollection):
             raise TypeError(f'`ee_collection` must be an instance of ee.ImageCollection')
@@ -100,12 +119,13 @@ class MaskedCollection:
         self._schema = None
         self._filtered = False
         self._ee_collection = ee_collection
+        self._add_props = list(add_props) if add_props else None
         self._image_type = None
-        self.__stac = None
-        self.__stats_scale = None
+        self._stac = None
+        self._stats_scale = None
 
     @classmethod
-    def from_name(cls, name: str) -> 'MaskedCollection':
+    def from_name(cls, name: str, add_props: List[str] = None) -> 'MaskedCollection':
         """
         Create a MaskedCollection instance from an Earth Engine image collection name.
 
@@ -113,6 +133,8 @@ class MaskedCollection:
         ----------
         name: str
             Name of the Earth Engine image collection to create.
+        add_props: list of str, optional
+            Additional Earth Engine image properties to include in :attr:`properties`.
 
         Returns
         -------
@@ -130,12 +152,14 @@ class MaskedCollection:
             ee_collection = ee.ImageCollection(ee.Join.simple().apply(s2_coll, cloud_prob_coll, filt))
         else:
             ee_collection = ee.ImageCollection(name)
-        gd_collection = cls(ee_collection)
+        gd_collection = cls(ee_collection, add_props=add_props)
         gd_collection._name = name
         return gd_collection
 
     @classmethod
-    def from_list(cls, image_list: List[Union[str, MaskedImage, ee.Image]]) -> 'MaskedCollection':
+    def from_list(
+        cls, image_list: List[Union[str, MaskedImage, ee.Image]], add_props: List[str] = None
+    ) -> 'MaskedCollection':
         """
         Create a MaskedCollection instance from a list of Earth Engine image ID strings, ``ee.Image`` instances and/or
         :class:`~geedim.mask.MaskedImage` instances.  The list may include composite images, as created with
@@ -155,6 +179,8 @@ class MaskedCollection:
             List of images to include in the collection (must all be from the same, or compatible Earth Engine
             collections). List items can be ID strings, instances of :class:`~geedim.mask.MaskedImage`, or instances of
             ``ee.Image``.
+        add_props: list of str, optional
+            Additional Earth Engine image properties to include in :attr:`properties`.
 
         Returns
         -------
@@ -191,29 +217,29 @@ class MaskedCollection:
             raise InputImageError('All images must belong to the same, or spectrally compatible, collections.')
 
         # create the collection object, using the name of the first collection in ee_coll_names.
-        gd_collection = cls.from_name(ee_coll_names[0])
+        gd_collection = cls.from_name(ee_coll_names[0], add_props=add_props)
         gd_collection._ee_collection = ee.ImageCollection(ee.List([im_dict['ee_image'] for im_dict in im_dict_list]))
         gd_collection._filtered = True
         return gd_collection
 
     @property
-    def _stac(self) -> Union[StacItem, None]:
+    def stac(self) -> Union[StacItem, None]:
         """ STAC info, if any.  """
-        if not self.__stac and (self.name in StacCatalog().url_dict):
-            self.__stac = StacCatalog().get_item(self.name)
-        return self.__stac
+        if not self._stac and (self.name in StacCatalog().url_dict):
+            self._stac = StacCatalog().get_item(self.name)
+        return self._stac
 
     @property
-    def _stats_scale(self) -> Union[float, None]:
+    def stats_scale(self) -> Union[float, None]:
         """ Scale to use for re-projections when finding region statistics. """
-        if not self._stac:
+        if not self.stac:
             return None
-        if not self.__stats_scale:
-            gsds = [float(band_dict['gsd']) for band_dict in self._stac.band_props.values()]
+        if not self._stats_scale:
+            gsds = [float(band_dict['gsd']) for band_dict in self.stac.band_props.values()]
             max_gsd = max(gsds)
             min_gsd = min(gsds)
-            self.__stats_scale = min_gsd if (max_gsd > 10 * min_gsd) and (min_gsd > 0) else max_gsd
-        return self.__stats_scale
+            self._stats_scale = min_gsd if (max_gsd > 10 * min_gsd) and (min_gsd > 0) else max_gsd
+        return self._stats_scale
 
     @property
     def ee_collection(self) -> ee.ImageCollection:
@@ -262,23 +288,38 @@ class MaskedCollection:
         """
         if not self._schema:
             if self.name in schema.collection_schema:
-                self._schema = schema.collection_schema[self.name]['prop_schema']
+                self._schema = schema.collection_schema[self.name]['prop_schema'].copy()
             else:
-                self._schema = schema.default_prop_schema
+                self._schema = schema.default_prop_schema.copy()
+
+            # append any additional properties to the schema
+            if self._add_props:
+                for add_prop in self._add_props:
+                    # get a description from STAC where possible
+                    description = (
+                        self.stac.descriptions[add_prop] if self.stac and add_prop in self.stac.descriptions else ''
+                    )
+                    # remove newlines from description and crop to the first sentence
+                    description = ' '.join(description.strip().splitlines()).split('. ')[0]
+                    self._schema[add_prop] = dict(abbrev=abbreviate(add_prop), description=description)
         return self._schema
 
     @property
     def schema_table(self) -> str:
         """ :attr:`schema` formatted as a printable table string. """
-        headers = {key: key.upper() for key in list(self.schema.values())[0].keys()}
-        return tabulate.tabulate(self.schema.values(), headers=headers, floatfmt='.2f', tablefmt=_table_fmt)
+        table_list = []
+        for prop_name, prop_dict in self.schema.items():
+            description = '\n'.join(wrap.wrap(prop_dict['description'], 50))
+            table_list.append(dict(abbrev=prop_dict['abbrev'], name=prop_name, description=description))
+        headers = {key: key.upper() for key in table_list[0].keys()}
+        return tabulate.tabulate(table_list, headers=headers, floatfmt='.2f', tablefmt='simple')
 
     @property
     def refl_bands(self) -> Union[List[str], None]:
         """ List of spectral / reflectance band names, if any. """
-        if not self._stac:
+        if not self.stac:
             return None
-        return [bname for bname, bdict in self._stac.band_props.items() if 'center_wavelength' in bdict]
+        return [bname for bname, bdict in self.stac.band_props.items() if 'center_wavelength' in bdict]
 
     def _get_properties(self, ee_collection: ee.ImageCollection) -> Dict:
         """ Retrieve properties of images in a given Earth Engine image collection. """
@@ -352,7 +393,7 @@ class MaskedCollection:
 
             gd_image = self.image_type(ee_image, **kwargs)
             if region and (method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic]):
-                gd_image._set_region_stats(region=region, scale=self._stats_scale)
+                gd_image._set_region_stats(region=region, scale=self.stats_scale)
             if mask:
                 gd_image.mask_clouds()
             return resample(gd_image.ee_image, resampling)
@@ -375,8 +416,8 @@ class MaskedCollection:
         return ee_collection
 
     def search(
-        self, start_date: Union[datetime, str], end_date: Union[datetime, str], region: dict,
-        fill_portion: float = None, cloudless_portion: float = None, **kwargs
+        self, start_date: Union[datetime, str] = None, end_date: Union[datetime, str] = None, region: Dict = None,
+        fill_portion: float = None, cloudless_portion: float = None, custom_filter: str = None, **kwargs
     ) -> 'MaskedCollection':
         """
         Search for images based on date, region and filled/cloudless portion criteria.
@@ -394,6 +435,9 @@ class MaskedCollection:
             Minimum portion (%) of filled (valid) image pixels.
         cloudless_portion: float, optional
             Minimum portion (%) of cloud/shadow free image pixels.
+        custom_filter: str, optional
+            Custom filter expression e.g. "property > value".  See the `EE docs
+            <https://developers.google.com/earth-engine/apidocs/ee-filter-expression>`_.
         **kwargs
             Optional cloud/shadow masking parameters - see :meth:`geedim.mask.MaskedImage.__init__` for details.
 
@@ -402,34 +446,51 @@ class MaskedCollection:
         MaskedCollection
             Filtered MaskedCollection instance containing the search result image(s).
         """
-        start_date = parse_date(start_date, 'start_date')
+        if not start_date and not region:
+            raise ValueError('At least one of `start_date` or `region` should be specified')
 
-        if end_date is None:
-            # set end_date a day later than start_date
-            end_date = start_date + timedelta(days=1)
-        else:
-            end_date = parse_date(end_date, 'end_date')
-
-        if end_date <= start_date:
-            raise ValueError('`end_date` must be at least a day later than `start_date`')
+        if not start_date or not region:
+            logger.warning('Specifying `start_date` and `region` will improve the search speed.')
 
         def set_region_stats(ee_image: ee.Image):
             """ Find filled and cloud/shadow free portions inside the search region for a given image.  """
             gd_image = self.image_type(ee_image, **kwargs)
-            gd_image._set_region_stats(region, scale=self._stats_scale)
+            gd_image._set_region_stats(region, scale=self.stats_scale)
             return gd_image.ee_image
 
         # filter the image collection, finding cloud/shadow masks and region stats
-        ee_collection = self._ee_collection.filterDate(start_date, end_date).filterBounds(region).map(set_region_stats)
+        ee_collection = self._ee_collection
+        if start_date:
+            start_date = parse_date(start_date, 'start_date')
+            if end_date is None:
+                # set end_date a day later than start_date
+                end_date = start_date + timedelta(days=1)
+            else:
+                end_date = parse_date(end_date, 'end_date')
+            if end_date <= start_date:
+                raise ValueError('`end_date` must be at least a day later than `start_date`')
+            ee_collection = ee_collection.filterDate(start_date, end_date)
+
+        if region:
+            ee_collection = ee_collection.filterBounds(region)
+
+        # set regions stats before filtering on those properties
+        ee_collection = ee_collection.map(set_region_stats)
         if fill_portion:
             ee_collection = ee_collection.filter(ee.Filter.gte('FILL_PORTION', fill_portion))
+
         if cloudless_portion and self.image_type != MaskedImage:
             ee_collection = ee_collection.filter(ee.Filter.gte('CLOUDLESS_PORTION', cloudless_portion))
+
+        if custom_filter:
+            # this expression can include properties from set_region_stats
+            ee_collection = ee_collection.filter(ee.Filter.expression(custom_filter))
+
         ee_collection = ee_collection.sort('system:time_start')
 
         # return a new MaskedCollection containing the filtered EE collection (the EE collection
         # wrapped by MaskedCollection remains fixed)
-        gd_collection = MaskedCollection(ee_collection)
+        gd_collection = MaskedCollection(ee_collection, add_props=self._add_props)
         gd_collection._name = self._name
         gd_collection._filtered = True
         return gd_collection
