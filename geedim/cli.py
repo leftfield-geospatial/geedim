@@ -355,8 +355,11 @@ cli.add_command(config)
     '-c', '--collection', type=click.STRING, required=True, callback=_collection_cb,
     help=f'Earth Engine image collection to search. geedim or EE collection names can be used.'
 )
-@click.option('-s', '--start-date', type=click.DateTime(), required=True, help='Start date (UTC).')
-@click.option('-e', '--end-date', type=click.DateTime(), required=True, help='End date (UTC).')
+@click.option('-s', '--start-date', type=click.DateTime(), required=False, default=None, help='Start date (UTC).')
+@click.option(
+    '-e', '--end-date', type=click.DateTime(), required=False, default=None,
+    show_default='one day after ``--start-date``', help='End date (UTC).'
+)
 @bbox_option
 @click.option(
     '-r', '--region', type=click.Path(exists=True, dir_okay=False, allow_dash=True), callback=_region_cb,
@@ -373,11 +376,22 @@ cli.add_command(config)
     'for the specified collection, :option:`--cloudless-portion` will operate like :option:`--fill-portion`.'
 )
 @click.option(
+    '-cf', '--custom-filter', type=click.STRING, default=None,
+    help='Custom filter e.g. "property > value".  Quote delimiters are required.'
+)
+@click.option(
+    '-ap', '--add-property', 'add_props', type=click.STRING, default=None, multiple=True,
+    help='Additional image property name(s) to include in search results.'
+)  # TODO: add an example to the docstring below using -cf and -ap
+@click.option(
     '-op', '--output', type=click.Path(exists=False, dir_okay=False, writable=True), default=None,
     help='JSON file to write search results to.'
 )
 @click.pass_obj
-def search(obj, collection, start_date, end_date, bbox, region, fill_portion, cloudless_portion, output):
+def search(
+    obj, collection, start_date, end_date, bbox, region, fill_portion, cloudless_portion, custom_filter, output,
+    add_props
+):
     # @formatter:off
     """
     Search for images.
@@ -401,7 +415,7 @@ def search(obj, collection, start_date, end_date, bbox, region, fill_portion, cl
         s2-sr-hm     COPERNICUS/S2_SR_HARMONIZED
         ===========  ===========================
 
-    A search region must be specified with either the ``--bbox`` or ``--region`` option.
+    The search must be filtered with at least one of the ``--start-date``, or ``--bbox`` and ``--region`` options.
 
     Note that filled/cloudless portions are not taken from the granule metadata, but are calculated as portions of the
     specified search region for improved accuracy.
@@ -419,24 +433,24 @@ def search(obj, collection, start_date, end_date, bbox, region, fill_portion, cl
         geedim search -c l9-c2-l2 -s 2022-01-01 -e 2022-03-01 --bbox 23 -34 23.2 -33.8 --cloudless-portion 50
     """
     # @formatter:on
-    if not obj.region:
-        raise click.BadOptionUsage('region', 'Either pass --region or --bbox')
+    if not obj.region and not start_date:
+        raise click.BadOptionUsage(
+            'start-date / region', 'Specify at least --start-time and/or a region with --region/--bbox'
+        )
 
     # create collection wrapper and search
-    gd_collection = MaskedCollection.from_name(collection)
+    gd_collection = MaskedCollection.from_name(collection, add_props=add_props)
     logger.info('')
-    label = (
-        f'Searching for {collection} images between {start_date.strftime("%Y-%m-%d")} and '
-        f'{end_date.strftime("%Y-%m-%d")}: '
-    )
+
+    label = f'Searching for {collection} images: '
     with Spinner(label=label, leave=' '):
         gd_collection = gd_collection.search(
             start_date, end_date, obj.region, fill_portion=fill_portion, cloudless_portion=cloudless_portion,
-            **obj.cloud_kwargs
+            custom_filter=custom_filter, **obj.cloud_kwargs
         )
-        num_images = len(gd_collection.properties)  # retrieve search result properties from EE
 
-    if num_images == 0:
+    # retrieve search result properties from EE
+    if len(gd_collection.properties) == 0:
         logger.info('No images found\n')
     else:
         obj.image_list += list(gd_collection.properties.keys())  # store image ids for chained commands
