@@ -181,6 +181,27 @@ def test_from_list_ee_image(gedi_image_list: List):
     gd_collection = MaskedCollection.from_list(image_list)
     assert list(gd_collection.properties.keys()) == image_ids
 
+@pytest.mark.parametrize(
+    'image_list, add_props', [
+        ('s2_sr_image_list', ['AOT_RETRIEVAL_ACCURACY', 'CLOUDY_PIXEL_PERCENTAGE']),
+        ('l8_9_image_list', ['CLOUD_COVER', 'GEOMETRIC_RMSE_VERIFY'])
+    ]
+)  # yapf: disable
+def test_from_list_add_props(image_list: str, add_props: List, request: pytest.FixtureRequest):
+    """
+    Test MaskedCollection.from_list(add_props=...) contains the add_props in properties and schema.
+    """
+    image_list: List = request.getfixturevalue(image_list)
+    gd_collection = MaskedCollection.from_list(image_list, add_props=add_props)
+    assert gd_collection.properties is not None
+    assert gd_collection.schema is not None
+    assert len(gd_collection.schema) > len(schema.default_prop_schema)
+    assert all([add_prop in gd_collection.schema.keys() for add_prop in add_props])
+    assert all([gd_collection.schema[add_prop]['abbrev'] is not None for add_prop in add_props])
+    assert all([add_prop in list(gd_collection.properties.values())[0].keys() for add_prop in add_props])
+    assert gd_collection.properties_table is not None
+    assert gd_collection.schema_table is not None
+
 
 @pytest.mark.parametrize(
     'name, start_date, end_date, region, fill_portion, cloudless_portion, is_csmask', [
@@ -278,6 +299,33 @@ def test_search_mult_kwargs(region_100ha):
 
     assert cp_ref == pytest.approx(cp_prob80, abs=1e-3)
     assert cp_ref != pytest.approx(cp_prob40, abs=1e-1)
+
+
+def test_search_custom_filter(region_25ha):
+    """
+    Test that a CLOUDLESS_PORTION custom filter gives the same search results as the equivalent cloudless_portion
+    kwarg specification.
+    """
+    start_date = '2022-01-01'
+    end_date = '2022-02-01'
+    gd_collection = MaskedCollection.from_name('LANDSAT/LC09/C02/T1_L2')
+    kwarg_coll = gd_collection.search(start_date, end_date, region_25ha, cloudless_portion=90)
+    cust_filt_coll = gd_collection.search(start_date, end_date, region_25ha, custom_filter='CLOUDLESS_PORTION>=90')
+    assert (kwarg_coll.properties is not None) and (len(kwarg_coll.properties) > 0)
+    assert kwarg_coll.properties == cust_filt_coll.properties
+
+
+def test_search_add_props(region_25ha):
+    """
+    Test that specified add_props are added to the search results.
+    """
+    add_props = ['CLOUD_COVER', 'GEOMETRIC_RMSE_VERIFY']
+    gd_collection = MaskedCollection.from_name('LANDSAT/LC09/C02/T1_L2', add_props=add_props)
+    searched_coll = gd_collection.search('2022-01-01', '2022-02-01', region_25ha)
+    assert all([add_prop in searched_coll.schema.keys() for add_prop in add_props])
+    assert all([add_prop in list(searched_coll.properties.values())[0].keys() for add_prop in add_props])
+    assert searched_coll.properties_table is not None
+    assert searched_coll.schema_table is not None
 
 
 @pytest.mark.parametrize(
@@ -387,9 +435,9 @@ def test_composite_s2_cloud_mask_params(s2_sr_image_list, region_10000ha):
     """
     gd_collection = MaskedCollection.from_list(s2_sr_image_list)
     comp_im_prob80 = gd_collection.composite(prob=80)
-    comp_im_prob80._set_region_stats(region_10000ha, scale=gd_collection._stats_scale)
+    comp_im_prob80._set_region_stats(region_10000ha, scale=gd_collection.stats_scale)
     comp_im_prob40 = gd_collection.composite(prob=40)
-    comp_im_prob40._set_region_stats(region_10000ha, scale=gd_collection._stats_scale)
+    comp_im_prob40._set_region_stats(region_10000ha, scale=gd_collection.stats_scale)
     prob80_portion = comp_im_prob80.properties['CLOUDLESS_PORTION']
     prob40_portion = comp_im_prob40.properties['CLOUDLESS_PORTION']
     assert prob80_portion > prob40_portion
@@ -402,9 +450,9 @@ def test_composite_landsat_cloud_mask_params(l8_9_image_list, region_10000ha):
     """
     gd_collection = MaskedCollection.from_list(l8_9_image_list)
     comp_im_wshadows = gd_collection.composite(mask_shadows=False)
-    comp_im_wshadows._set_region_stats(region_10000ha, scale=gd_collection._stats_scale)
+    comp_im_wshadows._set_region_stats(region_10000ha, scale=gd_collection.stats_scale)
     comp_im_woshadows = gd_collection.composite(mask_shadows=True)
-    comp_im_woshadows._set_region_stats(region_10000ha, scale=gd_collection._stats_scale)
+    comp_im_woshadows._set_region_stats(region_10000ha, scale=gd_collection.stats_scale)
     with_shadows_portion = comp_im_wshadows.properties['CLOUDLESS_PORTION']
     without_shadows_portion = comp_im_woshadows.properties['CLOUDLESS_PORTION']
     assert with_shadows_portion > without_shadows_portion
@@ -488,9 +536,9 @@ def test_composite_mult_kwargs(region_100ha):
     filt_collection = gd_collection.search('2022-01-01', '2022-01-10', region_100ha)
 
     comp_im_prob80 = filt_collection.composite(prob=80)
-    comp_im_prob80._set_region_stats(region_100ha, scale=filt_collection._stats_scale)
+    comp_im_prob80._set_region_stats(region_100ha, scale=filt_collection.stats_scale)
     comp_im_prob40 = filt_collection.composite(prob=40)
-    comp_im_prob40._set_region_stats(region_100ha, scale=filt_collection._stats_scale)
+    comp_im_prob40._set_region_stats(region_100ha, scale=filt_collection.stats_scale)
 
     cp_prob80 = comp_im_prob80.properties['CLOUDLESS_PORTION']
     cp_prob40 = comp_im_prob40.properties['CLOUDLESS_PORTION']

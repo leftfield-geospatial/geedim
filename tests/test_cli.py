@@ -258,6 +258,44 @@ def test_raster_region_search(const_image_25ha_file, region_25ha_file, runner: C
     assert props_list[0].keys() == props_list[1].keys()
 
 
+def test_search_add_props_l9(region_25ha_file: pathlib.Path, runner: CliRunner, tmp_path: pathlib.Path):
+    """ Test --add-property generates results with the additional property keys. """
+    results_file = tmp_path.joinpath('search_results.json')
+    name = 'LANDSAT/LC09/C02/T1_L2'
+    add_props = ['CLOUD_COVER', 'GEOMETRIC_RMSE_VERIFY']
+    add_props_str = ''.join([f' -ap {add_prop} ' for add_prop in add_props])
+    cli_str = (
+        f'search -c {name} -s 2022-01-01 -e 2022-02-01 -r {region_25ha_file} {add_props_str} -op {results_file}'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert (result.exit_code == 0)
+    assert (results_file.exists())
+    with open(results_file, 'r') as f:
+        properties = json.load(f)
+    prop_keys = list(properties.values())[0].keys()
+    assert all([add_prop in prop_keys for add_prop in add_props])
+    assert all([add_prop in result.output for add_prop in add_props])
+
+
+def test_search_custom_filter_l9(region_25ha_file: pathlib.Path, runner: CliRunner, tmp_path: pathlib.Path):
+    """ Test --custom-filter filters the search results as specified. """
+    results_file = tmp_path.joinpath('search_results.json')
+    name = 'LANDSAT/LC09/C02/T1_L2'
+    cc_thresh = 30
+    add_prop = 'CLOUD_COVER'
+    cli_str = (
+        f'search -c {name} -s 2022-01-01 -e 2022-04-01 -r {region_25ha_file} -ap {add_prop} '
+        f'-cf {add_prop}>{cc_thresh} -op {results_file}'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert (result.exit_code == 0)
+    assert (results_file.exists())
+    with open(results_file, 'r') as f:
+        properties = json.load(f)
+    prop_keys = list(properties.values())[0].keys()
+    assert add_prop in prop_keys
+    assert all([prop[add_prop] > cc_thresh for prop in properties.values()])
+
 @pytest.mark.parametrize(
     'image_id, region_file', [
         ('l8_image_id', 'region_25ha_file'),
