@@ -431,6 +431,11 @@ def search(
     Search the Landsat-9 collection for images with a cloud/shadow free portion of at least 50%::
 
         geedim search -c l9-c2-l2 -s 2022-01-01 -e 2022-03-01 --bbox 23 -34 23.2 -33.8 --cloudless-portion 50
+
+    Search the Landsat-8 collection for images whose `CLOUD_COVER_LAND` property is less than 50%, and include the
+    `CLOUD_COVER_LAND`, and `CLOUD_COVER` image properties in the search results::
+
+        geedim search -c l8-c2-l2 -s 2022-01-01 -e 2022-05-01 --bbox 23 -34 23.2 -33.8 -cf "CLOUD_COVER_LAND<50" -ap CLOUD_COVER_LAND -ap CLOUD_COVER
     """
     # @formatter:on
     if not obj.region and not start_date:
