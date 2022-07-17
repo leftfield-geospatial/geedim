@@ -41,9 +41,3 @@ jobs:
         python -m pip install -e .
         geedim -v download -i LANDSAT/LC09/C02/T1_L2/LC09_173083_20220308 --bbox 21.3 -33.7 21.8 -33.2 -o
         ls -l
-    - name: Upload coverage
-      uses: codecov/codecov-action@v2
-      with:
-        fail_ci_if_error: true
-        files: ./coverage.xml
-        token: ${{ secrets.CODECOV_TOKEN }}
