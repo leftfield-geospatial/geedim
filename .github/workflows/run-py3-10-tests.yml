@@ -1,6 +1,5 @@
-# This workflow will install Python dependencies, run tests and lint with a variety of Python versions
 
-name: Tests
+name: Python 3.10 Tests
 
 on:
   push:
