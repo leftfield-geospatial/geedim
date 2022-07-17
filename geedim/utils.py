@@ -113,7 +113,7 @@ def get_bounds(filename: pathlib.Path, expand: float = 5):
         # GEE sets tif colorinterp tags incorrectly, suppress rasterio warning relating to this:
         # 'Sum of Photometric type-related color channels and ExtraSamples doesn't match SamplesPerPixel'
         logging.getLogger("rasterio").setLevel(logging.ERROR)
-        with rio.open(filename) as im:
+        with rio.Env(GTIFF_FORCE_RGBA=False), rio.open(filename) as im:
             bbox = im.bounds
             if (im.crs.linear_units == "metre") and (expand > 0):  # expand the bounding box
                 expand_x = (bbox.right - bbox.left) * expand / 100.0

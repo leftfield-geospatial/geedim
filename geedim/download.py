@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 
 class BaseImage:
     _float_nodata = float('nan')
-    _desc_width = 70
+    _desc_width = 50
     _default_resampling = ResamplingMethod.near
 
     def __init__(self, ee_image: ee.Image):
@@ -442,6 +442,7 @@ class BaseImage:
             int32=np.iinfo('int32').min
         )  # yapf: disable
         nodata = nodata_dict[exp_image.dtype] if set_nodata else None
+        # TODO: add bigtiff='yes' when raw size > 4GB
         profile = dict(
             driver='GTiff', dtype=exp_image.dtype, nodata=nodata, width=exp_image.shape[1], height=exp_image.shape[0],
             count=exp_image.count, crs=CRS.from_string(exp_image.crs), transform=exp_image.transform,
@@ -714,7 +715,7 @@ class BaseImage:
             )
 
         # configure the progress bar to monitor raw/uncompressed download size
-        desc = filename.name if (len(filename.name) < self._desc_width) else f'*{filename.name[-self._desc_width:]}'
+        desc = filename.name if (len(filename.name) < self._desc_width) else f'...{filename.name[-self._desc_width:]}'
         bar_format = (
             '{desc}: |{bar}| {n_fmt}/{total_fmt} (raw) [{percentage:5.1f}%] in {elapsed:>5s} (eta: {remaining:>5s})'
         )
@@ -725,9 +726,8 @@ class BaseImage:
         session = utils.retry_session(5)
         warnings.filterwarnings('ignore', category=TqdmWarning)
         redir_tqdm = logging_redirect_tqdm([logging.getLogger(__package__)])  # redirect logging through tqdm
-        out_ds = rio.open(filename, 'w', **profile)  # create output geotiff
-
-        with redir_tqdm, rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), out_ds, bar:
+        env = rio.Env(GDAL_NUM_THREADS='ALL_CPUs', GTIFF_FORCE_RGBA=False)
+        with redir_tqdm, env, rio.open(filename, 'w', **profile) as out_ds, bar:
 
             def download_tile(tile):
                 """Download a tile and write into the destination GeoTIFF. """
@@ -743,7 +743,7 @@ class BaseImage:
                     for future in as_completed(futures):
                         future.result()
                 except Exception as ex:
-                    logger.info('Cancelling...')
+                    logger.info(f'Exception: {str(ex)}\nCancelling...')
                     executor.shutdown(wait=False, cancel_futures=True)
                     raise ex
 

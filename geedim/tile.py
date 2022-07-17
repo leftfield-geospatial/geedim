@@ -19,6 +19,7 @@ from io import BytesIO
 
 import numpy as np
 import requests
+import rasterio as rio
 from rasterio import Affine, MemoryFile
 from rasterio.windows import Window
 from tqdm.auto import tqdm
@@ -104,7 +105,7 @@ class Tile:
         ext_buffer = BytesIO(zip_file.read(zip_file.filelist[0]))
 
         # read the geotiff with a rasterio memory file
-        with MemoryFile(ext_buffer) as mem_file:
+        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs', GTIFF_FORCE_RGBA=False), MemoryFile(ext_buffer) as mem_file:
             with mem_file.open() as ds:
                 array = ds.read()
                 if (array.dtype == np.dtype('float32')) or (array.dtype == np.dtype('float64')):

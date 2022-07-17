@@ -382,7 +382,7 @@ cli.add_command(config)
 @click.option(
     '-ap', '--add-property', 'add_props', type=click.STRING, default=None, multiple=True,
     help='Additional image property name(s) to include in search results.'
-)  # TODO: add an example to the docstring below using -cf and -ap
+)
 @click.option(
     '-op', '--output', type=click.Path(exists=False, dir_okay=False, writable=True), default=None,
     help='JSON file to write search results to.'
