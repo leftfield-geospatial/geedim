@@ -420,7 +420,7 @@ class MaskedCollection:
         fill_portion: float = None, cloudless_portion: float = None, custom_filter: str = None, **kwargs
     ) -> 'MaskedCollection':
         """
-        Search for images based on date, region and filled/cloudless portion criteria.
+        Search for images based on date, region, filled/cloudless portion, and custom criteria.
 
         Parameters
         ----------
@@ -436,7 +436,7 @@ class MaskedCollection:
         cloudless_portion: float, optional
             Minimum portion (%) of cloud/shadow free image pixels.
         custom_filter: str, optional
-            Custom filter expression e.g. "property > value".  See the `EE docs
+            Custom image property filter expression e.g. "property > value".  See the `EE docs
             <https://developers.google.com/earth-engine/apidocs/ee-filter-expression>`_.
         **kwargs
             Optional cloud/shadow masking parameters - see :meth:`geedim.mask.MaskedImage.__init__` for details.
