@@ -448,8 +448,15 @@ def test_export(user_fix_base_image: BaseImage, region_25ha: Dict):
     assert task.status()['state'] == 'READY'
 
 
+def test_download_bigtiff(s2_sr_base_image: BaseImage, tmp_path: pathlib.Path):
+    """ Test that BIGTIFF gets set in the profile of images larger than 4GB. """
+    exp_image, profile = s2_sr_base_image._prepare_for_download()
+    assert exp_image.size >= 4e9
+    assert 'bigtiff' in profile
+    assert profile['bigtiff']
+
 # TODO:
-# -  export(): test an export of small file (with wait ? - it kind of has to be to test monitor_export() )
+# -  export(): test an export of small file
 # - different generic collection images are downloaded ok (perhaps this goes with MaskedImage more than BaseImage)
 # - test float mask/nodata in downloaded image
 # - test mult tile download has no discontinuities

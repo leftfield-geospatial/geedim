@@ -442,12 +442,14 @@ class BaseImage:
             int32=np.iinfo('int32').min
         )  # yapf: disable
         nodata = nodata_dict[exp_image.dtype] if set_nodata else None
-        # TODO: add bigtiff='yes' when raw size > 4GB
         profile = dict(
             driver='GTiff', dtype=exp_image.dtype, nodata=nodata, width=exp_image.shape[1], height=exp_image.shape[0],
             count=exp_image.count, crs=CRS.from_string(exp_image.crs), transform=exp_image.transform,
             compress='deflate', interleave='band', tiled=True, photometric=None,
         )
+        # add BIGTIFF support if the uncompressed image is bigger than 4GB
+        if exp_image.size >= 4e9:
+            profile.update(bigtiff=True)
         return exp_image, profile
 
     @staticmethod
