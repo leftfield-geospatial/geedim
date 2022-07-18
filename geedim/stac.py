@@ -170,7 +170,8 @@ class StacCatalog:
     def refresh_url_dict(self):
         """ Update `url_dict` with the latest from EE STAC. """
         url_dict = {}
-        self._url_dict = self._traverse_stac(root_stac_url, url_dict)
+        url_dict = self._traverse_stac(root_stac_url, url_dict)
+        self._url_dict = dict(sorted(url_dict.items()))
 
     def write_url_dict(self, filename=None):
         """ Write the ``url_dict`` to file. """
