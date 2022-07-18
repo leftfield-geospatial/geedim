@@ -363,8 +363,7 @@ cli.add_command(config)
 @bbox_option
 @click.option(
     '-r', '--region', type=click.Path(exists=True, dir_okay=False, allow_dash=True), callback=_region_cb,
-    help='Region defined by geojson polygon or raster file. Use "-" to read geojson from stdin.  One of '
-    ':option:`--bbox` or :option:`--region` is required.'
+    help='Region defined by geojson polygon or raster file. Use "-" to read geojson from stdin.'
 )
 @click.option(
     '-fp', '--fill-portion', type=click.FloatRange(min=0, max=100), default=0, show_default=True,
@@ -377,7 +376,7 @@ cli.add_command(config)
 )
 @click.option(
     '-cf', '--custom-filter', type=click.STRING, default=None,
-    help='Custom filter e.g. "property > value".  Quote delimiters are required.'
+    help='Custom image property filter e.g. "property > value".  Quote delimiters are required.'
 )
 @click.option(
     '-ap', '--add-property', 'add_props', type=click.STRING, default=None, multiple=True,
@@ -396,9 +395,8 @@ def search(
     """
     Search for images.
 
-    Search a Google Earth Engine image collection for images, filtering by date, region and portion of
-    filled pixels.  Cloud/shadow-free (cloudless) portion filtering is supported on the following
-    collections:
+    Search a Google Earth Engine image collection for images, based on date, region, portion of filled pixels, and
+    custom filters.  Cloud/shadow-free (cloudless) portion filtering is supported on the following collections:
     \b
 
         ===========  ===========================
@@ -415,7 +413,7 @@ def search(
         s2-sr-hm     COPERNICUS/S2_SR_HARMONIZED
         ===========  ===========================
 
-    The search must be filtered with at least one of the ``--start-date``, or ``--bbox`` and ``--region`` options.
+    The search must be filtered with at least one of the ``--start-date``, ``--bbox`` or ``--region`` options.
 
     Note that filled/cloudless portions are not taken from the granule metadata, but are calculated as portions of the
     specified search region for improved accuracy.
@@ -453,9 +451,10 @@ def search(
             start_date, end_date, obj.region, fill_portion=fill_portion, cloudless_portion=cloudless_portion,
             custom_filter=custom_filter, **obj.cloud_kwargs
         )
+        # retrieve search result properties from EE
+        num_images = gd_collection.properties
 
-    # retrieve search result properties from EE
-    if len(gd_collection.properties) == 0:
+    if num_images == 0:
         logger.info('No images found\n')
     else:
         obj.image_list += list(gd_collection.properties.keys())  # store image ids for chained commands
