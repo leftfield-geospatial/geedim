@@ -16,6 +16,9 @@
 
 import zipfile
 from io import BytesIO
+import threading
+from contextlib import contextmanager
+import sys
 
 import numpy as np
 import requests
@@ -23,6 +26,9 @@ import rasterio as rio
 from rasterio import Affine, MemoryFile
 from rasterio.windows import Window
 from tqdm.auto import tqdm
+
+# lock to prevent concurrent calls to ee.Image.getDownloadURL in python 3.10
+_ee_lock = threading.Lock()
 
 
 class Tile:
@@ -49,15 +55,29 @@ class Tile:
         """ rasterio tile window into the source image. """
         return self._window
 
+    @staticmethod
+    @contextmanager
+    def _concurrent_download_url():
+        """
+        Context manager to acquire a thread lock if the python version is 3.10.  Works around a bug where concurrent
+        calls to ee.Image.getDownloadURL() cause a core dump (in python 3.10).
+        """
+        if sys.version_info.major == 3 and sys.version_info.minor == 10:
+            with _ee_lock:
+                yield None
+        else:
+            yield None
+
     def _get_download_url_response(self, session=None):
         """ Get tile download url and response. """
         session = session if session else requests
-        url = self._exp_image.ee_image.getDownloadURL(
-            dict(
-                crs=self._exp_image.crs, crs_transform=tuple(self._transform)[:6], dimensions=self._shape[::-1],
-                filePerBand=False, fileFormat='GeoTIFF'
+        with self._concurrent_download_url():
+            url = self._exp_image.ee_image.getDownloadURL(
+                dict(
+                    crs=self._exp_image.crs, crs_transform=tuple(self._transform)[:6], dimensions=self._shape[::-1],
+                    filePerBand=False, fileFormat='GeoTIFF'
+                )
             )
-        )
         return session.get(url, stream=True), url
 
     def download(self, session=None, response=None, bar: tqdm = None):
