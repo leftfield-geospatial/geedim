@@ -20,9 +20,9 @@ import pytest
 """ geemap integration test. """
 
 @pytest.fixture(scope='session', autouse=True)
-def ee_init() -> None:
+def ee_init():
     """ Override the ee_init fixture, so that we only initialise through geemap below. """
-    return None
+    return
 
 @pytest.mark.no_ee_init
 def test_geemap_integration(tmp_path: Path):

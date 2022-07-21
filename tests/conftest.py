@@ -23,9 +23,9 @@ from geedim.utils import root_path
 
 
 @pytest.fixture(scope='session', autouse=True)
-def ee_init() -> None:
+def ee_init():
     Initialize()
-    return None
+    return
 
 
 @pytest.fixture(scope='session')
