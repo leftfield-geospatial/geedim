@@ -1,0 +1,53 @@
+
+name: Run geemap download tests
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-conda:
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash -l {0}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ macos-latest, ubuntu-latest, windows-latest ]
+        python-version: [ 3.6, 3.7, 3.8, 3.9, 3.10 ]
+    steps:
+      - uses: conda-incubator/setup-miniconda@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+          channels: conda-forge
+          channel-priority: true
+          activate-environment: test
+          mamba-version: "*"
+      - name: Install geedim
+        run: |
+          mamba info
+          mamba install -c conda-forge geedim>=1.3.0
+          mamba list
+      - name: Test geedim download CLI
+        timeout-minutes: 5
+        env:
+          EE_SERVICE_ACC_PRIVATE_KEY: ${{ secrets.EE_SERVICE_ACC_PRIVATE_KEY }}
+        run: |
+          geedim --version
+          geedim --help
+          geedim download -i LANDSAT/LC08/C02/T1_TOA/LC08_001004_20140609 --scale 100 -o
+          test -f ./LANDSAT-LC08-C02-T1_TOA-LC08_001004_20140609.tif && echo "File exists"
+          pwd
+          ls -l
+      - name: Install geemap
+        run: |
+          mamba info
+          mamba install -c conda-forge geemap
+          mamba list
+      - name: Test geedim download API integration with geemap
+        uses: actions/checkout@v2
+        timeout-minutes: 5
+        env:
+          EE_SERVICE_ACC_PRIVATE_KEY: ${{ secrets.EE_SERVICE_ACC_PRIVATE_KEY }}
+        run: |
+          python -m pytest ./tests/integration.py
