@@ -22,7 +22,7 @@ import pathlib
 import sys
 import time
 from threading import Thread
-from typing import Tuple
+from typing import Tuple, Optional
 
 import ee
 import rasterio as rio
@@ -38,7 +38,7 @@ else:
     root_path = pathlib.Path(os.getcwd())
 
 
-def Initialize(**kwargs):
+def Initialize(opt_url: Optional[str]=None, **kwargs):
     """
     Initialise Earth Engine through the `high volume endpoint
     <https://developers.google.com/earth-engine/cloud/highvolume>`_.
@@ -48,6 +48,9 @@ def Initialize(**kwargs):
 
     Parameters
     ----------
+    opt_url: str
+        The Earth Engine endpoint to use.  If None, the default is used.  See the docs on the `
+        high volume endpoint <https://developers.google.com/earth-engine/cloud/highvolume>`_ for more info.
     kwargs
         Optional arguments to pass to `ee.Initialize`.
     """
@@ -60,9 +63,9 @@ def Initialize(**kwargs):
             # authenticate with service account
             key_dict = json.loads(os.environ[env_key])
             credentials = ee.ServiceAccountCredentials(key_dict['client_email'], key_data=key_dict['private_key'])
-            ee.Initialize(credentials, opt_url='https://earthengine-highvolume.googleapis.com', **kwargs)
+            ee.Initialize(credentials, opt_url=opt_url, **kwargs)
         else:
-            ee.Initialize(opt_url='https://earthengine-highvolume.googleapis.com', **kwargs)
+            ee.Initialize(opt_url=opt_url, **kwargs)
 
 
 def singleton(cls):

@@ -29,7 +29,7 @@ def ee_init():
 @pytest.mark.no_ee_init
 def test_geemap_integration(tmp_path: Path):
     """ Simulate the geemap download example. """
-    gd.Initialize(http_transport=Http())    # a replica of geemap Initialize
+    gd.Initialize(opt_url=None, http_transport=Http())    # a replica of geemap Initialize
     ee_image = ee.ImageCollection("LANDSAT/LC08/C02/T1_TOA").first()
     gd_image = gd.download.BaseImage(ee_image)
     out_file = tmp_path.joinpath('landsat.tif')
