@@ -40,17 +40,20 @@ else:
 
 def Initialize(opt_url: Optional[str]=None, **kwargs):
     """
-    Initialise Earth Engine through the `high volume endpoint
-    <https://developers.google.com/earth-engine/cloud/highvolume>`_.
+    Initialise Earth Engine.
 
     Credentials will be read from the `EE_SERVICE_ACC_PRIVATE_KEY` environment variable if it exists
     (useful for integrating with e.g. GitHub actions).
 
+    .. note::
+
+        Earth Engine recommends using the `high volume endpoint` for applications like ``geedim``.
+        See `the docs <https://developers.google.com/earth-engine/cloud/highvolume>`_ for more information.
+
     Parameters
     ----------
     opt_url: str
-        The Earth Engine endpoint to use.  If None, the default is used.  See the docs on the `
-        high volume endpoint <https://developers.google.com/earth-engine/cloud/highvolume>`_ for more info.
+        The Earth Engine endpoint to use.  If ``None``, the default is used.
     kwargs
         Optional arguments to pass to `ee.Initialize`.
     """

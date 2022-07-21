@@ -9,8 +9,7 @@ This section gives a quick overview of the API.  You can also take a look at the
 Initialisation
 ^^^^^^^^^^^^^^
 
-:meth:`~geedim.utils.Initialize` provides a shortcut for initialising the Earth Engine API through the `high-volume
-endpoint <https://developers.google.com/earth-engine/cloud/highvolume>`_.
+:meth:`~geedim.utils.Initialize` provides a shortcut for initialising the Earth Engine API.
 
 .. literalinclude:: examples/api_getting_started.py
     :language: python
