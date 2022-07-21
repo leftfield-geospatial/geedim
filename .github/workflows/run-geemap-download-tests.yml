@@ -1,5 +1,5 @@
 
-name: Run geemap download tests
+name: Run large download & geemap integration tests
 
 on:
   workflow_dispatch:
@@ -43,6 +43,8 @@ jobs:
           test -f ./LANDSAT-LC08-C02-T1_TOA-LC08_001004_20140609.tif && echo "File exists"
           pwd
           ls -l
+      - name: Check out geedim
+        uses: actions/checkout@v2
       - name: Simulate the geemap download example
         timeout-minutes: 10
         env:
