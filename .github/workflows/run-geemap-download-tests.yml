@@ -11,7 +11,7 @@ jobs:
       run:
         shell: bash -l {0}
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         os: [ macos-latest, ubuntu-latest, windows-latest ]
         python-version: [ 3.6, 3.7, 3.8, 3.9, 3.10 ]
@@ -44,8 +44,9 @@ jobs:
           mamba info
           mamba install -c conda-forge geemap
           mamba list
-      - name: Test geedim download API integration with geemap
+      - name: Check out geedim
         uses: actions/checkout@v2
+      - name: Test geedim download API integration with geemap
         timeout-minutes: 10
         env:
           EARTHENGINE_TOKEN: ${{ secrets.EARTHENGINE_TOKEN }}
