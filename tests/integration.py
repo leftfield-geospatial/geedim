@@ -14,22 +14,24 @@
     limitations under the License.
 """
 import ee
-import geemap
 from pathlib import Path
+from httplib2 import Http
+import geedim as gd
 import pytest
-""" geemap integration test. """
+
 
 @pytest.fixture(scope='session', autouse=True)
 def ee_init():
     """ Override the ee_init fixture, so that we only initialise through geemap below. """
     return
 
+
 @pytest.mark.no_ee_init
 def test_geemap_integration(tmp_path: Path):
-    """ Test the geemap download example. """
-    map = geemap.Map()  # initialise EE through geemap
-    image = ee.ImageCollection("LANDSAT/LC08/C02/T1_TOA").first()
+    """ Simulate the geemap download example. """
+    gd.Initialize(http_transport=Http())    # a replica of geemap Initialize
+    ee_image = ee.ImageCollection("LANDSAT/LC08/C02/T1_TOA").first()
+    gd_image = gd.download.BaseImage(ee_image)
     out_file = tmp_path.joinpath('landsat.tif')
-    geemap.download_ee_image(image, str(out_file), scale=100)
+    gd_image.download(out_file, scale=100)
     assert out_file.exists()
-
