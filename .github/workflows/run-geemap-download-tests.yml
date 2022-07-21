@@ -29,7 +29,7 @@ jobs:
           mamba install -c conda-forge geedim>=1.3.0
           mamba list
       - name: Test geedim download CLI
-        timeout-minutes: 5
+        timeout-minutes: 10
         env:
           EE_SERVICE_ACC_PRIVATE_KEY: ${{ secrets.EE_SERVICE_ACC_PRIVATE_KEY }}
         run: |
@@ -46,8 +46,8 @@ jobs:
           mamba list
       - name: Test geedim download API integration with geemap
         uses: actions/checkout@v2
-        timeout-minutes: 5
+        timeout-minutes: 10
         env:
-          EE_SERVICE_ACC_PRIVATE_KEY: ${{ secrets.EE_SERVICE_ACC_PRIVATE_KEY }}
+          EARTHENGINE_TOKEN: ${{ secrets.EARTHENGINE_TOKEN }}
         run: |
           python -m pytest ./tests/integration.py
