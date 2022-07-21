@@ -60,11 +60,9 @@ def Initialize(**kwargs):
             # authenticate with service account
             key_dict = json.loads(os.environ[env_key])
             credentials = ee.ServiceAccountCredentials(key_dict['client_email'], key_data=key_dict['private_key'])
-            # ee.Initialize(credentials, opt_url='https://earthengine-highvolume.googleapis.com', **kwargs)
-            ee.Initialize(credentials, **kwargs)
+            ee.Initialize(credentials, opt_url='https://earthengine-highvolume.googleapis.com', **kwargs)
         else:
-            # ee.Initialize(opt_url='https://earthengine-highvolume.googleapis.com', **kwargs)
-            ee.Initialize(**kwargs)
+            ee.Initialize(opt_url='https://earthengine-highvolume.googleapis.com', **kwargs)
 
 
 def singleton(cls):

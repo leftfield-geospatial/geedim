@@ -22,7 +22,7 @@ import pytest
 
 @pytest.fixture(scope='session', autouse=True)
 def ee_init():
-    """ Override the ee_init fixture, so that we only initialise through geemap below. """
+    """ Override the ee_init fixture, so that we only initialise as geemap does, below. """
     return
 
 
