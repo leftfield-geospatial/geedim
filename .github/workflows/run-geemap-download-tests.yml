@@ -53,3 +53,4 @@ jobs:
           EARTHENGINE_TOKEN: ${{ secrets.EARTHENGINE_TOKEN }}
         run: |
           python -m pytest ./tests/integration.py
+          ls -l ~/.config/earthengine/credentials
