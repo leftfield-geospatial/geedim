@@ -16,8 +16,6 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ['3.6', '3.9']
-    env:
-      EE_SERVICE_ACC_PRIVATE_KEY: ${{ secrets.EE_SERVICE_ACC_PRIVATE_KEY }}
     steps:
     - uses: actions/checkout@v2
     - name: Set up Python ${{ matrix.python-version }}
@@ -37,6 +35,8 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: Test with pytest
       timeout-minutes: 10
+      env:
+        EE_SERVICE_ACC_PRIVATE_KEY: ${{ secrets.EE_SERVICE_ACC_PRIVATE_KEY }}
       run: |
         python -m pytest -n 4 --cov=geedim --cov-report=term-missing --cov-report=xml:coverage.xml ./tests
     - name: Upload coverage
