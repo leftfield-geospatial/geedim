@@ -17,8 +17,6 @@
 import zipfile
 from io import BytesIO
 import threading
-from contextlib import contextmanager
-import sys
 
 import numpy as np
 import requests
@@ -28,10 +26,9 @@ from rasterio.windows import Window
 from tqdm.auto import tqdm
 
 
-
 class Tile:
     # lock to prevent concurrent calls to ee.Image.getDownloadURL(), which can cause a seg fault in the standard
-    # python networking libraries
+    # python networking libraries.
     _ee_lock = threading.Lock()
 
     def __init__(self, exp_image, window: Window):
