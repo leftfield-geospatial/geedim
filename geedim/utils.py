@@ -38,13 +38,18 @@ else:
     root_path = pathlib.Path(os.getcwd())
 
 
-def Initialize():
+def Initialize(**kwargs):
     """
     Initialise Earth Engine through the `high volume endpoint
     <https://developers.google.com/earth-engine/cloud/highvolume>`_.
 
     Credentials will be read from the `EE_SERVICE_ACC_PRIVATE_KEY` environment variable if it exists
     (useful for integrating with e.g. GitHub actions).
+
+    Parameters
+    ----------
+    kwargs
+        Optional arguments to pass to `ee.Initialize`.
     """
 
     if not ee.data._credentials:
@@ -55,9 +60,9 @@ def Initialize():
             # authenticate with service account
             key_dict = json.loads(os.environ[env_key])
             credentials = ee.ServiceAccountCredentials(key_dict['client_email'], key_data=key_dict['private_key'])
-            ee.Initialize(credentials, opt_url='https://earthengine-highvolume.googleapis.com')
+            ee.Initialize(credentials, opt_url='https://earthengine-highvolume.googleapis.com', **kwargs)
         else:
-            ee.Initialize(opt_url='https://earthengine-highvolume.googleapis.com')
+            ee.Initialize(opt_url='https://earthengine-highvolume.googleapis.com', **kwargs)
 
 
 def singleton(cls):
