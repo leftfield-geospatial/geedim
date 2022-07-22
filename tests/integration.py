@@ -35,3 +35,4 @@ def test_geemap_integration(tmp_path: Path):
     out_file = tmp_path.joinpath('landsat.tif')
     gd_image.download(out_file, scale=100)
     assert out_file.exists()
+    assert out_file.stat().st_size > 100e6

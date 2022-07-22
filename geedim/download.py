@@ -749,6 +749,7 @@ class BaseImage:
                     executor.shutdown(wait=False, cancel_futures=True)
                     raise ex
 
+            bar.update(bar.total - bar.n)   # ensure the bar reaches 100%
             # populate GeoTIFF metadata and build overviews
             self._write_metadata(out_ds)
             self._build_overviews(out_ds)
