@@ -179,7 +179,7 @@ class CloudMaskedImage(MaskedImage):
     """ A base class for encapsulating cloud/shadow masked images. """
 
     def _cloud_dist(self, cloudless_mask: ee.Image = None, max_cloud_dist: float = 5000) -> ee.Image:
-        """ Find the cloud/shadow distance. """
+        """ Find the cloud/shadow distance in units of 10m. """
         if not cloudless_mask:
             cloudless_mask = self.ee_image.select('CLOUDLESS_MASK')
         proj = get_projection(self.ee_image, min_scale=False)  # use maximum scale projection to save processing time
@@ -190,20 +190,20 @@ class CloudMaskedImage(MaskedImage):
         cloud_shadow_mask = cloudless_mask.Not()
         cloud_pix = ee.Number(max_cloud_dist).divide(proj.nominalScale()).round()  # cloud_dist in pixels
 
-        # Find distance to nearest cloud/shadow (m).
+        # Find distance to nearest cloud/shadow (units of 10m).
         cloud_dist = cloud_shadow_mask.fastDistanceTransform(
             neighborhood=cloud_pix, units='pixels', metric='squared_euclidean'
-        ).sqrt().multiply(proj.nominalScale())
+        ).sqrt().multiply(proj.nominalScale().divide(10))
 
         # Reproject to force calculation at correct scale.
         cloud_dist = cloud_dist.reproject(crs=proj, scale=proj.nominalScale()).rename('CLOUD_DIST')
 
         # Clip cloud_dist to max_cloud_dist.
-        cloud_dist = cloud_dist.where(cloud_dist.gt(ee.Image(max_cloud_dist)), max_cloud_dist)
+        cloud_dist = cloud_dist.where(cloud_dist.gt(ee.Image(max_cloud_dist / 10)), max_cloud_dist / 10)
 
-        # cloud_dist is float64 by default, so convert to Uint32 here to avoid forcing the whole image to float64 on
+        # cloud_dist is float64 by default, so convert to Uint16 here to avoid forcing the whole image to float64 on
         # download.
-        return cloud_dist.toUint32().rename('CLOUD_DIST')
+        return cloud_dist.toUint16().rename('CLOUD_DIST')
 
     def _set_region_stats(self, region: Dict = None, scale: float = None):
         """
@@ -304,9 +304,9 @@ class LandsatImage(CloudMaskedImage):
         cloud_shadow_mask = (cloud_mask.Or(shadow_mask)) if mask_shadows else cloud_mask
         cloudless_mask = cloud_shadow_mask.Not().And(fill_mask).rename('CLOUDLESS_MASK')
 
-        # copy cloud distance from existing ST_CDIST band, scale to meters, and clip to max_cloud_dist
-        cloud_dist = ee_image.select('ST_CDIST').rename('CLOUD_DIST').multiply(10).toUint32()
-        cloud_dist = cloud_dist.where(cloud_dist.gt(ee.Image(max_cloud_dist)), max_cloud_dist)
+        # copy cloud distance from existing ST_CDIST band (in 10m units), and clip to max_cloud_dist
+        cloud_dist = ee_image.select('ST_CDIST').rename('CLOUD_DIST').toUint16()
+        cloud_dist = cloud_dist.where(cloud_dist.gt(ee.Image(max_cloud_dist / 10)), max_cloud_dist / 10)
 
         return ee.Image([fill_mask, cloud_mask, shadow_mask, cloudless_mask, cloud_dist])
 

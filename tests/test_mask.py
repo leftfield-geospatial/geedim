@@ -245,7 +245,7 @@ def test_s2_clouddist_max(image_id: str, max_cloud_dist: int, region_10000ha: Di
     def get_max_cloud_dist(cloud_dist: ee.Image):
         """ Get the maximum of `cloud_dist` over region_10000ha. """
         mcd = cloud_dist.reduceRegion(reducer='max', geometry=region_10000ha, bestEffort=True, maxPixels=1e4)
-        return mcd.get('CLOUD_DIST').getInfo()
+        return mcd.get('CLOUD_DIST').getInfo() * 10
 
     image_id: str = request.getfixturevalue(image_id)
     masked_image = MaskedImage.from_id(image_id, max_cloud_dist=max_cloud_dist)
@@ -302,7 +302,7 @@ def test_s2_aux_bands(masked_image: str, region_10000ha: Dict, request: pytest.F
     assert stats['PAN_CLOUDLESS'] > stats['PAN_SHADOW']
     assert stats['CDIST_CLOUDLESS'] > stats['CDIST_CLOUD']
     proj_scale = get_projection(masked_image.ee_image, min_scale=False).nominalScale().getInfo()
-    assert stats['CDIST_MIN'] == proj_scale
+    assert stats['CDIST_MIN'] * 10 == proj_scale
 
 
 @pytest.mark.parametrize('masked_image', ['s2_sr_masked_image', 'l9_masked_image'])

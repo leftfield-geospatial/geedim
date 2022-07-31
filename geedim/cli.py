@@ -513,7 +513,7 @@ def download(obj, image_id, bbox, region, download_dir, mask, overwrite, **kwarg
         SHADOW_MASK     Mask of cloud shadows.
         CLOUD_MASK      Mask of clouds.
         CLOUDLESS_MASK  Mask of filled & cloud/shadow-free pixels.
-        CLOUD_DIST      Distance to nearest cloud (m).
+        CLOUD_DIST      Distance to nearest cloud (10m).
         ==============  =========================================
 
     Images from other collections, will contain the FILL_MASK band only.
@@ -588,7 +588,7 @@ def export(obj, image_id, bbox, region, drive_folder, mask, wait, **kwargs):
         SHADOW_MASK     Mask of cloud shadows.
         CLOUD_MASK      Mask of clouds.
         CLOUDLESS_MASK  Mask of filled & cloud/shadow-free pixels.
-        CLOUD_DIST      Distance to nearest cloud.
+        CLOUD_DIST      Distance to nearest cloud (10m).
         ==============  =========================================
 
     Images from other collections, will contain the FILL_MASK band only.
