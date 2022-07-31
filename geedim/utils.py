@@ -30,6 +30,8 @@ import requests
 from geedim.enums import ResamplingMethod
 from rasterio.warp import transform_geom
 from requests.adapters import HTTPAdapter, Retry
+import numpy as np
+from rasterio.env import GDALVersion
 from tqdm.auto import tqdm
 
 if '__file__' in globals():
@@ -37,6 +39,7 @@ if '__file__' in globals():
 else:
     root_path = pathlib.Path(os.getcwd())
 
+_GDAL_AT_LEAST_35 = GDALVersion.runtime().at_least("3.5")
 
 def Initialize(opt_url: Optional[str]=None, **kwargs):
     """
@@ -303,3 +306,5 @@ def retry_session(
     session.mount('http://', adapter)
     session.mount('https://', adapter)
     return session
+
+

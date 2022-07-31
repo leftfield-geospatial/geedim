@@ -159,9 +159,10 @@ def test_has_fixed_projection(user_base_image: BaseImage, user_fix_base_image: B
         ([{'precision': 'int', 'min': -128, 'max': -100}, {'precision': 'int', 'min': 0, 'max': 127}], 'int8'),
         ([{'precision': 'int', 'min': 256, 'max': 257}], 'uint16'),
         ([{'precision': 'int', 'min': -32768, 'max': 32767}], 'int16'),
-        ([{'precision': 'int', 'min': 2 << 15, 'max': 2 << 32}], 'uint32'),
-        ([{'precision': 'int', 'min': -2 << 31, 'max': 2 << 31}], 'int32'),
-        ([{'precision': 'float', 'min': 0, 'max': 1e9}, {'precision': 'float', 'min': 0, 'max': 1}], 'float32'),
+        ([{'precision': 'int', 'min': 2**15, 'max': 2**32 - 1}], 'uint32'),
+        ([{'precision': 'int', 'min': -2**31, 'max': 2**31 - 1}], 'int32'),
+        ([{'precision': 'float', 'min': 0., 'max': 1.e9}, {'precision': 'float', 'min': 0., 'max': 1.}], 'float32'),
+        ([{'precision': 'int', 'min': 0., 'max': 2**31 - 1}, {'precision': 'float', 'min': 0., 'max': 1.}], 'float64'),
         ([{'precision': 'int', 'min': 0, 'max': 255}, {'precision': 'double', 'min': -1e100, 'max': 1e100}], 'float64'),
     ]
 )
@@ -278,7 +279,7 @@ def test_prepare_for_download(src_image: str, tgt_image: str, region_25ha: Dict,
 @pytest.mark.parametrize(
     'dtype, exp_nodata', [
         ('uint8', 0), ('int8', -2**7), ('uint16', 0), ('int16', -2**15), ('uint32', 0), ('int32', -2**31),
-        ('float32', float('nan')), ('float64', float('nan'))
+        ('float32', float('nan')), ('float64', float('nan')),
     ]
 )
 def test_prepare_nodata(user_fix_base_image: BaseImage, region_25ha: Dict, dtype: str, exp_nodata: float):

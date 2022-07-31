@@ -29,10 +29,6 @@ from typing import Tuple, Dict, List, Union, Iterator
 import ee
 import numpy as np
 import rasterio as rio
-from geedim import utils
-from geedim.enums import ResamplingMethod
-from geedim.stac import StacCatalog, StacItem
-from geedim.tile import Tile
 from rasterio.crs import CRS
 from rasterio.enums import Resampling as RioResampling
 from rasterio.windows import Window
@@ -40,7 +36,20 @@ from tqdm import TqdmWarning
 from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
+from geedim import utils
+from geedim.enums import ResamplingMethod
+from geedim.stac import StacCatalog, StacItem
+from geedim.tile import Tile
+
 logger = logging.getLogger(__name__)
+
+supported_dtypes = ['uint8', 'uint16', 'uint32', 'int8', 'int16', 'int32', 'float32', 'float64']
+""" Supported image data types for downloading/exporting. """
+# Note:
+# - while gdal >= 3.5 supports *int64 data type, there is a rasterio bug retrieving the *int64 nodata value,
+# so geedim will not support these types for now.
+# - the ordering of the list above is relevant to the auto dtype and should be: unsigned ints smallest - largest,
+# signed ints smallest to largest, float types smallest to largest.
 
 
 class BaseImage:
@@ -236,25 +245,38 @@ class BaseImage:
 
     @staticmethod
     def _get_min_dtype(ee_info: Dict) -> str:
-        """ Return the minimum size data type corresponding to a given Earth Engine image info dictionary. """
+        """ Return the minimum size rasterio data type corresponding to a given Earth Engine image info dictionary. """
+        def get_min_int_dtype(band_info: List[Dict]) -> Union[str, None]:
+            """ Return the minimum integer dtype for the given band information. """
+            # create a list of integer min/max values
+            int_minmax = [
+                minmax for band_dict in band_info if band_dict['data_type']['precision'] == 'int'
+                for minmax in (int(band_dict['data_type']['min']), int(band_dict['data_type']['max']))
+            ]  # yapf: disable
+
+            if len(int_minmax) == 0:
+                return None
+            min_value = np.nanmin(int_minmax)
+            max_value = np.nanmax(int_minmax)
+
+            for dtype in supported_dtypes[:-2]:
+                if (min_value >= np.iinfo(dtype).min) and (max_value <= np.iinfo(dtype).max):
+                    return dtype
+            return 'float64'
+
+        # TODO: from gdal = 3.5, there is support *int64 in geotiffs, rasterio 1.3.0 had some nodata issues with this,
+        #  int64 support should be added when these issues are resolved
         dtype = None
         if 'bands' in ee_info:
             precisions = np.array([bd['data_type']['precision'] for bd in ee_info['bands']])
-            if all(precisions == 'int'):
-                dtype_minmax = np.array(
-                    [(bd['data_type']['min'], bd['data_type']['max']) for bd in ee_info['bands']], dtype=np.int64
-                )
-                dtype_min = min(0, int(dtype_minmax[:, 0].min()))  # minimum image pixel value
-                dtype_max = max(0, int(dtype_minmax[:, 1].max()))  # maximum image pixel value
-
-                # determine the number of integer bits required to represent the value range
-                bits = 2**np.ceil(np.log2(np.log2(dtype_max - dtype_min)))
-                bits = min(max(bits, 8), 32)  # clamp bits to allowed values
-                dtype = f'{"u" if dtype_min >= 0 else ""}int{int(bits)}'
-            elif any(precisions == 'double'):
+            if any(precisions == 'double'):
                 dtype = 'float64'
+            elif any(precisions == 'float'):
+                # if there are >= 32 integer bits, use float64 to accommodate them, otherwise float32
+                int_dtype = get_min_int_dtype(ee_info['bands'])
+                dtype = 'float32' if (not int_dtype or np.dtype(int_dtype).itemsize < 4) else 'float64'
             else:
-                dtype = 'float32'
+                dtype = get_min_int_dtype(ee_info['bands'])
         return dtype
 
     @staticmethod
@@ -273,7 +295,7 @@ class BaseImage:
         """ Convert the data type of an Earth Engine image to a specified type. """
         conv_dict = dict(
             float32=ee.Image.toFloat, float64=ee.Image.toDouble, uint8=ee.Image.toUint8, int8=ee.Image.toInt8,
-            uint16=ee.Image.toUint16, int16=ee.Image.toInt16, uint32=ee.Image.toUint32, int32=ee.Image.toInt32
+            uint16=ee.Image.toUint16, int16=ee.Image.toInt16, uint32=ee.Image.toUint32, int32=ee.Image.toInt32,
         )
         if dtype not in conv_dict:
             raise TypeError(f'Unsupported dtype: {dtype}')
@@ -360,8 +382,8 @@ class BaseImage:
         resampling : ResamplingMethod, optional
             Resampling method - see :class:`~geedim.enums.ResamplingMethod` for available options.
         dtype: str, optional
-           Convert to this data type (`uint8`, `int8`, `uint16`, `int16`, `uint32`, `int32`, `float32`
-           or `float64`). Defaults to auto select a minimal type that can represent the range of pixel values.
+           Convert to this data type (`uint8`, `int8`, `uint16`, `int16`, `uint32`, `int32`, `float32` or
+           `float64`). Defaults to auto select a minimal type that can represent the range of pixel values.
         scale_offset: bool, optional
             Whether to apply any EE band scales and offsets to the image.
 
@@ -421,7 +443,7 @@ class BaseImage:
         ee_image, _ = ee_image.prepare_for_export(export_args)
         return BaseImage(ee_image)
 
-    def _prepare_for_download(self, set_nodata: bool = True, **kwargs) -> ('BaseImage', Dict):
+    def _prepare_for_download(self, set_nodata: bool = True, **kwargs) -> Tuple['BaseImage', Dict]:
         """
         Prepare the encapsulated image for tiled GeoTIFF download. Will reproject, resample, clip and convert the image
         according to the provided parameters.
@@ -439,7 +461,7 @@ class BaseImage:
             uint16=0,
             int16=np.iinfo('int16').min,
             uint32=0,
-            int32=np.iinfo('int32').min
+            int32=np.iinfo('int32').min,
         )  # yapf: disable
         nodata = nodata_dict[exp_image.dtype] if set_nodata else None
         profile = dict(
@@ -455,7 +477,7 @@ class BaseImage:
     @staticmethod
     def _get_tile_shape(
         exp_image: 'BaseImage', max_download_size: int = 32 << 20, max_grid_dimension: int = 10000
-    ) -> (Tuple[int, int], int):  # yapf: disable
+    ) -> Tuple[Tuple[int, int], int]:  # yapf: disable
         """
         Return a tile shape and number of tiles for a given BaseImage, such that the tile shape satisfies GEE
         download limits, and is 'square-ish'.
@@ -623,8 +645,8 @@ class BaseImage:
         resampling : ResamplingMethod, optional
             Resampling method - see :class:`~geedim.enums.ResamplingMethod` for available options.
         dtype: str, optional
-           Convert to this data type (`uint8`, `int8`, `uint16`, `int16`, `uint32`, `int32`, `float32`
-           or `float64`). Defaults to auto select a minimal type that can represent the range of pixel values.
+           Convert to this data type (`uint8`, `int8`, `uint16`, `int16`, `uint32`, `int32`, `float32` or
+           `float64`). Defaults to auto select a minimal type that can represent the range of pixel values.
         scale_offset: bool, optional
             Whether to apply any EE band scales and offsets to the image.
 
@@ -676,8 +698,8 @@ class BaseImage:
         resampling : ResamplingMethod, optional
             Resampling method - see :class:`~geedim.enums.ResamplingMethod` for available options.
         dtype: str, optional
-            Convert to this data type (`uint8`, `int8`, `uint16`, `int16`, `uint32`, `int32`, `float32`
-            or `float64`).  Defaults to auto select a minimum size type that can represent the range of pixel values.
+           Convert to this data type (`uint8`, `int8`, `uint16`, `int16`, `uint32`, `int32`, `float32` or
+           `float64`). Defaults to auto select a minimal type that can represent the range of pixel values.
         scale_offset: bool, optional
             Whether to apply any EE band scales and offsets to the image.
         """
