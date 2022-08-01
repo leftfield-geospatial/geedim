@@ -486,9 +486,17 @@ cli.add_command(search)
 @mask_option
 @resampling_option
 @scale_offset_option
+@click.option(
+    '-mts', '--max-tile-size', type=click.FLOAT, default=None, show_default='Earth Engine limit',
+    help='Maximum download tile size (MB).'
+)
+@click.option(
+    '-mtd', '--max-tile-dim', type=click.INT, default=None, show_default='Earth Engine limit',
+    help='Maximum tile height/width dimension (pixels).'
+)
 @click.option('-o', '--overwrite', is_flag=True, default=False, help='Overwrite the destination file if it exists.')
 @click.pass_obj
-def download(obj, image_id, bbox, region, download_dir, mask, overwrite, **kwargs):
+def download(obj, image_id, bbox, region, download_dir, mask, max_tile_size, max_tile_dim, overwrite, **kwargs):
     # @formatter:off
     """
     Download image(s).
@@ -541,7 +549,10 @@ def download(obj, image_id, bbox, region, download_dir, mask, overwrite, **kwarg
     image_list = _prepare_image_list(obj, mask=mask)
     for im in image_list:
         filename = pathlib.Path(download_dir).joinpath(im.name + '.tif')
-        im.download(filename, overwrite=overwrite, region=obj.region, **kwargs)
+        im.download(
+            filename, region=obj.region, max_tile_size=max_tile_size, max_tile_dim=max_tile_dim, overwrite=overwrite,
+            **kwargs
+        )
 
 
 cli.add_command(download)
