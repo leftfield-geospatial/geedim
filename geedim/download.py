@@ -483,7 +483,7 @@ class BaseImage:
         download limits, and is 'square-ish'.
         """
         # convert max_tile_size from MB to bytes & set to EE default if None
-        max_tile_size = int((max_tile_size * (2 << 20)) or (32 << 20))
+        max_tile_size = int((max_tile_size * (1 << 20)) or (32 << 20))
         max_tile_dim = max_tile_dim or 10000   # set max_tile_dim to EE default if None
 
         # find the total number of tiles the image must be divided into to satisfy max_tile_size
@@ -673,7 +673,7 @@ class BaseImage:
 
     def download(
         self, filename: Union[pathlib.Path, str], overwrite: bool = False, num_threads: Optional[int] = None,
-        max_tile_size: Optional[float] = None, max_tile_dimension: Optional[int] = None, **kwargs
+        max_tile_size: Optional[float] = None, max_tile_dim: Optional[int] = None, **kwargs
     ):
         """
         Download the encapsulated image to a GeoTiff file.
@@ -693,7 +693,7 @@ class BaseImage:
             Number of tiles to download concurrently.  Defaults to a sensible auto value.
         max_tile_size: int, optional
             Maximum tile size (MB).  Defaults to the Earth Engine download size limit (32 MB).
-        max_tile_dimension: int, optional
+        max_tile_dim: int, optional
             Maximum tile width/height (pixels).  Defaults to the Earth Engine download limit (10000).
         region : dict, ee.Geometry, optional
             Region defined by geojson polygon in WGS84.  Defaults to the entire image granule.
@@ -725,9 +725,7 @@ class BaseImage:
         exp_image, profile = self._prepare_for_download(**kwargs)
 
         # get the dimensions of an image tile that will satisfy GEE download limits
-        tile_shape, num_tiles = self._get_tile_shape(
-            exp_image, max_tile_size=max_tile_size, max_tile_dim=max_tile_dimension
-        )
+        tile_shape, num_tiles = self._get_tile_shape(exp_image, max_tile_size=max_tile_size, max_tile_dim=max_tile_dim)
 
         # find raw size of the download data (less than the actual download size as the image data is zipped in a
         # compressed geotiff)
