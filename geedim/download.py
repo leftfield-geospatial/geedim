@@ -24,7 +24,7 @@ import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from itertools import product
-from typing import Tuple, Dict, List, Union, Iterator
+from typing import Tuple, Dict, List, Union, Iterator, Optional
 
 import ee
 import numpy as np
@@ -111,7 +111,7 @@ class BaseImage:
         return self.__min_projection
 
     @property
-    def _stac(self) -> Union[StacItem, None]:
+    def _stac(self) -> Optional[StacItem]:
         """ Image STAC info.  None if there is no Earth Engine STAC entry for the image / image's collection. """
         return StacCatalog().get_item(self.id)
 
@@ -128,7 +128,7 @@ class BaseImage:
         self._ee_image = value
 
     @property
-    def id(self) -> Union[str, None]:
+    def id(self) -> Optional[str]:
         """ Earth Engine image ID.  None if the image ``system:id`` property is not set. """
         if self._id:  # avoid a call to getInfo() if _id is set
             return self._id
@@ -136,7 +136,7 @@ class BaseImage:
             return self._ee_info['id'] if 'id' in self._ee_info else None
 
     @property
-    def date(self) -> Union[datetime, None]:
+    def date(self) -> Optional[datetime]:
         """ Image capture date & time.  None if the image ``system:time_start`` property is not set. """
         if 'system:time_start' in self.properties:
             return datetime.utcfromtimestamp(self.properties['system:time_start'] / 1000)
@@ -144,31 +144,31 @@ class BaseImage:
             return None
 
     @property
-    def name(self) -> Union[str, None]:
+    def name(self) -> Optional[str]:
         """ Image name (the :attr:`id` with slashes replaced by dashes). """
         return self.id.replace('/', '-') if self.id else None
 
     @property
-    def crs(self) -> Union[str, None]:
+    def crs(self) -> Optional[str]:
         """
         Image CRS corresponding to minimum scale band, as an EPSG string. None if the image has no fixed projection.
         """
         return self._min_projection['crs']
 
     @property
-    def scale(self) -> Union[float, None]:
+    def scale(self) -> Optional[float]:
         """ Minimum scale (m) of image bands. None if the image has no fixed projection. """
         return self._min_projection['scale']
 
     @property
-    def footprint(self) -> Union[Dict, None]:
+    def footprint(self) -> Optional[Dict]:
         """ Geojson polygon of the image extent.  None if the image is a composite. """
         if ('properties' not in self._ee_info) or ('system:footprint' not in self._ee_info['properties']):
             return None
         return self._ee_info['properties']['system:footprint']
 
     @property
-    def shape(self) -> Union[Tuple[int, int], None]:
+    def shape(self) -> Optional[Tuple[int, int]]:
         """ (row, column) pixel dimensions of the minimum scale band. None if the image has no fixed projection. """
         return self._min_projection['shape']
 
@@ -178,7 +178,7 @@ class BaseImage:
         return len(self._ee_info['bands']) if 'bands' in self._ee_info else None
 
     @property
-    def transform(self) -> Union[rio.Affine, None]:
+    def transform(self) -> Optional[rio.Affine]:
         """ Geo-transform of the minimum scale band. None if the image has no fixed projection. """
         return self._min_projection['transform']
 
@@ -190,7 +190,7 @@ class BaseImage:
         return self._min_dtype
 
     @property
-    def size(self) -> int:
+    def size(self) -> Optional[int]:
         """ Image size (bytes).  None if the image has no fixed projection. """
         if not self.shape:
             return None
@@ -213,7 +213,7 @@ class BaseImage:
         return self._get_band_properties()
 
     @property
-    def refl_bands(self) -> Union[List[str], None]:
+    def refl_bands(self) -> Optional[List[str]]:
         """ List of spectral / reflectance bands, if any. """
         if not self._stac:
             return None
@@ -246,7 +246,7 @@ class BaseImage:
     @staticmethod
     def _get_min_dtype(ee_info: Dict) -> str:
         """ Return the minimum size rasterio data type corresponding to a given Earth Engine image info dictionary. """
-        def get_min_int_dtype(band_info: List[Dict]) -> Union[str, None]:
+        def get_min_int_dtype(band_info: List[Dict]) -> Optional[str]:
             """ Return the minimum integer dtype for the given band information. """
             # create a list of integer min/max values
             int_minmax = [
@@ -476,14 +476,15 @@ class BaseImage:
 
     @staticmethod
     def _get_tile_shape(
-        exp_image: 'BaseImage', max_download_size: int = 32 << 20, max_grid_dimension: int = 10000
+        exp_image: 'BaseImage', max_tile_size: Optional[int] = None, max_tile_dimension: Optional[int] = None
     ) -> Tuple[Tuple[int, int], int]:  # yapf: disable
         """
         Return a tile shape and number of tiles for a given BaseImage, such that the tile shape satisfies GEE
         download limits, and is 'square-ish'.
         """
-
-        # find the total number of tiles the image must be divided into to satisfy max_download_size
+        max_tile_size = max_tile_size or 32 << 20
+        max_tile_dimension = max_tile_dimension or 10000
+        # find the total number of tiles the image must be divided into to satisfy max_tile_size
         image_shape = np.array(exp_image.shape, dtype='int64')
         dtype_size = np.dtype(exp_image.dtype).itemsize
         image_size = exp_image.size
@@ -497,13 +498,13 @@ class BaseImage:
         num_tile_shape = np.array([1, 1], dtype='int64')
         tile_size = image_size
         tile_shape = image_shape
-        while tile_size >= max_download_size:
+        while tile_size >= max_tile_size:
             div_axis = np.argmax(tile_shape)
             num_tile_shape[div_axis] += 1  # increase the num tiles down the longest dimension of tile_shape
             tile_shape = np.ceil(image_shape / num_tile_shape).astype('int64')
             tile_size = tile_shape[0] * tile_shape[1] * pixel_size
 
-        tile_shape[tile_shape > max_grid_dimension] = max_grid_dimension
+        tile_shape[tile_shape > max_tile_dimension] = max_tile_dimension
         num_tiles = int(np.product(np.ceil(image_shape / tile_shape)))
         tile_shape = tuple(tile_shape.tolist())
         return tile_shape, num_tiles
@@ -553,7 +554,7 @@ class BaseImage:
             dataset.update_tags(band_i + 1, **clean_band_dict)
 
     @staticmethod
-    def _tiles(exp_image: 'BaseImage', tile_shape: Tuple[int, int] = None) -> Iterator[Tile]:
+    def _tiles(exp_image: 'BaseImage', tile_shape: Tuple[int, int]) -> Iterator[Tile]:
         """
         Iterator over downloadable image tiles.
 
@@ -563,17 +564,15 @@ class BaseImage:
         ----------
         exp_image: BaseImage
             Image to tile.
-        tile_shape: Tuple[int, int], optional
-            (row, column) tile shape to use (pixels). Defaults to calculate an auto tile shape that satisfies the
-            Earth Engine download size limit.
+        tile_shape: Tuple[int, int]
+            (row, column) tile shape to use (pixels). Use :meth:`BaseImage._get_tile_shape` to find a tile shape that
+            satisfies the Earth Engine download limit for :param:`exp_image`.
 
         Yields
         -------
         Tile
             An image tile that can be downloaded.
         """
-        if not tile_shape:
-            tile_shape, num_tiles = BaseImage._get_tile_shape(exp_image)
 
         # split the image up into tiles of at most `tile_shape` dimension
         image_shape = exp_image.shape
@@ -670,7 +669,10 @@ class BaseImage:
             self.monitor_export(task)
         return task
 
-    def download(self, filename: Union[pathlib.Path, str], overwrite: bool = False, num_threads: int = None, **kwargs):
+    def download(
+        self, filename: Union[pathlib.Path, str], overwrite: bool = False, num_threads: Optional[int] = None,
+        max_tile_size: Optional[int] = None, max_tile_dimension: Optional[int] = None, **kwargs
+    ):
         """
         Download the encapsulated image to a GeoTiff file.
 
@@ -687,6 +689,10 @@ class BaseImage:
             Overwrite the destination file if it exists.
         num_threads: int, optional
             Number of tiles to download concurrently.  Defaults to a sensible auto value.
+        max_tile_size: int, optional
+            Maximum tile size (bytes).  Defaults to the Earth Engine download size limit (32 MB).
+        max_tile_dimension: int, optional
+            Maximum tile width/height (pixels).  Defaults to the Earth Engine download limit (10000).
         region : dict, ee.Geometry, optional
             Region defined by geojson polygon in WGS84.  Defaults to the entire image granule.
         crs : str, optional
@@ -717,7 +723,9 @@ class BaseImage:
         exp_image, profile = self._prepare_for_download(**kwargs)
 
         # get the dimensions of an image tile that will satisfy GEE download limits
-        tile_shape, num_tiles = self._get_tile_shape(exp_image)
+        tile_shape, num_tiles = self._get_tile_shape(
+            exp_image, max_tile_size=max_tile_size, max_tile_dimension=max_tile_dimension
+        )
 
         # find raw size of the download data (less than the actual download size as the image data is zipped in a
         # compressed geotiff)
