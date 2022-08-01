@@ -330,19 +330,21 @@ def test_scale_offset(src_image: str, dtype: str, region_100ha: Dict, request: p
 
 
 def test_tile_shape():
-    """ Test BaseImage._get_tile_shape() satisfies the EE download limit for different image shapes. """
-    max_download_size = 32 << 20
-    max_grid_dimension = 10000
+    """ Test BaseImage._get_tile_shape() satisfies the tile size limit for different image shapes. """
+    max_tile_dim = 10000
 
-    for height in range(1, 11000, 100):
-        for width in range(1, 11000, 100):
-            exp_shape = (height, width)
-            exp_image = BaseImageLike(shape=exp_shape)  # emulate a BaseImage
-            tile_shape, num_tiles = BaseImage._get_tile_shape(exp_image)
-            assert all(np.array(tile_shape) <= np.array(exp_shape))
-            assert all(np.array(tile_shape) <= max_grid_dimension)
-            tile_image = BaseImageLike(shape=tile_shape)
-            assert tile_image.size <= max_download_size
+    for max_tile_size in range(4, 32, 4):
+        for height in range(1, 11000, 100):
+            for width in range(1, 11000, 100):
+                exp_shape = (height, width)
+                exp_image = BaseImageLike(shape=exp_shape)  # emulate a BaseImage
+                tile_shape, num_tiles = BaseImage._get_tile_shape(
+                    exp_image, max_tile_size=max_tile_size, max_tile_dim=max_tile_dim
+                )
+                assert all(np.array(tile_shape) <= np.array(exp_shape))
+                assert all(np.array(tile_shape) <= max_tile_dim)
+                tile_image = BaseImageLike(shape=tile_shape)
+                assert tile_image.size <= (max_tile_size << 20)
 
 
 @pytest.mark.parametrize(
@@ -457,7 +459,7 @@ def test_download_bigtiff(s2_sr_base_image: BaseImage, tmp_path: pathlib.Path):
     assert profile['bigtiff']
 
 # TODO:
-# -  export(): test an export of small file
+# - export(): test an export of small file
 # - different generic collection images are downloaded ok (perhaps this goes with MaskedImage more than BaseImage)
 # - test float mask/nodata in downloaded image
 # - test mult tile download has no discontinuities
