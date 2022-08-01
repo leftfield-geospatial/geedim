@@ -19,6 +19,7 @@ from datetime import datetime
 from glob import glob
 from typing import List, Dict
 
+import ee
 import numpy as np
 import pytest
 import rasterio as rio
@@ -323,18 +324,19 @@ def test_download_defaults(
 
 
 @pytest.mark.parametrize(
-    'image_id, region_file, crs, scale, dtype, mask, resampling, scale_offset', [
-        ('l5_image_id', 'region_25ha_file', 'EPSG:3857', 30, 'uint16', False, 'near', False),
-        ('l9_image_id', 'region_25ha_file', 'EPSG:3857', 30, 'float32', False, 'near', True),
-        ('s2_toa_image_id', 'region_25ha_file', 'EPSG:3857', 10, 'float64', True, 'bilinear', True),
-        ('modis_nbar_image_id', 'region_100ha_file', 'EPSG:3857', 500, 'int32', False, 'bicubic', False),
-        ('gedi_cth_image_id', 'region_25ha_file', 'EPSG:3857', 10, 'float32', True, 'bilinear', False),
-        ('landsat_ndvi_image_id', 'region_25ha_file', 'EPSG:3857', 30, 'float64', True, 'near', False),
+    'image_id, region_file, crs, scale, dtype, mask, resampling, scale_offset, max_tile_size, max_tile_dim', [
+        ('l5_image_id', 'region_25ha_file', 'EPSG:3857', 30, 'uint16', False, 'near', False, 16, 10000),
+        ('l9_image_id', 'region_25ha_file', 'EPSG:3857', 30, 'float32', False, 'near', True, 32, 10000),
+        ('s2_toa_image_id', 'region_25ha_file', 'EPSG:3857', 10, 'float64', True, 'bilinear', True, 32, 10000),
+        ('modis_nbar_image_id', 'region_100ha_file', 'EPSG:3857', 500, 'int32', False, 'bicubic', False, 4, 100),
+        ('gedi_cth_image_id', 'region_25ha_file', 'EPSG:3857', 10, 'float32', True, 'bilinear', False, 32, 10000),
+        ('landsat_ndvi_image_id', 'region_25ha_file', 'EPSG:3857', 30, 'float64', True, 'near', False, 32, 10000),
     ]
 )
 def test_download_params(
     image_id: str, region_file: str, crs: str, scale: float, dtype: str, mask: bool, resampling: str,
-    scale_offset: bool, tmp_path: pathlib.Path, runner: CliRunner, request: pytest.FixtureRequest
+    scale_offset: bool, max_tile_size: float, max_tile_dim: int, tmp_path: pathlib.Path, runner: CliRunner,
+    request: pytest.FixtureRequest
 ):
     """ Test image download, specifying all possible cli params. """
     image_id = request.getfixturevalue(image_id)
@@ -343,7 +345,7 @@ def test_download_params(
 
     cli_str = (
         f'download -i {image_id} -r {region_file} -dd {tmp_path} --crs {crs} --scale {scale} --dtype {dtype} '
-        f'--resampling {resampling}'
+        f'--resampling {resampling} -mts {max_tile_size} -mtd {max_tile_dim}'
     )
     cli_str += ' --mask' if mask else ' --no-mask'
     cli_str += ' --scale-offset' if scale_offset else ' --no-scale-offset'
@@ -355,6 +357,20 @@ def test_download_params(
         region = json.load(f)
     # test downloaded file readability and format
     _test_downloaded_file(out_file, region=region, crs=crs, scale=scale, dtype=dtype, scale_offset=scale_offset)
+
+
+def test_max_tile_size_error(
+    s2_sr_image_id: str, region_10000ha_file: pathlib.Path, tmp_path: pathlib.Path, runner: CliRunner, request
+):
+    """ Test image download with max_tile_size > EE limit raises an EE error.  """
+    image_id = s2_sr_image_id
+    region_file = region_10000ha_file
+
+    cli_str = f'download -i {image_id} -r {region_file} -dd {tmp_path} -mts 64'
+    result = runner.invoke(cli, cli_str.split())
+    assert (result.exit_code != 0)
+    assert isinstance(result.exception, ee.EEException)
+    assert 'total request size' in result.output.lower()
 
 
 def test_export_params(l8_image_id: str, region_25ha_file: pathlib.Path, runner: CliRunner):
