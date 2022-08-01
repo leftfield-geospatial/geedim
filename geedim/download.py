@@ -483,7 +483,7 @@ class BaseImage:
         download limits, and is 'square-ish'.
         """
         # convert max_tile_size from MB to bytes & set to EE default if None
-        max_tile_size = int((max_tile_size * (1 << 20)) or (32 << 20))
+        max_tile_size = int((max_tile_size * (1 << 20)) if max_tile_size else (32 << 20))
         max_tile_dim = max_tile_dim or 10000   # set max_tile_dim to EE default if None
 
         # find the total number of tiles the image must be divided into to satisfy max_tile_size
