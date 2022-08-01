@@ -82,7 +82,7 @@ def gedi_image_id_list() -> List[str]:
     """ A list of GEDI canopy top height ID's. """
     return [
         'LARSE/GEDI/GEDI02_A_002_MONTHLY/202009_018E_036S', 'LARSE/GEDI/GEDI02_A_002_MONTHLY/202010_018E_036S',
-        'LARSE/GEDI/GEDI02_A_002_MONTHLY/202112_018E_036S'
+        'LARSE/GEDI/GEDI02_A_002_MONTHLY/202005_018E_036S'
     ]
 
 
@@ -394,7 +394,8 @@ def test_composite_defaults(
     'image_list, method, region_file, date, mask, resampling, download_scale', [
         ('s2_sr_image_id_list', 'mosaic', None, '2021-10-01', True, 'near', 10),
         ('l8_9_image_id_list', 'q-mosaic', 'region_25ha_file', None, True, 'bilinear', 30),
-        ('gedi_image_id_list', 'medoid', None, None, True, 'bilinear', 10),
+        ('l8_9_image_id_list', 'medoid', 'region_25ha_file', None, True, 'near', 30),
+        # ('gedi_image_id_list', 'medoid', None, None, True, 'bilinear', 25),     # TODO revert to GEDI medoid
     ]
 )
 def test_composite_params(

@@ -56,7 +56,7 @@ def gedi_image_list() -> List[Union[str, MaskedImage]]:
     """ A list of GEDI canopy top height IDs/ MaskedImage's """
     return [
         'LARSE/GEDI/GEDI02_A_002_MONTHLY/202009_018E_036S', 'LARSE/GEDI/GEDI02_A_002_MONTHLY/202010_018E_036S',
-        MaskedImage.from_id('LARSE/GEDI/GEDI02_A_002_MONTHLY/202112_018E_036S')
+        MaskedImage.from_id('LARSE/GEDI/GEDI02_A_002_MONTHLY/202005_018E_036S')
     ]
 
 
@@ -210,7 +210,7 @@ def test_from_list_add_props(image_list: str, add_props: List, request: pytest.F
         ('LANDSAT/LT05/C02/T1_L2', '2005-01-01', '2006-02-01', 'region_100ha', 40, 50, True),
         ('COPERNICUS/S2_SR', '2022-01-01', '2022-01-15', 'region_100ha', 0, 50, True),
         ('COPERNICUS/S2_HARMONIZED', '2022-01-01', '2022-01-15', 'region_100ha', 50, 40, True),
-        ('LARSE/GEDI/GEDI02_A_002_MONTHLY', '2021-11-01', '2022-01-01', 'region_100ha', 1, 0, False)
+        ('LARSE/GEDI/GEDI02_A_002_MONTHLY', '2021-08-01', '2021-09-01', 'region_100ha', .1, 0, False)
     ]
 )
 def test_search(
@@ -469,7 +469,8 @@ def test_composite_landsat_cloud_mask_params(l8_9_image_list, region_10000ha):
                 mask_method='qa', mask_cirrus=False, mask_shadows=False, prob=60, dark=0.2, shadow_dist=500, buffer=500,
                 cdi_thresh=None, max_cloud_dist=2000
             )
-        ), ('l8_9_image_list', CompositeMethod.q_mosaic, True, 'region_100ha', None, {}),
+        ),
+        ('l8_9_image_list', CompositeMethod.q_mosaic, True, 'region_100ha', None, {}),
         ('l8_9_image_list', CompositeMethod.mosaic, False, None, '2022-03-01', {}),
         ('l8_9_image_list', CompositeMethod.medoid, True, None, None, dict(mask_cirrus=False, mask_shadows=False)),
         ('l8_9_image_list', CompositeMethod.median, True, None, None, {}),
@@ -477,12 +478,12 @@ def test_composite_landsat_cloud_mask_params(l8_9_image_list, region_10000ha):
         (
             'l4_5_image_list', CompositeMethod.mosaic, True, None, '1988-01-01',
             dict(mask_cirrus=False, mask_shadows=False)
-        ), ('l4_5_image_list', CompositeMethod.medoid, True, None, None, {}),
+        ),
+        ('l4_5_image_list', CompositeMethod.medoid, True, None, None, {}),
         ('l4_5_image_list', CompositeMethod.median, True, None, None, {}),
         ('gedi_image_list', CompositeMethod.mosaic, True, 'region_100ha', None, {}),
         ('gedi_image_list', CompositeMethod.mosaic, True, None, '2020-09-01', {}),
-        ('gedi_image_list', CompositeMethod.medoid, True, None, None, {}),
-        ('gedi_image_list', CompositeMethod.median, True, None, None, {}),
+        # ('gedi_image_list', CompositeMethod.medoid, True, None, None, {}),    # TODO: include medoid & median?
     ]
 )  # yapf: disabl;e
 def test_composite(image_list, method, mask, region, date, cloud_kwargs, request):
