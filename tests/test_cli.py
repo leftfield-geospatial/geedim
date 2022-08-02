@@ -360,17 +360,25 @@ def test_download_params(
 
 
 def test_max_tile_size_error(
-    s2_sr_image_id: str, region_10000ha_file: pathlib.Path, tmp_path: pathlib.Path, runner: CliRunner, request
+    s2_sr_image_id: str, region_100ha_file: pathlib.Path, tmp_path: pathlib.Path, runner: CliRunner, request
 ):
     """ Test image download with max_tile_size > EE limit raises an EE error.  """
-    image_id = s2_sr_image_id
-    region_file = region_10000ha_file
-
-    cli_str = f'download -i {image_id} -r {region_file} -dd {tmp_path} -mts 64'
+    cli_str = f'download -i {s2_sr_image_id} -r {region_100ha_file} -dd {tmp_path} -mts 100'
     result = runner.invoke(cli, cli_str.split())
     assert (result.exit_code != 0)
-    assert isinstance(result.exception, ee.EEException)
-    assert 'total request size' in result.output.lower()
+    assert isinstance(result.exception, ValueError)
+    assert 'download size limit' in str(result.exception)
+
+
+def test_max_tile_dim_error(
+    s2_sr_image_id: str, region_100ha_file: pathlib.Path, tmp_path: pathlib.Path, runner: CliRunner, request
+):
+    """ Test image download with max_tile_dim > EE limit raises an EE error.  """
+    cli_str = f'download -i {s2_sr_image_id} -r {region_100ha_file} -dd {tmp_path} -mtd 100000'
+    result = runner.invoke(cli, cli_str.split())
+    assert (result.exit_code != 0)
+    assert isinstance(result.exception, ValueError)
+    assert 'download limit' in str(result.exception)
 
 
 def test_export_params(l8_image_id: str, region_25ha_file: pathlib.Path, runner: CliRunner):
