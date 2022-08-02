@@ -1,5 +1,5 @@
 
-name: Test large download & geemap integration
+name: Test geemap/geeml etc integration
 
 on:
   workflow_dispatch:
@@ -44,7 +44,7 @@ jobs:
           ls -l
       - name: Check out geedim
         uses: actions/checkout@v2
-      - name: Simulate the geemap download example
+      - name: Run integration tests
         timeout-minutes: 10
         env:
           EE_SERVICE_ACC_PRIVATE_KEY: ${{ secrets.EE_SERVICE_ACC_PRIVATE_KEY }}
@@ -79,7 +79,7 @@ jobs:
           ls -l
       - name: Check out geedim
         uses: actions/checkout@v2
-      - name: Simulate the geemap download example
+      - name: Run integration tests
         timeout-minutes: 10
         env:
           EE_SERVICE_ACC_PRIVATE_KEY: ${{ secrets.EE_SERVICE_ACC_PRIVATE_KEY }}
