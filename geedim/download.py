@@ -56,6 +56,8 @@ class BaseImage:
     _float_nodata = float('nan')
     _desc_width = 50
     _default_resampling = ResamplingMethod.near
+    _ee_max_tile_size = 32
+    _ee_max_tile_dim = 10000
 
     def __init__(self, ee_image: ee.Image):
         """
@@ -483,8 +485,18 @@ class BaseImage:
         download limits, and is 'square-ish'.
         """
         # convert max_tile_size from MB to bytes & set to EE default if None
-        max_tile_size = int((max_tile_size * (1 << 20)) if max_tile_size else (32 << 20))
-        max_tile_dim = max_tile_dim or 10000   # set max_tile_dim to EE default if None
+        if max_tile_size and (max_tile_size > BaseImage._ee_max_tile_size):
+            raise ValueError(
+                f'`max_tile_size` must be less than or equal to the Earth Engine download size limit of '
+                f'{BaseImage._ee_max_tile_size} MB.'
+            )
+        max_tile_size = int((max_tile_size * (1 << 20)) if max_tile_size else (BaseImage._ee_max_tile_size << 20))
+        if max_tile_dim and (max_tile_dim > BaseImage._ee_max_tile_dim):
+            raise ValueError(
+                f'`max_tile_dim` must be less than or equal to the Earth Engine download limit of '
+                f'{BaseImage._ee_max_tile_size} pixels.'
+            )
+        max_tile_dim = max_tile_dim or BaseImage._ee_max_tile_dim   # set max_tile_dim to EE default if None
 
         # find the total number of tiles the image must be divided into to satisfy max_tile_size
         image_shape = np.array(exp_image.shape, dtype='int64')
@@ -692,9 +704,9 @@ class BaseImage:
         num_threads: int, optional
             Number of tiles to download concurrently.  Defaults to a sensible auto value.
         max_tile_size: int, optional
-            Maximum tile size (MB).  Defaults to the Earth Engine download size limit (32 MB).
+            Maximum tile size (MB).  If None, defaults to the Earth Engine download size limit (32 MB).
         max_tile_dim: int, optional
-            Maximum tile width/height (pixels).  Defaults to the Earth Engine download limit (10000).
+            Maximum tile width/height (pixels).  If None, defaults to Earth Engine download limit (10000).
         region : dict, ee.Geometry, optional
             Region defined by geojson polygon in WGS84.  Defaults to the entire image granule.
         crs : str, optional
@@ -704,7 +716,7 @@ class BaseImage:
             Resample image(s) to this pixel scale (size) (m).  Where image bands have different scales,
             all are resampled to this scale.  Defaults to the minimum scale of image bands.
         resampling : ResamplingMethod, optional
-            Resampling method - see :class:`~geedim.enums.ResamplingMethod` for available options.
+            Resampling method - see :class:`~geedim.enums.ResamplingMethod` for available options.  Defaults to `near`.
         dtype: str, optional
            Convert to this data type (`uint8`, `int8`, `uint16`, `int16`, `uint32`, `int32`, `float32` or
            `float64`). Defaults to auto select a minimal type that can represent the range of pixel values.
