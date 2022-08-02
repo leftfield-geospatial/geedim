@@ -487,12 +487,12 @@ cli.add_command(search)
 @resampling_option
 @scale_offset_option
 @click.option(
-    '-mts', '--max-tile-size', type=click.FLOAT, default=None, show_default='Earth Engine limit',
+    '-mts', '--max-tile-size', type=click.FLOAT, default=BaseImage._ee_max_tile_size, show_default=True,
     help='Maximum download tile size (MB).'
 )
 @click.option(
-    '-mtd', '--max-tile-dim', type=click.INT, default=None, show_default='Earth Engine limit',
-    help='Maximum tile height/width dimension (pixels).'
+    '-mtd', '--max-tile-dim', type=click.INT, default=BaseImage._ee_max_tile_dim, show_default=True,
+    help='Maximum download tile dimension (pixels).'
 )
 @click.option('-o', '--overwrite', is_flag=True, default=False, help='Overwrite the destination file if it exists.')
 @click.pass_obj
