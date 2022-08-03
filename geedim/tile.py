@@ -94,11 +94,17 @@ class Tile:
         download_size = int(response.headers.get('content-length', 0))
 
         if download_size == 0 or not response.ok:
-            err_str = (
-                f'Tile shape: {self._shape}, count: {self._exp_image.count}, dtype: {self._exp_image.dtype}, '
-                f'size: {raw_download_size} Bytes.\n'
-            )
-            raise IOError(err_str + str(response.content))
+            resp_dict = response.json()
+            if 'error' in resp_dict and 'message' in resp_dict['error']:
+                msg = resp_dict['error']['message']
+                ex_msg = f'Error downloading tile: {msg}'
+                if 'user memory limit exceeded' in msg.lower():
+                    ex_msg += (
+                        '\nThe `max_tile_size` or `max_tile_dim` parameters can be decreased to work around this error.'
+                    )
+            else:
+                ex_msg = str(response.json())
+            raise IOError(ex_msg)
 
         # download zip into buffer
         zip_buffer = BytesIO()
