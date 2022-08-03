@@ -27,7 +27,7 @@ jobs:
       - name: Install geedim
         run: |
           mamba info
-          mamba install -c conda-forge geedim=1.3.1 pytest
+          mamba install -c conda-forge geedim=1.4.0 pytest
           # force an update to the latest versions
           mamba update -c conda-forge geedim --force-reinstall
           mamba list
