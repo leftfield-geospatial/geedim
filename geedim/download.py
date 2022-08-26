@@ -395,26 +395,27 @@ class BaseImage:
             Prepared image.
         """
 
-        if not region or not crs or not scale:
-            # One or more of region, crs and scale were not provided, so get the image values to use instead
-            if not self.has_fixed_projection:
-                # Raise an error if this image has no fixed projection
-                raise ValueError(
-                    f'This image does not have a fixed projection, you need to specify a region, '
-                    f'crs and scale.'
-                )
+        if False:
+            if not region or not crs or not scale:
+                # One or more of region, crs and scale were not provided, so get the image values to use instead
+                if not self.has_fixed_projection:
+                    # Raise an error if this image has no fixed projection
+                    raise ValueError(
+                        f'This image does not have a fixed projection, you need to specify a region, '
+                        f'crs and scale.'
+                    )
 
-        if not region and not self.footprint:
-            raise ValueError(f'This image does not have a footprint, you need to specify a region.')
+            if not region and not self.footprint:
+                raise ValueError(f'This image does not have a footprint, you need to specify a region.')
 
-        if self.crs == 'EPSG:4326' and not scale:
-            # ee.Image.prepare_for_export() expects a scale in meters, but if the image is EPSG:4326, the default scale
-            # is in degrees.
-            raise ValueError(f'This image is in EPSG:4326, you need to specify a scale in meters.')
+            if self.crs == 'EPSG:4326' and not scale:
+                # ee.Image.prepare_for_export() expects a scale in meters, but if the image is EPSG:4326, the default scale
+                # is in degrees.
+                raise ValueError(f'This image is in EPSG:4326, you need to specify a scale in meters.')
 
-        region = region or self.footprint
-        crs = crs or ee.Projection(self.crs, tuple(self.transform)[:6])
-        scale = scale or self.scale
+            region = region or self.footprint
+            crs = crs or ee.Projection(self.crs, tuple(self.transform)[:6])
+            scale = scale or self.scale
 
         if crs == 'SR-ORG:6974':
             raise ValueError(
@@ -442,6 +443,7 @@ class BaseImage:
         # TODO: Specify `crs_transform` and `dimensions` (as in tile), so that everything stays on the source grid
         #  where possible i.e. where the export CRS and scale are the same as the source.
         export_args = dict(region=region, crs=crs, scale=scale, fileFormat='GeoTIFF', filePerBand=False)
+        export_args = {k:v for k, v in export_args.items() if v is not None}
         ee_image, _ = ee_image.prepare_for_export(export_args)
         return BaseImage(ee_image)
 

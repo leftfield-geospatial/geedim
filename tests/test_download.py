@@ -246,7 +246,8 @@ def test_prepare_for_export(src_image: str, tgt_image: str, request: pytest.Fixt
     # Note that exp_image = ee.Image.prepare_for_export(<tgt_image properties>) resamples and can give an exp_image
     # with different grid and shape compared to tgt_image.  So just test the region here, as that is what is passed
     # to EE.
-    exp_region = transform_geom(exp_image.footprint['crs']['properties']['name'], 'EPSG:4326', exp_image.footprint)
+    footprint_crs = exp_image.footprint['crs']['properties']['name'] if 'crs' in exp_image.footprint else 'EPSG:4326'
+    exp_region = transform_geom(footprint_crs, 'EPSG:4326', exp_image.footprint)
     exp_bounds = bounds(exp_region)
     tgt_bounds = bounds(tgt_image.footprint)
     assert exp_bounds == pytest.approx(tgt_bounds, rel=.05)
