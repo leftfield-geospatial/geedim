@@ -31,7 +31,7 @@ import numpy as np
 import rasterio as rio
 from rasterio.crs import CRS
 from rasterio.enums import Resampling as RioResampling
-from rasterio.windows import Window
+from rasterio import windows, features, warp
 from tqdm import TqdmWarning
 from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
@@ -395,7 +395,7 @@ class BaseImage:
             Prepared image.
         """
 
-        if False:
+        if True:
             if not region or not crs or not scale:
                 # One or more of region, crs and scale were not provided, so get the image values to use instead
                 if not self.has_fixed_projection:
@@ -408,13 +408,13 @@ class BaseImage:
             if not region and not self.footprint:
                 raise ValueError(f'This image does not have a footprint, you need to specify a region.')
 
-            if self.crs == 'EPSG:4326' and not scale:
+            if False and self.crs == 'EPSG:4326' and not scale:
                 # ee.Image.prepare_for_export() expects a scale in meters, but if the image is EPSG:4326, the default scale
                 # is in degrees.
                 raise ValueError(f'This image is in EPSG:4326, you need to specify a scale in meters.')
 
             region = region or self.footprint
-            crs = crs or ee.Projection(self.crs, tuple(self.transform)[:6])
+            crs = crs or self.crs # TODO: ee.Projection(self.crs, tuple(self.transform)[:6])?
             scale = scale or self.scale
 
         if crs == 'SR-ORG:6974':
@@ -442,8 +442,20 @@ class BaseImage:
         ee_image = self._convert_dtype(ee_image, dtype=dtype or im_dtype)
         # TODO: Specify `crs_transform` and `dimensions` (as in tile), so that everything stays on the source grid
         #  where possible i.e. where the export CRS and scale are the same as the source.
-        export_args = dict(region=region, crs=crs, scale=scale, fileFormat='GeoTIFF', filePerBand=False)
-        export_args = {k:v for k, v in export_args.items() if v is not None}
+        if (crs == self.crs) and (scale == self.scale):
+            # specify crs_transform and dimensions to export/download image on the original pixel grid
+            region_crs = region['crs']['properties']['name'] if 'crs' in region else 'EPSG:4326'
+            region = warp.transform_geom(region_crs, crs, region or self.footprint) # region in image/download crs
+            region_win = windows.from_bounds(*features.bounds(region), transform=self.transform)
+            region_win = utils.expand_window_to_grid(region_win)
+            crs_transform = self.transform * rio.Affine.translation(region_win.col_off, region_win.row_off)
+            export_args = dict(
+                crs=crs, crs_transform=crs_transform[:6], dimensions=(region_win.width, region_win.height),
+                fileFormat='GeoTIFF', filePerBand=False
+            )
+        else:
+            export_args = dict(region=region, crs=crs, scale=scale, fileFormat='GeoTIFF', filePerBand=False)
+        export_args = {k:v for k, v in export_args.items() if v is not None}  # TODO: drop this?
         ee_image, _ = ee_image.prepare_for_export(export_args)
         return BaseImage(ee_image)
 
@@ -596,7 +608,7 @@ class BaseImage:
         for tile_start in start_range:
             tile_stop = np.clip(np.add(tile_start, tile_shape), a_min=None, a_max=image_shape)
             clip_tile_shape = (tile_stop - tile_start).tolist()  # tolist is just to convert to native int
-            tile_window = Window(tile_start[1], tile_start[0], clip_tile_shape[1], clip_tile_shape[0])
+            tile_window = windows.Window(tile_start[1], tile_start[0], clip_tile_shape[1], clip_tile_shape[0])
             yield Tile(exp_image, tile_window)
 
     @staticmethod
