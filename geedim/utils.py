@@ -29,9 +29,10 @@ import rasterio as rio
 import requests
 from geedim.enums import ResamplingMethod
 from rasterio.warp import transform_geom
+from rasterio.env import GDALVersion
+from rasterio.windows import Window
 from requests.adapters import HTTPAdapter, Retry
 import numpy as np
-from rasterio.env import GDALVersion
 from tqdm.auto import tqdm
 
 if '__file__' in globals():
@@ -308,3 +309,26 @@ def retry_session(
     return session
 
 
+def expand_window_to_grid(win: Window, expand_pixels: Tuple[int, int] = (0, 0)) -> Window:
+    """
+    Expand rasterio window extents to the nearest whole numbers i.e. for ``expand_pixels`` >= (0, 0), it will return a
+    window that contains the original extents.
+
+    Parameters
+    ----------
+    win: rasterio.windows.Window
+        Window to expand.
+    expand_pixels: tuple, optional
+        Tuple specifying the number of (rows, columns) pixels to expand the window by.
+
+    Returns
+    -------
+    rasterio.windows.Window
+        Expanded window.
+    """
+    col_off, col_frac = np.divmod(win.col_off - expand_pixels[1], 1)
+    row_off, row_frac = np.divmod(win.row_off - expand_pixels[0], 1)
+    width = np.ceil(win.width + 2 * expand_pixels[1] + col_frac)
+    height = np.ceil(win.height + 2 * expand_pixels[0] + row_frac)
+    exp_win = Window(int(col_off), int(row_off), int(width), int(height))
+    return exp_win
