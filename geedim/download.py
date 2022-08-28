@@ -485,13 +485,6 @@ class BaseImage:
 
         crs_transform = crs_transform[:6] if crs_transform else None
         dimensions = shape[::-1] if shape else None
-        # if crs == self.crs:
-        #     if self.transform and not crs_transform:
-        #         crs = ee.Projection(self.crs, tuple(self.transform)[:6])
-        # if crs_transform:
-        #     crs = ee.Projection(crs, tuple(crs_transform)[:6])
-        # crs = ee.Projection(crs, tuple(self.transform)[:6]) # if not crs_transform else crs_transform)
-        # crs or ee.Projection(self.crs, tuple(self.transform)[:6])
         export_args = dict(
             crs=crs, crs_transform=crs_transform, dimensions=dimensions, region=region, scale=scale,
             fileFormat='GeoTIFF', filePerBand=False

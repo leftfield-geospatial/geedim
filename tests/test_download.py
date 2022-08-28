@@ -296,36 +296,22 @@ def test_prepare_for_export(src_image: str, tgt_image: str, crs_transform: bool,
     assert exp_image.crs == tgt_image.crs
     assert exp_image.count == src_image.count
     assert exp_image.dtype == tgt_image.dtype
+    assert exp_image.scale == tgt_image.scale
     if crs_transform or (src_image == tgt_image):
         assert exp_image.transform == tgt_image.transform
         assert exp_image.shape == tgt_image.shape
     else:
         assert exp_image.transform[:6] == pytest.approx(tgt_image.transform[:6], rel=0.1)
-        # assert all(exp_image.shape >= np.array(tgt_image.shape))
-    assert exp_image.scale == tgt_image.scale
 
-    if False:
         exp_region = transform_geom(exp_image.footprint['crs']['properties']['name'], 'EPSG:4326', exp_image.footprint)
         exp_bounds = bounds(exp_region)
         tgt_bounds = bounds(tgt_image.footprint)
+
         assert exp_bounds == pytest.approx(tgt_bounds, rel=.05)
         # test exp_bounds contain tgt_bounds
         assert (
             (exp_bounds[0] <= tgt_bounds[0]) and (exp_bounds[1] <= tgt_bounds[1]) and
             (exp_bounds[2] >= tgt_bounds[2]) and (exp_bounds[3] >= tgt_bounds[3])
-        )
-    else:
-        # Compare bounds without transforming to EPSG:4326
-        tgt_br = tgt_image.transform * (np.array(tgt_image.shape[::-1]) + 1)
-        tgt_bounds = [tgt_image.transform.xoff, tgt_br[1], tgt_br[0], tgt_image.transform.yoff]
-        exp_br = exp_image.transform * (np.array(exp_image.shape[::-1]) + 1)
-        exp_bounds = [exp_image.transform.xoff, exp_br[1], exp_br[0], exp_image.transform.yoff]
-
-        assert exp_bounds == pytest.approx(tgt_bounds, rel=.05)
-        # # test exp_bounds contain tgt_bounds
-        assert (
-            (exp_bounds[0] <= tgt_bounds[0]) and (exp_bounds[1] <= tgt_bounds[1]) and (exp_bounds[2] >= tgt_bounds[2]) and
-            (exp_bounds[3] >= tgt_bounds[3])
         )
 
 
