@@ -384,7 +384,7 @@ class BaseImage:
             WKT, EPSG etc specification of CRS to export to.  Where image bands have different CRSs, all are
             re-projected to this CRS. Defaults to use the CRS of the minimum scale band if available.
         crs_transform: tuple of float, list of float, rio.Affine, optional
-            Array of 6 numbers specifying an affine transform from the specified CRS, in the order:
+            Array of 6 numbers specifying an affine transform in the specified CRS, in the order:
               [xScale, yShearing, xShearing, yScale, xTranslation, yTranslation].  All bands are re-projected to
               this transform.
         shape: tuple of int, optional
@@ -422,7 +422,7 @@ class BaseImage:
         # specified
         if (not self.footprint) and (not region and (not crs or not crs_transform or not shape)):
             raise ValueError(
-                f'This image does not have a footprint, you need to specify a region; or a crs, crs_transform and '
+                f'This image is unbounded, you need to specify a region; or a crs, crs_transform and '
                 f'shape.'
             )
 
@@ -456,29 +456,48 @@ class BaseImage:
 
         ee_image = self._convert_dtype(ee_image, dtype=dtype or im_dtype)
 
-        region = region or self.footprint
-        crs = crs or self.crs # TODO: ee.Projection(self.crs, tuple(self.transform)[:6])?
-        scale = (scale or self.scale) if not shape else None
+        # region = region or self.footprint
+        # scale = (scale or self.scale) if not shape else None
+        # crs_transform = crs_transform[:6] if crs_transform else None
+        # dimensions = shape[::-1] if shape else None
+        crs = crs or self.crs  # TODO: ee.Projection(self.crs, tuple(self.transform)[:6])
+        if not crs_transform and not shape:
+            region = region or self.footprint
+            scale = scale or self.scale
+
+            if (crs == self.crs) and (scale == self.scale):
+                if region == self.footprint:
+                    crs_transform = self.transform
+                    shape = self.shape
+                else:
+                    region_crs = region['crs']['properties']['name'] if 'crs' in region else 'EPSG:4326'
+                    # region bounds in download crs
+                    region_bounds = warp.transform_bounds(region_crs, crs, *features.bounds(region))
+                    region_win = windows.from_bounds(*region_bounds, transform=self.transform)
+                    region_win = utils.expand_window_to_grid(region_win)
+                    crs_transform = self.transform * rio.Affine.translation(region_win.col_off, region_win.row_off)
+                    crs_transform = crs_transform
+                    shape = (region_win.height, region_win.width)
+                    # TODO: what to do when dimensions is user-specified in this case?
+
+                region = None
+                scale = None
+
         crs_transform = crs_transform[:6] if crs_transform else None
         dimensions = shape[::-1] if shape else None
-
-        if (crs == self.crs) and (scale == self.scale) and not crs_transform:
-            # specify crs_transform and dimensions to export/download on the original pixel grid
-            region_crs = region['crs']['properties']['name'] if 'crs' in region else 'EPSG:4326'
-            region = warp.transform_geom(region_crs, crs, region or self.footprint) # region in image/download crs
-            region_win = windows.from_bounds(*features.bounds(region), transform=self.transform)
-            region_win = utils.expand_window_to_grid(region_win)
-            crs_transform = self.transform * rio.Affine.translation(region_win.col_off, region_win.row_off)
-            export_args = dict(
-                crs=crs, crs_transform=crs_transform[:6], dimensions=(region_win.width, region_win.height),
-                fileFormat='GeoTIFF', filePerBand=False
-            )
-        else:
-            export_args = dict(
-                crs=crs, crs_transform=crs_transform, dimensions=dimensions, region=region, scale=scale,
-                fileFormat='GeoTIFF', filePerBand=False
-            )
+        # if crs == self.crs:
+        #     if self.transform and not crs_transform:
+        #         crs = ee.Projection(self.crs, tuple(self.transform)[:6])
+        # if crs_transform:
+        #     crs = ee.Projection(crs, tuple(crs_transform)[:6])
+        # crs = ee.Projection(crs, tuple(self.transform)[:6]) # if not crs_transform else crs_transform)
+        # crs or ee.Projection(self.crs, tuple(self.transform)[:6])
+        export_args = dict(
+            crs=crs, crs_transform=crs_transform, dimensions=dimensions, region=region, scale=scale,
+            fileFormat='GeoTIFF', filePerBand=False
+        )
         # drop items with None values
+        # TODO: can we tidy this in some way?
         export_args = {k:v for k, v in export_args.items() if v is not None}
         ee_image, _ = ee_image.prepare_for_export(export_args)
         return BaseImage(ee_image)

@@ -187,14 +187,52 @@ def test_str_format_size(size: int, exp_str: str):
     assert BaseImage._str_format_size(size) == exp_str
 
 
+@pytest.mark.parametrize(
+    'params', [
+        dict(),
+        dict(crs='EPSG:4326'),
+        dict(crs='EPSG:4326', region='region_25ha'),
+        dict(crs='EPSG:4326', scale=100),
+        dict(crs='EPSG:4326', crs_transform=Affine.identity()),
+        dict(crs='EPSG:4326', shape=(100, 100)),
+        dict(region='region_25ha', scale=100),
+        dict(crs_transform=Affine.identity(), shape=(100, 100)),
+    ]
+)  # yapf: disable
+def test_prepare_no_fixed_projection(user_base_image: BaseImage, params: Dict, request: pytest.FixtureRequest):
+    """
+    Test BaseImage._prepare_for_export raises an exception when the image has no fixed projection, and insufficient
+    crs & region defining parameters are specified.
+    """
+    if 'region' in params:
+        params['region'] = request.getfixturevalue(params['region'])
+    with pytest.raises(ValueError) as ex:
+        user_base_image._prepare_for_export(**params)
+    assert 'does not have a fixed projection' in str(ex)
+
+
+@pytest.mark.parametrize(
+    'params', [
+        dict(),
+        dict(crs='EPSG:4326'),
+        dict(crs='EPSG:4326', scale=100),
+        dict(crs='EPSG:4326', crs_transform=Affine.identity()),
+        dict(crs='EPSG:4326', shape=(100, 100)),
+        dict(crs_transform=Affine.identity(), shape=(100, 100)),
+    ]
+)  # yapf: disable
+def test_prepare_unbounded(user_fix_base_image: BaseImage, params: Dict):
+    """
+    Test BaseImage._prepare_for_export raises an exception when the image is unbounded, and insufficient bounds
+    defining parameters are specified.
+    """
+    with pytest.raises(ValueError) as ex:
+        user_fix_base_image._prepare_for_export(**params)
+    assert 'This image is unbounded' in str(ex)
+
+
 def test_prepare_exceptions(user_base_image: BaseImage, user_fix_base_image: BaseImage, region_25ha: Dict):
-    """ Test BaseImage._prepare_for_export() error cases. """
-    with pytest.raises(ValueError):
-        # no fixed projection and no region / crs / scale
-        user_base_image._prepare_for_export()
-    with pytest.raises(ValueError):
-        # no footprint or region
-        user_fix_base_image._prepare_for_export()
+    """ Test remaining BaseImage._prepare_for_export() error cases. """
     with pytest.raises(ValueError):
         # EPSG:4326 and no scale
         user_fix_base_image._prepare_for_export(region=region_25ha)
@@ -209,53 +247,86 @@ def test_prepare_exceptions(user_base_image: BaseImage, user_fix_base_image: Bas
 
 
 @pytest.mark.parametrize(
-    'src_image, tgt_image', [
-        ('s2_sr_base_image', 's2_sr_base_image'),
-        ('l9_base_image', 's2_sr_base_image'),
-        ('modis_nbar_base_image', 's2_sr_base_image'),
-        ('user_base_image', 's2_sr_base_image'),
-        ('user_fix_base_image', 's2_sr_base_image'),
-        ('l9_base_image', 'l9_base_image'),
-        ('s2_sr_base_image', 'l9_base_image'),
-        ('modis_nbar_base_image', 'l9_base_image'),
-        ('user_base_image', 'l9_base_image'),
-        ('user_fix_base_image', 'l9_base_image'),
-        ('l9_base_image', 'modis_nbar_base_image'),
-        ('s2_sr_base_image', 'modis_nbar_base_image'),
-        ('modis_nbar_base_image', 'modis_nbar_base_image'),
-        ('user_base_image', 'modis_nbar_base_image'),
-        ('user_fix_base_image', 'modis_nbar_base_image'),
+    'src_image, tgt_image, crs_transform', [
+        ('s2_sr_base_image', 's2_sr_base_image', False),
+        ('l9_base_image', 's2_sr_base_image', False),
+        ('modis_nbar_base_image', 's2_sr_base_image', False),
+        ('user_base_image', 's2_sr_base_image', False),
+        ('user_fix_base_image', 's2_sr_base_image', False),
+        ('l9_base_image', 'l9_base_image', False),
+        ('s2_sr_base_image', 'l9_base_image', False),
+        ('modis_nbar_base_image', 'l9_base_image', False),
+        ('user_base_image', 'l9_base_image', False),
+        ('user_fix_base_image', 'l9_base_image', False),
+        ('l9_base_image', 'modis_nbar_base_image', False),
+        ('s2_sr_base_image', 'modis_nbar_base_image', False),
+        ('modis_nbar_base_image', 'modis_nbar_base_image', False),
+        ('user_base_image', 'modis_nbar_base_image', False),
+        ('user_fix_base_image', 'modis_nbar_base_image', False),
+
+        ('l9_base_image', 's2_sr_base_image', True),
+        ('modis_nbar_base_image', 's2_sr_base_image', True),
+        ('user_base_image', 's2_sr_base_image', True),
+        ('user_fix_base_image', 's2_sr_base_image', True),
+        ('s2_sr_base_image', 'l9_base_image', True),
+        ('modis_nbar_base_image', 'l9_base_image', True),
+        ('user_base_image', 'l9_base_image', True),
+        ('user_fix_base_image', 'l9_base_image', True),
+        ('l9_base_image', 'modis_nbar_base_image', True),
+        ('s2_sr_base_image', 'modis_nbar_base_image', True),
+        ('user_base_image', 'modis_nbar_base_image', True),
+        ('user_fix_base_image', 'modis_nbar_base_image', True),
     ]
 )  # yapf: disable
-def test_prepare_for_export(src_image: str, tgt_image: str, request: pytest.FixtureRequest):
-    """ Test BaseImage._prepare_for_export() sets properties of export image as expected.  """
+def test_prepare_for_export(src_image: str, tgt_image: str, crs_transform: bool, request: pytest.FixtureRequest):
+    """ Test BaseImage._prepare_for_export() with crs, region & scale sets properties of export image as expected.  """
     src_image: BaseImage = request.getfixturevalue(src_image)
     tgt_image: BaseImage = request.getfixturevalue(tgt_image)
     if tgt_image == src_image:
         exp_image = src_image._prepare_for_export()
     else:
-        exp_image = src_image._prepare_for_export(
-            crs=tgt_image.crs, scale=tgt_image.scale, region=tgt_image.footprint, dtype=tgt_image.dtype
-        )
+        if crs_transform:
+            params = dict(
+                crs=tgt_image.crs, crs_transform=tgt_image.transform, shape=tgt_image.shape, dtype=tgt_image.dtype
+            )
+        else:
+            params = dict(crs=tgt_image.crs, scale=tgt_image.scale, region=tgt_image.footprint, dtype=tgt_image.dtype)
+        exp_image = src_image._prepare_for_export(**params)
 
     assert exp_image.crs == tgt_image.crs
-    assert exp_image.scale == tgt_image.scale
     assert exp_image.count == src_image.count
     assert exp_image.dtype == tgt_image.dtype
+    if crs_transform or (src_image == tgt_image):
+        assert exp_image.transform == tgt_image.transform
+        assert exp_image.shape == tgt_image.shape
+    else:
+        assert exp_image.transform[:6] == pytest.approx(tgt_image.transform[:6], rel=0.1)
+        # assert all(exp_image.shape >= np.array(tgt_image.shape))
+    assert exp_image.scale == tgt_image.scale
 
-    # Note that exp_image = ee.Image.prepare_for_export(<tgt_image properties>) resamples and can give an exp_image
-    # with different grid and shape compared to tgt_image.  So just test the region here, as that is what is passed
-    # to EE.
-    footprint_crs = exp_image.footprint['crs']['properties']['name'] if 'crs' in exp_image.footprint else 'EPSG:4326'
-    exp_region = transform_geom(footprint_crs, 'EPSG:4326', exp_image.footprint)
-    exp_bounds = bounds(exp_region)
-    tgt_bounds = bounds(tgt_image.footprint)
-    assert exp_bounds == pytest.approx(tgt_bounds, rel=.05)
-    # test exp_bounds contain tgt_bounds
-    assert (
-        (exp_bounds[0] <= tgt_bounds[0]) and (exp_bounds[1] <= tgt_bounds[1]) and (exp_bounds[2] >= tgt_bounds[2]) and
-        (exp_bounds[3] >= tgt_bounds[3])
-    )
+    if False:
+        exp_region = transform_geom(exp_image.footprint['crs']['properties']['name'], 'EPSG:4326', exp_image.footprint)
+        exp_bounds = bounds(exp_region)
+        tgt_bounds = bounds(tgt_image.footprint)
+        assert exp_bounds == pytest.approx(tgt_bounds, rel=.05)
+        # test exp_bounds contain tgt_bounds
+        assert (
+            (exp_bounds[0] <= tgt_bounds[0]) and (exp_bounds[1] <= tgt_bounds[1]) and
+            (exp_bounds[2] >= tgt_bounds[2]) and (exp_bounds[3] >= tgt_bounds[3])
+        )
+    else:
+        # Compare bounds without transforming to EPSG:4326
+        tgt_br = tgt_image.transform * (np.array(tgt_image.shape[::-1]) + 1)
+        tgt_bounds = [tgt_image.transform.xoff, tgt_br[1], tgt_br[0], tgt_image.transform.yoff]
+        exp_br = exp_image.transform * (np.array(exp_image.shape[::-1]) + 1)
+        exp_bounds = [exp_image.transform.xoff, exp_br[1], exp_br[0], exp_image.transform.yoff]
+
+        assert exp_bounds == pytest.approx(tgt_bounds, rel=.05)
+        # # test exp_bounds contain tgt_bounds
+        assert (
+            (exp_bounds[0] <= tgt_bounds[0]) and (exp_bounds[1] <= tgt_bounds[1]) and (exp_bounds[2] >= tgt_bounds[2]) and
+            (exp_bounds[3] >= tgt_bounds[3])
+        )
 
 
 @pytest.mark.parametrize(
