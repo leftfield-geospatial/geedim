@@ -418,7 +418,7 @@ class BaseImage:
                 # if the image has no fixed projection, either crs, region, & scale; or crs, crs_transform and shape
                 # must be specified
                 raise ValueError(
-                    f'This image does not have a fixed projection, you need to specify a crs, region & scale; or a'
+                    f'This image does not have a fixed projection, you need to specify a crs, region & scale; or a '
                     f'crs, crs_transform & shape.'
                 )
 

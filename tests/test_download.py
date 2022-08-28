@@ -263,7 +263,6 @@ def test_prepare_exceptions(user_base_image: BaseImage, user_fix_base_image: Bas
         ('modis_nbar_base_image', 'modis_nbar_base_image', False),
         ('user_base_image', 'modis_nbar_base_image', False),
         ('user_fix_base_image', 'modis_nbar_base_image', False),
-
         ('l9_base_image', 's2_sr_base_image', True),
         ('modis_nbar_base_image', 's2_sr_base_image', True),
         ('user_base_image', 's2_sr_base_image', True),

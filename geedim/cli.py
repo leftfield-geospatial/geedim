@@ -23,6 +23,7 @@ from types import SimpleNamespace
 from typing import List
 
 import click
+import rasterio as rio
 import rasterio.crs as rio_crs
 from click.core import ParameterSource
 from geedim import schema, Initialize, version
@@ -90,6 +91,13 @@ class ChainedCommand(click.Command):
         if 'image_id' in ctx.params:
             # append any image id's to the image_list
             ctx.obj.image_list += list(ctx.params['image_id'])
+
+        if ('like' in ctx.params) and (ctx.params['like'] is not None):
+            # populate crs, crs_transform & shape from the given raster
+            with rio.open(ctx.params['like'], 'r') as im:
+                ctx.params['crs'] = f'EPSG:{im.crs.to_epsg()}'  # TODO: WKT?
+                ctx.params['crs_transform'] = im.transform
+                ctx.params['shape'] = im.shape
 
         return click.Command.invoke(self, ctx)
 
@@ -189,15 +197,14 @@ def _prepare_image_list(obj: SimpleNamespace, mask=False) -> List[MaskedImage, ]
             raise ValueError(f'Unsupported image object type: {type(im_obj)}')
         image_list.append(im_obj)
 
-    if obj.region is None and any([not im.has_fixed_projection for im in image_list]):
-        raise click.BadOptionUsage('region', 'One of --region or --bbox is required for a composite image.')
     return image_list
 
 
 # Define click options that are common to more than one command
 bbox_option = click.option(
     '-b', '--bbox', type=click.FLOAT, nargs=4, default=None, callback=_bbox_cb,
-    help='Region defined by WGS84 bounding box co-ordinates (left, bottom, right, top).'
+    metavar='LEFT BOTTOM RIGHT TOP',
+    help='Region defined by WGS84 bounding box co-ordinates.'
 )
 region_option = click.option(
     '-r', '--region', type=click.Path(exists=True, dir_okay=False, allow_dash=True), default=None, callback=_region_cb,
@@ -229,6 +236,19 @@ resampling_option = click.option(
 scale_offset_option = click.option(
     '-so/-nso', '--scale-offset/--no-scale-offset', default=False, show_default=True,
     help='Whether to apply any EE band scales and offsets to the image.'
+)
+crs_transform_option = click.option(
+    '-ct', '--crs-transform', type=click.FLOAT, nargs=6, default=None,
+    metavar='XSCALE YSHEAR XSHEAR YSCALE XTRANSLATION YTRANSLATION',
+    help='Six element affine transform in the specified :option:`crs`.'
+)  # yapf: disable
+shape_option = click.option(
+    '-sh', '--shape', type=click.INT, nargs=2, default=None, metavar='HEIGHT WIDTH',
+    help='Image height & width in pixels.'
+)
+like_option = click.option(
+    '-l', '--like', type=click.Path(exists=True, dir_okay=False), default=None,
+    help='Template raster for :option:`crs`, :option:`crs-transform` & :option:`shape`.'
 )
 
 
@@ -474,18 +494,21 @@ cli.add_command(search)
 # download command
 @click.command(cls=ChainedCommand)
 @click.option('-i', '--id', 'image_id', type=click.STRING, multiple=True, help='Earth Engine image ID(s) to download.')
+@crs_option
 @bbox_option
 @region_option
-@click.option(
-    '-dd', '--download-dir', type=click.Path(exists=True, file_okay=False, dir_okay=True, writable=True), default=None,
-    show_default='current working directory.', help='Directory to download image file(s) into.'
-)
-@crs_option
 @scale_option
+@like_option
+@crs_transform_option
+@shape_option
 @dtype_option
 @mask_option
 @resampling_option
 @scale_offset_option
+@click.option(
+    '-dd', '--download-dir', type=click.Path(exists=True, file_okay=False, dir_okay=True, writable=True), default=None,
+    show_default='current working directory.', help='Directory to download image file(s) into.'
+)
 @click.option(
     '-mts', '--max-tile-size', type=click.FLOAT, default=BaseImage._ee_max_tile_size, show_default=True,
     help='Maximum download tile size (MB).'
@@ -496,7 +519,7 @@ cli.add_command(search)
 )
 @click.option('-o', '--overwrite', is_flag=True, default=False, help='Overwrite the destination file if it exists.')
 @click.pass_obj
-def download(obj, image_id, bbox, region, download_dir, mask, max_tile_size, max_tile_dim, overwrite, **kwargs):
+def download(obj, image_id, bbox, region, like, download_dir, mask, max_tile_size, max_tile_dim, overwrite, **kwargs):
     # @formatter:off
     """
     Download image(s).
@@ -561,23 +584,26 @@ cli.add_command(download)
 # export command
 @click.command(cls=ChainedCommand)
 @click.option('-i', '--id', 'image_id', type=click.STRING, multiple=True, help='Earth Engine image ID(s) to export.')
+@crs_option
 @bbox_option
 @region_option
-@click.option(
-    '-df', '--drive-folder', type=click.STRING, default=None, show_default='root folder.',
-    help='Google Drive folder to export image(s) to.'
-)
-@crs_option
 @scale_option
+@like_option
+@crs_transform_option
+@shape_option
 @dtype_option
 @mask_option
 @resampling_option
 @scale_offset_option
 @click.option(
+    '-df', '--drive-folder', type=click.STRING, default=None, show_default='root folder.',
+    help='Google Drive folder to export image(s) to.'
+)
+@click.option(
     '-w/-nw', '--wait/--no-wait', default=True, show_default=True, help='Whether to wait for the export to complete.'
 )
 @click.pass_obj
-def export(obj, image_id, bbox, region, drive_folder, mask, wait, **kwargs):
+def export(obj, image_id, bbox, region, like, drive_folder, mask, wait, **kwargs):
     # @formatter:off
     """
     Export image(s) to Google Drive.
