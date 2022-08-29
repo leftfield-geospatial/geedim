@@ -221,6 +221,14 @@ class BaseImage:
             return None
         return [bname for bname, bdict in self._stac.band_props.items() if 'center_wavelength' in bdict]
 
+    @property
+    def profile(self) -> Dict:
+        """ Rasterio image profile. """
+        return dict(
+            crs=self.crs, transform=self.transform, width=self.shape[1], height=self.shape[0], dtype=self.dtype,
+            count=self.count
+        )
+
     @staticmethod
     def _get_projection(ee_info: Dict, min_scale=True) -> Dict:
         """
