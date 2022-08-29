@@ -93,7 +93,7 @@ class ChainedCommand(click.Command):
             ctx.obj.image_list += list(ctx.params['image_id'])
 
         if ('like' in ctx.params) and (ctx.params['like'] is not None):
-            # populate crs, crs_transform & shape from the given raster
+            # populate crs, crs_transform & shape parameters from a template raster
             with rio.open(ctx.params['like'], 'r') as im:
                 ctx.params['crs'] = f'EPSG:{im.crs.to_epsg()}'  # TODO: WKT?
                 ctx.params['crs_transform'] = im.transform
@@ -216,7 +216,7 @@ crs_option = click.option(
 )
 scale_option = click.option(
     '-s', '--scale', type=click.FLOAT, default=None, show_default='minimum scale of the source image bands.',
-    help='Pixel scale (size) to resample image(s) to (m).'
+    help='Pixel scale (size) to resample image(s) to (m).  Can\'t  be used with :option:`shape` or :option:`like`.'
 )
 dtype_option = click.option(
     '-dt', '--dtype', type=click.Choice(supported_dtypes, case_sensitive=False), default=None,
@@ -239,12 +239,13 @@ scale_offset_option = click.option(
 )
 crs_transform_option = click.option(
     '-ct', '--crs-transform', type=click.FLOAT, nargs=6, default=None,
-    metavar='XSCALE YSHEAR XSHEAR YSCALE XTRANSLATION YTRANSLATION',
-    help='Six element affine transform in the specified :option:`crs`.'
+    metavar='XSCALE XSHEAR XTRANSLATION YSHEAR YSCALE YTRANSLATION',
+    help='Six element affine transform in the given :option:`crs`.  Use with :option:`shape` to specify image bounds '
+         'and resolution.'
 )  # yapf: disable
 shape_option = click.option(
     '-sh', '--shape', type=click.INT, nargs=2, default=None, metavar='HEIGHT WIDTH',
-    help='Image height & width in pixels.'
+    help='Image height & width in pixels.  Can\'t be used together with :option:`scale`.'
 )
 like_option = click.option(
     '-l', '--like', type=click.Path(exists=True, dir_okay=False), default=None,

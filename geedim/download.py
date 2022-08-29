@@ -385,8 +385,8 @@ class BaseImage:
             WKT, EPSG etc. specification of CRS to export to.  Where image bands have different CRSs, all are
             re-projected to this CRS. Defaults to use the CRS of the minimum scale band if available.
         crs_transform: tuple of float, list of float, rio.Affine, optional
-            Array of 6 numbers specifying an affine transform in the specified CRS:
-            [xScale, yShearing, xShearing, yScale, xTranslation, yTranslation].  All bands are re-projected to
+            List of 6 numbers specifying an affine transform in the specified CRS.  In row-major order:
+            [xScale, xShearing, xTranslation, yShearing, yScale, yTranslation].  All bands are re-projected to
             this transform.
         shape: tuple of int, optional
             (height, width) dimensions to export (pixels).
@@ -705,8 +705,8 @@ class BaseImage:
             WKT, EPSG etc specification of CRS to export to.  Where image bands have different CRSs, all are
             re-projected to this CRS. Defaults to use the CRS of the minimum scale band if available.
         crs_transform: tuple of float, list of float, rio.Affine, optional
-            Array of 6 numbers specifying an affine transform in the specified CRS:
-            [xScale, yShearing, xShearing, yScale, xTranslation, yTranslation].  All bands are re-projected to
+            List of 6 numbers specifying an affine transform in the specified CRS.  In row-major order:
+            [xScale, xShearing, xTranslation, yShearing, yScale, yTranslation].  All bands are re-projected to
             this transform.
         shape: tuple of int, optional
             (height, width) dimensions to export (pixels).
@@ -772,8 +772,8 @@ class BaseImage:
             WKT, EPSG etc. specification of CRS to export to.  Where image bands have different CRSs, all are
             re-projected to this CRS. Defaults to use the CRS of the minimum scale band if available.
         crs_transform: tuple of float, list of float, rio.Affine, optional
-            Array of 6 numbers specifying an affine transform in the specified CRS:
-            [xScale, yShearing, xShearing, yScale, xTranslation, yTranslation].  All bands are re-projected to
+            List of 6 numbers specifying an affine transform in the specified CRS.  In row-major order:
+            [xScale, xShearing, xTranslation, yShearing, yScale, yTranslation].  All bands are re-projected to
             this transform.
         shape: tuple of int, optional
             (height, width) dimensions to export (pixels).
