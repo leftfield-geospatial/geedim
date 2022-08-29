@@ -332,3 +332,4 @@ def expand_window_to_grid(win: Window, expand_pixels: Tuple[int, int] = (0, 0)) 
     height = np.ceil(win.height + 2 * expand_pixels[0] + row_frac)
     exp_win = Window(int(col_off), int(row_off), int(width), int(height))
     return exp_win
+
