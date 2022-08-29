@@ -61,10 +61,10 @@ class ChainedCommand(click.Command):
         sub_strings = {
             '\b\n': '\n\b',  # convert from RST friendly to click literal (unwrapped) block marker
             ':option:': '',  # strip ':option:'
-            '\| ': '',  # strip RST literal (unwrapped) marker in e.g. tables and bullet lists
+            '\| ': '',       # strip RST literal (unwrapped) marker in e.g. tables and bullet lists
             '\n\.\. _.*:\n': '',  # strip RST ref directive '\n.. <name>:\n'
-            '`(.*)<(.*)>`_': '\g<1>',  # convert from RST cross-ref '`<name> <<link>>`_' to 'name'
-            '::': ':'  # convert from RST '::' to ':'
+            '`(.*) <(.*)>`_': '\g<1>',  # convert from RST cross-ref '`<name> <<link>>`_' to 'name'
+            '::': ':'        # convert from RST '::' to ':'
         }
 
         def reformat_text(text, width, **kwargs):
@@ -216,7 +216,7 @@ crs_option = click.option(
 )
 scale_option = click.option(
     '-s', '--scale', type=click.FLOAT, default=None, show_default='minimum scale of the source image bands.',
-    help='Pixel scale (size) to resample image(s) to (m).  Can\'t  be used with :option:`shape` or :option:`like`.'
+    help='Pixel scale (size) to resample image(s) to (m).'
 )
 dtype_option = click.option(
     '-dt', '--dtype', type=click.Choice(supported_dtypes, case_sensitive=False), default=None,
@@ -240,16 +240,16 @@ scale_offset_option = click.option(
 crs_transform_option = click.option(
     '-ct', '--crs-transform', type=click.FLOAT, nargs=6, default=None,
     metavar='XSCALE XSHEAR XTRANSLATION YSHEAR YSCALE YTRANSLATION',
-    help='Six element affine transform in the given :option:`crs`.  Use with :option:`shape` to specify image bounds '
-         'and resolution.'
+    help='Six element affine transform in the download CRS.  Use with ``--shape`` to specify image '
+         'bounds and resolution.'
 )  # yapf: disable
 shape_option = click.option(
     '-sh', '--shape', type=click.INT, nargs=2, default=None, metavar='HEIGHT WIDTH',
-    help='Image height & width in pixels.  Can\'t be used together with :option:`scale`.'
+    help='Image height & width dimensions (pixels).'
 )
 like_option = click.option(
     '-l', '--like', type=click.Path(exists=True, dir_okay=False), default=None,
-    help='Template raster for :option:`crs`, :option:`crs-transform` & :option:`shape`.'
+    help='Template raster from which to derive ``--crs``, ``--crs-transform`` & ``--shape``.'
 )
 
 
@@ -274,7 +274,7 @@ def cli(ctx, verbose, quiet):
 @click.option(
     '-mc/-nmc', '--mask-cirrus/--no-mask-cirrus', default=True, show_default=True,
     help='Whether to mask cirrus clouds.  Valid for Landsat 8-9 images, and, for Sentinel-2 images with '
-    'the `qa` :option:`--mask-method`.'
+    'the `qa` ``--mask-method``.'
 )
 @click.option(
     '-ms/-nms', '--mask-shadows/--no-mask-shadows', default=True, show_default=True,
@@ -287,7 +287,7 @@ def cli(ctx, verbose, quiet):
 )
 @click.option(
     '-p', '--prob', type=click.FloatRange(min=0, max=100), default=60, show_default=True,
-    help='Cloud probability threshold (%). Valid for Sentinel-2 images with the `cloud-prob` :option:`--mask-method`'
+    help='Cloud probability threshold (%). Valid for Sentinel-2 images with the `cloud-prob` ``--mask-method``'
 )
 @click.option(
     '-d', '--dark', type=click.FloatRange(min=0, max=1), default=.15, show_default=True,
@@ -392,7 +392,7 @@ cli.add_command(config)
 @click.option(
     '-cp', '--cloudless-portion', type=click.FloatRange(min=0, max=100), default=0, show_default=True,
     help='Lower limit on the cloud/shadow free portion of the region (%).  If cloud/shadow masking is not supported '
-    'for the specified collection, :option:`--cloudless-portion` will operate like :option:`--fill-portion`.'
+    'for the specified collection, ``--cloudless-portion`` will operate like ``--fill-portion``.'
 )
 @click.option(
     '-cf', '--custom-filter', type=click.STRING, default=None,
@@ -499,9 +499,9 @@ cli.add_command(search)
 @bbox_option
 @region_option
 @scale_option
-@like_option
 @crs_transform_option
 @shape_option
+@like_option
 @dtype_option
 @mask_option
 @resampling_option
@@ -526,10 +526,10 @@ def download(obj, image_id, bbox, region, like, download_dir, mask, max_tile_siz
     Download image(s).
 
     Download Earth Engine image(s) to GeoTIFF file(s), allowing optional region of interest, and other image
-    formatting options to be specified.  Images larger than the `Earth Engine size limit
-    <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`_ are split and downloaded as separate
-    tiles, then re-assembled into a single GeoTIFF.  Downloaded image files are populated with metadata from the Earth
-    Engine image and STAC.
+    formatting options to be specified.  Images larger than the
+    `Earth Engine size limit <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`_ are split
+    and downloaded as separate tiles, then re-assembled into a single GeoTIFF.  Downloaded image files are populated
+    with metadata from the Earth Engine image and STAC.
 
     This command can be chained after the ``composite`` command, to download the composite image.  It can also be
     chained after the ``search`` command, in which case the search result images will be downloaded, without the need
@@ -550,8 +550,13 @@ def download(obj, image_id, bbox, region, like, download_dir, mask, max_tile_siz
 
     Images from other collections, will contain the FILL_MASK band only.
 
-    If neither ``--bbox`` or ``--region`` are specified, the entire image granule
-    will be downloaded.
+    Bounds and resolution of the downloaded image can be specified with ``--region`` / ``--bbox`` and ``--scale`` /
+    ``--shape``, or ``--crs-transform`` and ``--shape``.  The ``--like`` option will automatically derive ``--crs``,
+    ``--crs-transform`` and ``--shape`` from a provided template raster.  If no bounds are specified (with either
+    ``--region``, or ``--crs-transform`` & ``--shape``), the entire image granule is downloaded.
+
+    When ``--crs``, ``--scale``, ``--crs-transform`` and ``--shape`` are not specified, the pixel grids of the
+    downloaded and Earth Engine images will coincide.
 
     Image filenames are derived from their Earth Engine ID.
     \b
@@ -589,9 +594,9 @@ cli.add_command(download)
 @bbox_option
 @region_option
 @scale_option
-@like_option
 @crs_transform_option
 @shape_option
+@like_option
 @dtype_option
 @mask_option
 @resampling_option
@@ -631,8 +636,13 @@ def export(obj, image_id, bbox, region, like, drive_folder, mask, wait, **kwargs
 
     Images from other collections, will contain the FILL_MASK band only.
 
-    If neither ``--bbox`` or ``--region`` are specified, the entire image granule
-    will be downloaded.
+    Bounds and resolution of the exported image can be specified with ``--region`` / ``--bbox`` and ``--scale`` /
+    ``--shape``, or ``--crs-transform`` and ``--shape``.  The ``--like`` option will automatically derive ``--crs``,
+    ``--crs-transform`` and ``--shape`` from a provided template raster.  If no bounds are specified (with either
+    ``--region``, or ``--crs-transform`` & ``--shape``), the entire image granule is exported.
+
+    When ``--crs``, ``--scale``, ``--crs-transform`` and ``--shape`` are not specified, the pixel grids of the
+    exported and Earth Engine images will coincide.
 
     Image filenames are derived from their Earth Engine ID.
     \b
@@ -689,17 +699,17 @@ cli.add_command(export)
 @click.option(
     '-b', '--bbox', type=click.FLOAT, nargs=4, default=None, callback=_bbox_cb,
     help='Give preference to images with the highest cloudless (or filled) portion inside this bounding box (left, '
-    'bottom, right, top).  Valid for `mosaic` and `q-mosaic` compositing :option:`--method`.'
+    'bottom, right, top).  Valid for `mosaic` and `q-mosaic` compositing ``--method``.'
 )
 @click.option(
     '-r', '--region', type=click.Path(exists=True, dir_okay=False, allow_dash=True), default=None, callback=_region_cb,
     help='Give preference to images with the highest cloudless (or filled) portion inside this geojson polygon, '
-    'or raster file, region.  Valid for `mosaic` and `q-mosaic` compositing :option:`--method`.'
+    'or raster file, region.  Valid for `mosaic` and `q-mosaic` compositing ``--method``.'
 )
 @click.option(
     '-d', '--date', type=click.DateTime(),
     help='Give preference to images closest to this date (UTC).  Valid for `mosaic` and `q-mosaic` compositing '
-    ':option:`--method`.'
+    '``--method``.'
 )
 @click.pass_obj
 def composite(obj, image_id, mask, method, resampling, bbox, region, date):

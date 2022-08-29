@@ -372,12 +372,13 @@ class BaseImage:
         Prepare the encapsulated image for export/download.  Will reproject, resample, clip and convert the image
         according to the provided parameters.
 
-        A region of interest can be defined by specifying ``crs`` & ``region``, or ``crs``, ``crs_transform`` and
-        ``shape``.
+        Export bounds and resolution can be specified with ``region`` and ``scale`` / ``shape``, or ``crs_transform``
+        and ``shape``.  If no bounds are specified (with either ``region``, or ``crs_transform`` & ``shape``), the
+        entire image granule is exported.
 
-        When the export ``crs`` and ``scale`` match those of the encapsulated image, and ``crs_transform`` & ``shape``
-        are not specified, the image will be exported on the pixel grid of the encapsulated image i.e. with
-        ``crs_transform`` matching that of the encapsulated image.
+        When ``crs`` and ``scale`` are not specified (or match those of the encapsulated image), and ``crs_transform``
+        & ``shape`` are not specified, the pixel grid of the exported image will coincide with that of the encapsulated
+        image.
 
         Parameters
         ----------
@@ -442,6 +443,10 @@ class BaseImage:
                 'https://issuetracker.google.com/issues/194561313'
             )
 
+        if scale and shape:
+            # This error is raised in later calls to ee.Image.getInfo(), but is neater to raise here first
+            raise ValueError('You can specify one of scale or shape, but not both.')
+
         # perform image scale/offset, dtype and resampling operations
         ee_image = self.ee_image
         if scale_offset:
@@ -496,6 +501,7 @@ class BaseImage:
         )
         # drop items with values==None
         export_kwargs = {k: v for k, v in export_kwargs.items() if v is not None}
+        logger.debug(f'ee.Image.prepare_for_export() params: {export_kwargs}')
         ee_image, _ = ee_image.prepare_for_export(export_kwargs)
         return BaseImage(ee_image)
 
@@ -693,6 +699,14 @@ class BaseImage:
         """
         Export the encapsulated image to Google Drive.
 
+        Export bounds and resolution can be specified with ``region`` and ``scale`` / ``shape``, or ``crs_transform``
+        and ``shape``.  If no bounds are specified (with either ``region``, or ``crs_transform`` & ``shape``), the
+        entire image granule is exported.
+
+        When ``crs`` and ``scale`` are not specified (or match those of the encapsulated image), and ``crs_transform``
+        & ``shape`` are not specified, the pixel grid of the exported image will coincide with that of the encapsulated
+        image.
+
         Parameters
         ----------
         filename : str
@@ -755,6 +769,14 @@ class BaseImage:
         <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`_ are split and downloaded as
         separate tiles, then re-assembled into a single GeoTIFF.  Downloaded image files are populated with metadata
         from the Earth Engine image and STAC.
+
+        Image bounds and resolution can be specified with ``region`` and ``scale`` / ``shape``, or ``crs_transform``
+        and ``shape``.  If no bounds are specified (with either ``region``, or ``crs_transform`` & ``shape``), the
+        entire image granule is downloaded.
+
+        When ``crs`` and ``scale`` are not specified (or match those of the encapsulated image), and ``crs_transform``
+        & ``shape`` are not specified, the pixel grid of the downloaded image will coincide with that of the
+        encapsulated image.
 
         Parameters
         ----------
