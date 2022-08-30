@@ -57,15 +57,16 @@ class ChainedCommand(click.Command):
         """ Strip some RST markup from the help text for CLI display.  Assumes no grid tables. """
         if not hasattr(self, 'click_wrap_text'):
             self.click_wrap_text = click.formatting.wrap_text
-        # TODO: copy homonim sub_strings
         sub_strings = {
-            '\b\n': '\n\b',  # convert from RST friendly to click literal (unwrapped) block marker
-            ':option:': '',  # strip ':option:'
-            '\| ': '',       # strip RST literal (unwrapped) marker in e.g. tables and bullet lists
-            '\n\.\. _.*:\n': '',  # strip RST ref directive '\n.. <name>:\n'
-            '`(.*) <(.*)>`_': '\g<1>',  # convert from RST cross-ref '`<name> <<link>>`_' to 'name'
-            '::': ':'        # convert from RST '::' to ':'
-        }
+            '\b\n': '\n\b',                 # convert from RST friendly to click literal (unwrapped) block marker
+            r'\| ': '',                     # strip RST literal (unwrapped) marker in e.g. tables and bullet lists
+            '\n\.\. _.*:\n': '',            # strip RST ref directive '\n.. _<name>:\n'
+            '`(.*?) <(.*?)>`_': r'\g<1>',   # convert from RST cross-ref '`<name> <<link>>`_' to 'name'
+            '::': ':',                      # convert from RST '::' to ':'
+            '``(.*?)``': r'\g<1>',          # convert from RST '``literal``' to 'literal'
+            ':option:`(.*?)( <.*?>)?`': r'\g<1>',  # convert ':option:`--name <group-command --name>`' to '--name'
+            ':option:`(.*?)`': r'\g<1>',    # convert ':option:`--name`' to '--name'
+        }  # yapf: disable
 
         def reformat_text(text, width, **kwargs):
             for sub_key, sub_value in sub_strings.items():
@@ -267,7 +268,10 @@ def cli(ctx, verbose, quiet):
 
 
 # TODO: add clear docs on what is piped out of or into each command.
-# TODO: use cloup and linear help layout.  move lists of option values from command docting to corresponding option help
+# TODO: use cloup and linear help layout & move lists of option values from command docsting to corresponding option
+#  help
+# TODO: add RST option markup like in homonim e.g. :option:`--mask-method`, and
+#  :option:`--param-image <homonim-fuse --param-image>`
 
 # config command
 @click.command(cls=ChainedCommand, context_settings=dict(auto_envvar_prefix='GEEDIM'))

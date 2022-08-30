@@ -312,8 +312,7 @@ def test_prepare_exceptions(user_base_image: BaseImage, user_fix_base_image: Bas
     ]
 )  # yapf: disable
 def test_prepare_for_export(src_image: str, tgt_image: str, request: pytest.FixtureRequest):
-    """ Test BaseImage._prepare_for_export() generates an export image with the expected properties. """
-    # TODO: can we include a non-footprint region
+    """ Test BaseImage._prepare_for_export() generates an export image with the target properties. """
     src_image: BaseImage = request.getfixturevalue(src_image)
     tgt_image: BaseImage = request.getfixturevalue(tgt_image)
     if tgt_image == src_image:

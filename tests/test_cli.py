@@ -485,7 +485,7 @@ def test_composite_defaults(
         ('s2_sr_image_id_list', 'mosaic', None, '2021-10-01', True, 'near', 10),
         ('l8_9_image_id_list', 'q-mosaic', 'region_25ha_file', None, True, 'bilinear', 30),
         ('l8_9_image_id_list', 'medoid', 'region_25ha_file', None, True, 'near', 30),
-        # ('gedi_image_id_list', 'medoid', None, None, True, 'bilinear', 25),     # TODO revert to GEDI medoid
+        ('gedi_image_id_list', 'medoid', None, None, True, 'bilinear', 25),
     ]
 )
 def test_composite_params(

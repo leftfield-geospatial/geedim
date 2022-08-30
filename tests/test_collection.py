@@ -483,7 +483,7 @@ def test_composite_landsat_cloud_mask_params(l8_9_image_list, region_10000ha):
         ('l4_5_image_list', CompositeMethod.median, True, None, None, {}),
         ('gedi_image_list', CompositeMethod.mosaic, True, 'region_100ha', None, {}),
         ('gedi_image_list', CompositeMethod.mosaic, True, None, '2020-09-01', {}),
-        # ('gedi_image_list', CompositeMethod.medoid, True, None, None, {}),    # TODO: include medoid & median?
+        ('gedi_image_list', CompositeMethod.medoid, True, None, None, {}),
     ]
 )  # yapf: disabl;e
 def test_composite(image_list, method, mask, region, date, cloud_kwargs, request):
