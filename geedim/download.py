@@ -31,7 +31,7 @@ import numpy as np
 import rasterio as rio
 from rasterio.crs import CRS
 from rasterio.enums import Resampling as RioResampling
-from rasterio.windows import Window
+from rasterio import windows, features, warp
 from tqdm import TqdmWarning
 from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
@@ -221,6 +221,14 @@ class BaseImage:
             return None
         return [bname for bname, bdict in self._stac.band_props.items() if 'center_wavelength' in bdict]
 
+    @property
+    def profile(self) -> Dict:
+        """ Rasterio image profile. """
+        return dict(
+            crs=self.crs, transform=self.transform, width=self.shape[1], height=self.shape[0], dtype=self.dtype,
+            count=self.count
+        )
+
     @staticmethod
     def _get_projection(ee_info: Dict, min_scale=True) -> Dict:
         """
@@ -364,23 +372,39 @@ class BaseImage:
         return ee.Image(adj_im.copyProperties(ee_image, ee_image.propertyNames()))
 
     def _prepare_for_export(
-        self, region: Dict = None, crs: str = None, scale: float = None,
-        resampling: ResamplingMethod = _default_resampling, dtype: str = None, scale_offset: bool = False
+        self, crs: str = None, crs_transform: Tuple[float] = None, shape: Tuple[int, int] = None, region: Dict =
+        None, scale: float = None, resampling: ResamplingMethod = _default_resampling, dtype: str = None,
+        scale_offset: bool = False
     ) -> 'BaseImage':
         """
         Prepare the encapsulated image for export/download.  Will reproject, resample, clip and convert the image
         according to the provided parameters.
 
+        Export bounds and resolution can be specified with ``region`` and ``scale`` / ``shape``, or ``crs_transform``
+        and ``shape``.  If no bounds are specified (with either ``region``, or ``crs_transform`` & ``shape``), the
+        entire image granule is exported.
+
+        When ``crs`` and ``scale`` are not specified (or match those of the encapsulated image), and ``crs_transform``
+        & ``shape`` are not specified, the pixel grid of the exported image will coincide with that of the encapsulated
+        image.
+
         Parameters
         ----------
-        region : dict, geojson, ee.Geometry, optional
-            Region of interest (WGS84) to export.  Defaults tp export the entire image if it has a footprint.
         crs : str, optional
-            WKT, EPSG etc specification of CRS to export to.  Where image bands have different CRSs, all are
+            WKT, EPSG etc. specification of CRS to export to.  Where image bands have different CRSs, all are
             re-projected to this CRS. Defaults to use the CRS of the minimum scale band if available.
+        crs_transform: tuple of float, list of float, rio.Affine, optional
+            List of 6 numbers specifying an affine transform in the specified CRS.  In row-major order:
+            [xScale, xShearing, xTranslation, yShearing, yScale, yTranslation].  All bands are re-projected to
+            this transform.
+        shape: tuple of int, optional
+            (height, width) dimensions to export (pixels).
+        region : dict, geojson, ee.Geometry, optional
+            Region of interest (WGS84) to export.  Defaults to the image footprint, when available.
         scale : float, optional
             Pixel scale (m) to export to.  Where image bands have different scales, all are re-projected to this scale.
-            Defaults to use the minimum scale of image bands if available.
+            Ignored if ``crs`` and ``crs_transform`` are specified.  Defaults to use the minimum scale of
+            image bands if available.
         resampling : ResamplingMethod, optional
             Resampling method - see :class:`~geedim.enums.ResamplingMethod` for available options.
         dtype: str, optional
@@ -395,26 +419,31 @@ class BaseImage:
             Prepared image.
         """
 
-        if not region or not crs or not scale:
-            # One or more of region, crs and scale were not provided, so get the image values to use instead
+        # Check for parameter combination errors.
+        # This necessarily duplicates some of what is done in ee.Image.getDownloadURL, so that errors are raised
+        # before tile creation & download.
+        if (not crs or not region or not scale) and (not crs or not crs_transform or not shape):
             if not self.has_fixed_projection:
-                # Raise an error if this image has no fixed projection
+                # if the image has no fixed projection, either crs, region, & scale; or crs, crs_transform and shape
+                # must be specified
                 raise ValueError(
-                    f'This image does not have a fixed projection, you need to specify a region, '
-                    f'crs and scale.'
+                    f'This image does not have a fixed projection, you need to specify a crs, region & scale; or a '
+                    f'crs, crs_transform & shape.'
                 )
 
-        if not region and not self.footprint:
-            raise ValueError(f'This image does not have a footprint, you need to specify a region.')
+        if (not self.footprint) and (not region and (not crs or not crs_transform or not shape)):
+            # if the image has no footprint (i.e. it is 'unbounded'), either region; or crs, crs_transform and shape
+            # must be specified
+            raise ValueError(
+                f'This image is unbounded, you need to specify a region; or a crs, crs_transform and '
+                f'shape.'
+            )
 
-        if self.crs == 'EPSG:4326' and not scale:
-            # ee.Image.prepare_for_export() expects a scale in meters, but if the image is EPSG:4326, the default scale
-            # is in degrees.
-            raise ValueError(f'This image is in EPSG:4326, you need to specify a scale in meters.')
-
-        region = region or self.footprint
-        crs = crs or ee.Projection(self.crs, tuple(self.transform)[:6])
-        scale = scale or self.scale
+        if self.crs == 'EPSG:4326' and not scale and not shape:
+            # If the image is in EPSG:4326, either scale (in meters); or shape must be specified.
+            # Note that ee.Image.prepare_for_export() expects a scale in meters, but if the image is EPSG:4326,
+            # the default scale is in degrees.
+            raise ValueError(f'This image is in EPSG:4326, you need to specify a scale (in meters); or a shape.')
 
         if crs == 'SR-ORG:6974':
             raise ValueError(
@@ -422,6 +451,11 @@ class BaseImage:
                 'https://issuetracker.google.com/issues/194561313'
             )
 
+        if scale and shape:
+            # This error is raised in later calls to ee.Image.getInfo(), but is neater to raise here first
+            raise ValueError('You can specify one of scale or shape, but not both.')
+
+        # perform image scale/offset, dtype and resampling operations
         ee_image = self.ee_image
         if scale_offset:
             ee_image = self._scale_offset(ee_image, self.band_properties)
@@ -439,10 +473,44 @@ class BaseImage:
             ee_image = utils.resample(ee_image, resampling)
 
         ee_image = self._convert_dtype(ee_image, dtype=dtype or im_dtype)
-        # TODO: Specify `crs_transform` and `dimensions` (as in tile), so that everything stays on the source grid
-        #  where possible i.e. where the export CRS and scale are the same as the source.
-        export_args = dict(region=region, crs=crs, scale=scale, fileFormat='GeoTIFF', filePerBand=False)
-        ee_image, _ = ee_image.prepare_for_export(export_args)
+
+        # configure the export parameter values
+        crs = crs or self.crs
+        if not crs_transform and not shape:
+            # if none of crs_transform, shape, region or scale are specified, then set region and scale to defaults
+            region = region or self.footprint
+            scale = scale or self.scale
+
+            if (crs == self.crs) and (scale == self.scale):
+                # if crs_transform & shape are not already specified, and crs & scale match this image's crs & scale,
+                # then set crs_transform and shape to export on this image's (self) pixel grid
+                if region == self.footprint:
+                    crs_transform = self.transform
+                    shape = self.shape
+                else:
+                    # find a crs_transform and shape that encompasses region
+                    region_crs = region['crs']['properties']['name'] if 'crs' in region else 'EPSG:4326'
+                    region_bounds = warp.transform_bounds(region_crs, crs, *features.bounds(region))
+                    region_win = windows.from_bounds(*region_bounds, transform=self.transform)
+                    region_win = utils.expand_window_to_grid(region_win)
+                    crs_transform = self.transform * rio.Affine.translation(region_win.col_off, region_win.row_off)
+                    shape = (region_win.height, region_win.width)
+
+                # prevent exporting with region & scale now that crs_transform and shape are set
+                region = None
+                scale = None
+
+        # create the export parameter dict
+        crs_transform = crs_transform[:6] if crs_transform else None
+        dimensions = shape[::-1] if shape else None
+        export_kwargs = dict(
+            crs=crs, crs_transform=crs_transform, dimensions=dimensions, region=region, scale=scale,
+            fileFormat='GeoTIFF', filePerBand=False
+        )
+        # drop items with values==None
+        export_kwargs = {k: v for k, v in export_kwargs.items() if v is not None}
+        logger.debug(f'ee.Image.prepare_for_export() params: {export_kwargs}')
+        ee_image, _ = ee_image.prepare_for_export(export_kwargs)
         return BaseImage(ee_image)
 
     def _prepare_for_download(self, set_nodata: bool = True, **kwargs) -> Tuple['BaseImage', Dict]:
@@ -594,7 +662,7 @@ class BaseImage:
         for tile_start in start_range:
             tile_stop = np.clip(np.add(tile_start, tile_shape), a_min=None, a_max=image_shape)
             clip_tile_shape = (tile_stop - tile_start).tolist()  # tolist is just to convert to native int
-            tile_window = Window(tile_start[1], tile_start[0], clip_tile_shape[1], clip_tile_shape[0])
+            tile_window = windows.Window(tile_start[1], tile_start[0], clip_tile_shape[1], clip_tile_shape[0])
             yield Tile(exp_image, tile_window)
 
     @staticmethod
@@ -639,6 +707,14 @@ class BaseImage:
         """
         Export the encapsulated image to Google Drive.
 
+        Export bounds and resolution can be specified with ``region`` and ``scale`` / ``shape``, or ``crs_transform``
+        and ``shape``.  If no bounds are specified (with either ``region``, or ``crs_transform`` & ``shape``), the
+        entire image granule is exported.
+
+        When ``crs`` and ``scale`` are not specified (or match those of the encapsulated image), and ``crs_transform``
+        & ``shape`` are not specified, the pixel grid of the exported image will coincide with that of the encapsulated
+        image.
+
         Parameters
         ----------
         filename : str
@@ -647,14 +723,21 @@ class BaseImage:
             Google Drive folder to export to. Defaults to the root.
         wait : bool
             Wait for the export to complete before returning.
-        region : dict, ee.Geometry, optional
-            Region defined by geojson polygon in WGS84. Defaults to the entire image granule.
         crs : str, optional
-            Reproject image(s) to this EPSG or WKT CRS.  Where image bands have different CRSs, all are
-            re-projected to this CRS. Defaults to the CRS of the minimum scale band.
+            WKT, EPSG etc specification of CRS to export to.  Where image bands have different CRSs, all are
+            re-projected to this CRS. Defaults to use the CRS of the minimum scale band if available.
+        crs_transform: tuple of float, list of float, rio.Affine, optional
+            List of 6 numbers specifying an affine transform in the specified CRS.  In row-major order:
+            [xScale, xShearing, xTranslation, yShearing, yScale, yTranslation].  All bands are re-projected to
+            this transform.
+        shape: tuple of int, optional
+            (height, width) dimensions to export (pixels).
+        region : dict, geojson, ee.Geometry, optional
+            Region of interest (WGS84) to export.  Defaults to the image footprint, when available.
         scale : float, optional
-            Resample image(s) to this pixel scale (size) (m).  Where image bands have different scales,
-            all are resampled to this scale. Defaults to the minimum scale of image bands.
+            Pixel scale (m) to export to.  Where image bands have different scales, all are re-projected to this scale.
+            Ignored if ``crs`` and ``crs_transform`` are specified.  Defaults to use the minimum scale of
+            image bands if available.
         resampling : ResamplingMethod, optional
             Resampling method - see :class:`~geedim.enums.ResamplingMethod` for available options.
         dtype: str, optional
@@ -695,6 +778,14 @@ class BaseImage:
         separate tiles, then re-assembled into a single GeoTIFF.  Downloaded image files are populated with metadata
         from the Earth Engine image and STAC.
 
+        Image bounds and resolution can be specified with ``region`` and ``scale`` / ``shape``, or ``crs_transform``
+        and ``shape``.  If no bounds are specified (with either ``region``, or ``crs_transform`` & ``shape``), the
+        entire image granule is downloaded.
+
+        When ``crs`` and ``scale`` are not specified (or match those of the encapsulated image), and ``crs_transform``
+        & ``shape`` are not specified, the pixel grid of the downloaded image will coincide with that of the
+        encapsulated image.
+
         Parameters
         ----------
         filename: pathlib.Path, str
@@ -707,16 +798,23 @@ class BaseImage:
             Maximum tile size (MB).  If None, defaults to the Earth Engine download size limit (32 MB).
         max_tile_dim: int, optional
             Maximum tile width/height (pixels).  If None, defaults to Earth Engine download limit (10000).
-        region : dict, ee.Geometry, optional
-            Region defined by geojson polygon in WGS84.  Defaults to the entire image granule.
         crs : str, optional
-            Reproject image(s) to this EPSG or WKT CRS.  Where image bands have different CRSs, all are
-            re-projected to this CRS.  Defaults to the CRS of the minimum scale band.
+            WKT, EPSG etc. specification of CRS to export to.  Where image bands have different CRSs, all are
+            re-projected to this CRS. Defaults to use the CRS of the minimum scale band if available.
+        crs_transform: tuple of float, list of float, rio.Affine, optional
+            List of 6 numbers specifying an affine transform in the specified CRS.  In row-major order:
+            [xScale, xShearing, xTranslation, yShearing, yScale, yTranslation].  All bands are re-projected to
+            this transform.
+        shape: tuple of int, optional
+            (height, width) dimensions to export (pixels).
+        region : dict, geojson, ee.Geometry, optional
+            Region of interest (WGS84) to export.  Defaults to the image footprint, when available.
         scale : float, optional
-            Resample image(s) to this pixel scale (size) (m).  Where image bands have different scales,
-            all are resampled to this scale.  Defaults to the minimum scale of image bands.
+            Pixel scale (m) to export to.  Where image bands have different scales, all are re-projected to this scale.
+            Ignored if ``crs`` and ``crs_transform`` are specified.  Defaults to use the minimum scale of
+            image bands if available.
         resampling : ResamplingMethod, optional
-            Resampling method - see :class:`~geedim.enums.ResamplingMethod` for available options.  Defaults to `near`.
+            Resampling method - see :class:`~geedim.enums.ResamplingMethod` for available options.
         dtype: str, optional
            Convert to this data type (`uint8`, `int8`, `uint16`, `int16`, `uint32`, `int32`, `float32` or
            `float64`). Defaults to auto select a minimal type that can represent the range of pixel values.
