@@ -17,7 +17,7 @@ import json
 import pathlib
 from datetime import datetime
 from glob import glob
-from typing import List, Dict
+from typing import List, Dict, Tuple
 
 import ee
 import numpy as np
@@ -30,6 +30,7 @@ from rasterio.coords import BoundingBox
 from rasterio.crs import CRS
 from rasterio.features import bounds
 from rasterio.warp import transform_geom
+from rasterio.transform import Affine
 
 
 @pytest.fixture
@@ -89,7 +90,7 @@ def gedi_image_id_list() -> List[str]:
 
 def _test_downloaded_file(
     filename: pathlib.Path, region: Dict = None, crs: str = None, scale: float = None, dtype: str = None,
-    scale_offset: bool = None
+    scale_offset: bool = None, transform: Affine = None, shape: Tuple[int, int] = None
 ):
     """ Helper function to test image file format against given parameters. """
     with rio.open(filename, 'r') as ds:
@@ -119,6 +120,10 @@ def _test_downloaded_file(
             array = ds.read(refl_bands, masked=True)
             assert all(array.min(axis=(1, 2)) >= -0.5)
             assert all(array.max(axis=(1, 2)) <= 1.5)
+        if transform:
+            assert ds.transform[:6] == transform[:6]
+        if shape:
+            assert ds.shape == tuple(shape)
 
 
 @pytest.mark.parametrize(
@@ -304,7 +309,7 @@ def test_search_custom_filter_l9(region_25ha_file: pathlib.Path, runner: CliRunn
         ('gedi_cth_image_id', 'region_25ha_file'),
     ]
 )  # yapf: disable
-def test_download_defaults(
+def test_download_region_defaults(
     image_id: str, region_file: pathlib.Path, tmp_path: pathlib.Path, runner: CliRunner, request
 ):
     """ Test image download with default crs, scale, dtype etc.  """
@@ -320,7 +325,68 @@ def test_download_defaults(
     # test downloaded file readability and format
     with open(region_file) as f:
         region = json.load(f)
-    _test_downloaded_file(out_file, region)
+    _test_downloaded_file(out_file, region=region)
+
+
+@pytest.mark.parametrize(
+    'image_id, region_file', [
+        ('l8_image_id', 'region_25ha_file'),
+        ('s2_sr_hm_image_id', 'region_25ha_file'),
+        ('gedi_cth_image_id', 'region_25ha_file'),
+    ]
+)  # yapf: disable
+def test_download_crs_transform(
+    image_id: str, region_file: pathlib.Path, tmp_path: pathlib.Path, runner: CliRunner, request
+):
+    """ Test image download with crs, crs_transform, & shape specified. """
+    image_id = request.getfixturevalue(image_id)
+    region_file = request.getfixturevalue(region_file)
+    out_file = tmp_path.joinpath(image_id.replace('/', '-') + '.tif')
+
+    # find a transform and shape for region_file
+    with open(region_file) as f:
+        region = json.load(f)
+    region_bounds = bounds(region)
+    crs = 'EPSG:4326'
+    shape = (11, 12)
+    shape_str = ' '.join(map(str, shape))
+    crs_transform = rio.transform.from_bounds(*region_bounds, *shape[::-1])
+    crs_transform_str = ' '.join(map(str, crs_transform[:6]))
+
+    # run the download
+    cli_str = f'download -i {image_id} -c {crs} -ct {crs_transform_str} -sh {shape_str} -dd {tmp_path}'
+    result = runner.invoke(cli, cli_str.split())
+    assert (result.exit_code == 0)
+    assert (out_file.exists())
+
+    # test downloaded file readability and format
+    _test_downloaded_file(out_file, crs=crs, region=region, transform=crs_transform, shape=shape)
+
+
+def test_download_like(
+    l8_image_id: str, s2_sr_image_id: str, region_25ha_file: pathlib.Path, tmp_path: pathlib.Path, runner: CliRunner
+):
+    """ Test image download using --like. """
+    l8_file = tmp_path.joinpath(l8_image_id.replace('/', '-') + '.tif')
+    s2_file = tmp_path.joinpath(s2_sr_image_id.replace('/', '-') + '.tif')
+
+    # download the landsat 8 image to be the template
+    l8_cli_str = f'download -i {l8_image_id} -r {region_25ha_file} -dd {tmp_path}'
+    result = runner.invoke(cli, l8_cli_str.split())
+    assert (result.exit_code == 0)
+    assert (l8_file.exists())
+
+    # download the sentinel 2 image like the landsat 8 image
+    s2_cli_str = f'download -i {s2_sr_image_id} --like {l8_file} -dd {tmp_path}'
+    result = runner.invoke(cli, s2_cli_str.split())
+    assert (result.exit_code == 0)
+    assert (s2_file.exists())
+
+    # test the landsat 8 image is 'like' the sentinel 2 image
+    with rio.open(l8_file) as l8_im, rio.open(s2_file, 'r') as s2_im:
+        assert l8_im.crs == s2_im.crs
+        assert l8_im.shape == s2_im.shape
+        assert l8_im.transform[:6] == s2_im.transform[:6]
 
 
 @pytest.mark.parametrize(
@@ -338,7 +404,7 @@ def test_download_params(
     scale_offset: bool, max_tile_size: float, max_tile_dim: int, tmp_path: pathlib.Path, runner: CliRunner,
     request: pytest.FixtureRequest
 ):
-    """ Test image download, specifying all possible cli params. """
+    """ Test image download, specifying all cli params except crs_transform and shape. """
     image_id = request.getfixturevalue(image_id)
     region_file = request.getfixturevalue(region_file)
     out_file = tmp_path.joinpath(image_id.replace('/', '-') + '.tif')
