@@ -79,9 +79,8 @@ autodoc_typehints = 'both'
 nbsphinx_prolog = """
 .. note::
 
-   This page was generated from a Jupyter notebook. If you want to run and 
-   interact with it, you can download it 
-   :download:`here <../{{ env.docname }}.ipynb>`.
+   This page was generated from a Jupyter notebook. To run and interact with it, 
+   you can download it :download:`here <../{{ env.docname }}.ipynb>`.
 """
 
 # -- Generate cloud/shadow supported collection tables for github README and RTD
