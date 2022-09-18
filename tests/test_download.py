@@ -528,6 +528,13 @@ def test_download_bigtiff(s2_sr_base_image: BaseImage, tmp_path: pathlib.Path):
     assert 'bigtiff' in profile
     assert profile['bigtiff']
 
+
+def test_prepare_ee_geom(l9_base_image: BaseImage, tmp_path: pathlib.Path):
+    """ Test that _prepare_for_export works with an ee.Geometry region at native crs and scale (Issue #6). """
+    region = l9_base_image.ee_image.geometry()
+    exp_image = l9_base_image._prepare_for_export(region=region)
+    assert exp_image.scale == l9_base_image.scale
+
 # TODO:
 # - export(): test an export of small file
 # - different generic collection images are downloaded ok (perhaps this goes with MaskedImage more than BaseImage)

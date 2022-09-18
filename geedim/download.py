@@ -489,6 +489,8 @@ class BaseImage:
                     shape = self.shape
                 else:
                     # find a crs_transform and shape that encompasses region
+                    if isinstance(region, ee.Geometry):
+                        region = region.getInfo()
                     region_crs = region['crs']['properties']['name'] if 'crs' in region else 'EPSG:4326'
                     region_bounds = warp.transform_bounds(region_crs, crs, *features.bounds(region))
                     region_win = windows.from_bounds(*region_bounds, transform=self.transform)
