@@ -66,16 +66,23 @@ def l9_base_image(l9_image_id: str) -> BaseImage:
     """ A BaseImage instance encapsulating a Landsat-9 image.  Covers `region_*ha`.  """
     return BaseImage.from_id(l9_image_id)
 
+
 @pytest.fixture(scope='session')
 def l8_base_image(l8_image_id: str) -> BaseImage:
     """ A BaseImage instance encapsulating a Landsat-8 image.  Covers `region_*ha`.  """
     return BaseImage.from_id(l8_image_id)
+
 
 @pytest.fixture(scope='session')
 def landsat_ndvi_base_image(landsat_ndvi_image_id: str) -> BaseImage:
     """ A BaseImage instance encapsulating a Landsat NDVI composite image.  Covers `region_*ha`.  """
     return BaseImage.from_id(landsat_ndvi_image_id)
 
+
+@pytest.fixture(scope='session')
+def modis_nbar_base_image_unbnd(modis_nbar_image_id: str) -> BaseImage:
+    """ A BaseImage instance encapsulating an unbounded MODIS NBAR image in its native CRS.  Covers `region_*ha`.  """
+    return BaseImage(ee.Image(modis_nbar_image_id))
 
 @pytest.fixture(scope='session')
 def modis_nbar_base_image(modis_nbar_image_id: str, region_100ha: Dict) -> BaseImage:
@@ -254,22 +261,23 @@ def test_prepare_no_fixed_projection(user_base_image: BaseImage, params: Dict, r
 
 
 @pytest.mark.parametrize(
-    'params', [
-        dict(),
-        dict(crs='EPSG:4326'),
-        dict(crs='EPSG:4326', scale=100),
-        dict(crs='EPSG:4326', crs_transform=Affine.identity()),
-        dict(crs='EPSG:4326', shape=(100, 100)),
-        dict(crs_transform=Affine.identity(), shape=(100, 100)),
+    'base_image, params', [
+        ('user_fix_base_image', dict()),
+        ('modis_nbar_base_image_unbnd', dict(crs='EPSG:4326')),
+        ('modis_nbar_base_image_unbnd', dict(crs='EPSG:4326', scale=100)),
+        ('modis_nbar_base_image_unbnd', dict(crs='EPSG:4326', crs_transform=Affine.identity())),
+        ('modis_nbar_base_image_unbnd', dict(crs='EPSG:4326', shape=(100, 100))),
+        ('modis_nbar_base_image_unbnd', dict(crs_transform=Affine.identity(), shape=(100, 100))),
     ]
 )  # yapf: disable
-def test_prepare_unbounded(user_fix_base_image: BaseImage, params: Dict):
+def test_prepare_unbounded(base_image: BaseImage, params: Dict, request: pytest.FixtureRequest):
     """
     Test BaseImage._prepare_for_export raises an exception when the image is unbounded, and insufficient bounds
     defining parameters are specified.
     """
+    base_image: BaseImage = request.getfixturevalue(base_image)
     with pytest.raises(ValueError) as ex:
-        user_fix_base_image._prepare_for_export(**params)
+        base_image._prepare_for_export(**params)
     assert 'This image is unbounded' in str(ex)
 
 
@@ -534,6 +542,31 @@ def test_prepare_ee_geom(l9_base_image: BaseImage, tmp_path: pathlib.Path):
     region = l9_base_image.ee_image.geometry()
     exp_image = l9_base_image._prepare_for_export(region=region)
     assert exp_image.scale == l9_base_image.scale
+
+
+@pytest.mark.parametrize(
+    'base_image, exp_value', [
+        ('s2_sr_base_image', True),
+        ('l9_base_image', True),
+        ('modis_nbar_base_image_unbnd', False),
+        ('user_base_image', False),
+        ('user_fix_base_image', False),
+    ]
+)  # yapf: disable
+def test_bounded(base_image: str, exp_value: bool, request: pytest.FixtureRequest):
+    """ Test BaseImage.bounded has correct value for different images. """
+    base_image: BaseImage = request.getfixturevalue(base_image)
+    assert base_image.bounded == exp_value
+
+def test_modis_crs_error(modis_nbar_base_image_unbnd, region_25ha):
+    """ Test BaseImage._prepare_for_export raises an error when exporting in crs=SR-ORG:6974. """
+    base_image = modis_nbar_base_image_unbnd
+    with pytest.raises(ValueError) as ex:
+        base_image._prepare_for_export(region=region_25ha)
+    assert 'SR-ORG:6974' in str(ex)
+    with pytest.raises(ValueError) as ex:
+        base_image._prepare_for_export(region=region_25ha, crs='SR-ORG:6974')
+    assert 'SR-ORG:6974' in str(ex)
 
 # TODO:
 # - export(): test an export of small file
