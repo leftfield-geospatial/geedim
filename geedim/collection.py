@@ -332,11 +332,14 @@ class MaskedCollection:
             return ee.List(coll_list).add(im_dict)
 
         # retrieve list of dicts of properties of images in ee_collection
+        props_list = []
         try:
             props_list = ee.List(ee_collection.iterate(aggregrate_props, ee.List([]))).getInfo()
         except ee.EEException as ex:
             if 'geometry' in str(ex) and 'unbounded' in str(ex):
-                raise ValueError('Unbounded collections require a specified `region`.')
+                raise ValueError('This collection is unbounded and needs a `region` to be specified.')
+            else:
+                raise
         # add image properties to the return dict in the same order as the underlying collection
         props_dict = OrderedDict()
         for prop_dict in props_list:
