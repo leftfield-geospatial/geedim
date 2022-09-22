@@ -229,6 +229,13 @@ class BaseImage:
             count=self.count
         )
 
+    @property
+    def bounded(self) -> bool:
+        """ True if the image is bounded, otherwise False. """
+        # TODO: an unbounded region could also have these bounds
+        unbounded_bounds = (-180, -90, 180, 90)
+        return (self.footprint is not None) and (features.bounds(self.footprint) != unbounded_bounds)
+
     @staticmethod
     def _get_projection(ee_info: Dict, min_scale=True) -> Dict:
         """
@@ -431,7 +438,7 @@ class BaseImage:
                     f'crs, crs_transform & shape.'
                 )
 
-        if (not self.footprint) and (not region and (not crs or not crs_transform or not shape)):
+        if (not self.bounded) and (not region and (not crs or not crs_transform or not shape)):
             # if the image has no footprint (i.e. it is 'unbounded'), either region; or crs, crs_transform and shape
             # must be specified
             raise ValueError(
@@ -445,6 +452,7 @@ class BaseImage:
             # the default scale is in degrees.
             raise ValueError(f'This image is in EPSG:4326, you need to specify a scale (in meters); or a shape.')
 
+        crs = crs or self.crs
         if crs == 'SR-ORG:6974':
             raise ValueError(
                 'There is an earth engine bug exporting in SR-ORG:6974, specify another CRS: '
@@ -475,7 +483,6 @@ class BaseImage:
         ee_image = self._convert_dtype(ee_image, dtype=dtype or im_dtype)
 
         # configure the export parameter values
-        crs = crs or self.crs
         if not crs_transform and not shape:
             # if none of crs_transform, shape, region or scale are specified, then set region and scale to defaults
             region = region or self.footprint
