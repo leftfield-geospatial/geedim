@@ -27,7 +27,7 @@ jobs:
       run: |
         mamba info
         mamba list
-        mamba install -c conda-forge geedim>=1.5.1
+        mamba install -c conda-forge geedim>=1.5.2
         mamba list
     - name: Test geedim
       timeout-minutes: 5
