@@ -452,13 +452,6 @@ class BaseImage:
             # the default scale is in degrees.
             raise ValueError(f'This image is in EPSG:4326, you need to specify a scale (in meters); or a shape.')
 
-        crs = crs or self.crs
-        if False:  # crs == 'SR-ORG:6974':  TODO: remove
-            raise ValueError(
-                'There is an earth engine bug exporting in SR-ORG:6974, specify another CRS: '
-                'https://issuetracker.google.com/issues/194561313'
-            )
-
         if scale and shape:
             # This error is raised in later calls to ee.Image.getInfo(), but is neater to raise here first
             raise ValueError('You can specify one of scale or shape, but not both.')
@@ -483,6 +476,7 @@ class BaseImage:
         ee_image = self._convert_dtype(ee_image, dtype=dtype or im_dtype)
 
         # configure the export parameter values
+        crs = crs or self.crs
         if not crs_transform and not shape:
             # if none of crs_transform, shape, region or scale are specified, then set region and scale to defaults
             region = region or self.footprint
@@ -762,7 +756,6 @@ class BaseImage:
         """
 
         exp_image = self._prepare_for_export(**kwargs)
-        # TODO: this error check doesn't really belong here
         if exp_image.crs == 'SR-ORG:6974':
             logger.warning(
                 'There is an earth engine bug exporting in SR-ORG:6974, you will need to edit the exported file to '
