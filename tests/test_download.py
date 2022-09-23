@@ -90,7 +90,7 @@ def modis_nbar_base_image_unbnd(modis_nbar_image_id: str) -> BaseImage:
 @pytest.fixture(scope='session')
 def modis_nbar_base_image(modis_nbar_image_id: str, region_100ha: Dict) -> BaseImage:
     """ A BaseImage instance encapsulating a MODIS NBAR image.  Covers `region_*ha`.  """
-    return BaseImage(ee.Image(modis_nbar_image_id).clip(region_100ha))   # TODO: .reproject(crs='EPSG:3857', scale=500))
+    return BaseImage(ee.Image(modis_nbar_image_id).clip(region_100ha))
 
 
 def bounds_polygon(left: float, bottom: float, right: float, top: float, crs: str = None):
@@ -294,9 +294,6 @@ def test_prepare_exceptions(user_base_image: BaseImage, user_fix_base_image: Bas
     with pytest.raises(ValueError):
         # EPSG:4326 and no scale
         user_fix_base_image._prepare_for_export(region=region_25ha)
-    # with pytest.raises(ValueError): TODO: remove
-    #     # export in 'SR-ORG:6974'
-    #     user_fix_base_image._prepare_for_export(region=region_25ha, crs='SR-ORG:6974', scale=30)
     with pytest.raises(ValueError):
         # no fixed projection and resample
         user_base_image._prepare_for_export(
@@ -523,8 +520,30 @@ def test_tiles(image_shape: Tuple, tile_shape: Tuple, image_transform: Affine):
     assert (accum_window.height, accum_window.width) == exp_image.shape
 
 
-def test_download(user_base_image: str, tmp_path: pathlib.Path, request: pytest.FixtureRequest):
-    """ Test download file properties and pixel data. """
+def test_download_transform_shape(user_base_image: str, tmp_path: pathlib.Path, request: pytest.FixtureRequest):
+    """ Test download file properties and pixel data with crs_transform and shape arguments. """
+    tgt_prof = dict(crs='EPSG:3857', transform=Affine(1, 0, 0, 0, -1, 0), width=10, height=10, dtype='uint16', count=3)
+
+    # form download parameters from tgt_prof
+    shape = (tgt_prof['height'], tgt_prof['width'])
+    tgt_bounds = windows.bounds(
+        windows.Window(0, 0, *shape[::-1]), tgt_prof['transform']
+    )
+    download_params = dict(
+        crs=tgt_prof['crs'], crs_transform=tgt_prof['transform'], shape=shape, dtype=tgt_prof['dtype']
+    )
+    filename = tmp_path.joinpath('test.tif')
+    user_base_image.download(filename, **download_params)
+    assert filename.exists()
+    with rio.open(filename, 'r') as ds:
+        _test_export_profile(ds.profile, tgt_prof, 'crs_transform' in download_params)
+        array = ds.read()
+        for i in range(ds.count):
+            assert np.all(array[i] == i + 1)
+
+
+def test_download_region_scale(user_base_image: str, tmp_path: pathlib.Path, request: pytest.FixtureRequest):
+    """ Test download file properties and pixel data with region and scale arguments. """
     tgt_prof = dict(crs='EPSG:3857', transform=Affine(1, 0, 0, 0, -1, 0), width=10, height=10, dtype='uint16', count=3)
 
     # form download parameters from tgt_prof
@@ -533,20 +552,15 @@ def test_download(user_base_image: str, tmp_path: pathlib.Path, request: pytest.
         windows.Window(0, 0, *shape[::-1]), tgt_prof['transform']
     )
     region = bounds_polygon(*tgt_bounds, crs=tgt_prof['crs'])
-    # TODO: split this test in 2
-    download_params_list = [
-        dict(crs=tgt_prof['crs'], region=region, scale=tgt_prof['transform'][0], dtype=tgt_prof['dtype']),
-        dict(crs=tgt_prof['crs'], crs_transform=tgt_prof['transform'], shape=shape, dtype=tgt_prof['dtype'])
-    ]
-    filename_list = [tmp_path.joinpath('test1.tif'), tmp_path.joinpath('test2.tif')]
-    for filename, download_params in zip(filename_list, download_params_list):
-        user_base_image.download(filename, **download_params)
-        assert filename.exists()
-        with rio.open(filename, 'r') as ds:
-            _test_export_profile(ds.profile, tgt_prof, 'crs_transform' in download_params)
-            array = ds.read()
-            for i in range(ds.count):
-                assert np.all(array[i] == i + 1)
+    download_params = dict(crs=tgt_prof['crs'], region=region, scale=tgt_prof['transform'][0], dtype=tgt_prof['dtype'])
+    filename = tmp_path.joinpath('test.tif')
+    user_base_image.download(filename, **download_params)
+    assert filename.exists()
+    with rio.open(filename, 'r') as ds:
+        _test_export_profile(ds.profile, tgt_prof, 'crs_transform' in download_params)
+        array = ds.read()
+        for i in range(ds.count):
+            assert np.all(array[i] == i + 1)
 
 
 def test_overviews(user_base_image: BaseImage, region_25ha: Dict, tmp_path: pathlib.Path):
