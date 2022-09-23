@@ -333,3 +333,23 @@ def expand_window_to_grid(win: Window, expand_pixels: Tuple[int, int] = (0, 0)) 
     exp_win = Window(int(col_off), int(row_off), int(width), int(height))
     return exp_win
 
+
+def rio_crs(crs: str) -> str:
+    """ Convert a GEE CRS string to a rasterio compatible CRS string. """
+    if crs == 'SR-ORG:6974':
+        # This is a workaround for https://issuetracker.google.com/issues/194561313, that replaces the alleged GEE
+        # SR-ORG:6974 with actual (rasterio) SR-ORG:6842. WKT taken from
+        # https://spatialreference.org/ref/sr-org/modis-sinusoidal/html/.
+        crs = """PROJCS["Sinusoidal",
+GEOGCS["GCS_Undefined",
+    DATUM["Undefined",
+        SPHEROID["User_Defined_Spheroid",6371007.181,0.0]],
+    PRIMEM["Greenwich",0.0],
+    UNIT["Degree",0.0174532925199433]],
+PROJECTION["Sinusoidal"],
+PARAMETER["False_Easting",0.0],
+PARAMETER["False_Northing",0.0],
+PARAMETER["Central_Meridian",0.0],
+UNIT["Meter",1.0]]"""
+    return crs
+

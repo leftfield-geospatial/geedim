@@ -453,7 +453,7 @@ class BaseImage:
             raise ValueError(f'This image is in EPSG:4326, you need to specify a scale (in meters); or a shape.')
 
         crs = crs or self.crs
-        if crs == 'SR-ORG:6974':
+        if False:  # crs == 'SR-ORG:6974':  TODO: remove
             raise ValueError(
                 'There is an earth engine bug exporting in SR-ORG:6974, specify another CRS: '
                 'https://issuetracker.google.com/issues/194561313'
@@ -499,7 +499,7 @@ class BaseImage:
                     if isinstance(region, ee.Geometry):
                         region = region.getInfo()
                     region_crs = region['crs']['properties']['name'] if 'crs' in region else 'EPSG:4326'
-                    region_bounds = warp.transform_bounds(region_crs, crs, *features.bounds(region))
+                    region_bounds = warp.transform_bounds(region_crs, utils.rio_crs(crs), *features.bounds(region))
                     region_win = windows.from_bounds(*region_bounds, transform=self.transform)
                     region_win = utils.expand_window_to_grid(region_win)
                     crs_transform = self.transform * rio.Affine.translation(region_win.col_off, region_win.row_off)
@@ -545,7 +545,7 @@ class BaseImage:
         nodata = nodata_dict[exp_image.dtype] if set_nodata else None
         profile = dict(
             driver='GTiff', dtype=exp_image.dtype, nodata=nodata, width=exp_image.shape[1], height=exp_image.shape[0],
-            count=exp_image.count, crs=CRS.from_string(exp_image.crs), transform=exp_image.transform,
+            count=exp_image.count, crs=CRS.from_string(utils.rio_crs(exp_image.crs)), transform=exp_image.transform,
             compress='deflate', interleave='band', tiled=True, photometric=None,
         )
         # add BIGTIFF support if the uncompressed image is bigger than 4GB
@@ -762,6 +762,12 @@ class BaseImage:
         """
 
         exp_image = self._prepare_for_export(**kwargs)
+        # TODO: this error check doesn't really belong here
+        if exp_image.crs == 'SR-ORG:6974':
+            logger.warning(
+                'There is an earth engine bug exporting in SR-ORG:6974, you will need to edit the exported file to '
+                'replace the CRS with SR-ORG:6842. See: https://issuetracker.google.com/issues/194561313.'
+            )
 
         if logger.getEffectiveLevel() <= logging.DEBUG:
             logger.debug(f'Uncompressed size: {self._str_format_size(exp_image.size)}')
