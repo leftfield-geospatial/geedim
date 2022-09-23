@@ -23,6 +23,7 @@ import numpy as np
 import pytest
 import rasterio as rio
 from rasterio import features, warp
+from rasterio.crs import CRS
 from geedim.download import BaseImage
 from geedim.enums import ResamplingMethod
 from geedim import utils
@@ -394,7 +395,7 @@ def test_prepare_region_scale(base_image: str, param_image: str, region_25ha: di
     tgt_footprint_crs = (
         param_image.footprint['crs']['properties']['name'] if 'crs' in param_image.footprint else 'EPSG:4326'
     )
-    exp_crs = rio.CRS.from_string(utils.rio_crs(exp_image.crs))
+    exp_crs = CRS.from_string(utils.rio_crs(exp_image.crs))
     tgt_bounds = warp.transform_bounds(tgt_footprint_crs, exp_crs, *tgt_bounds)
     assert (
         (exp_bounds[0] <= tgt_bounds[0]) and (exp_bounds[1] <= tgt_bounds[1]) and
