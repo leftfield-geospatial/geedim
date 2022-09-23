@@ -391,14 +391,13 @@ class BaseImage:
         and ``shape``.  If no bounds are specified (with either ``region``, or ``crs_transform`` & ``shape``), the
         entire image granule is exported.
 
-        When ``crs`` and ``scale`` are not specified (or match those of the encapsulated image), and ``crs_transform``
-        & ``shape`` are not specified, the pixel grid of the exported image will coincide with that of the encapsulated
-        image.
+        When ``crs``, ``scale``, ``crs_transform`` & ``shape`` are not specified, the pixel grid of the exported
+        image will coincide with that of the encapsulated image.
 
         Parameters
         ----------
         crs : str, optional
-            WKT, EPSG etc. specification of CRS to export to.  Where image bands have different CRSs, all are
+            WKT or EPSG specification of CRS to export to.  Where image bands have different CRSs, all are
             re-projected to this CRS. Defaults to use the CRS of the minimum scale band if available.
         crs_transform: tuple of float, list of float, rio.Affine, optional
             List of 6 numbers specifying an affine transform in the specified CRS.  In row-major order:
@@ -714,9 +713,9 @@ class BaseImage:
         and ``shape``.  If no bounds are specified (with either ``region``, or ``crs_transform`` & ``shape``), the
         entire image granule is exported.
 
-        When ``crs`` and ``scale`` are not specified (or match those of the encapsulated image), and ``crs_transform``
-        & ``shape`` are not specified, the pixel grid of the exported image will coincide with that of the encapsulated
-        image.
+        When ``crs``, ``scale``, ``crs_transform`` & ``shape`` are not specified, the pixel grid of the exported
+        image will coincide with that of the encapsulated image.
+
 
         Parameters
         ----------
@@ -727,7 +726,7 @@ class BaseImage:
         wait : bool
             Wait for the export to complete before returning.
         crs : str, optional
-            WKT, EPSG etc specification of CRS to export to.  Where image bands have different CRSs, all are
+            WKT or EPSG specification of CRS to export to.  Where image bands have different CRSs, all are
             re-projected to this CRS. Defaults to use the CRS of the minimum scale band if available.
         crs_transform: tuple of float, list of float, rio.Affine, optional
             List of 6 numbers specifying an affine transform in the specified CRS.  In row-major order:
@@ -790,9 +789,8 @@ class BaseImage:
         and ``shape``.  If no bounds are specified (with either ``region``, or ``crs_transform`` & ``shape``), the
         entire image granule is downloaded.
 
-        When ``crs`` and ``scale`` are not specified (or match those of the encapsulated image), and ``crs_transform``
-        & ``shape`` are not specified, the pixel grid of the downloaded image will coincide with that of the
-        encapsulated image.
+        When ``crs``, ``scale``, ``crs_transform`` & ``shape`` are not specified, the pixel grid of the exported
+        image will coincide with that of the encapsulated image.
 
         Parameters
         ----------
@@ -807,7 +805,7 @@ class BaseImage:
         max_tile_dim: int, optional
             Maximum tile width/height (pixels).  If None, defaults to Earth Engine download limit (10000).
         crs : str, optional
-            WKT, EPSG etc. specification of CRS to export to.  Where image bands have different CRSs, all are
+            WKT or EPSG specification of CRS to export to.  Where image bands have different CRSs, all are
             re-projected to this CRS. Defaults to use the CRS of the minimum scale band if available.
         crs_transform: tuple of float, list of float, rio.Affine, optional
             List of 6 numbers specifying an affine transform in the specified CRS.  In row-major order:
