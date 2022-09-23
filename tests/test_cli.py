@@ -307,6 +307,7 @@ def test_search_custom_filter_l9(region_25ha_file: pathlib.Path, runner: CliRunn
         ('l8_image_id', 'region_25ha_file'),
         ('s2_sr_hm_image_id', 'region_25ha_file'),
         ('gedi_cth_image_id', 'region_25ha_file'),
+        ('modis_nbar_image_id', 'region_25ha_file'),
     ]
 )  # yapf: disable
 def test_download_region_defaults(

@@ -229,6 +229,13 @@ class BaseImage:
             count=self.count
         )
 
+    @property
+    def bounded(self) -> bool:
+        """ True if the image is bounded, otherwise False. """
+        # TODO: an unbounded region could also have these bounds
+        unbounded_bounds = (-180, -90, 180, 90)
+        return (self.footprint is not None) and (features.bounds(self.footprint) != unbounded_bounds)
+
     @staticmethod
     def _get_projection(ee_info: Dict, min_scale=True) -> Dict:
         """
@@ -384,14 +391,13 @@ class BaseImage:
         and ``shape``.  If no bounds are specified (with either ``region``, or ``crs_transform`` & ``shape``), the
         entire image granule is exported.
 
-        When ``crs`` and ``scale`` are not specified (or match those of the encapsulated image), and ``crs_transform``
-        & ``shape`` are not specified, the pixel grid of the exported image will coincide with that of the encapsulated
-        image.
+        When ``crs``, ``scale``, ``crs_transform`` & ``shape`` are not specified, the pixel grid of the exported
+        image will coincide with that of the encapsulated image.
 
         Parameters
         ----------
         crs : str, optional
-            WKT, EPSG etc. specification of CRS to export to.  Where image bands have different CRSs, all are
+            WKT or EPSG specification of CRS to export to.  Where image bands have different CRSs, all are
             re-projected to this CRS. Defaults to use the CRS of the minimum scale band if available.
         crs_transform: tuple of float, list of float, rio.Affine, optional
             List of 6 numbers specifying an affine transform in the specified CRS.  In row-major order:
@@ -431,7 +437,7 @@ class BaseImage:
                     f'crs, crs_transform & shape.'
                 )
 
-        if (not self.footprint) and (not region and (not crs or not crs_transform or not shape)):
+        if (not self.bounded) and (not region and (not crs or not crs_transform or not shape)):
             # if the image has no footprint (i.e. it is 'unbounded'), either region; or crs, crs_transform and shape
             # must be specified
             raise ValueError(
@@ -444,12 +450,6 @@ class BaseImage:
             # Note that ee.Image.prepare_for_export() expects a scale in meters, but if the image is EPSG:4326,
             # the default scale is in degrees.
             raise ValueError(f'This image is in EPSG:4326, you need to specify a scale (in meters); or a shape.')
-
-        if crs == 'SR-ORG:6974':
-            raise ValueError(
-                'There is an earth engine bug exporting in SR-ORG:6974, specify another CRS: '
-                'https://issuetracker.google.com/issues/194561313'
-            )
 
         if scale and shape:
             # This error is raised in later calls to ee.Image.getInfo(), but is neater to raise here first
@@ -492,7 +492,7 @@ class BaseImage:
                     if isinstance(region, ee.Geometry):
                         region = region.getInfo()
                     region_crs = region['crs']['properties']['name'] if 'crs' in region else 'EPSG:4326'
-                    region_bounds = warp.transform_bounds(region_crs, crs, *features.bounds(region))
+                    region_bounds = warp.transform_bounds(region_crs, utils.rio_crs(crs), *features.bounds(region))
                     region_win = windows.from_bounds(*region_bounds, transform=self.transform)
                     region_win = utils.expand_window_to_grid(region_win)
                     crs_transform = self.transform * rio.Affine.translation(region_win.col_off, region_win.row_off)
@@ -538,7 +538,7 @@ class BaseImage:
         nodata = nodata_dict[exp_image.dtype] if set_nodata else None
         profile = dict(
             driver='GTiff', dtype=exp_image.dtype, nodata=nodata, width=exp_image.shape[1], height=exp_image.shape[0],
-            count=exp_image.count, crs=CRS.from_string(exp_image.crs), transform=exp_image.transform,
+            count=exp_image.count, crs=CRS.from_string(utils.rio_crs(exp_image.crs)), transform=exp_image.transform,
             compress='deflate', interleave='band', tiled=True, photometric=None,
         )
         # add BIGTIFF support if the uncompressed image is bigger than 4GB
@@ -713,9 +713,9 @@ class BaseImage:
         and ``shape``.  If no bounds are specified (with either ``region``, or ``crs_transform`` & ``shape``), the
         entire image granule is exported.
 
-        When ``crs`` and ``scale`` are not specified (or match those of the encapsulated image), and ``crs_transform``
-        & ``shape`` are not specified, the pixel grid of the exported image will coincide with that of the encapsulated
-        image.
+        When ``crs``, ``scale``, ``crs_transform`` & ``shape`` are not specified, the pixel grid of the exported
+        image will coincide with that of the encapsulated image.
+
 
         Parameters
         ----------
@@ -726,7 +726,7 @@ class BaseImage:
         wait : bool
             Wait for the export to complete before returning.
         crs : str, optional
-            WKT, EPSG etc specification of CRS to export to.  Where image bands have different CRSs, all are
+            WKT or EPSG specification of CRS to export to.  Where image bands have different CRSs, all are
             re-projected to this CRS. Defaults to use the CRS of the minimum scale band if available.
         crs_transform: tuple of float, list of float, rio.Affine, optional
             List of 6 numbers specifying an affine transform in the specified CRS.  In row-major order:
@@ -755,6 +755,11 @@ class BaseImage:
         """
 
         exp_image = self._prepare_for_export(**kwargs)
+        if exp_image.crs == 'SR-ORG:6974':
+            logger.warning(
+                'There is an earth engine bug exporting in SR-ORG:6974, you will need to edit the exported file to '
+                'replace the CRS with SR-ORG:6842. See: https://issuetracker.google.com/issues/194561313.'
+            )
 
         if logger.getEffectiveLevel() <= logging.DEBUG:
             logger.debug(f'Uncompressed size: {self._str_format_size(exp_image.size)}')
@@ -784,9 +789,8 @@ class BaseImage:
         and ``shape``.  If no bounds are specified (with either ``region``, or ``crs_transform`` & ``shape``), the
         entire image granule is downloaded.
 
-        When ``crs`` and ``scale`` are not specified (or match those of the encapsulated image), and ``crs_transform``
-        & ``shape`` are not specified, the pixel grid of the downloaded image will coincide with that of the
-        encapsulated image.
+        When ``crs``, ``scale``, ``crs_transform`` & ``shape`` are not specified, the pixel grid of the exported
+        image will coincide with that of the encapsulated image.
 
         Parameters
         ----------
@@ -801,7 +805,7 @@ class BaseImage:
         max_tile_dim: int, optional
             Maximum tile width/height (pixels).  If None, defaults to Earth Engine download limit (10000).
         crs : str, optional
-            WKT, EPSG etc. specification of CRS to export to.  Where image bands have different CRSs, all are
+            WKT or EPSG specification of CRS to export to.  Where image bands have different CRSs, all are
             re-projected to this CRS. Defaults to use the CRS of the minimum scale band if available.
         crs_transform: tuple of float, list of float, rio.Affine, optional
             List of 6 numbers specifying an affine transform in the specified CRS.  In row-major order:

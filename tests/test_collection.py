@@ -545,3 +545,33 @@ def test_composite_mult_kwargs(region_100ha):
     cp_prob40 = comp_im_prob40.properties['CLOUDLESS_PORTION']
 
     assert cp_prob80 != pytest.approx(cp_prob40, abs=1e-1)
+
+
+@pytest.mark.parametrize(
+    'name', ['FAO/WAPOR/2/L1_RET_E', 'MODIS/006/MCD43A4']
+)
+def test_unbounded_search_no_region(name):
+    """
+    Test searching an unbounded collection without a region raises an exception.
+    """
+    start_date = '2022-01-01'
+    end_date = '2022-01-02'
+    gd_collection = MaskedCollection.from_name(name)
+    gd_collection = gd_collection.search(start_date, end_date)
+    with pytest.raises(ValueError) as ex:
+        _ = gd_collection.properties
+    assert 'unbounded' in str(ex) and 'region' in str(ex)
+
+
+def test_unknown_collection_error(region_25ha):
+    """
+    Test searching a non-existent collection gives an error.
+    """
+    start_date = '2022-01-01'
+    end_date = '2022-01-02'
+    gd_collection = MaskedCollection.from_name('Unknown')
+    with pytest.raises(ee.EEException) as ex:
+        gd_collection = gd_collection.search(start_date, end_date, region_25ha)
+        _ = gd_collection.properties
+    assert 'not found' in str(ex)
+

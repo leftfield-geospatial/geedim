@@ -476,7 +476,7 @@ def search(
             custom_filter=custom_filter, **obj.cloud_kwargs
         )
         # retrieve search result properties from EE
-        num_images = gd_collection.properties
+        num_images = len(gd_collection.properties)
 
     if num_images == 0:
         logger.info('No images found\n')
