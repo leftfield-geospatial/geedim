@@ -81,8 +81,10 @@ class StacItem:
 
         for ee_band_dict in ee_band_props:
             band_dict = {
-                strip_gee(prop_key): ee_band_dict[prop_key] for prop_key in prop_keys if prop_key in ee_band_dict
-            }
+                strip_gee(prop_key): ee_band_dict[prop_key]
+                for prop_key in prop_keys
+                if prop_key in ee_band_dict
+            }  # yapf: disable
             gsd = ee_band_dict['gsd'] if 'gsd' in ee_band_dict else global_gsd
             gsd = gsd[0] if isinstance(gsd, (list, tuple)) else gsd
             band_dict.update(gsd=gsd) if gsd else None

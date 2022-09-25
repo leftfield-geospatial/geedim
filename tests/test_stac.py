@@ -56,7 +56,7 @@ def test_traverse_stac(stac_catalog: StacCatalog):
 @pytest.mark.parametrize(
     'image_id', [
         'l4_image_id', 'l5_image_id', 'l7_image_id', 'l8_image_id', 'l9_image_id', 'landsat_ndvi_image_id',
-        's2_sr_image_id', 's2_toa_image_id', 's1_sar_image_id', 'modis_nbar_image_id',
+        's2_sr_image_id', 's2_toa_image_id', 's1_sar_image_id', 'modis_nbar_image_id', 'gedi_cth_image_id',
     ]
 )
 def test_known_get_item(image_id: str, stac_catalog: StacCatalog, request: pytest.FixtureRequest):
