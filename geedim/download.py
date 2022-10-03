@@ -539,7 +539,7 @@ class BaseImage:
         profile = dict(
             driver='GTiff', dtype=exp_image.dtype, nodata=nodata, width=exp_image.shape[1], height=exp_image.shape[0],
             count=exp_image.count, crs=CRS.from_string(utils.rio_crs(exp_image.crs)), transform=exp_image.transform,
-            compress='deflate', interleave='band', tiled=True, photometric=None,
+            compress='deflate', interleave='band', tiled=True, photometric='MINISBLACK',
         )
         # add BIGTIFF support if the uncompressed image is bigger than 4GB
         if exp_image.size >= 4e9:
