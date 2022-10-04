@@ -96,7 +96,7 @@ class ChainedCommand(click.Command):
         if ('like' in ctx.params) and (ctx.params['like'] is not None):
             # populate crs, crs_transform & shape parameters from a template raster
             with rio.open(ctx.params['like'], 'r') as im:
-                ctx.params['crs'] = f'EPSG:{im.crs.to_epsg()}'  # TODO: WKT?
+                ctx.params['crs'] = im.crs.to_string()
                 ctx.params['crs_transform'] = im.transform
                 ctx.params['shape'] = im.shape
 
