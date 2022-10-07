@@ -322,3 +322,14 @@ def test_mask_clouds(masked_image: str, region_100ha: Dict, tmp_path, request: p
         # test that cloudless_mask is the same as the nodata/dataset mask for each bands
         ds_masks = ds.read_masks().astype('bool')
         assert np.all(cloudless_mask == ds_masks)
+
+
+def test_skysat_region_stats():
+    """ Test _set_region_stats() works on SKYSAT image with no region. """
+    ee_image = ee.Image('SKYSAT/GEN-A/PUBLIC/ORTHO/RGB/s02_20141004T074858Z')
+    masked_image = MaskedImage(ee_image)
+    masked_image._set_region_stats()
+    assert 'FILL_PORTION' in masked_image.properties
+    assert masked_image.properties['FILL_PORTION'] > 0.8
+##
+

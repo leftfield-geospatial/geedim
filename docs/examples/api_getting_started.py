@@ -4,7 +4,7 @@ gd.Initialize()
 # [initialise-end]
 
 # [search-start]
-# geojson search region
+# geojson search polygon
 region = {
     'type': 'Polygon', 'coordinates': [[
         (19, -34), (19, -33.8), (18.8, -33.8), (18.8, -34), (19., -34)

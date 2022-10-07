@@ -213,7 +213,7 @@ Example
 
    gd.Initialize()  # initialise earth engine
 
-   # geojson region to search / download
+   # geojson polygon to search / download
    region = {
        "type": "Polygon",
        "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]

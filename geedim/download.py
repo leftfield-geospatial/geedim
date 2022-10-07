@@ -167,6 +167,15 @@ class BaseImage:
         """ Geojson polygon of the image extent.  None if the image is a composite. """
         if ('properties' not in self._ee_info) or ('system:footprint' not in self._ee_info['properties']):
             return None
+        footprint = self._ee_info['properties']['system:footprint']
+
+        if ('type' in footprint) and ('coordinates' in footprint) and footprint['type'] == 'LinearRing':
+            # convert LinearRing to simple Polygon
+            # this is necessary to make footprint compatible as a region in other geedim methods e.g.
+            # MaskedCollection.search or BaseImage.download.
+            footprint['coordinates'] = [footprint['coordinates']]
+            footprint['type'] = 'Polygon'
+
         return self._ee_info['properties']['system:footprint']
 
     @property

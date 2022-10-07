@@ -186,6 +186,7 @@ def test_s2_props(s2_sr_base_image: BaseImage):
     assert s2_sr_base_image.date == datetime.utcfromtimestamp(s2_sr_base_image.properties['system:time_start'] / 1000)
     assert s2_sr_base_image.size is not None
     assert s2_sr_base_image.footprint is not None
+    assert s2_sr_base_image.footprint['type'] == 'Polygon'
     assert s2_sr_base_image.dtype == 'uint32'
     assert s2_sr_base_image.count == len(s2_sr_base_image._ee_info['bands'])
 
