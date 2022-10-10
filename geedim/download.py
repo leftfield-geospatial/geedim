@@ -882,7 +882,8 @@ class BaseImage:
 
         session = utils.retry_session(5)
         warnings.filterwarnings('ignore', category=TqdmWarning)
-        redir_tqdm = logging_redirect_tqdm([logging.getLogger(__package__)])  # redirect logging through tqdm
+        # redirect logging through tqdm
+        redir_tqdm = logging_redirect_tqdm([logging.getLogger(__package__)], tqdm_class=type(bar))
         env = rio.Env(GDAL_NUM_THREADS='ALL_CPUs', GTIFF_FORCE_RGBA=False)
         with redir_tqdm, env, rio.open(filename, 'w', **profile) as out_ds, bar:
 

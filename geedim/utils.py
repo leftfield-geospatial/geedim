@@ -13,10 +13,10 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
-
+import logging
+from contextlib import contextmanager
 import itertools
 import json
-import logging
 import os
 import pathlib
 import sys
@@ -108,6 +108,19 @@ def split_id(image_id: str) -> Tuple[str, str]:
     return ee_coll_name, index
 
 
+@contextmanager
+def rio_log_error():
+    """ A context manager that sets the `rasterio` logging level to ERROR, then returns it to its original value. """
+    try:
+        # GEE sets GeoTIFF `colorinterp` tags incorrectly. This suppresses `rasterio` warning relating to this:
+        # 'Sum of Photometric type-related color channels and ExtraSamples doesn't match SamplesPerPixel'
+        rio_level = logging.getLogger('rasterio').getEffectiveLevel()
+        logging.getLogger('rasterio').setLevel(logging.ERROR)
+        yield
+    finally:
+        logging.getLogger('rasterio').setLevel(rio_level)
+
+
 def get_bounds(filename: pathlib.Path, expand: float = 5):
     """
     Get a geojson polygon representing the bounds of an image.
@@ -124,31 +137,25 @@ def get_bounds(filename: pathlib.Path, expand: float = 5):
     dict
         Geojson polygon.
     """
-    try:
-        # GEE sets tif colorinterp tags incorrectly, suppress rasterio warning relating to this:
-        # 'Sum of Photometric type-related color channels and ExtraSamples doesn't match SamplesPerPixel'
-        logging.getLogger("rasterio").setLevel(logging.ERROR)
-        with rio.Env(GTIFF_FORCE_RGBA=False), rio.open(filename) as im:
-            bbox = im.bounds
-            if (im.crs.linear_units == "metre") and (expand > 0):  # expand the bounding box
-                expand_x = (bbox.right - bbox.left) * expand / 100.0
-                expand_y = (bbox.top - bbox.bottom) * expand / 100.0
-                bbox_expand = rio.coords.BoundingBox(
-                    bbox.left - expand_x, bbox.bottom - expand_y, bbox.right + expand_x, bbox.top + expand_y
-                )
-            else:
-                bbox_expand = bbox
+    with rio_log_error(), rio.Env(GTIFF_FORCE_RGBA=False), rio.open(filename) as im:
+        bbox = im.bounds
+        if (im.crs.linear_units == "metre") and (expand > 0):  # expand the bounding box
+            expand_x = (bbox.right - bbox.left) * expand / 100.0
+            expand_y = (bbox.top - bbox.bottom) * expand / 100.0
+            bbox_expand = rio.coords.BoundingBox(
+                bbox.left - expand_x, bbox.bottom - expand_y, bbox.right + expand_x, bbox.top + expand_y
+            )
+        else:
+            bbox_expand = bbox
 
-            coordinates = [
-                [bbox_expand.right, bbox_expand.bottom], [bbox_expand.right, bbox_expand.top],
-                [bbox_expand.left, bbox_expand.top], [bbox_expand.left, bbox_expand.bottom],
-                [bbox_expand.right, bbox_expand.bottom],
-            ]
+        coordinates = [
+            [bbox_expand.right, bbox_expand.bottom], [bbox_expand.right, bbox_expand.top],
+            [bbox_expand.left, bbox_expand.top], [bbox_expand.left, bbox_expand.bottom],
+            [bbox_expand.right, bbox_expand.bottom],
+        ]
 
-            bbox_expand_dict = dict(type="Polygon", coordinates=[coordinates])
-            src_bbox_wgs84 = transform_geom(im.crs, "WGS84", bbox_expand_dict)  # convert to WGS84 geojson
-    finally:
-        logging.getLogger("rasterio").setLevel(logging.WARNING)
+        bbox_expand_dict = dict(type="Polygon", coordinates=[coordinates])
+        src_bbox_wgs84 = transform_geom(im.crs, "WGS84", bbox_expand_dict)  # convert to WGS84 geojson
     return src_bbox_wgs84
 
 
