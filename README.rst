@@ -256,7 +256,7 @@ Credits
 Author
 ------
 
-**Dugal Harris** - dugalh@gmail.com
+**Dugal Harris**
 
 .. |Tests| image:: https://github.com/dugalh/geedim/actions/workflows/run-unit-tests.yml/badge.svg
    :target: https://github.com/dugalh/geedim/actions/workflows/run-unit-tests.yml
