@@ -109,7 +109,7 @@ def split_id(image_id: str) -> Tuple[str, str]:
 
 
 @contextmanager
-def rio_log_error():
+def suppress_rio_warn_logs():
     """ A context manager that sets the `rasterio` logging level to ERROR, then returns it to its original value. """
     try:
         # GEE sets GeoTIFF `colorinterp` tags incorrectly. This suppresses `rasterio` warning relating to this:
@@ -137,7 +137,7 @@ def get_bounds(filename: pathlib.Path, expand: float = 5):
     dict
         Geojson polygon.
     """
-    with rio_log_error(), rio.Env(GTIFF_FORCE_RGBA=False), rio.open(filename) as im:
+    with suppress_rio_warn_logs(), rio.Env(GTIFF_FORCE_RGBA=False), rio.open(filename) as im:
         bbox = im.bounds
         if (im.crs.linear_units == "metre") and (expand > 0):  # expand the bounding box
             expand_x = (bbox.right - bbox.left) * expand / 100.0

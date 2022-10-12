@@ -253,10 +253,6 @@ Credits
 -  Sentinel-2 cloud/shadow masking was adapted from `ee_extra <https://github.com/r-earthengine/ee_extra>`__ under
    terms of the `Apache-2.0 license <https://github.com/r-earthengine/ee_extra/blob/master/LICENSE>`__
 
-Author
-------
-
-**Dugal Harris**
 
 .. |Tests| image:: https://github.com/dugalh/geedim/actions/workflows/run-unit-tests.yml/badge.svg
    :target: https://github.com/dugalh/geedim/actions/workflows/run-unit-tests.yml

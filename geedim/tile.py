@@ -122,7 +122,7 @@ class Tile:
 
         # read the geotiff with a rasterio memory file
         env = rio.Env(GDAL_NUM_THREADS='ALL_CPUs', GTIFF_FORCE_RGBA=False)
-        with utils.rio_log_error(), env, MemoryFile(ext_buffer) as mem_file:
+        with utils.suppress_rio_warn_logs(), env, MemoryFile(ext_buffer) as mem_file:
             with mem_file.open() as ds:
                 array = ds.read()
                 if (array.dtype == np.dtype('float32')) or (array.dtype == np.dtype('float64')):
