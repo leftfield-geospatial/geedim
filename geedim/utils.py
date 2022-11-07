@@ -42,7 +42,7 @@ else:
 
 _GDAL_AT_LEAST_35 = GDALVersion.runtime().at_least("3.5")
 
-def Initialize(opt_url: Optional[str]=None, **kwargs):
+def Initialize(opt_url: Optional[str]='https://earthengine-highvolume.googleapis.com', **kwargs):
     """
     Initialise Earth Engine.
 

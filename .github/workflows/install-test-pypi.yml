@@ -15,7 +15,7 @@ jobs:
         python-version: [ 3.6, 3.7, 3.8, 3.9 ]
     steps:
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install geedim from PyPI
