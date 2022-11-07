@@ -83,7 +83,7 @@ def s2_sr_image_id_list() -> List[str]:
 def gedi_image_id_list() -> List[str]:
     """ A list of GEDI canopy top height ID's. """
     return [
-        'LARSE/GEDI/GEDI02_A_002_MONTHLY/202009_018E_036S', 'LARSE/GEDI/GEDI02_A_002_MONTHLY/202010_018E_036S',
+        'LARSE/GEDI/GEDI02_A_002_MONTHLY/202008_018E_036S', 'LARSE/GEDI/GEDI02_A_002_MONTHLY/202009_018E_036S',
         'LARSE/GEDI/GEDI02_A_002_MONTHLY/202005_018E_036S'
     ]
 

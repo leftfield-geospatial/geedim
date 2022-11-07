@@ -55,7 +55,7 @@ def s2_sr_image_list() -> List[Union[str, MaskedImage]]:
 def gedi_image_list() -> List[Union[str, MaskedImage]]:
     """ A list of GEDI canopy top height IDs/ MaskedImage's """
     return [
-        'LARSE/GEDI/GEDI02_A_002_MONTHLY/202009_018E_036S', 'LARSE/GEDI/GEDI02_A_002_MONTHLY/202010_018E_036S',
+        'LARSE/GEDI/GEDI02_A_002_MONTHLY/202008_018E_036S', 'LARSE/GEDI/GEDI02_A_002_MONTHLY/202009_018E_036S',
         MaskedImage.from_id('LARSE/GEDI/GEDI02_A_002_MONTHLY/202005_018E_036S')
     ]
 
@@ -485,7 +485,7 @@ def test_composite_landsat_cloud_mask_params(l8_9_image_list, region_10000ha):
         ('gedi_image_list', CompositeMethod.mosaic, True, None, '2020-09-01', {}),
         ('gedi_image_list', CompositeMethod.medoid, True, None, None, {}),
     ]
-)  # yapf: disabl;e
+)  # yapf: disable
 def test_composite(image_list, method, mask, region, date, cloud_kwargs, request):
     """ Test MaskedCollection.composite() runs successfully with a variety of `method` and other parameters. """
     image_list: List = request.getfixturevalue(image_list)
