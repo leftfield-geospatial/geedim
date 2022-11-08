@@ -731,13 +731,13 @@ class BaseImage:
         Parameters
         ----------
         filename : str
-            Name of the task and destination file or asset ID.
+            Name of the export task, and destination file or asset name.
         type : ExportType, optional
             Export type.
         folder : str, optional
-            Google Drive folder (``type ==`` :attr:`geedim.enums.ExportType.drive`) or Google Cloud Storage bucket
-            (``type ==`` :attr:`geedim.enums.ExportType.cloud`) to export to.  Ignored if
-            (``type ==`` :attr:`geedim.enums.ExportType.asset`).
+            Google Drive folder (``type ==`` :attr:`geedim.enums.ExportType.drive`),
+            Earth Engine asset project (``type ==`` :attr:`geedim.enums.ExportType.asset`),
+            or Google Cloud Storage bucket (``type ==`` :attr:`geedim.enums.ExportType.cloud`) to export to.
         wait : bool
             Wait for the export to complete before returning.
         crs : str, optional
@@ -783,15 +783,17 @@ class BaseImage:
         if type == ExportType.drive:
             task = ee.batch.Export.image.toDrive(
                 image=exp_image.ee_image, description=filename[:100], folder=folder, fileNamePrefix=filename,
-                maxPixels=1e9
+                maxPixels=1e9, formatOptions=dict(cloudOptimized=True),
             )
         elif type == ExportType.asset:
+            asset_id = f'projects/{folder}/assets/{filename}'
             task = ee.batch.Export.image.toAsset(
-                image=exp_image.ee_image, description=filename[:100], assetId=filename, maxPixels=1e9
+                image=exp_image.ee_image, description=filename[:100], assetId=asset_id, maxPixels=1e9,
             )
         else:
             task = ee.batch.Export.image.toCloudStorage(
-                image=exp_image.ee_image, description=filename[:100], bucket=folder, assetId=filename, maxPixels=1e9
+                image=exp_image.ee_image, description=filename[:100], bucket=folder, assetId=filename, maxPixels=1e9,
+                formatOptions=dict(cloudOptimized=True),
             )
 
         task.start()

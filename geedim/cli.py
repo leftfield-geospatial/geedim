@@ -617,7 +617,7 @@ cli.add_command(download)
 @scale_offset_option
 @click.option(
     '-f', '-df', '--folder', '--drive-folder', type=click.STRING, default=None,
-    help='Google Drive folder or Google Cloud Storage bucket to export image(s) to.'
+    help='Google Drive folder, Earth Engine asset project, or Google Cloud Storage bucket to export image(s) to.'
 )
 @click.option(
     '-w/-nw', '--wait/--no-wait', default=True, show_default=True, help='Whether to wait for the export to complete.'
@@ -658,7 +658,7 @@ def export(obj, image_id, type, bbox, region, like, folder, mask, wait, **kwargs
     When ``--crs``, ``--scale``, ``--crs-transform`` and ``--shape`` are not specified, the pixel grids of the
     exported and Earth Engine images will coincide.
 
-    Image filenames are derived from their Earth Engine ID.
+    Image file or asset names are derived from their Earth Engine ID.
     \b
 
     Examples
@@ -682,8 +682,13 @@ def export(obj, image_id, type, bbox, region, like, folder, mask, wait, **kwargs
         logger.info(f'Started {im.name}') if not wait else None
 
     if wait:
-        for task in export_tasks:
+        obj.image_list = [] if type == ExportType.asset else obj.image_list
+        for task, im in zip(export_tasks, image_list):
             BaseImage.monitor_export(task)
+            if type == ExportType.asset:
+                # TODO: can we simplify this so we don't create the asset ID in 2 different places?
+                # add asset ids, so that assets can be downloaded or composited with chained commands
+                obj.image_list += [f'projects/{folder}/assets/{im.name}']
 
 
 cli.add_command(export)
