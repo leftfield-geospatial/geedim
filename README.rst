@@ -16,10 +16,10 @@ Description
 
 ``geedim`` provides a command line interface and API for searching, compositing and downloading satellite imagery
 from Google Earth Engine (EE). It optionally performs cloud/shadow masking, and cloud/shadow-free compositing on
-supported collections. Images and composites can be downloaded, or exported to Google Drive. Images larger than the
+supported collections. Images and composites can be downloaded; or exported to Google Drive, Earth Engine asset or
+Google Cloud Storage. Images larger than the
 `EE size limit <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`_ are split and downloaded
 as separate tiles, then re-assembled into a single GeoTIFF.
-
 .. description_end
 
 See the documentation site for more detail: https://geedim.readthedocs.io/.
@@ -133,7 +133,7 @@ Command line interface
 -  ``search``: Search for images.
 -  ``composite``: Create a composite image.
 -  ``download``: Download image(s).
--  ``export``: Export image(s) to Google Drive.
+-  ``export``: Export image(s).
 -  ``config``: Configure cloud/shadow masking.
 
 Get help on ``geedim`` with:

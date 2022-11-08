@@ -29,7 +29,7 @@ from click.core import ParameterSource
 from geedim import schema, Initialize, version
 from geedim.collection import MaskedCollection
 from geedim.download import BaseImage, supported_dtypes
-from geedim.enums import CloudMaskMethod, CompositeMethod, ResamplingMethod
+from geedim.enums import CloudMaskMethod, CompositeMethod, ResamplingMethod, ExportType
 from geedim.mask import MaskedImage
 from geedim.utils import get_bounds, Spinner
 from rasterio.errors import CRSError
@@ -179,6 +179,11 @@ def _resampling_method_cb(ctx, param, value):
 def _comp_method_cb(ctx, param, value):
     """click callback to convert composite method string to enum."""
     return CompositeMethod(value) if value else None
+
+
+def _export_type_cb(ctx, param, value):
+    """click callback to convert export type string to enum."""
+    return ExportType(value)
 
 
 def _prepare_image_list(obj: SimpleNamespace, mask=False) -> List[MaskedImage, ]:
@@ -594,6 +599,11 @@ cli.add_command(download)
 # export command
 @click.command(cls=ChainedCommand)
 @click.option('-i', '--id', 'image_id', type=click.STRING, multiple=True, help='Earth Engine image ID(s) to export.')
+@click.option(
+    '-t', '--type', type=click.Choice([t.value for t in ExportType], case_sensitive=True),
+    default=BaseImage._default_export_type.value, show_default=True, callback=_export_type_cb,
+    help='Export type.'
+)
 @crs_option
 @bbox_option
 @region_option
@@ -606,20 +616,20 @@ cli.add_command(download)
 @resampling_option
 @scale_offset_option
 @click.option(
-    '-df', '--drive-folder', type=click.STRING, default=None, show_default='root folder.',
-    help='Google Drive folder to export image(s) to.'
+    '-f', '-df', '--folder', '--drive-folder', type=click.STRING, default=None,
+    help='Google Drive folder or Google Cloud Storage bucket to export image(s) to.'
 )
 @click.option(
     '-w/-nw', '--wait/--no-wait', default=True, show_default=True, help='Whether to wait for the export to complete.'
 )
 @click.pass_obj
-def export(obj, image_id, bbox, region, like, drive_folder, mask, wait, **kwargs):
+def export(obj, image_id, type, bbox, region, like, folder, mask, wait, **kwargs):
     # @formatter:off
     """
-    Export image(s) to Google Drive.
+    Export image(s).
 
-    Export Earth Engine image(s) to GeoTIFF file(s) on Google Drive, allowing optional region of interest,
-    and other image formatting options to be specified.
+    Export Earth Engine image(s) to Google Drive, Earth Engine asset, or Google Cloud Storage, allowing optional region
+    of interest, and other image formatting options to be specified.
 
     This command can be chained after the ``composite`` command, to export the composite image.  It can also be
     chained after the ``search`` command, in which case the search result images will be exported, without the need
@@ -667,7 +677,7 @@ def export(obj, image_id, bbox, region, like, drive_folder, mask, wait, **kwargs
     image_list = _prepare_image_list(obj, mask=mask)
     export_tasks = []
     for im in image_list:
-        task = im.export(im.name, folder=drive_folder, wait=False, region=obj.region, **kwargs)
+        task = im.export(im.name, type=type, folder=folder, wait=False, region=obj.region, **kwargs)
         export_tasks.append(task)
         logger.info(f'Started {im.name}') if not wait else None
 
