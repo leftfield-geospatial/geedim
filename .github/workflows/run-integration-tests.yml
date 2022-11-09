@@ -1,5 +1,5 @@
 
-name: Test geemap/geeml etc integration
+name: Test integration
 
 on:
   workflow_dispatch:

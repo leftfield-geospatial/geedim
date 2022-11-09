@@ -18,6 +18,7 @@ from pathlib import Path
 from httplib2 import Http
 import numpy as np
 import rasterio as rio
+from rasterio.crs import CRS
 import geedim as gd
 import pytest
 
@@ -121,7 +122,7 @@ def test_asset_export(tmp_path: Path, region_25ha):
         # test downloaded asset image
         with rio.open(download_filename, 'r') as im:
             im : rio.DatasetReader
-            assert im.crs == rio.CRS.from_string(crs)
+            assert im.crs == CRS.from_string(crs)
             assert im.transform[0] == scale
             assert im.count == 3
             for bi in range(1, 4):
