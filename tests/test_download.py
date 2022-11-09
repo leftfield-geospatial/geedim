@@ -599,7 +599,7 @@ def test_export_drive(user_fix_base_image: BaseImage, region_25ha: Dict):
 
 def test_export_asset(user_fix_base_image: BaseImage, region_25ha: Dict):
     """ Test start of a small export to EE asset. """
-    filename = 'test_export'
+    filename = f'test_export_{np.random.randint(1<<31)}'
     folder = 'geedim'
     asset_id = utils.asset_id(filename, folder)
 
@@ -611,7 +611,10 @@ def test_export_asset(user_fix_base_image: BaseImage, region_25ha: Dict):
         assert ee.data.getAsset(asset_id) is not None
     finally:
         # the asset must be deleted so that subsequent tests don't fail on overwrite
-        ee.data.deleteAsset(asset_id)
+        try:
+            ee.data.deleteAsset(asset_id)
+        except ee.ee_exception.EEException:
+            pass
 
 
 def test_download_bigtiff(s2_sr_base_image: BaseImage, tmp_path: pathlib.Path):

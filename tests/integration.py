@@ -85,30 +85,40 @@ def test_geeml_integration(tmp_path: Path):
         assert ds.transform.yoff == pytest.approx(region['coordinates'][0][2][1])
 
 
-def test_asset_export(tmp_path: Path, region_25ha, tmpdir):
+def test_asset_export(tmp_path: Path, region_25ha):
     """  Export a test image to an asset, then download the asset and check validity. """
     gd.Initialize()
 
     base_image = gd.download.BaseImage(ee.Image([1, 2, 3]))
     _folder = 'geedim'
-    _filename = 'integration_test'
+    # prevent parallel tests (e.g. in github) from writing to the same asset
+    _filename = f'int_test_asset_export_{np.random.randint(1<<31)}'
     asset_id = gd.utils.asset_id(_filename, _folder)
     crs = 'EPSG:3857'
     scale = 30
 
-    for filename, folder in zip([_filename, asset_id], [_folder, None]):
+    # loop over filename, folder params to test both specified, and only filename specified
+    for ti, filename, folder in zip(range(2), [_filename, asset_id], [_folder, None]):
         try:
+            # export to asset
             task = base_image.export(
                 filename, type='asset', folder=folder, crs=crs, scale=scale, region=region_25ha, wait=True
             )
             assert task.status()['state'] == 'COMPLETED'
-            base_image = gd.download.BaseImage.from_id(asset_id)
-            download_filename = tmp_path.joinpath('integration_test.tif')
-            base_image.download(download_filename)
-            assert filename.exists()
-        finally:
-            ee.data.deleteAsset(asset_id)
 
+            # download asset
+            asset_image = gd.download.BaseImage.from_id(asset_id)
+            download_filename = tmp_path.joinpath(f'integration_test_{ti}.tif')
+            asset_image.download(download_filename)
+            assert download_filename.exists()
+        finally:
+            # delete asset
+            try:
+                ee.data.deleteAsset(asset_id)
+            except ee.ee_exception.EEException:
+                pass
+
+        # test downloaded asset image
         with rio.open(download_filename, 'r') as im:
             im : rio.DatasetReader
             assert im.crs == rio.CRS.from_string(crs)
