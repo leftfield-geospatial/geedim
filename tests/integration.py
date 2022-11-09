@@ -86,7 +86,7 @@ def test_geeml_integration(tmp_path: Path):
 
 
 def test_asset_export(tmp_path: Path, region_25ha):
-    """   Export a test image to an asset, then download the asset and check validity.  """
+    """  Export a test image to an asset, then download the asset and check validity. """
     gd.Initialize()
     base_image = gd.download.BaseImage(ee.Image([1, 2, 3]))
 

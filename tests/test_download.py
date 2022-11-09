@@ -614,6 +614,14 @@ def test_export_asset(user_fix_base_image: BaseImage, region_25ha: Dict):
     assert task.status()['state'] == 'READY'
 
 
+def test_export_asset_no_folder_error(user_fix_base_image: BaseImage, region_25ha: Dict):
+    """ Test exporting to asset raises an error when no folder is specified. """
+    with pytest.raises(ValueError):
+        _ = user_fix_base_image.export(
+            'test_export', type=ExportType.asset, scale=30, region=region_25ha, wait=False
+        )
+
+
 def test_download_bigtiff(s2_sr_base_image: BaseImage, tmp_path: pathlib.Path):
     """ Test that BIGTIFF gets set in the profile of images larger than 4GB. """
     exp_image, profile = s2_sr_base_image._prepare_for_download()
