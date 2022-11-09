@@ -124,6 +124,32 @@ Output:
      {'center_wavelength': '0.4439', 'description': 'Aerosols', 'gsd': '60', 'name': 'B1', 'scale': '0.0001', 'wavelength': '443.9nm (S2A) / 442.3nm (S2B)'}
 
 
+Computed images and user memory
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Earth engine has a size limit (32 MB) on `download requests <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`_.  ``geedim`` avoids exceeding this by tiling downloads.  However, Earth engine also has a `limit on user memory <https://developers.google.com/earth-engine/guides/usage#per-request_memory_footprint>`_ for image computations.  In some situations, this limit can be exceeded when downloading large computed images, generating a *user memory limit exceeded* error.  Unfortunately, there is no way for ``geedim`` to adjust tiles to avoid exceeding this limit, as the memory requirements of a computation are not known in advance.   The user has two options for working around this error:
+
+``max_tile_size``
+~~~~~~~~~~~~~~~~~
+
+Decreasing the ``max_tile_size`` argument to :meth:`geedim.mask.MaskedImage.download` reduces the user memory required by computations.  The default value is 32 MB, so reducing this by half, or even a quarter will usually solve the problem.  :option:`--max-tile-size <geedim-download --max-tile-size>` is the equivalent option on the command line.
+
+.. literalinclude:: examples/api_getting_started.py
+    :language: python
+    :start-after: [max_tile_size-start]
+    :end-before: [max_tile_size-end]
+
+Exporting
+~~~~~~~~~
+
+Another way around the user memory limit, is to export the image to an Earth Engine asset, and then download.  Exporting images is not subject to the user memory limit, and computation on the asset image is complete.  So the exported asset image can then be downloaded in the standard way.
+
+.. literalinclude:: examples/api_getting_started.py
+    :language: python
+    :start-after: [export-asset-download-start]
+    :end-before: [export-asset-download-end]
+
+
 Reference
 ---------
 
