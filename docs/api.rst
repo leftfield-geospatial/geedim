@@ -231,6 +231,14 @@ ResamplingMethod
 .. autoclass:: ResamplingMethod
     :members:
 
+ExportType
+~~~~~~~~~~
+
+.. currentmodule:: geedim.enums
+
+.. autoclass:: ExportType
+    :members:
+
 
 Initialize
 ^^^^^^^^^^
