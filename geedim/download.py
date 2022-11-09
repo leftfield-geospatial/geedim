@@ -796,8 +796,10 @@ class BaseImage:
             # if folder is specified create an EE asset ID from it and filename,
             # else assume filename is a valid EE asset ID
             asset_id = utils.asset_id(filename, folder) if folder else filename
+            # fix description for when filename is asset id with forward slashes
+            description = filename.replace('/', '-')[:100]
             task = ee.batch.Export.image.toAsset(
-                image=exp_image.ee_image, description=filename[:100], assetId=asset_id, maxPixels=1e9,
+                image=exp_image.ee_image, description=description, assetId=asset_id, maxPixels=1e9,
             )
         else:
             task = ee.batch.Export.image.toCloudStorage(
