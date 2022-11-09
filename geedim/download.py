@@ -698,9 +698,13 @@ class BaseImage:
 
         # poll EE until the export preparation is complete
         with utils.Spinner(label=f'Preparing {label}: ', leave='done'):
-            while 'progress' not in status['metadata']:
+            while ('done' not in status) or (not status['done']):
                 time.sleep(5 * pause)
                 status = ee.data.getOperation(task.name)
+                if 'progress' in status['metadata']:
+                    break
+                elif status['metadata']['state'] == 'FAILED':
+                    raise IOError(f"Export failed \n{status}")
 
         # wait for export to complete, displaying a progress bar
         bar_format = '{desc}: |{bar}| [{percentage:5.1f}%] in {elapsed:>5s} (eta: {remaining:>5s})'
@@ -780,6 +784,7 @@ class BaseImage:
             logger.debug(f'Uncompressed size: {self._str_format_size(exp_image.size)}')
 
         # create export task and start
+        type = ExportType(type)
         if type == ExportType.drive:
             task = ee.batch.Export.image.toDrive(
                 image=exp_image.ee_image, description=filename[:100], folder=folder, fileNamePrefix=filename,
