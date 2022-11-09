@@ -85,36 +85,36 @@ def test_geeml_integration(tmp_path: Path):
         assert ds.transform.yoff == pytest.approx(region['coordinates'][0][2][1])
 
 
-def test_asset_export(tmp_path: Path, region_25ha):
+def test_asset_export(tmp_path: Path, region_25ha, tmpdir):
     """  Export a test image to an asset, then download the asset and check validity. """
     gd.Initialize()
+
     base_image = gd.download.BaseImage(ee.Image([1, 2, 3]))
-
-    folder = 'geedim'
-    filename = 'integration_test'
-    asset_id = gd.utils.asset_id(filename, folder)
-    try:
-        ee.data.deleteAsset(asset_id)
-    except ee.ee_exception.EEException:
-        pass
-
+    _folder = 'geedim'
+    _filename = 'integration_test'
+    asset_id = gd.utils.asset_id(_filename, _folder)
     crs = 'EPSG:3857'
     scale = 30
-    task = base_image.export(
-        filename, type='asset', folder=folder, crs=crs, scale=scale, region=region_25ha, wait=True
-    )
-    assert task.status()['state'] == 'COMPLETED'
 
-    base_image = gd.download.BaseImage.from_id(asset_id)
-    filename = tmp_path.joinpath('integration_test.tif')
-    base_image.download(filename)
-    assert filename.exists()
+    for filename, folder in zip([_filename, asset_id], [_folder, None]):
+        try:
+            task = base_image.export(
+                filename, type='asset', folder=folder, crs=crs, scale=scale, region=region_25ha, wait=True
+            )
+            assert task.status()['state'] == 'COMPLETED'
+            base_image = gd.download.BaseImage.from_id(asset_id)
+            download_filename = tmp_path.joinpath('integration_test.tif')
+            base_image.download(download_filename)
+            assert filename.exists()
+        finally:
+            ee.data.deleteAsset(asset_id)
 
-    with rio.open(filename, 'r') as im:
-        im : rio.DatasetReader
-        assert im.crs == rio.CRS.from_string(crs)
-        assert im.transform[0] == scale
-        assert im.count == 3
-        for bi in range(1, 4):
-            data = im.read(bi)
-            assert np.all(data == bi)
+        with rio.open(download_filename, 'r') as im:
+            im : rio.DatasetReader
+            assert im.crs == rio.CRS.from_string(crs)
+            assert im.transform[0] == scale
+            assert im.count == 3
+            for bi in range(1, 4):
+                data = im.read(bi)
+                assert np.all(data == bi)
+

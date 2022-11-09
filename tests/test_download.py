@@ -604,22 +604,14 @@ def test_export_asset(user_fix_base_image: BaseImage, region_25ha: Dict):
     asset_id = utils.asset_id(filename, folder)
 
     try:
-        ee.data.deleteAsset(asset_id)
-    except ee.ee_exception.EEException:
-        pass
-    task = user_fix_base_image.export(
-        filename, type=ExportType.asset, folder=folder, scale=30, region=region_25ha, wait=False
-    )
-    assert task.active()
-    assert task.status()['state'] == 'READY'
-
-
-def test_export_asset_no_folder_error(user_fix_base_image: BaseImage, region_25ha: Dict):
-    """ Test exporting to asset raises an error when no folder is specified. """
-    with pytest.raises(ValueError):
-        _ = user_fix_base_image.export(
-            'test_export', type=ExportType.asset, scale=30, region=region_25ha, wait=False
+        task = user_fix_base_image.export(
+            filename, type=ExportType.asset, folder=folder, scale=30, region=region_25ha, wait=True
         )
+        assert task.status()['state'] == 'SUCCEEDED'
+        assert ee.data.getAsset(asset_id) is not None
+    finally:
+        # the asset must be deleted so that subsequent tests don't fail on overwrite
+        ee.data.deleteAsset(asset_id)
 
 
 def test_download_bigtiff(s2_sr_base_image: BaseImage, tmp_path: pathlib.Path):

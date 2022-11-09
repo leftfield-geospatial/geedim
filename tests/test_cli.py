@@ -475,6 +475,17 @@ def test_export_asset_params(l8_image_id: str, region_25ha_file: pathlib.Path, r
     assert (result.exit_code == 0)
 
 
+def test_export_asset_no_folder_error(l8_image_id: str, region_25ha_file: pathlib.Path, runner: CliRunner):
+    """ Test export to asset starts ok, specifying all cli params"""
+    cli_str = (
+        f'export -i {l8_image_id} -r {region_25ha_file} --crs EPSG:3857 --scale 30 '
+        f'--dtype uint16 --mask --resampling bilinear --no-wait --type asset'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0
+    assert '--folder' in result.output
+
+
 @pytest.mark.parametrize('image_list, scale', [('s2_sr_image_id_list', 10), ('l8_9_image_id_list', 30)])
 def test_composite_defaults(
     image_list: str, scale: float, region_25ha_file: pathlib.Path, runner: CliRunner, tmp_path: pathlib.Path,
