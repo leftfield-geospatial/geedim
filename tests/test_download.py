@@ -25,7 +25,7 @@ import rasterio as rio
 from rasterio import features, warp
 from rasterio.crs import CRS
 from geedim.download import BaseImage
-from geedim.enums import ResamplingMethod
+from geedim.enums import ResamplingMethod, ExportType
 from geedim import utils
 from rasterio import Affine, windows
 
@@ -590,9 +590,26 @@ def test_metadata(landsat_ndvi_base_image: BaseImage, region_25ha: Dict, tmp_pat
             assert key in band_dict
 
 
-def test_export(user_fix_base_image: BaseImage, region_25ha: Dict):
-    """ Test start of a small export. """
+def test_export_drive(user_fix_base_image: BaseImage, region_25ha: Dict):
+    """ Test start of a small export to google drive. """
     task = user_fix_base_image.export('test_export.tif', folder='geedim', scale=30, region=region_25ha, wait=False)
+    assert task.active()
+    assert task.status()['state'] == 'READY'
+
+
+def test_export_asset(user_fix_base_image: BaseImage, region_25ha: Dict):
+    """ Test start of a small export to EE asset. """
+    filename = 'test_export'
+    folder = 'geedim'
+    asset_id = utils.asset_id(filename, folder)
+
+    try:
+        ee.data.deleteAsset(asset_id)
+    except ee.ee_exception.EEException:
+        pass
+    task = user_fix_base_image.export(
+        filename, type=ExportType.asset, folder=folder, scale=30, region=region_25ha, wait=False
+    )
     assert task.active()
     assert task.status()['state'] == 'READY'
 
