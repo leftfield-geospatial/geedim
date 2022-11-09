@@ -665,11 +665,12 @@ def export(obj, image_id, type, folder, bbox, region, like, mask, wait, **kwargs
     Examples
     --------
 
-    Export a region of a Landsat-9 image, applying the cloud/shadow mask and converting to uint16::
+    Export a region of a Landsat-9 image to Google Drive, applying the cloud/shadow mask and converting to uint16::
 
         geedim export -i LANDSAT/LC09/C02/T1_L2/LC09_173083_20220308 --mask --bbox 21.6 -33.5 21.7 -33.4 --dtype uint16
 
-    Export the results of a MODIS NBAR search to the 'geedim' folder, specifying a CRS and scale to reproject to::
+    Export the results of a MODIS NBAR search to Google Drive in the 'geedim' folder, specifying a CRS and scale to
+    reproject to::
 
         geedim search -c MODIS/006/MCD43A4 -s 2022-01-01 -e 2022-01-03 --bbox 23 -34 24 -33 export --crs EPSG:3857 --scale 500 -df geedim
     """
