@@ -739,9 +739,11 @@ class BaseImage:
         type : ExportType, optional
             Export type.
         folder : str, optional
-            Google Drive folder (when ``type ==`` :attr:`~geedim.enums.ExportType.drive`),
-            Earth Engine asset project (when ``type ==`` :attr:`~geedim.enums.ExportType.asset`),
-            or Google Cloud Storage bucket (when ``type ==`` :attr:`~geedim.enums.ExportType.cloud`), to export to.
+            Google Drive folder (when ``type`` is :attr:`~geedim.enums.ExportType.drive`),
+            Earth Engine asset project (when ``type`` is :attr:`~geedim.enums.ExportType.asset`),
+            or Google Cloud Storage bucket (when ``type`` is :attr:`~geedim.enums.ExportType.cloud`), to export to.
+            If ``type`` is :attr:`~geedim.enums.ExportType.asset` and ``folder`` is not specified, ``filename``
+            should be a valid Earth Engine asset ID.
         wait : bool
             Wait for the export to complete before returning.
         crs : str, optional
@@ -791,9 +793,9 @@ class BaseImage:
                 maxPixels=1e9, formatOptions=dict(cloudOptimized=True),
             )
         elif type == ExportType.asset:
-            if (not folder) or (len(folder) == 0):
-                raise ValueError('`folder` must be specified when exporting to Earth Engine asset.')
-            asset_id = utils.asset_id(filename, folder)
+            # if folder is specified create an EE asset ID from it and filename,
+            # else assume filename is a valid EE asset ID
+            asset_id = utils.asset_id(filename, folder) if folder else filename
             task = ee.batch.Export.image.toAsset(
                 image=exp_image.ee_image, description=filename[:100], assetId=asset_id, maxPixels=1e9,
             )
