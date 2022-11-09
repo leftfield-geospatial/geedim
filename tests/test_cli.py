@@ -25,7 +25,7 @@ import pytest
 import rasterio as rio
 from click.testing import CliRunner
 from geedim.cli import cli
-from geedim.utils import root_path
+from geedim.utils import root_path, asset_id
 from rasterio.coords import BoundingBox
 from rasterio.crs import CRS
 from rasterio.features import bounds
@@ -448,11 +448,28 @@ def test_max_tile_dim_error(
     assert 'download limit' in str(result.exception)
 
 
-def test_export_params(l8_image_id: str, region_25ha_file: pathlib.Path, runner: CliRunner):
-    """ Test export starts ok, specifying all cli params"""
+def test_export_drive_params(l8_image_id: str, region_25ha_file: pathlib.Path, runner: CliRunner):
+    """ Test export to google drive starts ok, specifying all cli params"""
     cli_str = (
         f'export -i {l8_image_id} -r {region_25ha_file} -df geedim/test --crs EPSG:3857 --scale 30 '
         f'--dtype uint16 --mask --resampling bilinear --no-wait'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert (result.exit_code == 0)
+
+
+def test_export_asset_params(l8_image_id: str, region_25ha_file: pathlib.Path, runner: CliRunner):
+    """ Test export to asset starts ok, specifying all cli params"""
+    folder = 'geedim'
+    test_asset_id = asset_id(l8_image_id, folder)
+    try:
+        ee.data.deleteAsset(test_asset_id)
+    except ee.ee_exception.EEException:
+        pass
+
+    cli_str = (
+        f'export -i {l8_image_id} -r {region_25ha_file} -f {folder} --crs EPSG:3857 --scale 30 '
+        f'--dtype uint16 --mask --resampling bilinear --no-wait --type asset'
     )
     result = runner.invoke(cli, cli_str.split())
     assert (result.exit_code == 0)
