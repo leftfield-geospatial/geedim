@@ -31,7 +31,7 @@ from geedim.collection import MaskedCollection
 from geedim.download import BaseImage, supported_dtypes
 from geedim.enums import CloudMaskMethod, CompositeMethod, ResamplingMethod, ExportType
 from geedim.mask import MaskedImage
-from geedim.utils import get_bounds, Spinner
+from geedim.utils import get_bounds, Spinner, asset_id
 from rasterio.errors import CRSError
 
 logger = logging.getLogger(__name__)
@@ -604,6 +604,11 @@ cli.add_command(download)
     default=BaseImage._default_export_type.value, show_default=True, callback=_export_type_cb,
     help='Export type.'
 )
+@click.option(
+    '-f', '-df', '--folder', '--drive-folder', type=click.STRING, default=None,
+    help='Google Drive folder, Earth Engine asset project, or Google Cloud Storage bucket to export image(s) to.  '
+         'Interpretation based on :option:`--type`.'
+)
 @crs_option
 @bbox_option
 @region_option
@@ -616,14 +621,10 @@ cli.add_command(download)
 @resampling_option
 @scale_offset_option
 @click.option(
-    '-f', '-df', '--folder', '--drive-folder', type=click.STRING, default=None,
-    help='Google Drive folder, Earth Engine asset project, or Google Cloud Storage bucket to export image(s) to.'
-)
-@click.option(
     '-w/-nw', '--wait/--no-wait', default=True, show_default=True, help='Whether to wait for the export to complete.'
 )
 @click.pass_obj
-def export(obj, image_id, type, bbox, region, like, folder, mask, wait, **kwargs):
+def export(obj, image_id, type, folder, bbox, region, like, mask, wait, **kwargs):
     # @formatter:off
     """
     Export image(s).
@@ -686,9 +687,8 @@ def export(obj, image_id, type, bbox, region, like, folder, mask, wait, **kwargs
         for task, im in zip(export_tasks, image_list):
             BaseImage.monitor_export(task)
             if type == ExportType.asset:
-                # TODO: can we simplify this so we don't create the asset ID in 2 different places?
                 # add asset ids, so that assets can be downloaded or composited with chained commands
-                obj.image_list += [f'projects/{folder}/assets/{im.name}']
+                obj.image_list += [asset_id(im.name, folder)]
 
 
 cli.add_command(export)
