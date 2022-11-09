@@ -83,3 +83,38 @@ def test_geeml_integration(tmp_path: Path):
         assert np.isnan(ds.nodata)
         assert ds.transform.xoff == pytest.approx(region['coordinates'][0][0][0])
         assert ds.transform.yoff == pytest.approx(region['coordinates'][0][2][1])
+
+
+def test_asset_export(tmp_path: Path, region_25ha):
+    """   Export a test image to an asset, then download the asset and check validity.  """
+    gd.Initialize()
+    base_image = gd.download.BaseImage(ee.Image([1, 2, 3]))
+
+    folder = 'geedim'
+    filename = 'integration_test'
+    asset_id = gd.utils.asset_id(filename, folder)
+    try:
+        ee.data.deleteAsset(asset_id)
+    except ee.ee_exception.EEException:
+        pass
+
+    crs = 'EPSG:3857'
+    scale = 30
+    task = base_image.export(
+        filename, type='asset', folder=folder, crs=crs, scale=scale, region=region_25ha, wait=True
+    )
+    assert task.status()['state'] == 'COMPLETED'
+
+    base_image = gd.download.BaseImage.from_id(asset_id)
+    filename = tmp_path.joinpath('integration_test.tif')
+    base_image.download(filename)
+    assert filename.exists()
+
+    with rio.open(filename, 'r') as im:
+        im : rio.DatasetReader
+        assert im.crs == rio.CRS.from_string(crs)
+        assert im.transform[0] == scale
+        assert im.count == 3
+        for bi in range(1, 4):
+            data = im.read(bi)
+            assert np.all(data == bi)
