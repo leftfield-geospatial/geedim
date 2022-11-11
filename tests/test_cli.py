@@ -476,7 +476,7 @@ def test_export_asset_params(l8_image_id: str, region_25ha_file: pathlib.Path, r
 
 
 def test_export_asset_no_folder_error(l8_image_id: str, region_25ha_file: pathlib.Path, runner: CliRunner):
-    """ Test export to asset starts ok, specifying all cli params"""
+    """ Test export to asset raises an error when no folder is specified. """
     cli_str = (
         f'export -i {l8_image_id} -r {region_25ha_file} --crs EPSG:3857 --scale 30 '
         f'--dtype uint16 --mask --resampling bilinear --no-wait --type asset'

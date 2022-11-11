@@ -69,7 +69,7 @@ im.download('s2_entropy.tif', region=region, max_tile_size=8)
 # [max_tile_size-end]
 
 # [export-asset-download-start]
-# create EE asset ID, export computed image to asset
+# create EE asset ID & export computed image to asset
 asset_id = f'projects/<your cloud project>/assets/s2_entropy'
 _ = im.export(asset_id, type='asset', region=region, wait=True)
 

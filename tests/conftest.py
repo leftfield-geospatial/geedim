@@ -161,7 +161,7 @@ def gedi_agb_image_id() -> str:
 @pytest.fixture(scope='session')
 def gedi_cth_image_id() -> str:
     """ GEDI canopy top height EE image ID.  25m."""
-    return 'LARSE/GEDI/GEDI02_A_002_MONTHLY/202010_018E_036S'
+    return 'LARSE/GEDI/GEDI02_A_002_MONTHLY/202009_018E_036S'
 
 
 @pytest.fixture(scope='session')
