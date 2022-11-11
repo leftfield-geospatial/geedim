@@ -21,7 +21,7 @@ import ee
 import pytest
 from geedim import MaskedImage
 from geedim.enums import ResamplingMethod
-from geedim.utils import split_id, get_projection, get_bounds, Spinner, resample
+from geedim.utils import split_id, get_projection, get_bounds, Spinner, resample, asset_id
 from rasterio.features import bounds
 
 from .conftest import get_image_std
@@ -106,3 +106,18 @@ def test_resample_comp(
     assert (
         get_image_std(after_image, region_10000ha, std_scale) == get_image_std(before_image, region_10000ha, std_scale)
     )
+
+
+@pytest.mark.parametrize(
+    'filename, folder, exp_id', [
+        ('file', 'folder', 'projects/folder/assets/file'),
+        ('fp1/fp2/fp3', 'folder', 'projects/folder/assets/fp1-fp2-fp3'),
+        ('file', 'folder/sub-folder', 'projects/folder/assets/sub-folder/file'),
+        ('file', None, 'file'),
+        ('projects/folder/assets/file', None, 'projects/folder/assets/file'),
+    ]
+)
+def test_asset_id(filename: str, folder: str, exp_id: str):
+    """ Test asset_id() works as expected. """
+    id = asset_id(filename, folder)
+    assert id == exp_id

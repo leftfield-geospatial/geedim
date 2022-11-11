@@ -18,6 +18,7 @@ from typing import Dict, List
 
 import ee
 import pytest
+from click.testing import CliRunner
 from geedim import Initialize, MaskedImage
 from geedim.utils import root_path
 
@@ -161,7 +162,7 @@ def gedi_agb_image_id() -> str:
 @pytest.fixture(scope='session')
 def gedi_cth_image_id() -> str:
     """ GEDI canopy top height EE image ID.  25m."""
-    return 'LARSE/GEDI/GEDI02_A_002_MONTHLY/202010_018E_036S'
+    return 'LARSE/GEDI/GEDI02_A_002_MONTHLY/202009_018E_036S'
 
 
 @pytest.fixture(scope='session')
@@ -304,6 +305,29 @@ def generic_masked_images(
         landsat_ndvi_masked_image
     ]
 
+@pytest.fixture
+def runner():
+    """ click runner for command line execution. """
+    return CliRunner()
+
+
+@pytest.fixture
+def region_25ha_file() -> pathlib.Path:
+    """ Path to region_25ha geojson file. """
+    return root_path.joinpath('tests/data/region_25ha.geojson')
+
+
+@pytest.fixture
+def region_100ha_file() -> pathlib.Path:
+    """ Path to region_100ha geojson file. """
+    return root_path.joinpath('tests/data/region_100ha.geojson')
+
+
+@pytest.fixture
+def region_10000ha_file() -> pathlib.Path:
+    """ Path to region_10000ha geojson file. """
+    return root_path.joinpath('tests/data/region_10000ha.geojson')
+
 
 def get_image_std(ee_image: ee.Image, region: Dict, std_scale: float):
     """
@@ -319,3 +343,4 @@ def get_image_std(ee_image: ee.Image, region: Dict, std_scale: float):
         reducer='mean', geometry=region, crs=proj.crs(), scale=std_scale, bestEffort=True, maxPixels=1e6
     )
     return mean_std_image.get('TEST').getInfo()
+

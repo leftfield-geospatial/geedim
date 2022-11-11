@@ -29,9 +29,9 @@ from click.core import ParameterSource
 from geedim import schema, Initialize, version
 from geedim.collection import MaskedCollection
 from geedim.download import BaseImage, supported_dtypes
-from geedim.enums import CloudMaskMethod, CompositeMethod, ResamplingMethod
+from geedim.enums import CloudMaskMethod, CompositeMethod, ResamplingMethod, ExportType
 from geedim.mask import MaskedImage
-from geedim.utils import get_bounds, Spinner
+from geedim.utils import get_bounds, Spinner, asset_id
 from rasterio.errors import CRSError
 
 logger = logging.getLogger(__name__)
@@ -179,6 +179,11 @@ def _resampling_method_cb(ctx, param, value):
 def _comp_method_cb(ctx, param, value):
     """click callback to convert composite method string to enum."""
     return CompositeMethod(value) if value else None
+
+
+def _export_type_cb(ctx, param, value):
+    """click callback to convert export type string to enum."""
+    return ExportType(value)
 
 
 def _prepare_image_list(obj: SimpleNamespace, mask=False) -> List[MaskedImage, ]:
@@ -535,9 +540,10 @@ def download(obj, image_id, bbox, region, like, download_dir, mask, max_tile_siz
     and downloaded as separate tiles, then re-assembled into a single GeoTIFF.  Downloaded image files are populated
     with metadata from the Earth Engine image and STAC.
 
-    This command can be chained after the ``composite`` command, to download the composite image.  It can also be
-    chained after the ``search`` command, in which case the search result images will be downloaded, without the need
-    to specify image IDs with ``--id``, or region with ``--bbox`` / ``--region``.
+    This command can be chained after the ``composite`` command, to download the composite image, or it can be
+    chained after an asset ``export`` to download the asset image.  It can also be chained after the ``search`` command,
+    in which case the search result images will be downloaded, without the need to specify image IDs with ``--id``, or
+    region with ``--bbox`` / ``--region``.
 
     The following auxiliary bands are added to images from collections with support for cloud/shadow masking:
     \b
@@ -594,6 +600,16 @@ cli.add_command(download)
 # export command
 @click.command(cls=ChainedCommand)
 @click.option('-i', '--id', 'image_id', type=click.STRING, multiple=True, help='Earth Engine image ID(s) to export.')
+@click.option(
+    '-t', '--type', type=click.Choice([t.value for t in ExportType], case_sensitive=True),
+    default=BaseImage._default_export_type.value, show_default=True, callback=_export_type_cb,
+    help='Export type.'
+)
+@click.option(
+    '-f', '-df', '--folder', '--drive-folder', type=click.STRING, default=None,
+    help='Google Drive folder, Earth Engine asset project, or Google Cloud Storage bucket to export image(s) to.  '
+         'Interpretation based on :option:`--type`.'
+)
 @crs_option
 @bbox_option
 @region_option
@@ -606,20 +622,16 @@ cli.add_command(download)
 @resampling_option
 @scale_offset_option
 @click.option(
-    '-df', '--drive-folder', type=click.STRING, default=None, show_default='root folder.',
-    help='Google Drive folder to export image(s) to.'
-)
-@click.option(
     '-w/-nw', '--wait/--no-wait', default=True, show_default=True, help='Whether to wait for the export to complete.'
 )
 @click.pass_obj
-def export(obj, image_id, bbox, region, like, drive_folder, mask, wait, **kwargs):
+def export(obj, image_id, type, folder, bbox, region, like, mask, wait, **kwargs):
     # @formatter:off
     """
-    Export image(s) to Google Drive.
+    Export image(s).
 
-    Export Earth Engine image(s) to GeoTIFF file(s) on Google Drive, allowing optional region of interest,
-    and other image formatting options to be specified.
+    Export Earth Engine image(s) to Google Drive, Earth Engine asset, or Google Cloud Storage, allowing optional region
+    of interest, and other image formatting options to be specified.
 
     This command can be chained after the ``composite`` command, to export the composite image.  It can also be
     chained after the ``search`` command, in which case the search result images will be exported, without the need
@@ -648,32 +660,40 @@ def export(obj, image_id, bbox, region, like, drive_folder, mask, wait, **kwargs
     When ``--crs``, ``--scale``, ``--crs-transform`` and ``--shape`` are not specified, the pixel grids of the
     exported and Earth Engine images will coincide.
 
-    Image filenames are derived from their Earth Engine ID.
+    Image file or asset names are derived from their Earth Engine ID.
     \b
 
     Examples
     --------
 
-    Export a region of a Landsat-9 image, applying the cloud/shadow mask and converting to uint16::
+    Export a region of a Landsat-9 image to an Earth Engine asset, applying the cloud/shadow mask and converting to
+    uint16::
 
-        geedim export -i LANDSAT/LC09/C02/T1_L2/LC09_173083_20220308 --mask --bbox 21.6 -33.5 21.7 -33.4 --dtype uint16
+        geedim export -i LANDSAT/LC09/C02/T1_L2/LC09_173083_20220308 --type asset --folder <your cloud project> --mask --bbox 21.6 -33.5 21.7 -33.4 --dtype uint16
 
-    Export the results of a MODIS NBAR search to the 'geedim' folder, specifying a CRS and scale to reproject to::
+    Export the results of a MODIS NBAR search to Google Drive in the 'geedim' folder, specifying a CRS and scale to
+    reproject to::
 
         geedim search -c MODIS/006/MCD43A4 -s 2022-01-01 -e 2022-01-03 --bbox 23 -34 24 -33 export --crs EPSG:3857 --scale 500 -df geedim
     """
     # @formatter:on
     logger.info('\nExporting:\n')
+    if (type == ExportType.asset) and not folder:
+        raise click.BadParameter('--folder must be specified when exporting to asset', param_hint='--folder')
     image_list = _prepare_image_list(obj, mask=mask)
     export_tasks = []
     for im in image_list:
-        task = im.export(im.name, folder=drive_folder, wait=False, region=obj.region, **kwargs)
+        task = im.export(im.name, type=type, folder=folder, wait=False, region=obj.region, **kwargs)
         export_tasks.append(task)
         logger.info(f'Started {im.name}') if not wait else None
 
     if wait:
-        for task in export_tasks:
+        obj.image_list = [] if type == ExportType.asset else obj.image_list
+        for task, im in zip(export_tasks, image_list):
             BaseImage.monitor_export(task)
+            if type == ExportType.asset:
+                # add asset ids, so that assets can be downloaded or composited with chained commands
+                obj.image_list += [asset_id(im.name, folder)]
 
 
 cli.add_command(export)

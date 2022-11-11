@@ -69,3 +69,16 @@ class ResamplingMethod(str, Enum):
 
     average = 'average'
     """ Average (recommended for downsampling). """
+
+
+class ExportType(str, Enum):
+    """ Enumeration for the export type. """
+    drive = 'drive'
+    """ Export to Google Drive. """
+
+    asset = 'asset'
+    """ Export to an Earth Engine asset. """
+
+    cloud = 'cloud'
+    """ Export to Google Cloud Storage. """
+

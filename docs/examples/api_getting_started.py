@@ -56,3 +56,24 @@ with rio.open('s2_sr_image.tif', 'r') as ds:
     print('Band names:\n', ds.descriptions)
     print('Band 1 properties:\n', ds.tags(1))
 # [metadata-end]
+
+# [max_tile_size-start]
+import ee
+# create a computed ee.Image
+ee_im = ee.Image('COPERNICUS/S2_SR/20190101T082331_20190101T084846_T34HCH')
+comp_im = ee_im.select('B3').entropy(ee.Kernel.square(5))
+
+# encapsulate in MaskedImage, and download with max_tile_size=8
+im = gd.MaskedImage(comp_im)
+im.download('s2_entropy.tif', region=region, max_tile_size=8)
+# [max_tile_size-end]
+
+# [export-asset-download-start]
+# create EE asset ID & export computed image to asset
+asset_id = f'projects/<your cloud project>/assets/s2_entropy'
+_ = im.export(asset_id, type='asset', region=region, wait=True)
+
+# create and download the asset image
+im = gd.MaskedImage.from_id(asset_id)
+im.download('s2_entropy.tif')
+# [export-asset-download-end]

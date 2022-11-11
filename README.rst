@@ -16,10 +16,10 @@ Description
 
 ``geedim`` provides a command line interface and API for searching, compositing and downloading satellite imagery
 from Google Earth Engine (EE). It optionally performs cloud/shadow masking, and cloud/shadow-free compositing on
-supported collections. Images and composites can be downloaded, or exported to Google Drive. Images larger than the
+supported collections. Images and composites can be downloaded; or exported to Google Drive, Earth Engine asset or
+Google Cloud Storage. Images larger than the
 `EE size limit <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`_ are split and downloaded
 as separate tiles, then re-assembled into a single GeoTIFF.
-
 .. description_end
 
 See the documentation site for more detail: https://geedim.readthedocs.io/.
@@ -133,7 +133,7 @@ Command line interface
 -  ``search``: Search for images.
 -  ``composite``: Create a composite image.
 -  ``download``: Download image(s).
--  ``export``: Export image(s) to Google Drive.
+-  ``export``: Export image(s).
 -  ``config``: Configure cloud/shadow masking.
 
 Get help on ``geedim`` with:
@@ -191,6 +191,12 @@ Composite the results of a Landsat-8 search and download the result.
 .. code:: shell
 
    geedim search -c l8-c2-l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 composite -cm q-mosaic download --scale 30 --crs EPSG:3857
+
+Composite the results of a Landsat-8 search, export to Earth Engine asset, and download the asset image.
+
+.. code:: shell
+
+    geedim search -c l8-c2-l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 composite -cm q-mosaic export --type asset --folder <your cloud project> --scale 30 --crs EPSG:3857 download
 
 Search for Sentinel-2 SR images with a cloudless portion of at least 60%, using the ``qa`` mask-method to identify
 clouds:

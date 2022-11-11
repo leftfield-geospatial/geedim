@@ -25,7 +25,7 @@ import rasterio as rio
 from rasterio import features, warp
 from rasterio.crs import CRS
 from geedim.download import BaseImage
-from geedim.enums import ResamplingMethod
+from geedim.enums import ResamplingMethod, ExportType
 from geedim import utils
 from rasterio import Affine, windows
 
@@ -590,11 +590,36 @@ def test_metadata(landsat_ndvi_base_image: BaseImage, region_25ha: Dict, tmp_pat
             assert key in band_dict
 
 
-def test_export(user_fix_base_image: BaseImage, region_25ha: Dict):
-    """ Test start of a small export. """
+def test_export_drive(user_fix_base_image: BaseImage, region_25ha: Dict):
+    """ Test start of a small export to google drive. """
     task = user_fix_base_image.export('test_export.tif', folder='geedim', scale=30, region=region_25ha, wait=False)
     assert task.active()
     assert task.status()['state'] == 'READY'
+
+
+def test_export_asset(user_fix_base_image: BaseImage, region_25ha: Dict):
+    """ Test start of a small export to EE asset. """
+    # TODO: consider removing this slow test in favour of the equivalent integration test
+    filename = f'test_export_{np.random.randint(1<<31)}'
+    folder = 'geedim'
+    asset_id = utils.asset_id(filename, folder)
+    # Note: to allow parallel tests exporting to assets, we use random asset names to prevent conflicts.  The test
+    # must wait for export to complete and clean up after itself, otherwise lots of test assets will accumulate in my
+    # geedim cloud project.
+
+    try:
+        # export and test asset exists
+        task = user_fix_base_image.export(
+            filename, type=ExportType.asset, folder=folder, scale=30, region=region_25ha, wait=True
+        )
+        assert task.status()['state'] == 'COMPLETED'
+        assert ee.data.getAsset(asset_id) is not None
+    finally:
+        # delete asset
+        try:
+            ee.data.deleteAsset(asset_id)
+        except ee.ee_exception.EEException:
+            pass
 
 
 def test_download_bigtiff(s2_sr_base_image: BaseImage, tmp_path: pathlib.Path):

@@ -37,7 +37,7 @@ from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 from geedim import utils
-from geedim.enums import ResamplingMethod
+from geedim.enums import ResamplingMethod, ExportType
 from geedim.stac import StacCatalog, StacItem
 from geedim.tile import Tile
 
@@ -58,6 +58,7 @@ class BaseImage:
     _default_resampling = ResamplingMethod.near
     _ee_max_tile_size = 32
     _ee_max_tile_dim = 10000
+    _default_export_type = ExportType.drive
 
     def __init__(self, ee_image: ee.Image):
         """
@@ -697,9 +698,13 @@ class BaseImage:
 
         # poll EE until the export preparation is complete
         with utils.Spinner(label=f'Preparing {label}: ', leave='done'):
-            while 'progress' not in status['metadata']:
+            while ('done' not in status) or (not status['done']):
                 time.sleep(5 * pause)
                 status = ee.data.getOperation(task.name)
+                if 'progress' in status['metadata']:
+                    break
+                elif status['metadata']['state'] == 'FAILED':
+                    raise IOError(f"Export failed \n{status}")
 
         # wait for export to complete, displaying a progress bar
         bar_format = '{desc}: |{bar}| [{percentage:5.1f}%] in {elapsed:>5s} (eta: {remaining:>5s})'
@@ -714,9 +719,11 @@ class BaseImage:
             else:
                 raise IOError(f"Export failed \n{status}")
 
-    def export(self, filename: str, folder: str = None, wait: bool = True, **kwargs) -> ee.batch.Task:
+    def export(
+        self, filename: str, type: ExportType = _default_export_type, folder: str = None, wait: bool = True, **kwargs
+    ) -> ee.batch.Task:
         """
-        Export the encapsulated image to Google Drive.
+        Export the encapsulated image to Google Drive, Earth Engine asset or Google Cloud Storage.
 
         Export bounds and resolution can be specified with ``region`` and ``scale`` / ``shape``, or ``crs_transform``
         and ``shape``.  If no bounds are specified (with either ``region``, or ``crs_transform`` & ``shape``), the
@@ -725,13 +732,18 @@ class BaseImage:
         When ``crs``, ``scale``, ``crs_transform`` & ``shape`` are not specified, the pixel grid of the exported
         image will coincide with that of the encapsulated image.
 
-
         Parameters
         ----------
         filename : str
-            Name of the task and destination file.
+            Name of the export task, and destination file or asset name.
+        type : ExportType, optional
+            Export type.
         folder : str, optional
-            Google Drive folder to export to. Defaults to the root.
+            Google Drive folder (when ``type`` is :attr:`~geedim.enums.ExportType.drive`),
+            Earth Engine asset project (when ``type`` is :attr:`~geedim.enums.ExportType.asset`),
+            or Google Cloud Storage bucket (when ``type`` is :attr:`~geedim.enums.ExportType.cloud`), to export to.
+            If ``type`` is :attr:`~geedim.enums.ExportType.asset` and ``folder`` is not specified, ``filename``
+            should be a valid Earth Engine asset ID.
         wait : bool
             Wait for the export to complete before returning.
         crs : str, optional
@@ -774,9 +786,27 @@ class BaseImage:
             logger.debug(f'Uncompressed size: {self._str_format_size(exp_image.size)}')
 
         # create export task and start
-        task = ee.batch.Export.image.toDrive(
-            image=exp_image.ee_image, description=filename[:100], folder=folder, fileNamePrefix=filename, maxPixels=1e9
-        )
+        type = ExportType(type)
+        if type == ExportType.drive:
+            task = ee.batch.Export.image.toDrive(
+                image=exp_image.ee_image, description=filename[:100], folder=folder, fileNamePrefix=filename,
+                maxPixels=1e9, formatOptions=dict(cloudOptimized=True),
+            )
+        elif type == ExportType.asset:
+            # if folder is specified create an EE asset ID from it and filename,
+            # else assume filename is a valid EE asset ID
+            asset_id = utils.asset_id(filename, folder) if folder else filename
+            # fix description for when filename is asset id with forward slashes
+            description = filename.replace('/', '-')[:100]
+            task = ee.batch.Export.image.toAsset(
+                image=exp_image.ee_image, description=description, assetId=asset_id, maxPixels=1e9,
+            )
+        else:
+            task = ee.batch.Export.image.toCloudStorage(
+                image=exp_image.ee_image, description=filename[:100], bucket=folder, assetId=filename, maxPixels=1e9,
+                formatOptions=dict(cloudOptimized=True),
+            )
+
         task.start()
         if wait:  # wait for completion
             self.monitor_export(task)

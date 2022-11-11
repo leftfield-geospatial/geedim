@@ -25,36 +25,12 @@ import pytest
 import rasterio as rio
 from click.testing import CliRunner
 from geedim.cli import cli
-from geedim.utils import root_path
+from geedim.utils import root_path, asset_id
 from rasterio.coords import BoundingBox
 from rasterio.crs import CRS
 from rasterio.features import bounds
 from rasterio.warp import transform_geom
 from rasterio.transform import Affine
-
-
-@pytest.fixture
-def runner():
-    """ click runner for command line execution. """
-    return CliRunner()
-
-
-@pytest.fixture
-def region_25ha_file() -> pathlib.Path:
-    """ Path to region_25ha geojson file. """
-    return root_path.joinpath('tests/data/region_25ha.geojson')
-
-
-@pytest.fixture
-def region_100ha_file() -> pathlib.Path:
-    """ Path to region_100ha geojson file. """
-    return root_path.joinpath('tests/data/region_100ha.geojson')
-
-
-@pytest.fixture
-def region_10000ha_file() -> pathlib.Path:
-    """ Path to region_10000ha geojson file. """
-    return root_path.joinpath('tests/data/region_10000ha.geojson')
 
 
 @pytest.fixture()
@@ -448,14 +424,45 @@ def test_max_tile_dim_error(
     assert 'download limit' in str(result.exception)
 
 
-def test_export_params(l8_image_id: str, region_25ha_file: pathlib.Path, runner: CliRunner):
-    """ Test export starts ok, specifying all cli params"""
+def test_export_drive_params(l8_image_id: str, region_25ha_file: pathlib.Path, runner: CliRunner):
+    """ Test export to google drive starts ok, specifying all cli params"""
     cli_str = (
         f'export -i {l8_image_id} -r {region_25ha_file} -df geedim/test --crs EPSG:3857 --scale 30 '
         f'--dtype uint16 --mask --resampling bilinear --no-wait'
     )
     result = runner.invoke(cli, cli_str.split())
     assert (result.exit_code == 0)
+
+
+def test_export_asset_params(l8_image_id: str, region_25ha_file: pathlib.Path, runner: CliRunner):
+    """ Test export to asset starts ok, specifying all cli params"""
+    # Note when e.g. github runs this test in parallel, it could run into problems trying to overwrite an existing
+    # asset.  The overwrite error won't be raised with --no-wait though.  So this test serves at least to check the
+    # CLI export options work, and won't fail if run in parallel, even if it runs into overwrite problems.
+    folder = f'geedim'
+    test_asset_id = asset_id(l8_image_id, folder)
+    try:
+        ee.data.deleteAsset(test_asset_id)
+    except ee.ee_exception.EEException:
+        pass
+
+    cli_str = (
+        f'export -i {l8_image_id} -r {region_25ha_file} -f {folder} --crs EPSG:3857 --scale 30 '
+        f'--dtype uint16 --mask --resampling bilinear --no-wait --type asset'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert (result.exit_code == 0)
+
+
+def test_export_asset_no_folder_error(l8_image_id: str, region_25ha_file: pathlib.Path, runner: CliRunner):
+    """ Test export to asset raises an error when no folder is specified. """
+    cli_str = (
+        f'export -i {l8_image_id} -r {region_25ha_file} --crs EPSG:3857 --scale 30 '
+        f'--dtype uint16 --mask --resampling bilinear --no-wait --type asset'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0
+    assert '--folder' in result.output
 
 
 @pytest.mark.parametrize('image_list, scale', [('s2_sr_image_id_list', 10), ('l8_9_image_id_list', 30)])

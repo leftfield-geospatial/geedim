@@ -360,3 +360,21 @@ PARAMETER["Central_Meridian",0.0],
 UNIT["Meter",1.0]]"""
     return crs
 
+
+def asset_id(image_id: str, folder: str = None):
+    """
+    Convert an EE image ID and EE asset project into an EE asset ID.
+
+    If ``folder`` is not specified, ``image_id`` is returned as is. Otherwise, ``image_id`` is converted to a name by
+    changing forward slashes to dashes, ``folder`` is split into <root folder> and <sub folder> sections, and a string
+    is returned with EE asset ID format:
+
+        projects/<root folder>/assets/<sub folder(s)>/<image_name>.
+    """
+    if not folder:
+        return image_id
+    im_name = image_id.replace('/', '-')
+    folder = pathlib.PurePosixPath(folder)
+    cloud_folder = pathlib.PurePosixPath(folder.parts[0])
+    asset_path = pathlib.PurePosixPath('/'.join(folder.parts[1:])).joinpath(im_name)
+    return f'projects/{str(cloud_folder)}/assets/{str(asset_path)}'

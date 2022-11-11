@@ -14,6 +14,6 @@
     limitations under the License.
 """
 from geedim.collection import MaskedCollection
-from geedim.enums import CloudMaskMethod, CompositeMethod, ResamplingMethod
+from geedim.enums import CloudMaskMethod, CompositeMethod, ResamplingMethod, ExportType
 from geedim.mask import MaskedImage
 from geedim.utils import Initialize
