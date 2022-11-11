@@ -13,14 +13,20 @@
     See the License for the specific language governing permissions and
     limitations under the License.
 """
+import json
+
 import ee
 from pathlib import Path
 from httplib2 import Http
 import numpy as np
 import rasterio as rio
 from rasterio.crs import CRS
+from rasterio.features import bounds
+from rasterio.warp import transform_geom
+from rasterio.coords import BoundingBox
 from click.testing import CliRunner
 import pytest
+import json
 import geedim as gd
 from geedim import utils, cli
 
@@ -89,69 +95,33 @@ def test_geeml_integration(tmp_path: Path):
         assert ds.transform.yoff == pytest.approx(region['coordinates'][0][2][1])
 
 
-def test_asset_export(tmp_path: Path, region_25ha):
-    """  Export a test image to an asset, then download the asset and check validity. """
-    gd.Initialize()
-
-    base_image = gd.download.BaseImage(ee.Image([1, 2, 3]))
-    _folder = 'geedim'
-    # prevent parallel tests (e.g. in github) from writing to the same asset
-    _filename = f'int_test_asset_export_{np.random.randint(1<<31)}'
-    asset_id = gd.utils.asset_id(_filename, _folder)
-    crs = 'EPSG:3857'
-    scale = 30
-
-    # loop over filename, folder params to test both specified, and only filename specified
-    for ti, filename, folder in zip(range(2), [_filename, asset_id], [_folder, None]):
-        try:
-            # export to asset
-            task = base_image.export(
-                filename, type='asset', folder=folder, crs=crs, scale=scale, region=region_25ha, wait=True
-            )
-            assert task.status()['state'] == 'COMPLETED'
-            assert ee.data.getAsset(asset_id) is not None
-
-            # download asset
-            asset_image = gd.download.BaseImage.from_id(asset_id)
-            download_filename = tmp_path.joinpath(f'integration_test_{ti}.tif')
-            asset_image.download(download_filename)
-            assert download_filename.exists()
-        finally:
-            # delete asset
-            try:
-                ee.data.deleteAsset(asset_id)
-            except ee.ee_exception.EEException:
-                pass
-
-        # test downloaded asset image
-        with rio.open(download_filename, 'r') as im:
-            im : rio.DatasetReader
-            assert im.crs == CRS.from_string(crs)
-            assert im.transform[0] == scale
-            assert im.count == 3
-            for bi in range(1, 4):
-                data = im.read(bi)
-                assert np.all(data == bi)
-
-
-def test_cli_asset_export(l8_image_id, region_25ha_file: Path, runner: CliRunner):
+def test_cli_asset_export(l8_image_id, region_25ha_file: Path, runner: CliRunner, tmp_path: Path):
     """  Export a test image to an asset using the CLI. """
     # create a randomly named folder to allow parallel tests without overwriting the same asset
     gd.Initialize()
     folder = f'geedim/int_test_asset_export_{np.random.randint(1 << 31)}'
     asset_folder = f'projects/{Path(folder).parts[0]}/assets/{Path(folder).parts[1]}'
+    crs = 'EPSG:3857'
+    scale = 30
 
     try:
         # export image to asset via CLI
         test_asset_id = utils.asset_id(l8_image_id, folder)
         ee.data.createAsset(dict(type='Folder'), asset_folder)
         cli_str = (
-            f'export -i {l8_image_id} -r {region_25ha_file} -f {folder} --crs EPSG:3857 --scale 30 '
+            f'export -i {l8_image_id} -r {region_25ha_file} -f {folder} --crs {crs} --scale {scale} '
             f'--dtype uint16 --mask --resampling bilinear --wait --type asset'
         )
         result = runner.invoke(cli.cli, cli_str.split())
         assert (result.exit_code == 0)
         assert ee.data.getAsset(test_asset_id) is not None
+
+        # download the asset image
+        asset_image = gd.download.BaseImage.from_id(test_asset_id)
+        download_filename = tmp_path.joinpath(f'integration_test.tif')
+        asset_image.download(download_filename)
+        assert download_filename.exists()
+
     finally:
         # clean up the asset and its folder
         try:
@@ -159,3 +129,18 @@ def test_cli_asset_export(l8_image_id, region_25ha_file: Path, runner: CliRunner
             ee.data.deleteAsset(asset_folder)
         except ee.ee_exception.EEException:
             pass
+
+    # test downloaded asset image
+    with open(region_25ha_file) as f:
+        region = json.load(f)
+    with rio.open(download_filename, 'r') as im:
+        im : rio.DatasetReader
+        exp_region = transform_geom('EPSG:4326', im.crs, region)
+        exp_bounds = BoundingBox(*bounds(exp_region))
+        assert im.crs == CRS.from_string(crs)
+        assert im.transform[0] == scale
+        assert im.count > 1
+        assert (
+            (im.bounds[0] <= exp_bounds[0]) and (im.bounds[1] <= exp_bounds[1]) and
+            (im.bounds[2] >= exp_bounds[2]) and (im.bounds[3] >= exp_bounds[3])
+        )
