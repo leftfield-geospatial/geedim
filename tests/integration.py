@@ -19,8 +19,10 @@ from httplib2 import Http
 import numpy as np
 import rasterio as rio
 from rasterio.crs import CRS
-import geedim as gd
+from click.testing import CliRunner
 import pytest
+import geedim as gd
+from geedim import utils, cli
 
 
 @pytest.fixture(scope='session', autouse=True)
@@ -107,6 +109,7 @@ def test_asset_export(tmp_path: Path, region_25ha):
                 filename, type='asset', folder=folder, crs=crs, scale=scale, region=region_25ha, wait=True
             )
             assert task.status()['state'] == 'COMPLETED'
+            assert ee.data.getAsset(asset_id) is not None
 
             # download asset
             asset_image = gd.download.BaseImage.from_id(asset_id)
@@ -130,3 +133,29 @@ def test_asset_export(tmp_path: Path, region_25ha):
                 data = im.read(bi)
                 assert np.all(data == bi)
 
+
+def test_cli_asset_export(l8_image_id, region_25ha_file: Path, runner: CliRunner):
+    """  Export a test image to an asset using the CLI. """
+    # create a randomly named folder to allow parallel tests without overwriting the same asset
+    gd.Initialize()
+    folder = f'geedim/int_test_asset_export_{np.random.randint(1 << 31)}'
+    asset_folder = f'projects/{Path(folder).parts[0]}/assets/{Path(folder).parts[1]}'
+
+    try:
+        # export image to asset via CLI
+        test_asset_id = utils.asset_id(l8_image_id, folder)
+        ee.data.createAsset(dict(type='Folder'), asset_folder)
+        cli_str = (
+            f'export -i {l8_image_id} -r {region_25ha_file} -f {folder} --crs EPSG:3857 --scale 30 '
+            f'--dtype uint16 --mask --resampling bilinear --wait --type asset'
+        )
+        result = runner.invoke(cli.cli, cli_str.split())
+        assert (result.exit_code == 0)
+        assert ee.data.getAsset(test_asset_id) is not None
+    finally:
+        # clean up the asset and its folder
+        try:
+            ee.data.deleteAsset(test_asset_id)
+            ee.data.deleteAsset(asset_folder)
+        except ee.ee_exception.EEException:
+            pass

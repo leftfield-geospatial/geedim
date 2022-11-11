@@ -33,30 +33,6 @@ from rasterio.warp import transform_geom
 from rasterio.transform import Affine
 
 
-@pytest.fixture
-def runner():
-    """ click runner for command line execution. """
-    return CliRunner()
-
-
-@pytest.fixture
-def region_25ha_file() -> pathlib.Path:
-    """ Path to region_25ha geojson file. """
-    return root_path.joinpath('tests/data/region_25ha.geojson')
-
-
-@pytest.fixture
-def region_100ha_file() -> pathlib.Path:
-    """ Path to region_100ha geojson file. """
-    return root_path.joinpath('tests/data/region_100ha.geojson')
-
-
-@pytest.fixture
-def region_10000ha_file() -> pathlib.Path:
-    """ Path to region_10000ha geojson file. """
-    return root_path.joinpath('tests/data/region_10000ha.geojson')
-
-
 @pytest.fixture()
 def l4_5_image_id_list(l4_image_id, l5_image_id) -> List[str]:
     """ A list of landsat 4 & 5 image ID's. """
@@ -460,7 +436,10 @@ def test_export_drive_params(l8_image_id: str, region_25ha_file: pathlib.Path, r
 
 def test_export_asset_params(l8_image_id: str, region_25ha_file: pathlib.Path, runner: CliRunner):
     """ Test export to asset starts ok, specifying all cli params"""
-    folder = 'geedim'
+    # Note when e.g. github runs this test in parallel, it could run into problems trying to overwrite an existing
+    # asset.  The overwrite error won't be raised with --no-wait though.  So this test serves at least to check the
+    # CLI export options work, and won't fail if run in parallel, even if it runs into overwrite problems.
+    folder = f'geedim'
     test_asset_id = asset_id(l8_image_id, folder)
     try:
         ee.data.deleteAsset(test_asset_id)
