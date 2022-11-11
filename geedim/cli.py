@@ -540,9 +540,10 @@ def download(obj, image_id, bbox, region, like, download_dir, mask, max_tile_siz
     and downloaded as separate tiles, then re-assembled into a single GeoTIFF.  Downloaded image files are populated
     with metadata from the Earth Engine image and STAC.
 
-    This command can be chained after the ``composite`` command, to download the composite image.  It can also be
-    chained after the ``search`` command, in which case the search result images will be downloaded, without the need
-    to specify image IDs with ``--id``, or region with ``--bbox`` / ``--region``.
+    This command can be chained after the ``composite`` command, to download the composite image, or it can be
+    chained after an asset ``export`` to download the asset image.  It can also be chained after the ``search`` command,
+    in which case the search result images will be downloaded, without the need to specify image IDs with ``--id``, or
+    region with ``--bbox`` / ``--region``.
 
     The following auxiliary bands are added to images from collections with support for cloud/shadow masking:
     \b
@@ -665,9 +666,10 @@ def export(obj, image_id, type, folder, bbox, region, like, mask, wait, **kwargs
     Examples
     --------
 
-    Export a region of a Landsat-9 image to Google Drive, applying the cloud/shadow mask and converting to uint16::
+    Export a region of a Landsat-9 image to an Earth Engine asset, applying the cloud/shadow mask and converting to
+    uint16::
 
-        geedim export -i LANDSAT/LC09/C02/T1_L2/LC09_173083_20220308 --mask --bbox 21.6 -33.5 21.7 -33.4 --dtype uint16
+        geedim export -i LANDSAT/LC09/C02/T1_L2/LC09_173083_20220308 --type asset --folder <your cloud project> --mask --bbox 21.6 -33.5 21.7 -33.4 --dtype uint16
 
     Export the results of a MODIS NBAR search to Google Drive in the 'geedim' folder, specifying a CRS and scale to
     reproject to::
