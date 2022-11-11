@@ -599,6 +599,7 @@ def test_export_drive(user_fix_base_image: BaseImage, region_25ha: Dict):
 
 def test_export_asset(user_fix_base_image: BaseImage, region_25ha: Dict):
     """ Test start of a small export to EE asset. """
+    # TODO: consider removing this slow test in favour of the equivalent integration test
     filename = f'test_export_{np.random.randint(1<<31)}'
     folder = 'geedim'
     asset_id = utils.asset_id(filename, folder)
