@@ -70,8 +70,8 @@ im.download('s2_entropy.tif', region=region, max_tile_size=8)
 
 # [export-asset-download-start]
 # create EE asset ID, export computed image to asset
-asset_id = f'projects/geedim/assets/s2_entropy'
-_ = im.export(asset_id, type='asset', region=region)
+asset_id = f'projects/<your cloud project>/assets/s2_entropy'
+_ = im.export(asset_id, type='asset', region=region, wait=True)
 
 # create and download the asset image
 im = gd.MaskedImage.from_id(asset_id)
