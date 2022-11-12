@@ -127,7 +127,7 @@ Output:
 Computed images and user memory
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Earth engine has a size limit (32 MB) on `download requests <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`_.  ``geedim`` avoids exceeding this by tiling downloads.  However, Earth engine also has a `limit on user memory <https://developers.google.com/earth-engine/guides/usage#per-request_memory_footprint>`_ for image computations.  In some situations, this limit can be exceeded when downloading large computed images.  This generates a *user memory limit exceeded* error.  Unfortunately, there is no way for ``geedim`` to adjust tiles to avoid exceeding this limit, as the memory requirements of a computation are not known in advance.  The user has two options for working around this error:
+Earth engine has a size limit of 32 MB on `download requests <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`_.  ``geedim`` avoids exceeding this by tiling downloads.  However, Earth engine also has a `limit on user memory <https://developers.google.com/earth-engine/guides/usage#per-request_memory_footprint>`_ for image computations.  In some situations, this limit can be exceeded when downloading large computed images.  This generates a *user memory limit exceeded* error.  Unfortunately, there is no way for ``geedim`` to adjust tiles to avoid exceeding this limit, as the memory requirements of a computation are not known in advance.  The user has two options for working around this error:
 
 1) max_tile_size
 ~~~~~~~~~~~~~~~~
