@@ -20,6 +20,7 @@ supported collections. Images and composites can be downloaded; or exported to G
 Google Cloud Storage. Images larger than the
 `EE size limit <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`_ are split and downloaded
 as separate tiles, then re-assembled into a single GeoTIFF.
+
 .. description_end
 
 See the documentation site for more detail: https://geedim.readthedocs.io/.

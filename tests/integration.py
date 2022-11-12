@@ -13,11 +13,10 @@
     See the License for the specific language governing permissions and
     limitations under the License.
 """
-import json
-
 import ee
 from pathlib import Path
 from httplib2 import Http
+import json
 import numpy as np
 import rasterio as rio
 from rasterio.crs import CRS
@@ -26,7 +25,6 @@ from rasterio.warp import transform_geom
 from rasterio.coords import BoundingBox
 from click.testing import CliRunner
 import pytest
-import json
 import geedim as gd
 from geedim import utils, cli
 
