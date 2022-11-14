@@ -803,7 +803,7 @@ class BaseImage:
             )
         else:
             task = ee.batch.Export.image.toCloudStorage(
-                image=exp_image.ee_image, description=filename[:100], bucket=folder, assetId=filename, maxPixels=1e9,
+                image=exp_image.ee_image, description=filename[:100], bucket=folder, maxPixels=1e9,
                 formatOptions=dict(cloudOptimized=True),
             )
 
