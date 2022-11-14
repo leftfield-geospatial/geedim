@@ -132,7 +132,7 @@ Earth engine has a size limit of 32 MB on `download requests <https://developers
 1) max_tile_size
 ~~~~~~~~~~~~~~~~
 
-Decreasing the ``max_tile_size`` argument to :meth:`geedim.mask.MaskedImage.download` reduces the user memory required by computations.  The default value is 32 MB; reducing this by half, or a quarter usually solves the problem.  You may need to experiment to find a reduced value that works.  :option:`--max-tile-size <geedim-download --max-tile-size>` is the equivalent option on the command line.
+Decreasing the ``max_tile_size`` argument to :meth:`geedim.mask.MaskedImage.download` reduces the user memory required by computations.  The user would need to experiment to find a reduced value that solves any memory limit problem.  :option:`--max-tile-size <geedim-download --max-tile-size>` is the equivalent option on the command line.
 
 .. literalinclude:: examples/api_getting_started.py
     :language: python
