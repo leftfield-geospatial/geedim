@@ -590,9 +590,14 @@ def test_metadata(landsat_ndvi_base_image: BaseImage, region_25ha: Dict, tmp_pat
             assert key in band_dict
 
 
-def test_export_drive(user_fix_base_image: BaseImage, region_25ha: Dict):
-    """ Test start of a small export to google drive. """
-    task = user_fix_base_image.export('test_export.tif', folder='geedim', scale=30, region=region_25ha, wait=False)
+@pytest.mark.parametrize('type', [ExportType.drive, ExportType.asset, ExportType.cloud])  # yapf: disable
+def test_start_export(type, user_fix_base_image: BaseImage, region_25ha: Dict):
+    """ Test start of a small export. """
+    # Note that this export should start successfully, but will ultimately fail for the asset and cloud options.  For
+    # the asset option, there will be an overwrite issue.  For cloud storage, there is no 'geedim' bucket.
+    task = user_fix_base_image.export(
+        'test_export', type=type, folder='geedim', scale=30, region=region_25ha, wait=False
+    )
     assert task.active()
     assert task.status()['state'] == 'READY'
 
