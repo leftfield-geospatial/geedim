@@ -366,8 +366,8 @@ def test_composite_region_date_ordering(image_list, method, region, date, reques
 
 @pytest.mark.parametrize(
     'image_list, method, mask', [
-        ('s2_sr_image_list', CompositeMethod.q_mosaic, True), ('s2_sr_image_list', CompositeMethod.mosaic, False),
-        ('l8_9_image_list', CompositeMethod.medoid, True), ('l8_9_image_list', CompositeMethod.median, False),
+        ('s2_sr_image_list', CompositeMethod.medoid, True), ('s2_sr_image_list', CompositeMethod.mosaic, False),
+        ('l8_9_image_list', CompositeMethod.medoid, True), ('l8_9_image_list', CompositeMethod.medoid, False),
     ]
 )
 def test_composite_mask(image_list, method, mask, region_100ha, request):
