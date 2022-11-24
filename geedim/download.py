@@ -447,7 +447,7 @@ class BaseImage:
                     f'crs, crs_transform & shape.'
                 )
 
-        if (not self.bounded) and (not region and (not crs or not crs_transform or not shape)):
+        if (not region and (not crs or not crs_transform or not shape)) and (not self.bounded):
             # if the image has no footprint (i.e. it is 'unbounded'), either region; or crs, crs_transform and shape
             # must be specified
             raise ValueError(
@@ -455,7 +455,7 @@ class BaseImage:
                 f'shape.'
             )
 
-        if self.crs == 'EPSG:4326' and not scale and not shape:
+        if not scale and not shape and self.crs == 'EPSG:4326':
             # If the image is in EPSG:4326, either scale (in meters); or shape must be specified.
             # Note that ee.Image.prepare_for_export() expects a scale in meters, but if the image is EPSG:4326,
             # the default scale is in degrees.
@@ -478,7 +478,7 @@ class BaseImage:
             if not self.has_fixed_projection:
                 raise ValueError(
                     'This image has no fixed projection and cannot be resampled.  If this image is a composite, '
-                    'you can resample the images used to create the composite.'
+                    'you can resample the compimages used to create the composite.'
                 )
             ee_image = utils.resample(ee_image, resampling)
 
