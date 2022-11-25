@@ -572,6 +572,7 @@ class MaskedCollection:
             raise ValueError(f'Unsupported composite method: {method}')
 
         # populate composite image metadata with info on component images
+        # TODO: speed this up, e.g. for large S2 collections
         props = self._get_properties(ee_collection)
         if len(props) == 0:
             raise ValueError('The collection is empty.')

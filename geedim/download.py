@@ -481,7 +481,7 @@ class BaseImage:
                     'you can resample the compimages used to create the composite.'
                 )
             ee_image = utils.resample(ee_image, resampling)
-
+        # TODO: only do this if there is a change?  Or do we need to standardise the bands?
         ee_image = self._convert_dtype(ee_image, dtype=dtype or im_dtype)
 
         # configure the export parameter values

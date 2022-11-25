@@ -21,8 +21,12 @@ from typing import Optional, List
 """
 
 
-def sum_distance(image: ee.Image, collection: ee.ImageCollection, name:str = 'sumdist') -> ee.Image:
+def sum_distance(
+    image: ee.Image, collection: ee.ImageCollection, bands: Optional[List] = None, omit_mask: bool = False
+) -> ee.Image:
     """ Find the sum of the euclidean spectral distances between the provided ``image`` and ``collection``. """
+    if not bands:
+        bands = collection.first().bandNames()
 
     def accum_dist_to_image(to_image: ee.Image, sum_image: ee.Image) -> ee.Image:
         """
@@ -36,18 +40,20 @@ def sum_distance(image: ee.Image, collection: ee.ImageCollection, name:str = 'su
         # unmask the other image so that it does not mask summed distance when added
         unmask_to_image = ee.Image(to_image).unmask()
         # find the distance between image and unmask_to_image
-        dist = image.spectralDistance(unmask_to_image)
-        # zero distances where to_image is masked
-        zero_mask = to_image.mask().reduce(ee.Reducer.allNonZero()).Not()
-        dist = dist.where(zero_mask, 0)
+
+        dist = image.select(bands).spectralDistance(unmask_to_image.select(bands))
+        if omit_mask:
+            # zero distances where to_image is masked
+            zero_mask = to_image.mask().reduce(ee.Reducer.allNonZero()).Not()
+            dist = dist.where(zero_mask, 0)
         # return accumulated distance
         return ee.Image(sum_image).add(dist)
 
-    return ee.Image(collection.iterate(accum_dist_to_image, ee.Image(0).rename(name)))
+    return ee.Image(collection.iterate(accum_dist_to_image, ee.Image(0)))
 
 
 def medoid_score(
-    collection: ee.ImageCollection, bands: Optional[List] = None, name: str = 'sumdist'
+    collection: ee.ImageCollection, bands: Optional[List] = None, name: str = 'sumdist', omit_mask: bool = False,
 ) -> ee.ImageCollection:
     """
     Add medoid score band (i.e. summed distance to all other images) to all images in ``collection``.
@@ -60,32 +66,31 @@ def medoid_score(
         Bands to calculate the medoid score from (default: use all bands).
     name: str, optional
         Name of score band to add (default: 'sumdist').
+    omit_mask: bool, optional
+        Whether to omit the contribution of masked image pixels to the summed distance (default: False).
 
     Returns
     -------
     ee.ImageCollection
         Collection with added medoid score band.
     """
-    if not bands:
-        bands = collection.first().bandNames()
-
-    sel_coll = collection.select(bands)
 
     def add_score_band(image: ee.Image):
         """ Add medoid score band to provided ``image``. """
         image = ee.Image(image)
-        sel_image = image.select(bands)
 
         # Compute the sum of the euclidean distance between the current image
         # and every image in the rest of the collection
-        dist = sum_distance(sel_image, sel_coll, name=name)
+        # TODO: many (~50%) of these distance calcs are duplicates, can we make this more efficient?
+        dist = sum_distance(image, collection, bands=bands, omit_mask=omit_mask)
 
         # multiply by -1 so that highest score is closest distance
         dist = dist.multiply(-1)
-        return image.addBands(dist)
+        return image.addBands(dist.rename(name))
 
-    medoid_coll = collection.map(add_score_band)
-    return medoid_coll
+    # TODO: can we avoid having two copies (selected and unselected) of the image and collection.  would it help
+    #  speed things up and reduce mem?
+    return collection.map(add_score_band)
 
 
 def medoid(collection: ee.ImageCollection, bands: Optional[List] = None) -> ee.Image:
@@ -105,8 +110,9 @@ def medoid(collection: ee.ImageCollection, bands: Optional[List] = None) -> ee.I
     ee.Image
         Medoid composite image.
     """
-    medoid_coll = medoid_score(collection, bands)
-    comp_im = medoid_coll.qualityMosaic('sumdist')
+    name = 'sumdist'
+    medoid_coll = medoid_score(collection, bands, name=name)
+    comp_im = medoid_coll.qualityMosaic(name)
     # remove score band and return
-    keep_bands = comp_im.bandNames().remove('sumdist')
+    keep_bands = comp_im.bandNames().remove(name)
     return comp_im.select(keep_bands)
