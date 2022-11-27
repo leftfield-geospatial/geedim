@@ -52,9 +52,10 @@ def sum_distance(
         # return accumulated distance
         return ee.Image(sum_image).add(dist.unmask())
 
-    sumdist = collection.iterate(accum_dist_to_image, ee.Image(0))
+    sumdist = ee.Image(collection.iterate(accum_dist_to_image, ee.Image(0)))
+    # sumdist = sumdist.updateMask(image.mask().reduce(ee.Reducer.allNonZero()))
     # TODO: mask sumdist with image mask?
-    return ee.Image(sumdist)
+    return sumdist
 
 
 def medoid_score(
