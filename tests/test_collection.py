@@ -334,6 +334,8 @@ def test_search_add_props(region_25ha):
         ('s2_sr_image_list', CompositeMethod.q_mosaic, None, '2021-10-01'),
         ('gedi_image_list', CompositeMethod.mosaic, 'region_10000ha', None),
         ('gedi_image_list', CompositeMethod.mosaic, None, '2020-09-01'),
+        ('l8_9_image_list', CompositeMethod.medoid, 'region_10000ha', None),
+        ('l8_9_image_list', CompositeMethod.medoid, None, '2021-10-01'),
     ]
 )
 def test_composite_region_date_ordering(image_list, method, region, date, request):
@@ -366,8 +368,10 @@ def test_composite_region_date_ordering(image_list, method, region, date, reques
 
 @pytest.mark.parametrize(
     'image_list, method, mask', [
-        ('s2_sr_image_list', CompositeMethod.medoid, True), ('s2_sr_image_list', CompositeMethod.mosaic, False),
-        ('l8_9_image_list', CompositeMethod.medoid, True), ('l8_9_image_list', CompositeMethod.medoid, False),
+        ('s2_sr_image_list', CompositeMethod.q_mosaic, True), ('s2_sr_image_list', CompositeMethod.mosaic, False),
+        ('l8_9_image_list', CompositeMethod.medoid, True), ('l8_9_image_list', CompositeMethod.median, False),
+        ('s2_sr_image_list', CompositeMethod.medoid, True), ('s2_sr_image_list', CompositeMethod.medoid, False),
+        ('l8_9_image_list', CompositeMethod.medoid, False),
     ]
 )
 def test_composite_mask(image_list, method, mask, region_100ha, request):

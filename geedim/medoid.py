@@ -14,7 +14,7 @@
    limitations under the License.
 """
 import ee
-from enums import SpectralDistanceMetric
+from geedim.enums import SpectralDistanceMetric
 from typing import Optional, List
 """
     This module contains Medoid related functionality adapted from 'Google Earth Engine tools' under MIT 
