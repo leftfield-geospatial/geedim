@@ -377,6 +377,7 @@ class MaskedCollection:
         """
 
         date = parse_date(date, 'date')
+        sort_methods = [CompositeMethod.mosaic, CompositeMethod.q_mosaic, CompositeMethod.medoid]
 
         if not self._filtered:
             raise UnfilteredError(
@@ -394,12 +395,12 @@ class MaskedCollection:
 
         def prepare_image(ee_image: ee.Image):
             """ Prepare an Earth Engine image for use in compositing. """
-            if date and (method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic]):
+            if date and (method in sort_methods):
                 date_dist = ee.Number(ee_image.get('system:time_start')).subtract(ee.Date(date).millis()).abs()
                 ee_image = ee_image.set('DATE_DIST', date_dist)
 
             gd_image = self.image_type(ee_image, **kwargs)
-            if region and (method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic]):
+            if region and (method in sort_methods):
                 gd_image._set_region_stats(region=region, scale=self.stats_scale)
             if mask:
                 gd_image.mask_clouds()
@@ -407,7 +408,7 @@ class MaskedCollection:
 
         ee_collection = self._ee_collection.map(prepare_image)
 
-        if method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic, CompositeMethod.medoid]:
+        if method in sort_methods:
             if date:
                 ee_collection = ee_collection.sort('DATE_DIST', opt_ascending=False)
             elif region:
