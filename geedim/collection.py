@@ -407,7 +407,7 @@ class MaskedCollection:
 
         ee_collection = self._ee_collection.map(prepare_image)
 
-        if method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic]:
+        if method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic, CompositeMethod.medoid]:
             if date:
                 ee_collection = ee_collection.sort('DATE_DIST', opt_ascending=False)
             elif region:
@@ -416,9 +416,9 @@ class MaskedCollection:
                 ee_collection = ee_collection.sort('system:time_start')
         else:
             if date:
-                logger.warning('`date` is valid for `mosaic` and `q_mosaic` methods only.')
+                logger.warning('`date` is valid for `mosaic`, `q_mosaic` and `medoid` methods only.')
             elif region:
-                logger.warning('`region` is valid for `mosaic` and `q_mosaic` methods only.')
+                logger.warning('`region` is valid for `mosaic`, `q_mosaic` and `medoid` methods only.')
 
         return ee_collection
 
@@ -524,13 +524,13 @@ class MaskedCollection:
             (the default).  See :class:`~geedim.enums.ResamplingMethod` for available options.
         date: datetime, str, optional
             Sort collection images by their absolute difference in capture time from this date.  Useful for
-            prioritising pixels from images closest to this date.  Valid for the `q-mosaic`
-            and `mosaic` ``method`` only.  If None, no time difference sorting is done (the default).
+            prioritising pixels from images closest to this date.  Valid for the `q-mosaic`, `mosaic` and
+            `medoid` ``method``s only.  If None, no time difference sorting is done (the default).
         region: dict, optional
             Sort collection images by their cloudless portion inside this geojson polygon (only if ``date`` is not
             specified).  This is useful to prioritise pixels from the least cloudy image(s).  Valid for the `q-mosaic`
-            and `mosaic` ``method`` only.  If None, no cloudless portion sorting is done (the default). If ``date`` and
-            ``region`` are not specified, collection images are sorted by their capture date.
+            `mosaic`, and `medoid` ``method``s only.  If None, no cloudless portion sorting is done (the default). If
+            ``date`` and ``region`` are not specified, collection images are sorted by their capture date.
         **kwargs
             Optional cloud/shadow masking parameters - see :meth:`geedim.mask.MaskedImage.__init__` for details.
 
