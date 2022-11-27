@@ -14,19 +14,22 @@
    limitations under the License.
 """
 import ee
+from enums import SpectralDistanceMetric
 from typing import Optional, List
 """
     This module contains Medoid related functionality adapted from 'Google Earth Engine tools' under MIT 
     license.  See https://github.com/gee-community/gee_tools.
 """
 
-
 def sum_distance(
-    image: ee.Image, collection: ee.ImageCollection, bands: Optional[List] = None, omit_mask: bool = False
+    image: ee.Image, collection: ee.ImageCollection, bands: Optional[List] = None,
+    metric: SpectralDistanceMetric = SpectralDistanceMetric.sed, omit_mask: bool = False,
 ) -> ee.Image:
     """ Find the sum of the euclidean spectral distances between the provided ``image`` and ``collection``. """
     if not bands:
         bands = collection.first().bandNames()
+
+    image = ee.Image(image).select(bands)
 
     def accum_dist_to_image(to_image: ee.Image, sum_image: ee.Image) -> ee.Image:
         """
@@ -38,18 +41,20 @@ def sum_distance(
         # - Where any other image in ``collection`` is masked, the summed distance should omit its contribution.
 
         # unmask the other image so that it does not mask summed distance when added
-        unmask_to_image = ee.Image(to_image).unmask()
-        # find the distance between image and unmask_to_image
+        to_image = ee.Image(to_image).unmask(0).select(bands)
 
-        dist = image.select(bands).spectralDistance(unmask_to_image.select(bands))
+        # find the distance between image and unmask_to_image
+        dist = image.spectralDistance(to_image, metric.value)
         if omit_mask:
             # zero distances where to_image is masked
             zero_mask = to_image.mask().reduce(ee.Reducer.allNonZero()).Not()
             dist = dist.where(zero_mask, 0)
         # return accumulated distance
-        return ee.Image(sum_image).add(dist)
+        return ee.Image(sum_image).add(dist.unmask())
 
-    return ee.Image(collection.iterate(accum_dist_to_image, ee.Image(0)))
+    sumdist = collection.iterate(accum_dist_to_image, ee.Image(0))
+    # TODO: mask sumdist with image mask?
+    return ee.Image(sumdist)
 
 
 def medoid_score(
