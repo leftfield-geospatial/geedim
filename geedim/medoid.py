@@ -41,10 +41,13 @@ def sum_distance(
         # - Where any other image in ``collection`` is masked, the summed distance should omit its contribution.
 
         # unmask the other image so that it does not mask summed distance when added
-        to_image = ee.Image(to_image).unmask(0).select(bands)
+        to_image = ee.Image(to_image).unmask().select(bands)
 
         # find the distance between image and unmask_to_image
         dist = image.spectralDistance(to_image, metric.value)
+        if metric == SpectralDistanceMetric.sed:
+            dist = dist.sqrt()      # necessary for summing with other distances
+        # dist = euclideanDistance(image, to_image, bands=bands)
         if omit_mask:
             # zero distances where to_image is masked
             zero_mask = to_image.mask().reduce(ee.Reducer.allNonZero()).Not()
