@@ -809,7 +809,8 @@ def composite(obj, image_id, mask, method, resampling, bbox, region, date):
     gd_collection = MaskedCollection.from_list(obj.image_list)
     obj.image_list = [
         gd_collection.composite(
-            method=method, mask=mask, resampling=resampling, region=obj.region, date=date, **obj.cloud_kwargs
+            method=method, mask=mask, resampling=resampling, region=obj.region if (region or bbox) else None, date=date,
+            **obj.cloud_kwargs
         )
     ]
 
