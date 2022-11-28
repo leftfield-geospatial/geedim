@@ -56,7 +56,7 @@ def sum_distance(
 
     sumdist = ee.Image(collection.iterate(accum_dist_to_image, ee.Image(0)))
     # TODO: mask sumdist with image mask?
-    sumdist = sumdist.updateMask(image.mask().reduce(ee.Reducer.allNonZero()))
+    # sumdist = sumdist.updateMask(image.mask().reduce(ee.Reducer.allNonZero()))
     return sumdist
 
 
@@ -116,7 +116,6 @@ def medoid(collection: ee.ImageCollection, bands: Optional[List] = None) -> ee.I
     name = 'sumdist'
     medoid_coll = medoid_score(collection, bands, name=name)
     comp_im = medoid_coll.qualityMosaic(name)
-    return comp_im
     # remove score band and return
     keep_bands = comp_im.bandNames().remove(name)
     return comp_im.select(keep_bands)
