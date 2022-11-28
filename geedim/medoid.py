@@ -21,48 +21,47 @@ from typing import Optional, List
     license.  See https://github.com/gee-community/gee_tools.
 """
 
+
 def sum_distance(
     image: ee.Image, collection: ee.ImageCollection, bands: Optional[List] = None,
-    metric: SpectralDistanceMetric = SpectralDistanceMetric.sed, omit_mask: bool = False,
+    metric: SpectralDistanceMetric = SpectralDistanceMetric.sed,
 ) -> ee.Image:
-    """ Find the sum of the euclidean spectral distances between the provided ``image`` and ``collection``. """
+    """ Find the sum of the spectral distances between the provided ``image`` and image ``collection``. """
+    metric = SpectralDistanceMetric(metric)
     if not bands:
         bands = collection.first().bandNames()
-
     image = ee.Image(image).select(bands)
 
     def accum_dist_to_image(to_image: ee.Image, sum_image: ee.Image) -> ee.Image:
         """
-        Earth engine iterator function to find the sum of the euclidean spectral distances between ``image`` and
-        ``to_image``.
+        Earth engine iterator function to find the sum of the spectral distances between ``image`` and ``to_image``.
         """
+
         # Notes on masking:
-        # - Where ``image`` is masked, the summed distance should be masked
+        # - Where ``image`` is masked, the summed distance should be masked.
         # - Where any other image in ``collection`` is masked, the summed distance should omit its contribution.
 
-        # unmask the other image so that it does not mask summed distance when added
-        to_image = ee.Image(to_image).unmask().select(bands)
+        to_image = ee.Image(to_image).select(bands)
 
-        # find the distance between image and unmask_to_image
+        # Find the distance between image and to_image.  Both images are not unmasked so that distance will be
+        # masked where one or both are masked.
         dist = image.spectralDistance(to_image, metric.value)
         if metric == SpectralDistanceMetric.sed:
-            dist = dist.sqrt()      # necessary for summing with other distances
-        # dist = euclideanDistance(image, to_image, bands=bands)
-        if omit_mask:
-            # zero distances where to_image is masked
-            zero_mask = to_image.mask().reduce(ee.Reducer.allNonZero()).Not()
-            dist = dist.where(zero_mask, 0)
-        # return accumulated distance
+            # sqrt scaling is necessary for summing with other distances and equivalence to original method
+            dist = dist.sqrt()
+
+        # Accumulate the distance.  It is first unmasked so that it does not mask the accumulated distance where
+        # either to_image is masked, or image or to_image is not filled.
         return ee.Image(sum_image).add(dist.unmask())
 
     sumdist = ee.Image(collection.iterate(accum_dist_to_image, ee.Image(0)))
-    # sumdist = sumdist.updateMask(image.mask().reduce(ee.Reducer.allNonZero()))
     # TODO: mask sumdist with image mask?
+    sumdist = sumdist.updateMask(image.mask().reduce(ee.Reducer.allNonZero()))
     return sumdist
 
 
 def medoid_score(
-    collection: ee.ImageCollection, bands: Optional[List] = None, name: str = 'sumdist', omit_mask: bool = False,
+    collection: ee.ImageCollection, bands: Optional[List] = None, name: str = 'sumdist',
 ) -> ee.ImageCollection:
     """
     Add medoid score band (i.e. summed distance to all other images) to all images in ``collection``.
@@ -75,8 +74,6 @@ def medoid_score(
         Bands to calculate the medoid score from (default: use all bands).
     name: str, optional
         Name of score band to add (default: 'sumdist').
-    omit_mask: bool, optional
-        Whether to omit the contribution of masked image pixels to the summed distance (default: False).
 
     Returns
     -------
@@ -91,14 +88,11 @@ def medoid_score(
         # Compute the sum of the euclidean distance between the current image
         # and every image in the rest of the collection
         # TODO: many (~50%) of these distance calcs are duplicates, can we make this more efficient?
-        dist = sum_distance(image, collection, bands=bands, omit_mask=omit_mask)
+        dist = sum_distance(image, collection, bands=bands)
 
-        # multiply by -1 so that highest score is closest distance
-        dist = dist.multiply(-1)
-        return image.addBands(dist.rename(name))
+        # multiply by -1 so that highest score is lowest summed distance
+        return image.addBands(dist.multiply(-1).rename(name))
 
-    # TODO: can we avoid having two copies (selected and unselected) of the image and collection.  would it help
-    #  speed things up and reduce mem?
     return collection.map(add_score_band)
 
 
@@ -122,6 +116,7 @@ def medoid(collection: ee.ImageCollection, bands: Optional[List] = None) -> ee.I
     name = 'sumdist'
     medoid_coll = medoid_score(collection, bands, name=name)
     comp_im = medoid_coll.qualityMosaic(name)
+    return comp_im
     # remove score band and return
     keep_bands = comp_im.bandNames().remove(name)
     return comp_im.select(keep_bands)
