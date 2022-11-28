@@ -23,7 +23,8 @@ from typing import Dict, List, Union
 import ee
 import tabulate
 import textwrap as wrap
-from geedim import schema, medoid
+from geedim import schema
+from geedim.medoid import medoid
 from geedim.download import BaseImage
 from geedim.enums import ResamplingMethod, CompositeMethod
 from geedim.errors import UnfilteredError, InputImageError
@@ -377,7 +378,7 @@ class MaskedCollection:
         """
 
         date = parse_date(date, 'date')
-        sort_methods = [CompositeMethod.mosaic, CompositeMethod.q_mosaic]
+        sort_methods = [CompositeMethod.mosaic, CompositeMethod.q_mosaic, CompositeMethod.medoid]
 
         if not self._filtered:
             raise UnfilteredError(
@@ -564,7 +565,7 @@ class MaskedCollection:
             comp_image = ee_collection.median()
         elif method == CompositeMethod.medoid:
             # limit medoid to surface reflectance bands
-            comp_image = medoid.medoid(ee_collection, bands=self.refl_bands)
+            comp_image = medoid(ee_collection, bands=self.refl_bands)
         elif method == CompositeMethod.mode:
             comp_image = ee_collection.mode()
         elif method == CompositeMethod.mean:
