@@ -377,7 +377,7 @@ class MaskedCollection:
         """
 
         date = parse_date(date, 'date')
-        sort_methods = [CompositeMethod.mosaic, CompositeMethod.q_mosaic, CompositeMethod.medoid]
+        sort_methods = [CompositeMethod.mosaic, CompositeMethod.q_mosaic]
 
         if not self._filtered:
             raise UnfilteredError(
