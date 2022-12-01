@@ -401,7 +401,14 @@ class Sentinel2ClImage(CloudMaskedImage):
                 dark_mask = ee_im.select('SCL').neq(6).And(dark_mask)
 
             proj = get_projection(ee_im, min_scale=False)
-            shadow_azimuth = ee.Number(90).subtract(ee.Number(ee_im.get('MEAN_SOLAR_AZIMUTH_ANGLE')))
+            # Note:
+            # S2 MEAN_SOLAR_AZIMUTH_ANGLE (SAA) appears to be measured clockwise with 0 at N (i.e. shadow goes in the
+            # opposite direction), directionalDistanceTransform() angle appears to be measured clockwise with 0 at W.
+            # So we need to add/subtract 180 to SAA to get shadow angle in S2 convention, then add 90 to get
+            # directionalDistanceTransform() convention i.e. we need to add -180 + 90 = -90 to the SAA.  This is not
+            # the same as in the EE tutorial which is 90-SAA
+            # (https://developers.google.com/earth-engine/tutorials/community/sentinel-2-s2cloudless).
+            shadow_azimuth = ee.Number(-90).add(ee.Number(ee_im.get('MEAN_SOLAR_AZIMUTH_ANGLE')))
             proj_pixels = ee.Number(shadow_dist).divide(proj.nominalScale()).round()
             # Project the cloud mask in the direction of the shadows it will cast.
             cloud_cast_proj = cloud_mask.directionalDistanceTransform(shadow_azimuth, proj_pixels).select('distance')
