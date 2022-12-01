@@ -100,6 +100,7 @@ def abbreviate(name: str) -> str:
 
 
 class MaskedCollection:
+    _sort_methods = [CompositeMethod.mosaic, CompositeMethod.q_mosaic, CompositeMethod.medoid]
 
     def __init__(self, ee_collection: ee.ImageCollection, add_props: List[str] = None):
         """
@@ -322,11 +323,13 @@ class MaskedCollection:
             return None
         return [bname for bname, bdict in self.stac.band_props.items() if 'center_wavelength' in bdict]
 
-    def _get_properties(self, ee_collection: ee.ImageCollection) -> Dict:
+    def _get_properties(self, ee_collection: ee.ImageCollection, schema=None) -> Dict:
         """ Retrieve properties of images in a given Earth Engine image collection. """
+        if not schema:
+            schema = self.schema
 
         # the properties to retrieve
-        prop_key_list = ee.List(list(self.schema.keys()))
+        prop_key_list = ee.List(list(schema.keys()))
 
         def aggregrate_props(ee_image, coll_list):
             im_dict = ee_image.toDictionary(prop_key_list)
@@ -349,7 +352,7 @@ class MaskedCollection:
 
     def _get_properties_table(self, properties: Dict, schema: Dict = None) -> str:
         """
-        Format the given properties into a table.  Orders properties (columns) according :attr:`schema` and
+        Format the given properties into a table.  Orders properties (columns) according to :attr:`schema` and
         replaces long form property names with abbreviations.
         """
         if not schema:
@@ -378,7 +381,6 @@ class MaskedCollection:
         """
 
         date = parse_date(date, 'date')
-        sort_methods = [CompositeMethod.mosaic, CompositeMethod.q_mosaic, CompositeMethod.medoid]
 
         if not self._filtered:
             raise UnfilteredError(
@@ -396,12 +398,12 @@ class MaskedCollection:
 
         def prepare_image(ee_image: ee.Image):
             """ Prepare an Earth Engine image for use in compositing. """
-            if date and (method in sort_methods):
+            if date and (method in self._sort_methods):
                 date_dist = ee.Number(ee_image.get('system:time_start')).subtract(ee.Date(date).millis()).abs()
                 ee_image = ee_image.set('DATE_DIST', date_dist)
 
             gd_image = self.image_type(ee_image, **kwargs)
-            if region and (method in sort_methods):
+            if region and (method in self._sort_methods):
                 gd_image._set_region_stats(region=region, scale=self.stats_scale)
             if mask:
                 gd_image.mask_clouds()
@@ -409,7 +411,7 @@ class MaskedCollection:
 
         ee_collection = self._ee_collection.map(prepare_image)
 
-        if method in sort_methods:
+        if method in self._sort_methods:
             if date:
                 ee_collection = ee_collection.sort('DATE_DIST', opt_ascending=False)
             elif region:
@@ -575,7 +577,9 @@ class MaskedCollection:
 
         # populate composite image metadata with info on component images
         # TODO: speed this up, e.g. for large S2 collections
-        props = self._get_properties(ee_collection)
+
+        _comp_schema = {k: schema.default_prop_schema[k] for k in ['system:id', 'system:time_start']}
+        props = self._get_properties(ee_collection, schema=_comp_schema)
         if len(props) == 0:
             raise ValueError('The collection is empty.')
         props_str = self._get_properties_table(props)
@@ -587,7 +591,7 @@ class MaskedCollection:
         end_date = max(dates).strftime('%Y_%m_%d')
 
         method_str = method.value.upper()
-        if method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic] and date:
+        if method in self._sort_methods and date:
             method_str += '-' + date.strftime('%Y_%m_%d')
 
         comp_id = f'{self.name}/{start_date}-{end_date}-{method_str}-COMP'
