@@ -379,6 +379,7 @@ class MaskedCollection:
         Prepare the Earth Engine collection for compositing. See :meth:`~MaskedCollection.composite` for
         parameter descriptions.
         """
+        # TODO: speed this up by reconstructing ee_collection from self's id's
 
         date = parse_date(date, 'date')
 

@@ -372,13 +372,13 @@ class Sentinel2ClImage(CloudMaskedImage):
             if mask_method == CloudMaskMethod.cloud_prob:
                 if not cloud_prob:
                     cloud_prob = get_cloud_prob(ee_im)
-                cloud_mask = cloud_prob.gte(prob).rename('CLOUD_MASK')
+                cloud_mask = cloud_prob.gte(prob)
             else:
                 qa = ee_im.select('QA60')
                 cloud_mask = qa.bitwiseAnd(1 << 10).neq(0)
                 if mask_cirrus:
                     cloud_mask = cloud_mask.Or(qa.bitwiseAnd(1 << 11).neq(0))
-            return cloud_mask
+            return cloud_mask.rename('CLOUD_MASK')
 
         def get_cdi_cloud_mask(ee_im):
             """
