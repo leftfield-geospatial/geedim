@@ -410,7 +410,10 @@ class MaskedCollection:
                 gd_image.mask_clouds()
             return resample(gd_image.ee_image, resampling)
 
-        ee_collection = self._ee_collection.map(prepare_image)
+        # Re-create self._ee_collection from list of ID's.  This is faster than working with a filtered
+        # ee.Collection as returned by MaskedCollection.search.
+        gd_collection = MaskedCollection.from_list(list(self.properties.keys()))
+        ee_collection = gd_collection._ee_collection.map(prepare_image)
 
         if method in self._sort_methods:
             if date:
