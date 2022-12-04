@@ -416,7 +416,8 @@ class MaskedCollection:
             if date:
                 ee_collection = ee_collection.sort('DATE_DIST', opt_ascending=False)
             elif region:
-                ee_collection = ee_collection.sort('CLOUDLESS_PORTION')
+                sort_key = 'CLOUDLESS_PORTION' if 'CLOUDLESS_PORTION' in self.schema.keys() else 'FILL_PORTION'
+                ee_collection = ee_collection.sort(sort_key)
             else:
                 ee_collection = ee_collection.sort('system:time_start')
         else:
@@ -487,7 +488,7 @@ class MaskedCollection:
             ee_collection = ee_collection.filterBounds(region)
 
         # when possible filter on custom_filter before calling set_region_stats to reduce computation
-        if custom_filter and any([prop_key in custom_filter for prop_key in ['FILL_PORTION', 'CLOUDLESS_PORTION']]):
+        if custom_filter and all([prop_key not in custom_filter for prop_key in ['FILL_PORTION', 'CLOUDLESS_PORTION']]):
             ee_collection = ee_collection.filter(ee.Filter.expression(custom_filter))
             custom_filter = None
 
@@ -586,9 +587,7 @@ class MaskedCollection:
 
         # populate composite image metadata with info on component images
         # TODO: speed this up, e.g. for large S2 collections
-
-        _comp_schema = {k: schema.default_prop_schema[k] for k in ['system:id', 'system:time_start']}
-        props = self._get_properties(ee_collection, schema=_comp_schema)
+        props = self._get_properties(ee_collection)
         if len(props) == 0:
             raise ValueError('The collection is empty.')
         props_str = self._get_properties_table(props)
