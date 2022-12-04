@@ -145,7 +145,6 @@ def test_search(
         # test CLOUDLESS_PORTION in expected range
         im_cl_portions = np.array([im_props['CLOUDLESS_PORTION'] for im_props in properties.values()])
         assert np.all(im_cl_portions >= cloudless_portion) and np.all(im_cl_portions <= 100)
-        assert np.all(im_cl_portions <= im_fill_portions)
     # test search result image dates lie between `start_date` and `end_date`
     assert np.all(im_dates >= start_date) and np.all(im_dates < end_date)
     # test search result image dates are sorted

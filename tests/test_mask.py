@@ -84,7 +84,6 @@ def test_set_region_stats(masked_image: str, region_100ha, request: pytest.Fixtu
     for stat_name in ['FILL_PORTION', 'CLOUDLESS_PORTION']:
         assert stat_name in masked_image.properties
         assert masked_image.properties[stat_name] >= 0 and masked_image.properties[stat_name] <= 100
-    assert masked_image.properties['CLOUDLESS_PORTION'] <= masked_image.properties['FILL_PORTION']
 
 
 @pytest.mark.parametrize('image_id', ['l9_image_id', 'l8_image_id', 'l7_image_id', 'l5_image_id', 'l4_image_id'])
@@ -93,8 +92,8 @@ def test_landsat_cloudless_portion(image_id: str, request: pytest.FixtureRequest
     image_id: MaskedImage = request.getfixturevalue(image_id)
     masked_image = MaskedImage.from_id(image_id, mask_shadows=False, mask_cirrus=False)
     masked_image._set_region_stats()
-    # the `geedim` cloudless portion inside the filled portion
-    cloudless_portion = 100 * masked_image.properties['CLOUDLESS_PORTION'] / masked_image.properties['FILL_PORTION']
+    # the `geedim` cloudless portion of the filled portion
+    cloudless_portion = masked_image.properties['CLOUDLESS_PORTION']
     # landsat provided cloudless portion
     landsat_cloudless_portion = 100 - float(masked_image.properties['CLOUD_COVER'])
     assert cloudless_portion == pytest.approx(landsat_cloudless_portion, abs=5)
