@@ -40,8 +40,8 @@ The output:
     --------- ---------------------------------------
     ID        Earth Engine image id
     DATE      Image capture date/time (UTC)
-    FILL      Portion of valid pixels (%)
-    CLOUDLESS Portion of cloud/shadow free pixels (%)
+    FILL      Portion of region pixels that are valid (%)
+    CLOUDLESS Portion of filled pixels that are cloud/shadow free (%)
     GRMSE     Orthorectification RMSE (m)
     SAA       Solar azimuth angle (deg)
     SEA       Solar elevation angle (deg)
