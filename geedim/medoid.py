@@ -32,15 +32,19 @@ def sum_distance(
         bands = collection.first().bandNames()
     image = ee.Image(image).select(bands)
 
-    def accum_dist_to_image(to_image: ee.Image, sum_image: ee.Image) -> ee.Image:
-        """
-        Earth engine iterator function to find the sum of the spectral distances between ``image`` and ``to_image``.
-        """
+    # Notes on masking:
+    # - Where ``image`` is masked, the summed distance should be masked.
+    # - Where any other image in ``collection`` is masked, the summed distance should omit its contribution.
+    #
+    # The above requirements are satisfied by leaving images masked, creating an ee.ImageCollection of distances
+    # between ``image`` and other images in the collection (these distances are masked where either image is masked),
+    # and using ImageCollection.sum() to sum distances, omitting masked areas from the sum.
+    # The sum is only masked where all component distances are masked i.e. where ``image`` is masked.
 
-        # Notes on masking:
-        # - Where ``image`` is masked, the summed distance should be masked.
-        # - Where any other image in ``collection`` is masked, the summed distance should omit its contribution.
-
+    def accum_dist_to_image(to_image: ee.Image, dist_list: ee.List) -> ee.Image:
+        """
+        Earth engine iterator function to create a list of spectral distances between ``image`` and ``to_image``.
+        """
         to_image = ee.Image(to_image).select(bands)
 
         # Find the distance between image and to_image.  Both images are not unmasked so that distance will be
@@ -50,14 +54,11 @@ def sum_distance(
             # sqrt scaling is necessary for summing with other distances and equivalence to original method
             dist = dist.sqrt()
 
-        # Accumulate the distance.  It is first unmasked so that it does not mask the accumulated distance where
-        # either to_image is masked, or image or to_image is not filled.
-        return ee.Image(sum_image).add(dist.unmask())
+        # Append distance to list.
+        return ee.List(dist_list).add(dist)
 
-    sumdist = ee.Image(collection.iterate(accum_dist_to_image, ee.Image(0)))
-    # TODO: mask sumdist with image mask?
-    # sumdist = sumdist.updateMask(image.mask().reduce(ee.Reducer.allNonZero()))
-    return sumdist
+    dist_list = ee.List(collection.iterate(accum_dist_to_image, ee.List([])))
+    return ee.ImageCollection(dist_list).sum()
 
 
 def medoid_score(
