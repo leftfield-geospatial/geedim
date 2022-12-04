@@ -395,13 +395,13 @@ cli.add_command(config)
     help='Region defined by geojson polygon or raster file. Use "-" to read geojson from stdin.'
 )
 @click.option(
-    '-fp', '--fill-portion', type=click.FloatRange(min=0, max=100), default=0, show_default=True,
-    help='Lower limit on the filled portion of the region (%).'
+    '-fp', '--fill-portion', '--fill', type=click.FloatRange(min=0, max=100), default=0, show_default=True,
+    help='Lower limit on the portion of the region that contains filled/valid image pixels (%).'
 )
 @click.option(
-    '-cp', '--cloudless-portion', type=click.FloatRange(min=0, max=100), default=0, show_default=True,
-    help='Lower limit on the cloud/shadow free portion of the region (%).  If cloud/shadow masking is not supported '
-    'for the specified collection, ``--cloudless-portion`` will operate like ``--fill-portion``.'
+    '-cp', '--cloudless-portion', '--cloudless', type=click.FloatRange(min=0, max=100), default=0, show_default=True,
+    help='Lower limit on the portion of filled pixels that are cloud/shadow free (%).  If cloud/shadow masking is '
+         'not supported for the specified collection, ``--cloudless-portion`` has no effect.'
 )
 @click.option(
     '-cf', '--custom-filter', type=click.STRING, default=None,
@@ -424,8 +424,9 @@ def search(
     """
     Search for images.
 
-    Search a Google Earth Engine image collection for images, based on date, region, portion of filled pixels, and
-    custom filters.  Cloud/shadow-free (cloudless) portion filtering is supported on the following collections:
+    Search a Google Earth Engine image collection for images, based on date, region, portion of filled pixels in
+    region, and custom filters.  Filtering on cloud/shadow-free (cloudless) portion of filled pixels is supported on
+    the following collections:
     \b
 
         ===========  ===========================
@@ -444,8 +445,8 @@ def search(
 
     The search must be filtered with at least one of the ``--start-date``, ``--bbox`` or ``--region`` options.
 
-    Note that filled/cloudless portions are not taken from the granule metadata, but are calculated as portions of the
-    specified search region for improved accuracy.
+    Note that filled/cloudless portions are not taken from the granule metadata, but are calculated as portions
+    inside the specified search region for improved accuracy.
     \b
 
     Examples

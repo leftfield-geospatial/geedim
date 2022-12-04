@@ -410,10 +410,7 @@ class MaskedCollection:
                 gd_image.mask_clouds()
             return resample(gd_image.ee_image, resampling)
 
-        # Re-create self._ee_collection from list of ID's.  This is faster than working with a filtered
-        # ee.Collection as returned by MaskedCollection.search.
-        gd_collection = MaskedCollection.from_list(list(self.properties.keys()))
-        ee_collection = gd_collection._ee_collection.map(prepare_image)
+        ee_collection = self._ee_collection.map(prepare_image)
 
         if method in self._sort_methods:
             if date:
@@ -489,6 +486,11 @@ class MaskedCollection:
         if region:
             ee_collection = ee_collection.filterBounds(region)
 
+        # when possible filter on custom_filter before calling set_region_stats to reduce computation
+        if custom_filter and any([prop_key in custom_filter for prop_key in ['FILL_PORTION', 'CLOUDLESS_PORTION']]):
+            ee_collection = ee_collection.filter(ee.Filter.expression(custom_filter))
+            custom_filter = None
+
         # set regions stats before filtering on those properties
         ee_collection = ee_collection.map(set_region_stats)
         if fill_portion:
@@ -497,6 +499,7 @@ class MaskedCollection:
         if cloudless_portion and self.image_type != MaskedImage:
             ee_collection = ee_collection.filter(ee.Filter.gte('CLOUDLESS_PORTION', cloudless_portion))
 
+        # filter on custom_filter that refers to FILL_ or CLOUDLESS_PORTION
         if custom_filter:
             # this expression can include properties from set_region_stats
             ee_collection = ee_collection.filter(ee.Filter.expression(custom_filter))
@@ -535,10 +538,12 @@ class MaskedCollection:
             prioritising pixels from images closest to this date.  Valid for the `q-mosaic`, `mosaic` and
             `medoid` ``method``s only.  If None, no time difference sorting is done (the default).
         region: dict, optional
-            Sort collection images by their cloudless portion inside this geojson polygon (only if ``date`` is not
-            specified).  This is useful to prioritise pixels from the least cloudy image(s).  Valid for the `q-mosaic`
-            `mosaic`, and `medoid` ``method``s only.  If None, no cloudless portion sorting is done (the default). If
-            ``date`` and ``region`` are not specified, collection images are sorted by their capture date.
+            Sort collection images by the portion of their pixels that are cloudless, and inside this geojson polygon.
+            This is useful to prioritise pixels from the least cloudy image(s). Valid for the `q-mosaic` `mosaic`, and
+            `medoid` ``method``s only.  If collection has no cloud/shadow mask support, images are sorted by the portion
+            of their pixels that are valid, and inside ``region``. If None, no cloudless/valid portion sorting is done
+            (the default).  If ``date`` and ``region`` are not specified, collection images are sorted by their capture
+            date.
         **kwargs
             Optional cloud/shadow masking parameters - see :meth:`geedim.mask.MaskedImage.__init__` for details.
 
