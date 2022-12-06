@@ -283,3 +283,4 @@ Tutorial
     :maxdepth: 1
 
     examples/l7_composite.ipynb
+    examples/s2_composite.ipynb
