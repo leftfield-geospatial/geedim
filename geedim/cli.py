@@ -764,9 +764,9 @@ def composite(obj, image_id, mask, method, resampling, bbox, region, date):
                     | pixel has the same cloud distance, the first one in the
                     | stack is selected.
         `mosaic`    Use the first unmasked pixel in the stack.
-        `medoid`    | Use the medoid of the unmasked pixels i.e. the pixels
-                    | of the image with minimum summed difference (across
-                    | bands) to the median over the input images.
+        `medoid`    | Use the medoid of the unmasked pixels i.e. the pixel
+                    | of the image with minimum sum of spectral distances to
+                    | the rest of the input images.
                     | Maintains relationship between bands.
         `median`    Use the median of the unmasked pixels.
         `mode`      Use the mode of the unmasked pixels.
