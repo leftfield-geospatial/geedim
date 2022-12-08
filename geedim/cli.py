@@ -765,15 +765,16 @@ def composite(obj, image_id, mask, method, resampling, bbox, region, date):
                     | stack is selected.
         `mosaic`    Use the first unmasked pixel in the stack.
         `medoid`    | Use the medoid of the unmasked pixels i.e. the pixel
-                    | of the image with minimum sum of spectral distances to
-                    | the rest of the input images.
+                    | of the image with the minimum sum of spectral distances
+                    | to the rest of the input images.
                     | Maintains relationship between bands.
         `median`    Use the median of the unmasked pixels.
         `mode`      Use the mode of the unmasked pixels.
         `mean`      Use the mean of the unmasked pixels.
         ==========  ========================================================
 
-    For the `mosaic` and `q-mosaic` methods there are three ways of ordering (i.e. prioritising) images in the stack:
+    For the `mosaic`, `q-mosaic` and `medoid` methods there are three ways of ordering (i.e. prioritising) images in
+    the stack:
     \b
 
         * | If ``--date`` is specified, images are sorted by the absolute

@@ -32,9 +32,9 @@ class CompositeMethod(str, Enum):
 
     medoid = 'medoid'
     """
-    Use the medoid of the unmasked pixels.  This is the pixel from the image having the minimum of the sum of spectral 
-    distances to the rest of the images. Maintains the original relationship between bands. See 
-    https://www.mdpi.com/2072-4292/5/12/6481 for detail.
+    Use the medoid of the unmasked pixels.  This is the pixel from the image having the minimum sum of spectral 
+    distances to the rest of the images. 
+    Maintains the original relationship between bands. See https://www.mdpi.com/2072-4292/5/12/6481 for detail.
     """
 
     median = 'median'
