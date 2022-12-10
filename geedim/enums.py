@@ -32,9 +32,9 @@ class CompositeMethod(str, Enum):
 
     medoid = 'medoid'
     """
-    Use the medoid of the unmasked pixels.  This is the pixel from the image having the minimum summed difference (
-    across bands) from the median of the image stack. Maintains the original relationship between bands. See 
-    https://www.mdpi.com/2072-4292/5/12/6481 for detail.    
+    Use the medoid of the unmasked pixels.  This is the pixel from the image having the minimum sum of spectral 
+    distances to the rest of the images. 
+    Maintains the original relationship between bands. See https://www.mdpi.com/2072-4292/5/12/6481 for detail.
     """
 
     median = 'median'
@@ -81,4 +81,18 @@ class ExportType(str, Enum):
 
     cloud = 'cloud'
     """ Export to Google Cloud Storage. """
+
+class SpectralDistanceMetric(str, Enum):
+    """ Enumeration for the spectral distance metric. """
+    sam = 'sam'
+    """ Spectral angle mapper. """
+
+    sid = 'sid'
+    """ Spectral information divergence. """
+
+    sed = 'sed'
+    """ Squared euclidean distance. """
+
+    emd = 'emd'
+    """ Earth movers distance. """
 

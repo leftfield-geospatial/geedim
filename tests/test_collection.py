@@ -234,12 +234,10 @@ def test_search(
     # test FILL_PORTION in expected range
     im_fill_portions = np.array([im_props['FILL_PORTION'] for im_props in properties.values()])
     assert np.all(im_fill_portions >= fill_portion) and np.all(im_fill_portions <= 100)
-    assert np.all(im_fill_portions >= cloudless_portion) and np.all(im_fill_portions <= 100)
     if is_csmask:  # is a cloud/shadow masked collection
         # test CLOUDLESS_PORTION in expected range
         im_cl_portions = np.array([im_props['CLOUDLESS_PORTION'] for im_props in properties.values()])
         assert np.all(im_cl_portions >= cloudless_portion) and np.all(im_cl_portions <= 100)
-        assert np.all(im_cl_portions <= im_fill_portions)
     # test search result image dates lie between `start_date` and `end_date`
     assert np.all(im_dates >= start_date) and np.all(im_dates < end_date)
     assert set(searched_collection.schema.keys()) == set(list(properties.values())[0].keys())
@@ -334,6 +332,8 @@ def test_search_add_props(region_25ha):
         ('s2_sr_image_list', CompositeMethod.q_mosaic, None, '2021-10-01'),
         ('gedi_image_list', CompositeMethod.mosaic, 'region_10000ha', None),
         ('gedi_image_list', CompositeMethod.mosaic, None, '2020-09-01'),
+        ('l8_9_image_list', CompositeMethod.medoid, 'region_10000ha', None),
+        ('l8_9_image_list', CompositeMethod.medoid, None, '2021-10-01'),
     ]
 )
 def test_composite_region_date_ordering(image_list, method, region, date, request):
@@ -368,6 +368,8 @@ def test_composite_region_date_ordering(image_list, method, region, date, reques
     'image_list, method, mask', [
         ('s2_sr_image_list', CompositeMethod.q_mosaic, True), ('s2_sr_image_list', CompositeMethod.mosaic, False),
         ('l8_9_image_list', CompositeMethod.medoid, True), ('l8_9_image_list', CompositeMethod.median, False),
+        ('s2_sr_image_list', CompositeMethod.medoid, True), ('s2_sr_image_list', CompositeMethod.medoid, False),
+        ('l8_9_image_list', CompositeMethod.medoid, False),
     ]
 )
 def test_composite_mask(image_list, method, mask, region_100ha, request):
@@ -438,8 +440,8 @@ def test_composite_s2_cloud_mask_params(s2_sr_image_list, region_10000ha):
     comp_im_prob80._set_region_stats(region_10000ha, scale=gd_collection.stats_scale)
     comp_im_prob40 = gd_collection.composite(prob=40)
     comp_im_prob40._set_region_stats(region_10000ha, scale=gd_collection.stats_scale)
-    prob80_portion = comp_im_prob80.properties['CLOUDLESS_PORTION']
-    prob40_portion = comp_im_prob40.properties['CLOUDLESS_PORTION']
+    prob80_portion = comp_im_prob80.properties['FILL_PORTION']
+    prob40_portion = comp_im_prob40.properties['FILL_PORTION']
     assert prob80_portion > prob40_portion
 
 
@@ -453,8 +455,8 @@ def test_composite_landsat_cloud_mask_params(l8_9_image_list, region_10000ha):
     comp_im_wshadows._set_region_stats(region_10000ha, scale=gd_collection.stats_scale)
     comp_im_woshadows = gd_collection.composite(mask_shadows=True)
     comp_im_woshadows._set_region_stats(region_10000ha, scale=gd_collection.stats_scale)
-    with_shadows_portion = comp_im_wshadows.properties['CLOUDLESS_PORTION']
-    without_shadows_portion = comp_im_woshadows.properties['CLOUDLESS_PORTION']
+    with_shadows_portion = comp_im_wshadows.properties['FILL_PORTION']
+    without_shadows_portion = comp_im_woshadows.properties['FILL_PORTION']
     assert with_shadows_portion > without_shadows_portion
 
 
@@ -541,8 +543,8 @@ def test_composite_mult_kwargs(region_100ha):
     comp_im_prob40 = filt_collection.composite(prob=40)
     comp_im_prob40._set_region_stats(region_100ha, scale=filt_collection.stats_scale)
 
-    cp_prob80 = comp_im_prob80.properties['CLOUDLESS_PORTION']
-    cp_prob40 = comp_im_prob40.properties['CLOUDLESS_PORTION']
+    cp_prob80 = comp_im_prob80.properties['FILL_PORTION']
+    cp_prob40 = comp_im_prob40.properties['FILL_PORTION']
 
     assert cp_prob80 != pytest.approx(cp_prob40, abs=1e-1)
 

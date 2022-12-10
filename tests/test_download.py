@@ -657,28 +657,6 @@ def test_bounded(base_image: str, exp_value: bool, request: pytest.FixtureReques
     assert base_image.bounded == exp_value
 
 
-# @pytest.mark.parametrize(
-#     'crs', [None, 'SR-ORG:6974',]
-# )  # yapf: disable
-# def test_modis_prepare_for_export(modis_nbar_base_image_unbnd, region_100ha, crs):
-#     """ Test BaseImage._prepare_for_export with workaround for MODIS in its native crs=SR-ORG:6974. """
-#     base_image: BaseImage = modis_nbar_base_image_unbnd
-#     tgt_profile = base_image.profile
-#     tgt_profile.update(crs='SR-ORG:6974', region=region_100ha, dtype=base_image.dtype)
-#     exp_image = base_image._prepare_for_export(crs=crs, region=region_100ha)
-#     _test_export_profile(exp_image.profile, tgt_profile, False)
-#     assert exp_image.scale == base_image.scale
-
-# def test_modis_crs_error(modis_nbar_base_image_unbnd, region_25ha):
-#     """ Test BaseImage._prepare_for_export raises an error when exporting in crs=SR-ORG:6974. """
-#     base_image = modis_nbar_base_image_unbnd
-#     with pytest.raises(ValueError) as ex:
-#         base_image.export('test_modis_crs_error', region=region_25ha)
-#     assert 'SR-ORG:6974' in str(ex)
-#     with pytest.raises(ValueError) as ex:
-#         base_image.export('test_modis_crs_error', region=region_25ha, crs='SR-ORG:6974')
-#     assert 'SR-ORG:6974' in str(ex)
-
 # TODO:
 # - export(): test an export of small file
 # - different generic collection images are downloaded ok (perhaps this goes with MaskedImage more than BaseImage)

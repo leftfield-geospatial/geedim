@@ -23,7 +23,8 @@ from typing import Dict, List, Union
 import ee
 import tabulate
 import textwrap as wrap
-from geedim import schema, medoid
+from geedim import schema
+from geedim.medoid import medoid
 from geedim.download import BaseImage
 from geedim.enums import ResamplingMethod, CompositeMethod
 from geedim.errors import UnfilteredError, InputImageError
@@ -99,6 +100,7 @@ def abbreviate(name: str) -> str:
 
 
 class MaskedCollection:
+    _sort_methods = [CompositeMethod.mosaic, CompositeMethod.q_mosaic, CompositeMethod.medoid]
 
     def __init__(self, ee_collection: ee.ImageCollection, add_props: List[str] = None):
         """
@@ -321,11 +323,13 @@ class MaskedCollection:
             return None
         return [bname for bname, bdict in self.stac.band_props.items() if 'center_wavelength' in bdict]
 
-    def _get_properties(self, ee_collection: ee.ImageCollection) -> Dict:
+    def _get_properties(self, ee_collection: ee.ImageCollection, schema=None) -> Dict:
         """ Retrieve properties of images in a given Earth Engine image collection. """
+        if not schema:
+            schema = self.schema
 
         # the properties to retrieve
-        prop_key_list = ee.List(list(self.schema.keys()))
+        prop_key_list = ee.List(list(schema.keys()))
 
         def aggregrate_props(ee_image, coll_list):
             im_dict = ee_image.toDictionary(prop_key_list)
@@ -348,7 +352,7 @@ class MaskedCollection:
 
     def _get_properties_table(self, properties: Dict, schema: Dict = None) -> str:
         """
-        Format the given properties into a table.  Orders properties (columns) according :attr:`schema` and
+        Format the given properties into a table.  Orders properties (columns) according to :attr:`schema` and
         replaces long form property names with abbreviations.
         """
         if not schema:
@@ -375,7 +379,6 @@ class MaskedCollection:
         Prepare the Earth Engine collection for compositing. See :meth:`~MaskedCollection.composite` for
         parameter descriptions.
         """
-
         date = parse_date(date, 'date')
 
         if not self._filtered:
@@ -394,12 +397,12 @@ class MaskedCollection:
 
         def prepare_image(ee_image: ee.Image):
             """ Prepare an Earth Engine image for use in compositing. """
-            if date and (method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic]):
+            if date and (method in self._sort_methods):
                 date_dist = ee.Number(ee_image.get('system:time_start')).subtract(ee.Date(date).millis()).abs()
                 ee_image = ee_image.set('DATE_DIST', date_dist)
 
             gd_image = self.image_type(ee_image, **kwargs)
-            if region and (method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic]):
+            if region and (method in self._sort_methods):
                 gd_image._set_region_stats(region=region, scale=self.stats_scale)
             if mask:
                 gd_image.mask_clouds()
@@ -407,18 +410,19 @@ class MaskedCollection:
 
         ee_collection = self._ee_collection.map(prepare_image)
 
-        if method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic]:
+        if method in self._sort_methods:
             if date:
                 ee_collection = ee_collection.sort('DATE_DIST', opt_ascending=False)
             elif region:
-                ee_collection = ee_collection.sort('CLOUDLESS_PORTION')
+                sort_key = 'CLOUDLESS_PORTION' if 'CLOUDLESS_PORTION' in self.schema.keys() else 'FILL_PORTION'
+                ee_collection = ee_collection.sort(sort_key)
             else:
                 ee_collection = ee_collection.sort('system:time_start')
         else:
             if date:
-                logger.warning('`date` is valid for `mosaic` and `q_mosaic` methods only.')
+                logger.warning('`date` is valid for `mosaic`, `q_mosaic` and `medoid` methods only.')
             elif region:
-                logger.warning('`region` is valid for `mosaic` and `q_mosaic` methods only.')
+                logger.warning('`region` is valid for `mosaic`, `q_mosaic` and `medoid` methods only.')
 
         return ee_collection
 
@@ -439,9 +443,9 @@ class MaskedCollection:
         region : dict, ee.Geometry
             Polygon in WGS84 specifying a region that images should intersect.
         fill_portion: float, optional
-            Minimum portion (%) of filled (valid) image pixels.
+            Lower limit on the portion of region that contains filled/valid image pixels (%).
         cloudless_portion: float, optional
-            Minimum portion (%) of cloud/shadow free image pixels.
+            Lower limit on the portion of filled pixels that are cloud/shadow free (%).
         custom_filter: str, optional
             Custom image property filter expression e.g. "property > value".  See the `EE docs
             <https://developers.google.com/earth-engine/apidocs/ee-filter-expression>`_.
@@ -481,6 +485,11 @@ class MaskedCollection:
         if region:
             ee_collection = ee_collection.filterBounds(region)
 
+        # when possible filter on custom_filter before calling set_region_stats to reduce computation
+        if custom_filter and all([prop_key not in custom_filter for prop_key in ['FILL_PORTION', 'CLOUDLESS_PORTION']]):
+            ee_collection = ee_collection.filter(ee.Filter.expression(custom_filter))
+            custom_filter = None
+
         # set regions stats before filtering on those properties
         ee_collection = ee_collection.map(set_region_stats)
         if fill_portion:
@@ -489,6 +498,7 @@ class MaskedCollection:
         if cloudless_portion and self.image_type != MaskedImage:
             ee_collection = ee_collection.filter(ee.Filter.gte('CLOUDLESS_PORTION', cloudless_portion))
 
+        # filter on custom_filter that refers to FILL_ or CLOUDLESS_PORTION
         if custom_filter:
             # this expression can include properties from set_region_stats
             ee_collection = ee_collection.filter(ee.Filter.expression(custom_filter))
@@ -524,13 +534,15 @@ class MaskedCollection:
             (the default).  See :class:`~geedim.enums.ResamplingMethod` for available options.
         date: datetime, str, optional
             Sort collection images by their absolute difference in capture time from this date.  Useful for
-            prioritising pixels from images closest to this date.  Valid for the `q-mosaic`
-            and `mosaic` ``method`` only.  If None, no time difference sorting is done (the default).
+            prioritising pixels from images closest to this date.  Valid for the `q-mosaic`, `mosaic` and
+            `medoid` ``method`` only.  If None, no time difference sorting is done (the default).
         region: dict, optional
-            Sort collection images by their cloudless portion inside this geojson polygon (only if ``date`` is not
-            specified).  This is useful to prioritise pixels from the least cloudy image(s).  Valid for the `q-mosaic`
-            and `mosaic` ``method`` only.  If None, no cloudless portion sorting is done (the default). If ``date`` and
-            ``region`` are not specified, collection images are sorted by their capture date.
+            Sort collection images by the portion of their pixels that are cloudless, and inside this geojson polygon.
+            This is useful to prioritise pixels from the least cloudy image(s). Valid for the `q-mosaic` `mosaic`, and
+            `medoid` ``method`` only.  If collection has no cloud/shadow mask support, images are sorted by the portion
+            of their pixels that are valid, and inside ``region``. If None, no cloudless/valid portion sorting is done
+            (the default).  If ``date`` and ``region`` are not specified, collection images are sorted by their capture
+            date.
         **kwargs
             Optional cloud/shadow masking parameters - see :meth:`geedim.mask.MaskedImage.__init__` for details.
 
@@ -563,7 +575,7 @@ class MaskedCollection:
             comp_image = ee_collection.median()
         elif method == CompositeMethod.medoid:
             # limit medoid to surface reflectance bands
-            comp_image = medoid.medoid(ee_collection, bands=self.refl_bands)
+            comp_image = medoid(ee_collection, bands=self.refl_bands)
         elif method == CompositeMethod.mode:
             comp_image = ee_collection.mode()
         elif method == CompositeMethod.mean:
@@ -572,6 +584,7 @@ class MaskedCollection:
             raise ValueError(f'Unsupported composite method: {method}')
 
         # populate composite image metadata with info on component images
+        # TODO: speed this up, e.g. can we use just ID's and times from self.properties?
         props = self._get_properties(ee_collection)
         if len(props) == 0:
             raise ValueError('The collection is empty.')
@@ -584,7 +597,7 @@ class MaskedCollection:
         end_date = max(dates).strftime('%Y_%m_%d')
 
         method_str = method.value.upper()
-        if method in [CompositeMethod.mosaic, CompositeMethod.q_mosaic] and date:
+        if method in self._sort_methods and date:
             method_str += '-' + date.strftime('%Y_%m_%d')
 
         comp_id = f'{self.name}/{start_date}-{end_date}-{method_str}-COMP'

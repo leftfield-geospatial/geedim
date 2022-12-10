@@ -167,8 +167,10 @@ class MaskedImage(BaseImage):
 
         # set the encapsulated image properties
         self.ee_image = self.ee_image.set(means)
-        # set CLOUDLESS_PORTION=FILL_PORTION for the generic case, where cloud/shadow masking is not supported
-        self.ee_image = self.ee_image.set('CLOUDLESS_PORTION', means.get('FILL_PORTION'))
+        # set CLOUDLESS_PORTION=100 for the generic case, where cloud/shadow masking is not supported
+        self.ee_image = self.ee_image.set('CLOUDLESS_PORTION', 100.)
+        # # set CLOUDLESS_PORTION=FILL_PORTION for the generic case, where cloud/shadow masking is not supported
+        # self.ee_image = self.ee_image.set('CLOUDLESS_PORTION', means.get('FILL_PORTION'))
 
     def mask_clouds(self):
         """ Apply the cloud/shadow mask if supported, otherwise apply the fill mask. """
@@ -236,11 +238,19 @@ class CloudMaskedImage(MaskedImage):
         ).rename(['FILL_MASK', 'CLOUDLESS_MASK'], ['FILL_PORTION', 'CLOUDLESS_PORTION'])
 
         def region_percentage(key, value):
-            return ee.Number(value).multiply(100).divide(ee.Number(sums.get("REGION_SUM")))
+            return ee.Number(value).multiply(100).divide(ee.Number(sums.get('REGION_SUM')))
 
-        means = sums.select(['FILL_PORTION', 'CLOUDLESS_PORTION']).map(region_percentage)
+        cloudless_portion = (
+            ee.Number(sums.get('CLOUDLESS_PORTION')).divide(ee.Number(sums.get('FILL_PORTION'))).multiply(100)
+        )
+        fill_portion = (
+            ee.Number(sums.get('FILL_PORTION')).divide(ee.Number(sums.get('REGION_SUM'))).multiply(100)
+        )
+        region_stats = ee.Dictionary(dict(FILL_PORTION=fill_portion, CLOUDLESS_PORTION=cloudless_portion))
+
+        # means = sums.select(['FILL_PORTION', 'CLOUDLESS_PORTION']).map(region_percentage)
         # set the encapsulated image properties
-        self.ee_image = self.ee_image.set(means)
+        self.ee_image = self.ee_image.set(region_stats)
 
     def _aux_image(self, **kwargs) -> ee.Image:
         """
@@ -372,13 +382,13 @@ class Sentinel2ClImage(CloudMaskedImage):
             if mask_method == CloudMaskMethod.cloud_prob:
                 if not cloud_prob:
                     cloud_prob = get_cloud_prob(ee_im)
-                cloud_mask = cloud_prob.gte(prob).rename('CLOUD_MASK')
+                cloud_mask = cloud_prob.gte(prob)
             else:
                 qa = ee_im.select('QA60')
                 cloud_mask = qa.bitwiseAnd(1 << 10).neq(0)
                 if mask_cirrus:
                     cloud_mask = cloud_mask.Or(qa.bitwiseAnd(1 << 11).neq(0))
-            return cloud_mask
+            return cloud_mask.rename('CLOUD_MASK')
 
         def get_cdi_cloud_mask(ee_im):
             """
@@ -401,7 +411,14 @@ class Sentinel2ClImage(CloudMaskedImage):
                 dark_mask = ee_im.select('SCL').neq(6).And(dark_mask)
 
             proj = get_projection(ee_im, min_scale=False)
-            shadow_azimuth = ee.Number(90).subtract(ee.Number(ee_im.get('MEAN_SOLAR_AZIMUTH_ANGLE')))
+            # Note:
+            # S2 MEAN_SOLAR_AZIMUTH_ANGLE (SAA) appears to be measured clockwise with 0 at N (i.e. shadow goes in the
+            # opposite direction), directionalDistanceTransform() angle appears to be measured clockwise with 0 at W.
+            # So we need to add/subtract 180 to SAA to get shadow angle in S2 convention, then add 90 to get
+            # directionalDistanceTransform() convention i.e. we need to add -180 + 90 = -90 to the SAA.  This is not
+            # the same as in the EE tutorial which is 90-SAA
+            # (https://developers.google.com/earth-engine/tutorials/community/sentinel-2-s2cloudless).
+            shadow_azimuth = ee.Number(-90).add(ee.Number(ee_im.get('MEAN_SOLAR_AZIMUTH_ANGLE')))
             proj_pixels = ee.Number(shadow_dist).divide(proj.nominalScale()).round()
             # Project the cloud mask in the direction of the shadows it will cast.
             cloud_cast_proj = cloud_mask.directionalDistanceTransform(shadow_azimuth, proj_pixels).select('distance')

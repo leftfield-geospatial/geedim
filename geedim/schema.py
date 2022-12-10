@@ -22,14 +22,14 @@ import geedim.mask
 default_prop_schema = {
     'system:id': {'abbrev': 'ID', 'description': 'Earth Engine image id'},
     'system:time_start': {'abbrev': 'DATE', 'description': 'Image capture date/time (UTC)'},
-    'FILL_PORTION': {'abbrev': 'FILL', 'description': 'Portion of valid pixels (%)'},
+    'FILL_PORTION': {'abbrev': 'FILL', 'description': 'Portion of region pixels that are valid (%)'},
 }
 
 landsat_prop_schema = {
     'system:id': {'abbrev': 'ID', 'description': 'Earth Engine image id'},
     'system:time_start': {'abbrev': 'DATE', 'description': 'Image capture date/time (UTC)'},
-    'FILL_PORTION': {'abbrev': 'FILL', 'description': 'Portion of valid pixels (%)'},
-    'CLOUDLESS_PORTION': {'abbrev': 'CLOUDLESS', 'description': 'Portion of cloud/shadow free pixels (%)'},
+    'FILL_PORTION': {'abbrev': 'FILL', 'description': 'Portion of region pixels that are valid (%)'},
+    'CLOUDLESS_PORTION': {'abbrev': 'CLOUDLESS', 'description': 'Portion of filled pixels that are cloud/shadow free (%)'},
     'GEOMETRIC_RMSE_MODEL': {'abbrev': 'GRMSE', 'description': 'Orthorectification RMSE (m)'},
     'SUN_AZIMUTH': {'abbrev': 'SAA', 'description': 'Solar azimuth angle (deg)'},
     'SUN_ELEVATION': {'abbrev': 'SEA', 'description': 'Solar elevation angle (deg)'}
@@ -38,8 +38,8 @@ landsat_prop_schema = {
 s2_prop_schema = {
     'system:id': {'abbrev': 'ID', 'description': 'Earth Engine image id'},
     'system:time_start': {'abbrev': 'DATE', 'description': 'Image capture date/time (UTC)'},
-    'FILL_PORTION': {'abbrev': 'FILL', 'description': 'Portion of valid pixels (%)'},
-    'CLOUDLESS_PORTION': {'abbrev': 'CLOUDLESS', 'description': 'Portion of cloud/shadow free pixels (%)'},
+    'FILL_PORTION': {'abbrev': 'FILL', 'description': 'Portion of region pixels that are valid (%)'},
+    'CLOUDLESS_PORTION': {'abbrev': 'CLOUDLESS', 'description': 'Portion of filled pixels that are cloud/shadow free (%)'},
     'RADIOMETRIC_QUALITY': {'abbrev': 'RADQ', 'description': 'Radiometric quality check'},
     'GEOMETRIC_QUALITY': {'abbrev': 'GEOMQ', 'description': 'Geometric quality check'},
     'MEAN_SOLAR_AZIMUTH_ANGLE': {'abbrev': 'SAA', 'description': 'Solar azimuth angle (deg)'},

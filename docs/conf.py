@@ -37,6 +37,7 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.autosummary',
     'sphinx.ext.napoleon',
+    'jupyter_sphinx',
     'nbsphinx'
 ] # yapf: disable
 
@@ -82,6 +83,8 @@ nbsphinx_prolog = """
    This page was generated from a Jupyter notebook. To run and interact with it, 
    you can download it :download:`here <../{{ env.docname }}.ipynb>`.
 """
+nbsphinx_widgets_path=''
+nbsphinx_requirejs_path=''
 
 # -- Generate cloud/shadow supported collection tables for github README and RTD
 # docs
