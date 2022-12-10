@@ -379,8 +379,6 @@ class MaskedCollection:
         Prepare the Earth Engine collection for compositing. See :meth:`~MaskedCollection.composite` for
         parameter descriptions.
         """
-        # TODO: speed this up by reconstructing ee_collection from self's id's
-
         date = parse_date(date, 'date')
 
         if not self._filtered:
@@ -586,7 +584,7 @@ class MaskedCollection:
             raise ValueError(f'Unsupported composite method: {method}')
 
         # populate composite image metadata with info on component images
-        # TODO: speed this up, e.g. for large S2 collections
+        # TODO: speed this up, e.g. can we use just ID's and times from self.properties?
         props = self._get_properties(ee_collection)
         if len(props) == 0:
             raise ValueError('The collection is empty.')

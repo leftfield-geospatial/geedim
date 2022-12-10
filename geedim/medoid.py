@@ -58,6 +58,7 @@ def sum_distance(
         return ee.List(dist_list).add(dist)
 
     dist_list = ee.List(collection.iterate(accum_dist_to_image, ee.List([])))
+    # TODO: are we better off using mean here to avoid overflow?
     return ee.ImageCollection(dist_list).sum()
 
 

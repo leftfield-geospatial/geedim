@@ -240,8 +240,6 @@ class CloudMaskedImage(MaskedImage):
         def region_percentage(key, value):
             return ee.Number(value).multiply(100).divide(ee.Number(sums.get('REGION_SUM')))
 
-        # TODO: rename _PORTION of one of FILL or CLOUDLESS to be in line with what it actually means, also perhaps
-        #  the options in CLI
         cloudless_portion = (
             ee.Number(sums.get('CLOUDLESS_PORTION')).divide(ee.Number(sums.get('FILL_PORTION'))).multiply(100)
         )
