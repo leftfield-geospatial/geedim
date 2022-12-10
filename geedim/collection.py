@@ -443,9 +443,9 @@ class MaskedCollection:
         region : dict, ee.Geometry
             Polygon in WGS84 specifying a region that images should intersect.
         fill_portion: float, optional
-            Minimum portion (%) of filled (valid) image pixels.
+            Lower limit on the portion of region that contains filled/valid image pixels (%).
         cloudless_portion: float, optional
-            Minimum portion (%) of cloud/shadow free image pixels.
+            Lower limit on the portion of filled pixels that are cloud/shadow free (%).
         custom_filter: str, optional
             Custom image property filter expression e.g. "property > value".  See the `EE docs
             <https://developers.google.com/earth-engine/apidocs/ee-filter-expression>`_.
