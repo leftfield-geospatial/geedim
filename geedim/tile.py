@@ -101,7 +101,8 @@ class Tile:
                 ex_msg = f'Error downloading tile: {msg}'
                 if 'user memory limit exceeded' in msg.lower():
                     ex_msg += (
-                        '\nThe `max_tile_size` or `max_tile_dim` parameters can be decreased to work around this error.'
+                        '\nThe `max_tile_size` or `max_tile_dim` parameters can be decreased to work around this '
+                        'error.  Alternatively you can export to Earth Engine asset, and then download the asset image.'
                     )
             else:
                 ex_msg = str(response.json())
