@@ -274,7 +274,7 @@ Initialize
 .. autofunction:: Initialize
 
 
-.. _tutorial:
+.. _tutorials:
 
 Tutorials
 ---------
