@@ -217,7 +217,8 @@ def test_search(
     name, start_date: str, end_date: str, region: str, fill_portion: float, cloudless_portion: float, is_csmask, request
 ):
     """
-    Test MaskedCollection.search() gives valid results for different cloud/shadow maskable, and generic collections.
+    Test MaskedCollection.search() with fill / cloudless portion filters gives valid results for different cloud/shadow
+    maskable, and generic collections.
     """
     region: Dict = request.getfixturevalue(region)
     gd_collection = MaskedCollection.from_name(name)
@@ -324,6 +325,41 @@ def test_search_add_props(region_25ha):
     assert all([add_prop in list(searched_coll.properties.values())[0].keys() for add_prop in add_props])
     assert searched_coll.properties_table is not None
     assert searched_coll.schema_table is not None
+
+
+@pytest.mark.parametrize(
+    'name, start_date, end_date, region', [
+        ('LANDSAT/LC09/C02/T1_L2', '2022-01-01', '2022-02-01', 'region_100ha'),
+        ('COPERNICUS/S2_HARMONIZED', '2022-01-01', '2022-01-15', 'region_100ha'),
+        ('LARSE/GEDI/GEDI02_A_002_MONTHLY', '2021-08-01', '2021-09-01', 'region_100ha')
+    ]
+)
+def test_search_no_fill_or_cloudless_portion(
+    name: str, start_date: str, end_date: str, region: str, request: pytest.FixtureRequest
+):
+    """
+    Test MaskedCollection.search() without fill / cloudless portion filters gives valid results for different
+    collections.
+    """
+    region: Dict = request.getfixturevalue(region)
+    gd_collection = MaskedCollection.from_name(name)
+    searched_collection = gd_collection.search(start_date, end_date, region)
+
+    properties = searched_collection.properties
+    start_date = datetime.strptime(start_date, '%Y-%m-%d')
+    end_date = datetime.strptime(end_date, '%Y-%m-%d')
+    im_dates = np.array(
+        [datetime.utcfromtimestamp(im_props['system:time_start'] / 1000) for im_props in properties.values()]
+    )
+    # test FILL_PORTION and CLOUDLESS_PORTION are not in properties
+    prop_keys = list(properties.values())[0].keys()
+    assert 'FILL_PORTION' not in prop_keys
+    assert 'CLOUDLESS_PORTION' not in prop_keys
+    # test search result image dates lie between `start_date` and `end_date`
+    assert np.all(im_dates >= start_date) and np.all(im_dates < end_date)
+    assert set(searched_collection.schema.keys()) >= set(list(properties.values())[0].keys())
+    # test search result image dates are sorted
+    assert np.all(sorted(im_dates) == im_dates)
 
 
 @pytest.mark.parametrize(
