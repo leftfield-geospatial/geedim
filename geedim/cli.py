@@ -395,15 +395,18 @@ cli.add_command(config)
     help='Region defined by geojson polygon or raster file. Use "-" to read geojson from stdin.'
 )
 @click.option(
-    '-fp', '--fill-portion', '--fill', type=click.FloatRange(min=0, max=100), default=None,
-    show_default='don\'t calculate or filter on fill portion',
-    help='Lower limit on the portion of the region that contains filled/valid image pixels (%).'
+    '-fp', '--fill-portion', '--fill', metavar='VALUE', type=click.FloatRange(min=0, max=100), default=None,
+    is_flag=False, flag_value=0,
+    show_default='don\'t calculate, or filter on, fill portion',
+    help='Lower limit on the portion of the region that contains filled/valid image pixels (%).  Uses zero if VALUE is '
+         'not specified.'
 )
 @click.option(
-    '-cp', '--cloudless-portion', '--cloudless', type=click.FloatRange(min=0, max=100), default=None,
-    show_default='don\'t calculate or filter on cloudless portion',
-    help='Lower limit on the portion of filled pixels that are cloud/shadow free (%).  If cloud/shadow masking is '
-         'not supported for the specified collection, ``--cloudless-portion`` has no effect.'
+    '-cp', '--cloudless-portion', '--cloudless', metavar='VALUE', type=click.FloatRange(min=0, max=100), default=None,
+    is_flag=False, flag_value=0, show_default='don\'t calculate, or filter on, cloudless portion',
+    help='Lower limit on the portion of filled pixels that are cloud/shadow free (%).  Uses zero if VALUE is not '
+         'specified.  If cloud/shadow masking is not supported for the specified collection, ``--cloudless-portion`` '
+         'has no effect.'
 )
 @click.option(
     '-cf', '--custom-filter', type=click.STRING, default=None,
