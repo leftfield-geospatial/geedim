@@ -436,6 +436,12 @@ class MaskedCollection:
         """
         Search for images based on date, region, filled/cloudless portion, and custom criteria.
 
+        Filled and cloudless portions are only calculated and included in collection properties when one or both of
+        ``fill_portion`` / ``cloudless_portion`` are specified.
+
+        Search speed can be increased by specifying ``custom_filter``, or omitting ``fill_portion`` /
+        ``cloudless_portion``.
+
         Parameters
         ----------
         start_date : datetime, str
