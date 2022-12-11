@@ -465,9 +465,9 @@ def search(
 
         geedim search -c LARSE/GEDI/GEDI02_A_002_MONTHLY -s 2021-12-01 -e 2022-02-01 --bbox 23 -34 23.2 -33.8 --fill-portion 0.5
 
-    Search the Landsat-9 collection for images with a cloud/shadow free portion of at least 50%::
+    Search the Landsat-9 collection for images, reporting the cloud/shadow free portion::
 
-        geedim search -c l9-c2-l2 -s 2022-01-01 -e 2022-03-01 --bbox 23 -34 23.2 -33.8 --cloudless-portion 50
+        geedim search -c l9-c2-l2 -s 2022-01-01 -e 2022-03-01 --bbox 23 -34 23.2 -33.8 --cloudless-portion
 
     Search the Landsat-8 collection for images whose `CLOUD_COVER_LAND` property is less than 50%, and include the
     `CLOUD_COVER_LAND`, and `CLOUD_COVER` image properties in the search results::
