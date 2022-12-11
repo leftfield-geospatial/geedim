@@ -448,7 +448,11 @@ def search(
     The search must be filtered with at least one of the ``--start-date``, ``--bbox`` or ``--region`` options.
 
     Note that filled/cloudless portions are not taken from the granule metadata, but are calculated as portions
-    inside the specified search region for improved accuracy.
+    inside the specified search region for improved accuracy.  These portions are only found and reported when the
+    respective ``--fill-portion`` / ``--cloudless-portion`` option is specified.
+
+    Search speed can be improved by specifying ``--custom-filter``, or by omitting the ``--fill-portion`` /
+    ``--cloudless-portion`` options.
     \b
 
     Examples
