@@ -341,7 +341,10 @@ class MaskedCollection:
             props_list = ee.List(ee_collection.iterate(aggregrate_props, ee.List([]))).getInfo()
         except ee.EEException as ex:
             if 'geometry' in str(ex) and 'unbounded' in str(ex):
-                raise ValueError('This collection is unbounded and needs a `region` to be specified.')
+                raise ValueError(
+                    'This collection is unbounded and needs a `region` to be specified to find FILL_PORTION / '
+                    'CLOUDLESS_PORTION.'
+                )
             else:
                 raise
         # add image properties to the return dict in the same order as the underlying collection
@@ -490,7 +493,7 @@ class MaskedCollection:
             ee_collection = ee_collection.filter(ee.Filter.expression(custom_filter))
             custom_filter = None
 
-        if fill_portion or cloudless_portion or custom_filter:
+        if (fill_portion is not None) or (cloudless_portion is not None) or (custom_filter is not None):
             # set regions stats before filtering on those properties
             ee_collection = ee_collection.map(set_region_stats)
             if fill_portion:

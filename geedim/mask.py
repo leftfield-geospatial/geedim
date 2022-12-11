@@ -153,14 +153,15 @@ class MaskedImage(BaseImage):
         # image (==1)).  We take this approach rather than using a mean reducer, as this does not find the mean over
         # the region, but the mean over the part of the region covered by the image.
         stats_image = ee.Image(
-            [self.ee_image.select('FILL_MASK').rename('FILL_PORTION').unmask(), ee.Image(1).rename('REGION_SUM')]
+            [self.ee_image.select('FILL_MASK').unmask(), ee.Image(1).rename('REGION_SUM')]
         )  # yapf: disable
         # Note: sometimes proj has no EPSG in crs(), hence use crs=proj and not crs=proj.crs() below
         sums = stats_image.reduceRegion(
             reducer="sum", geometry=region, crs=proj, scale=scale, bestEffort=True, maxPixels=1e6
         )
+
         fill_portion = (
-            ee.Number(sums.get('FILL_PORTION')).divide(ee.Number(sums.get('REGION_SUM'))).multiply(100)
+            ee.Number(sums.get('FILL_MASK')).divide(ee.Number(sums.get('REGION_SUM'))).multiply(100)
         )
 
         # set the encapsulated image properties
