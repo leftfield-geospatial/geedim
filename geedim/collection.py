@@ -439,7 +439,7 @@ class MaskedCollection:
         Filled and cloudless portions are only calculated and included in collection properties when one or both of
         ``fill_portion`` / ``cloudless_portion`` are specified.
 
-        Search speed can be increased by specifying ``custom_filter``, or omitting ``fill_portion`` /
+        Search speed can be increased by specifying ``custom_filter``, and or by omitting ``fill_portion`` /
         ``cloudless_portion``.
 
         Parameters

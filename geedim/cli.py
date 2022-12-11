@@ -451,7 +451,7 @@ def search(
     inside the specified search region for improved accuracy.  These portions are only found and reported when one or
     both of respective ``--fill-portion`` / ``--cloudless-portion`` options are specified.
 
-    Search speed can be improved by specifying ``--custom-filter``, or by omitting the ``--fill-portion`` /
+    Search speed can be improved by specifying ``--custom-filter``, and or by omitting the ``--fill-portion`` /
     ``--cloudless-portion`` options.
     \b
 
