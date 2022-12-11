@@ -156,21 +156,17 @@ class MaskedImage(BaseImage):
             [self.ee_image.select('FILL_MASK').rename('FILL_PORTION').unmask(), ee.Image(1).rename('REGION_SUM')]
         )  # yapf: disable
         # Note: sometimes proj has no EPSG in crs(), hence use crs=proj and not crs=proj.crs() below
-        sums_dict = stats_image.reduceRegion(
+        sums = stats_image.reduceRegion(
             reducer="sum", geometry=region, crs=proj, scale=scale, bestEffort=True, maxPixels=1e6
         )
-
-        def region_percentage(key, value):
-            return ee.Number(value).multiply(100).divide(ee.Number(sums_dict.get("REGION_SUM")))
-
-        means = sums_dict.select(['FILL_PORTION']).map(region_percentage)
+        fill_portion = (
+            ee.Number(sums.get('FILL_PORTION')).divide(ee.Number(sums.get('REGION_SUM'))).multiply(100)
+        )
 
         # set the encapsulated image properties
-        self.ee_image = self.ee_image.set(means)
+        self.ee_image = self.ee_image.set('FILL_PORTION', fill_portion)
         # set CLOUDLESS_PORTION=100 for the generic case, where cloud/shadow masking is not supported
         self.ee_image = self.ee_image.set('CLOUDLESS_PORTION', 100.)
-        # # set CLOUDLESS_PORTION=FILL_PORTION for the generic case, where cloud/shadow masking is not supported
-        # self.ee_image = self.ee_image.set('CLOUDLESS_PORTION', means.get('FILL_PORTION'))
 
     def mask_clouds(self):
         """ Apply the cloud/shadow mask if supported, otherwise apply the fill mask. """
@@ -229,27 +225,23 @@ class CloudMaskedImage(MaskedImage):
 
         # Find the fill portion as the (sum over the region of FILL_MASK) divided by (sum over the region of a constant
         # image (==1)).  We take this approach rather than using a mean reducer, as this does not find the mean over
-        # the region, but the mean over the part of the region covered by the image.
+        # the region, but the mean over the part of the region covered by the image.  Then we find cloudless portion
+        # as portion of fill that is cloudless.
         stats_image = ee.Image(
             [self.ee_image.select(['FILL_MASK', 'CLOUDLESS_MASK']).unmask(), ee.Image(1).rename('REGION_SUM')]
         )  # yapf: disable
         sums = stats_image.reduceRegion(
             reducer="sum", geometry=region, crs=proj, scale=scale, bestEffort=True, maxPixels=1e6
         ).rename(['FILL_MASK', 'CLOUDLESS_MASK'], ['FILL_PORTION', 'CLOUDLESS_PORTION'])
-
-        def region_percentage(key, value):
-            return ee.Number(value).multiply(100).divide(ee.Number(sums.get('REGION_SUM')))
-
-        cloudless_portion = (
-            ee.Number(sums.get('CLOUDLESS_PORTION')).divide(ee.Number(sums.get('FILL_PORTION'))).multiply(100)
-        )
         fill_portion = (
             ee.Number(sums.get('FILL_PORTION')).divide(ee.Number(sums.get('REGION_SUM'))).multiply(100)
         )
-        region_stats = ee.Dictionary(dict(FILL_PORTION=fill_portion, CLOUDLESS_PORTION=cloudless_portion))
+        cloudless_portion = (
+            ee.Number(sums.get('CLOUDLESS_PORTION')).divide(ee.Number(sums.get('FILL_PORTION'))).multiply(100)
+        )
 
-        # means = sums.select(['FILL_PORTION', 'CLOUDLESS_PORTION']).map(region_percentage)
         # set the encapsulated image properties
+        region_stats = ee.Dictionary(dict(FILL_PORTION=fill_portion, CLOUDLESS_PORTION=cloudless_portion))
         self.ee_image = self.ee_image.set(region_stats)
 
     def _aux_image(self, **kwargs) -> ee.Image:
