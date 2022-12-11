@@ -490,18 +490,19 @@ class MaskedCollection:
             ee_collection = ee_collection.filter(ee.Filter.expression(custom_filter))
             custom_filter = None
 
-        # set regions stats before filtering on those properties
-        ee_collection = ee_collection.map(set_region_stats)
-        if fill_portion:
-            ee_collection = ee_collection.filter(ee.Filter.gte('FILL_PORTION', fill_portion))
+        if fill_portion or cloudless_portion or custom_filter:
+            # set regions stats before filtering on those properties
+            ee_collection = ee_collection.map(set_region_stats)
+            if fill_portion:
+                ee_collection = ee_collection.filter(ee.Filter.gte('FILL_PORTION', fill_portion))
 
-        if cloudless_portion and self.image_type != MaskedImage:
-            ee_collection = ee_collection.filter(ee.Filter.gte('CLOUDLESS_PORTION', cloudless_portion))
+            if cloudless_portion and self.image_type != MaskedImage:
+                ee_collection = ee_collection.filter(ee.Filter.gte('CLOUDLESS_PORTION', cloudless_portion))
 
-        # filter on custom_filter that refers to FILL_ or CLOUDLESS_PORTION
-        if custom_filter:
-            # this expression can include properties from set_region_stats
-            ee_collection = ee_collection.filter(ee.Filter.expression(custom_filter))
+            # filter on custom_filter that refers to FILL_ or CLOUDLESS_PORTION
+            if custom_filter:
+                # this expression can include properties from set_region_stats
+                ee_collection = ee_collection.filter(ee.Filter.expression(custom_filter))
 
         ee_collection = ee_collection.sort('system:time_start')
 

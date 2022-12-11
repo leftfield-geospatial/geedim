@@ -395,11 +395,13 @@ cli.add_command(config)
     help='Region defined by geojson polygon or raster file. Use "-" to read geojson from stdin.'
 )
 @click.option(
-    '-fp', '--fill-portion', '--fill', type=click.FloatRange(min=0, max=100), default=0, show_default=True,
+    '-fp', '--fill-portion', '--fill', type=click.FloatRange(min=0, max=100), default=None,
+    show_default='don\'t calculate or filter on fill portion',
     help='Lower limit on the portion of the region that contains filled/valid image pixels (%).'
 )
 @click.option(
-    '-cp', '--cloudless-portion', '--cloudless', type=click.FloatRange(min=0, max=100), default=0, show_default=True,
+    '-cp', '--cloudless-portion', '--cloudless', type=click.FloatRange(min=0, max=100), default=None,
+    show_default='don\'t calculate or filter on cloudless portion',
     help='Lower limit on the portion of filled pixels that are cloud/shadow free (%).  If cloud/shadow masking is '
          'not supported for the specified collection, ``--cloudless-portion`` has no effect.'
 )
