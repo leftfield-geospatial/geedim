@@ -277,6 +277,31 @@ def test_search_custom_filter_l9(region_25ha_file: pathlib.Path, runner: CliRunn
     assert add_prop in prop_keys
     assert all([prop[add_prop] > cc_thresh for prop in properties.values()])
 
+
+def test_search_cloudless_portion_no_value(
+    region_25ha_file: pathlib.Path, runner: CliRunner, tmp_path: pathlib.Path
+):
+    """ Test `search --cloudless-portion` gives the same results as `search --cloudless-portion 0`. """
+    results_file = tmp_path.joinpath(f'search_results.json')
+    name = 'LANDSAT/LC09/C02/T1_L2'
+    clp_list = []
+    for post_fix, cp_spec in zip(['no_val', 'zero_val'], ['-cp', '-cp 0']):
+        cli_str = (
+            f'search -c {name} -s 2022-01-01 -e 2022-04-01 -r {region_25ha_file} {cp_spec} -op {results_file}'
+        )
+        result = runner.invoke(cli, cli_str.split())
+        assert (result.exit_code == 0)
+        assert (results_file.exists())
+        with open(results_file, 'r') as f:
+            props = json.load(f)
+        prop_keys = list(props.values())[0].keys()
+        assert 'FILL_PORTION' in prop_keys
+        assert 'CLOUDLESS_PORTION' in prop_keys
+        clp = np.array([prop['CLOUDLESS_PORTION'] for prop in props.values()])
+        clp_list.append(clp)
+    assert np.all(clp_list[0] == clp_list[1])
+
+
 @pytest.mark.parametrize(
     'image_id, region_file', [
         ('l8_image_id', 'region_25ha_file'),
