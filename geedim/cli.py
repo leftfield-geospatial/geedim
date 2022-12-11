@@ -449,7 +449,7 @@ def search(
 
     Note that filled/cloudless portions are not taken from the granule metadata, but are calculated as portions
     inside the specified search region for improved accuracy.  These portions are only found and reported when one or
-    both of the respective ``--fill-portion`` / ``--cloudless-portion`` options are specified.
+    both of the ``--fill-portion`` / ``--cloudless-portion`` options are specified.
 
     Search speed can be improved by specifying ``--custom-filter``, and or by omitting ``--fill-portion`` /
     ``--cloudless-portion``.
