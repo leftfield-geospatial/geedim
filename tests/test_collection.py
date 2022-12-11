@@ -287,9 +287,9 @@ def test_search_mult_kwargs(region_100ha):
     def get_cloudless_portion(properties: Dict) -> List[float]:
         return [prop_dict['CLOUDLESS_PORTION'] for prop_dict in properties.values()]
 
-    filt_collection = gd_collection.search(start_date, end_date, region_100ha, prob=80)
-    filt_coll_prob80 = filt_collection.search(start_date, end_date, region_100ha, prob=80)
-    filt_coll_prob40 = filt_collection.search(start_date, end_date, region_100ha, prob=40)
+    filt_collection = gd_collection.search(start_date, end_date, region_100ha, prob=80, fill_portion=0)
+    filt_coll_prob80 = filt_collection.search(start_date, end_date, region_100ha, prob=80, fill_portion=0)
+    filt_coll_prob40 = filt_collection.search(start_date, end_date, region_100ha, prob=40, fill_portion=0)
 
     cp_ref = get_cloudless_portion(filt_collection.properties)
     cp_prob80 = get_cloudless_portion(filt_coll_prob80.properties)
@@ -559,7 +559,7 @@ def test_unbounded_search_no_region(name):
     start_date = '2022-01-01'
     end_date = '2022-01-02'
     gd_collection = MaskedCollection.from_name(name)
-    gd_collection = gd_collection.search(start_date, end_date)
+    gd_collection = gd_collection.search(start_date, end_date, fill_portion=0)
     with pytest.raises(ValueError) as ex:
         _ = gd_collection.properties
     assert 'unbounded' in str(ex) and 'region' in str(ex)

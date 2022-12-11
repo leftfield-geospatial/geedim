@@ -158,7 +158,7 @@ def test_config_search_s2(region_10000ha_file: pathlib.Path, runner: CliRunner, 
     cl_portion_list = []
     for prob in [40, 80]:
         cli_str = (
-            f'config --prob {prob} search -c {name} -s 2022-01-01 -e 2022-02-01 -r {region_10000ha_file} -op '
+            f'config --prob {prob} search -c {name} -s 2022-01-01 -e 2022-02-01 -r {region_10000ha_file} -fp 0 -op '
             f'{results_file}'
         )
         result = runner.invoke(cli, cli_str.split())
@@ -179,7 +179,7 @@ def test_config_search_l9(region_10000ha_file: pathlib.Path, runner: CliRunner, 
     cl_portion_list = []
     for param in ['--mask-shadows', '--no-mask-shadows']:
         cli_str = (
-            f'config {param} search -c {name} -s 2022-02-15 -e 2022-04-01 -r {region_10000ha_file} -op'
+            f'config {param} search -c {name} -s 2022-02-15 -e 2022-04-01 -r {region_10000ha_file} -fp 0 -op'
             f' {results_file}'
         )
         result = runner.invoke(cli, cli_str.split())
