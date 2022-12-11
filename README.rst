@@ -156,7 +156,7 @@ Search for Landsat-8 images.
 
 .. code:: shell
 
-   geedim search -c l8-c2-l2 -s 2021-06-01 -e 2021-07-01 --bbox 24 -33 24.1 -33.1
+   geedim search -c l8-c2-l2 -s 2021-06-01 -e 2021-07-01 --bbox 24 -33 24.1 -33.1 --cloudless-portion 0
 
 Download a Landsat-8 image with cloud/shadow mask applied.
 
@@ -226,9 +226,9 @@ Example
        "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]
    }
 
-   # make collection and search
+   # make collection and search, reporting fill and cloudless portions
    coll = gd.MaskedCollection.from_name('COPERNICUS/S2_SR')
-   coll = coll.search('2019-01-10', '2019-01-21', region)
+   coll = coll.search('2019-01-10', '2019-01-21', region, fill_portion=0)
    print(coll.schema_table)
    print(coll.properties_table)
 
