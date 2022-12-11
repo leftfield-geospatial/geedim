@@ -736,6 +736,8 @@
     "NOAA/GOES/17/MCMIPC": "https://storage.googleapis.com/earthengine-stac/catalog/NOAA/GOES/NOAA_GOES_17_MCMIPC.json",
     "NOAA/GOES/17/MCMIPF": "https://storage.googleapis.com/earthengine-stac/catalog/NOAA/GOES/NOAA_GOES_17_MCMIPF.json",
     "NOAA/GOES/17/MCMIPM": "https://storage.googleapis.com/earthengine-stac/catalog/NOAA/GOES/NOAA_GOES_17_MCMIPM.json",
+    "NOAA/GOES/18/FDCC": "https://storage.googleapis.com/earthengine-stac/catalog/NOAA/GOES/NOAA_GOES_18_FDCC.json",
+    "NOAA/GOES/18/FDCF": "https://storage.googleapis.com/earthengine-stac/catalog/NOAA/GOES/NOAA_GOES_18_FDCF.json",
     "NOAA/GOES/18/MCMIPC": "https://storage.googleapis.com/earthengine-stac/catalog/NOAA/GOES/NOAA_GOES_18_MCMIPC.json",
     "NOAA/GOES/18/MCMIPF": "https://storage.googleapis.com/earthengine-stac/catalog/NOAA/GOES/NOAA_GOES_18_MCMIPF.json",
     "NOAA/GOES/18/MCMIPM": "https://storage.googleapis.com/earthengine-stac/catalog/NOAA/GOES/NOAA_GOES_18_MCMIPM.json",
