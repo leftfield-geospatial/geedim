@@ -226,9 +226,9 @@ Example
        "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]
    }
 
-   # make collection and search, reporting fill and cloudless portions
+   # make collection and search, reporting cloudless portions
    coll = gd.MaskedCollection.from_name('COPERNICUS/S2_SR')
-   coll = coll.search('2019-01-10', '2019-01-21', region, fill_portion=0)
+   coll = coll.search('2019-01-10', '2019-01-21', region, cloudless_portion=0)
    print(coll.schema_table)
    print(coll.properties_table)
 
