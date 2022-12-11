@@ -152,11 +152,11 @@ and help on a ``geedim`` command with:
 Examples
 ^^^^^^^^
 
-Search for Landsat-8 images.
+Search for Landsat-8 images, reporting cloudless portions.
 
 .. code:: shell
 
-   geedim search -c l8-c2-l2 -s 2021-06-01 -e 2021-07-01 --bbox 24 -33 24.1 -33.1 --cloudless-portion 0
+   geedim search -c l8-c2-l2 -s 2021-06-01 -e 2021-07-01 --bbox 24 -33 24.1 -33.1 --cloudless-portion
 
 Download a Landsat-8 image with cloud/shadow mask applied.
 

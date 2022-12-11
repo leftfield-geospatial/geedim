@@ -11,9 +11,9 @@ region = {
     ]]
 }
 
-# create & search a landsat-8 collection, reporting fill & cloudless portions
+# create & search a landsat-8 collection, reporting cloudless portions
 coll = gd.MaskedCollection.from_name('LANDSAT/LC08/C02/T1_L2')
-filt_coll = coll.search('2019-01-01', '2019-02-15', region, fill_portion=0)
+filt_coll = coll.search('2019-01-01', '2019-02-15', region, cloudless_portion=0)
 
 # display the search results
 print(filt_coll.schema_table)
