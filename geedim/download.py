@@ -478,7 +478,7 @@ class BaseImage:
             if not self.has_fixed_projection:
                 raise ValueError(
                     'This image has no fixed projection and cannot be resampled.  If this image is a composite, '
-                    'you can resample the compimages used to create the composite.'
+                    'you can resample the component images used to create the composite.'
                 )
             ee_image = utils.resample(ee_image, resampling)
         # TODO: only do this if there is a change?  Or do we need to standardise the bands?
