@@ -263,8 +263,8 @@ Credits
 
 .. |Tests| image:: https://github.com/leftfield-geospatial/geedim/actions/workflows/run-unit-tests.yml/badge.svg
    :target: https://github.com/leftfield-geospatial/geedim/actions/workflows/run-unit-tests.yml
-.. |codecov| image:: https://codecov.io/gh/dugalh/geedim/branch/main/graph/badge.svg?token=69GZNQ3TI3
-   :target: https://codecov.io/gh/dugalh/geedim
+.. |codecov| image:: https://codecov.io/gh/leftfield-geospatial/geedim/branch/main/graph/badge.svg?token=69GZNQ3TI3
+   :target: https://codecov.io/gh/leftfield-geospatial/geedim
 .. |PyPI version| image:: https://img.shields.io/pypi/v/geedim.svg
    :target: https://pypi.org/project/geedim/
 .. |conda-forge version| image:: https://img.shields.io/conda/vn/conda-forge/geedim.svg
