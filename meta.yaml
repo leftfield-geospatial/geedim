@@ -37,7 +37,7 @@ test:
     - geedim --help
 
 about:
-  home: https://github.com/dugalh/geedim
+  home: https://github.com/leftfield-geospatial/geedim
   summary: Search, composite, and download Google Earth Engine imagery.
   license: Apache-2.0
   license_file: LICENSE

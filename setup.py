@@ -44,7 +44,7 @@ setup(
     long_description_content_type='text/x-rst',
     author='Dugal Harris',
     author_email='dugalh@gmail.com',
-    url='https://github.com/dugalh/geedim',
+    url='https://github.com/leftfield-geospatial/geedim',
     license='Apache-2.0',
     packages=find_packages(include=['geedim']),
     package_data={'geedim': ['data/ee_stac_urls.json']},
@@ -69,6 +69,6 @@ setup(
     entry_points={'console_scripts': ['geedim=geedim.cli:cli']},
     project_urls={
         'Documentation': 'https://geedim.readthedocs.io',
-        'Source': 'https://github.com/dugalh/geedim',
+        'Source': 'https://github.com/leftfield-geospatial/geedim',
     },
 )  # yapf: disable

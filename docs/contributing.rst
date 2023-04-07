@@ -2,7 +2,7 @@ Contributing
 ============
 
 Contributions are welcome.  Please report bugs and make feature requests with the github `issue tracker
-<https://github.com/dugalh/geedim/issues>`_.
+<https://github.com/leftfield-geospatial/geedim/issues>`_.
 
 Development environment
 -----------------------
@@ -69,7 +69,7 @@ Style
 Please include `NumPy docstrings <https://sphinxcontrib-napoleon.readthedocs.io/en/latest/example_numpy.html>`_ with
 your code. Try to conform to the ``geedim`` code style.  You can auto-format with
 `yapf <https://github.com/google/yapf>`__ and the included
-`.style.yapf <https://github.com/dugalh/geedim/blob/main/ .style.yapf>`__ configuration file:
+`.style.yapf <https://github.com/leftfield-geospatial/geedim/blob/main/ .style.yapf>`__ configuration file:
 
 .. code::
 

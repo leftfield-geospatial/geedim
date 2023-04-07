@@ -261,8 +261,8 @@ Credits
    terms of the `Apache-2.0 license <https://github.com/r-earthengine/ee_extra/blob/master/LICENSE>`__
 
 
-.. |Tests| image:: https://github.com/dugalh/geedim/actions/workflows/run-unit-tests.yml/badge.svg
-   :target: https://github.com/dugalh/geedim/actions/workflows/run-unit-tests.yml
+.. |Tests| image:: https://github.com/leftfield-geospatial/geedim/actions/workflows/run-unit-tests.yml/badge.svg
+   :target: https://github.com/leftfield-geospatial/geedim/actions/workflows/run-unit-tests.yml
 .. |codecov| image:: https://codecov.io/gh/dugalh/geedim/branch/main/graph/badge.svg?token=69GZNQ3TI3
    :target: https://codecov.io/gh/dugalh/geedim
 .. |PyPI version| image:: https://img.shields.io/pypi/v/geedim.svg
