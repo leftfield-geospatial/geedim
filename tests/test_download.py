@@ -43,6 +43,9 @@ class BaseImageLike:
         dtype_size = np.dtype(dtype).itemsize
         self.size = shape[0] * shape[1] * count * dtype_size
 
+    _tiles = BaseImage._tiles
+    _get_tile_shape = BaseImage._get_tile_shape
+
 
 @pytest.fixture(scope='session')
 def user_base_image() -> BaseImage:
@@ -405,6 +408,30 @@ def test_prepare_region_scale(base_image: str, param_image: str, region_25ha: di
 
 
 @pytest.mark.parametrize(
+    'base_image, bands', [
+        ('s2_sr_base_image', ['B1', 'B5']),
+        ('l9_base_image', ['SR_B4', 'SR_B3', 'SR_B2']),
+    ]
+)  # yapf: disable
+def test_prepare_bands(base_image: str, bands: List[str], region_25ha: dict, request: pytest.FixtureRequest):
+    """ Test BaseImage._prepare_for_export() with bands parameter. """
+    base_image: BaseImage = request.getfixturevalue(base_image)
+    param_image = BaseImage(base_image.ee_image.select(bands))
+
+    exp_image = base_image._prepare_for_export(bands=bands)
+
+    assert exp_image.count == len(bands)
+    for attr in ['crs', 'transform', 'scale', 'shape', 'band_properties']:
+        assert exp_image.__getattribute__(attr) == param_image.__getattribute__(attr)
+
+
+def test_prepare_bands_error(s2_sr_base_image):
+    """ Test BaseImage._prepare_for_export() raises an error with incorrect bands. """
+    with pytest.raises(ValueError):
+        s2_sr_base_image._prepare_for_export(bands=['unknown'])
+
+
+@pytest.mark.parametrize(
     'base_image', ['s2_sr_base_image', 'l9_base_image', 'modis_nbar_base_image'],
 )
 def test_prepare_for_download(
@@ -480,8 +507,8 @@ def test_tile_shape():
             for width in range(1, 11000, 100):
                 exp_shape = (height, width)
                 exp_image = BaseImageLike(shape=exp_shape)  # emulate a BaseImage
-                tile_shape, num_tiles = BaseImage._get_tile_shape(
-                    exp_image, max_tile_size=max_tile_size, max_tile_dim=max_tile_dim
+                tile_shape, num_tiles = exp_image._get_tile_shape(
+                    max_tile_size=max_tile_size, max_tile_dim=max_tile_dim
                 )
                 assert all(np.array(tile_shape) <= np.array(exp_shape))
                 assert all(np.array(tile_shape) <= max_tile_dim)
@@ -499,7 +526,7 @@ def test_tile_shape():
 def test_tiles(image_shape: Tuple, tile_shape: Tuple, image_transform: Affine):
     """ Test continuity and coverage of tiles. """
     exp_image = BaseImageLike(shape=image_shape, transform=image_transform)
-    tiles = [tile for tile in BaseImage._tiles(exp_image, tile_shape=tile_shape)]
+    tiles = [tile for tile in exp_image._tiles(tile_shape=tile_shape)]
 
     # test window coverage, and window & transform continuity
     prev_tile = tiles[0]
@@ -576,15 +603,15 @@ def test_overviews(user_base_image: BaseImage, region_25ha: Dict, tmp_path: path
             assert ds.overviews(band_i + 1)[0] == 2
 
 
-def test_metadata(landsat_ndvi_base_image: BaseImage, region_25ha: Dict, tmp_path: pathlib.Path):
+def test_metadata(s2_sr_base_image: BaseImage, region_25ha: Dict, tmp_path: pathlib.Path):
     """ Test metadata is written to a downloaded file. """
-    filename = tmp_path.joinpath('test_landsat_ndvi_download.tif')
-    landsat_ndvi_base_image.download(filename, region=region_25ha, crs='EPSG:3857', scale=30)
+    filename = tmp_path.joinpath('test_s2_band_subset_download.tif')
+    s2_sr_base_image.download(filename, region=region_25ha, crs='EPSG:3857', scale=60, bands=['B9'])
     assert filename.exists()
     with rio.open(filename, 'r') as ds:
         assert 'LICENSE' in ds.tags()
         assert len(ds.tags()['LICENSE']) > 0
-        assert 'NDVI' in ds.descriptions
+        assert 'B9' in ds.descriptions
         band_dict = ds.tags(1)
         for key in ['gsd', 'name', 'description']:
             assert key in band_dict
@@ -602,7 +629,7 @@ def test_start_export(type, user_fix_base_image: BaseImage, region_25ha: Dict):
     assert task.status()['state'] == 'READY'
 
 
-def test_export_asset(user_fix_base_image: BaseImage, region_25ha: Dict):
+def __test_export_asset(user_fix_base_image: BaseImage, region_25ha: Dict):
     """ Test start of a small export to EE asset. """
     # TODO: consider removing this slow test in favour of the equivalent integration test
     filename = f'test_export_{np.random.randint(1<<31)}'
