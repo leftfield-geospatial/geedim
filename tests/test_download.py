@@ -629,7 +629,7 @@ def test_start_export(type, user_fix_base_image: BaseImage, region_25ha: Dict):
     assert task.status()['state'] == 'READY'
 
 
-def test_export_asset(user_fix_base_image: BaseImage, region_25ha: Dict):
+def __test_export_asset(user_fix_base_image: BaseImage, region_25ha: Dict):
     """ Test start of a small export to EE asset. """
     # TODO: consider removing this slow test in favour of the equivalent integration test
     filename = f'test_export_{np.random.randint(1<<31)}'
