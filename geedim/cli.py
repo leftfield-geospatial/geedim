@@ -522,6 +522,10 @@ cli.add_command(search)
 @shape_option
 @like_option
 @dtype_option
+@click.option(
+    '-bn', '--band-name', 'bands', type=click.STRING, multiple=True, default=None, show_default='all bands',
+    help='Band name(s) to download.'
+)
 @mask_option
 @resampling_option
 @scale_offset_option
@@ -628,6 +632,10 @@ cli.add_command(download)
 @shape_option
 @like_option
 @dtype_option
+@click.option(
+    '-bn', '--band-name', 'bands', type=click.STRING, multiple=True, default=None, show_default='all bands',
+    help='Band name(s) to download.'
+)
 @mask_option
 @resampling_option
 @scale_offset_option
