@@ -414,7 +414,7 @@ def test_prepare_region_scale(base_image: str, param_image: str, region_25ha: di
     ]
 )  # yapf: disable
 def test_prepare_bands(base_image: str, bands: List[str], region_25ha: dict, request: pytest.FixtureRequest):
-    """ Test BaseImage._prepare_for_export() with region and scale parameters. """
+    """ Test BaseImage._prepare_for_export() with bands parameter. """
     base_image: BaseImage = request.getfixturevalue(base_image)
     param_image = BaseImage(base_image.ee_image.select(bands))
 
@@ -423,6 +423,12 @@ def test_prepare_bands(base_image: str, bands: List[str], region_25ha: dict, req
     assert exp_image.count == len(bands)
     for attr in ['crs', 'transform', 'scale', 'shape', 'band_properties']:
         assert exp_image.__getattribute__(attr) == param_image.__getattribute__(attr)
+
+
+def test_prepare_bands_error(s2_sr_base_image):
+    """ Test BaseImage._prepare_for_export() raises an error with incorrect bands. """
+    with pytest.raises(ValueError):
+        s2_sr_base_image._prepare_for_export(bands=['unknown'])
 
 
 @pytest.mark.parametrize(
