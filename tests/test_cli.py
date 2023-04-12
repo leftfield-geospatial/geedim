@@ -66,7 +66,7 @@ def gedi_image_id_list() -> List[str]:
 
 def _test_downloaded_file(
     filename: pathlib.Path, region: Dict = None, crs: str = None, scale: float = None, dtype: str = None,
-    scale_offset: bool = None, transform: Affine = None, shape: Tuple[int, int] = None
+    bands: List[str] = None, scale_offset: bool = None, transform: Affine = None, shape: Tuple[int, int] = None
 ):
     """ Helper function to test image file format against given parameters. """
     with rio.open(filename, 'r') as ds:
@@ -100,6 +100,9 @@ def _test_downloaded_file(
             assert ds.transform[:6] == transform[:6]
         if shape:
             assert ds.shape == tuple(shape)
+        if bands:
+            assert set(bands) == set(ds.descriptions)
+            assert set(bands) ==  set([ds.tags(bi)['name'] for bi in range(1, ds.count + 1)])
 
 
 @pytest.mark.parametrize(
@@ -391,17 +394,23 @@ def test_download_like(
 
 
 @pytest.mark.parametrize(
-    'image_id, region_file, crs, scale, dtype, mask, resampling, scale_offset, max_tile_size, max_tile_dim', [
-        ('l5_image_id', 'region_25ha_file', 'EPSG:3857', 30, 'uint16', False, 'near', False, 16, 10000),
-        ('l9_image_id', 'region_25ha_file', 'EPSG:3857', 30, 'float32', False, 'near', True, 32, 10000),
-        ('s2_toa_image_id', 'region_25ha_file', 'EPSG:3857', 10, 'float64', True, 'bilinear', True, 32, 10000),
-        ('modis_nbar_image_id', 'region_100ha_file', 'EPSG:3857', 500, 'int32', False, 'bicubic', False, 4, 100),
-        ('gedi_cth_image_id', 'region_25ha_file', 'EPSG:3857', 10, 'float32', True, 'bilinear', False, 32, 10000),
-        ('landsat_ndvi_image_id', 'region_25ha_file', 'EPSG:3857', 30, 'float64', True, 'near', False, 32, 10000),
+    'image_id, region_file, crs, scale, dtype, bands, mask, resampling, scale_offset, max_tile_size, max_tile_dim', [
+        ('l5_image_id', 'region_25ha_file', 'EPSG:3857', 30, 'uint16', None, False, 'near', False, 16, 10000),
+        ('l9_image_id', 'region_25ha_file', 'EPSG:3857', 30, 'float32', None, False, 'near', True, 32, 10000),
+        (
+            's2_toa_image_id', 'region_25ha_file', 'EPSG:3857', 10, 'float64', ['B5', 'B9'], True, 'bilinear', True, 32,
+            10000
+        ),
+        ('modis_nbar_image_id', 'region_100ha_file', 'EPSG:3857', 500, 'int32', None, False, 'bicubic', False, 4, 100),
+        (
+            'gedi_cth_image_id', 'region_25ha_file', 'EPSG:3857', 10, 'float32', ['rh99'], True, 'bilinear', False, 32,
+            10000
+        ),
+        ('landsat_ndvi_image_id', 'region_25ha_file', 'EPSG:3857', 30, 'float64', None, True, 'near', False, 32, 10000),
     ]
-)
+) # yapf: disable
 def test_download_params(
-    image_id: str, region_file: str, crs: str, scale: float, dtype: str, mask: bool, resampling: str,
+    image_id: str, region_file: str, crs: str, scale: float, dtype: str, bands: List[str], mask: bool, resampling: str,
     scale_offset: bool, max_tile_size: float, max_tile_dim: int, tmp_path: pathlib.Path, runner: CliRunner,
     request: pytest.FixtureRequest
 ):
@@ -416,6 +425,7 @@ def test_download_params(
     )
     cli_str += ' --mask' if mask else ' --no-mask'
     cli_str += ' --scale-offset' if scale_offset else ' --no-scale-offset'
+    cli_str += ''.join([f' --band-name {bn}' for bn in bands]) if bands else ''
     result = runner.invoke(cli, cli_str.split())
     assert (result.exit_code == 0)
     assert (out_file.exists())
@@ -423,7 +433,9 @@ def test_download_params(
     with open(region_file) as f:
         region = json.load(f)
     # test downloaded file readability and format
-    _test_downloaded_file(out_file, region=region, crs=crs, scale=scale, dtype=dtype, scale_offset=scale_offset)
+    _test_downloaded_file(
+        out_file, region=region, crs=crs, scale=scale, dtype=dtype, bands=bands, scale_offset=scale_offset
+    )
 
 
 def test_max_tile_size_error(
@@ -451,8 +463,8 @@ def test_max_tile_dim_error(
 def test_export_drive_params(l8_image_id: str, region_25ha_file: pathlib.Path, runner: CliRunner):
     """ Test export to google drive starts ok, specifying all cli params"""
     cli_str = (
-        f'export -i {l8_image_id} -r {region_25ha_file} -df geedim/test --crs EPSG:3857 --scale 30 '
-        f'--dtype uint16 --mask --resampling bilinear --no-wait'
+        f'export -i {l8_image_id} -r {region_25ha_file} -df geedim/test --crs EPSG:3857 --scale 30 --dtype uint16 '
+        f'--mask --resampling bilinear --no-wait --band-name SR_B4 --band-name SR_B3 --band-name SR_B2'
     )
     result = runner.invoke(cli, cli_str.split())
     assert (result.exit_code == 0)
@@ -471,8 +483,8 @@ def test_export_asset_params(l8_image_id: str, region_25ha_file: pathlib.Path, r
         pass
 
     cli_str = (
-        f'export -i {l8_image_id} -r {region_25ha_file} -f {folder} --crs EPSG:3857 --scale 30 '
-        f'--dtype uint16 --mask --resampling bilinear --no-wait --type asset'
+        f'export -i {l8_image_id} -r {region_25ha_file} -f {folder} --crs EPSG:3857 --scale 30 --dtype uint16 '
+        f'--mask --resampling bilinear --no-wait --type asset --band-name SR_B4 --band-name SR_B3 --band-name SR_B2'
     )
     result = runner.invoke(cli, cli_str.split())
     assert (result.exit_code == 0)
