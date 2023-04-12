@@ -391,7 +391,7 @@ class BaseImage:
     def _prepare_for_export(
         self, crs: str = None, crs_transform: Tuple[float] = None, shape: Tuple[int, int] = None, region: Dict =
         None, scale: float = None, resampling: ResamplingMethod = _default_resampling, dtype: str = None,
-        scale_offset: bool = False
+        scale_offset: bool = False, bands: List[str] = None,
     ) -> 'BaseImage':
         """
         Prepare the encapsulated image for export/download.  Will reproject, resample, clip and convert the image
@@ -465,47 +465,57 @@ class BaseImage:
             # This error is raised in later calls to ee.Image.getInfo(), but is neater to raise here first
             raise ValueError('You can specify one of scale or shape, but not both.')
 
+        if bands:
+            band_diff = set(bands).difference([band_prop['name'] for band_prop in self.band_properties])
+            if len(band_diff) > 0:
+                # If one or more specified bands don't exist, raise an error
+                raise ValueError(f'The band(s) {list(band_diff)} don\'t exist.')
+
+        # Create a new BaseImage of band subset is specified.  This is done here so that crs, scale etc
+        # parameters used below will have the values specific to bands.
+        exp_image = BaseImage(self.ee_image.select(bands)) if bands else self
+
         # perform image scale/offset, dtype and resampling operations
-        ee_image = self.ee_image
+        ee_image = exp_image.ee_image
         if scale_offset:
-            ee_image = self._scale_offset(ee_image, self.band_properties)
+            ee_image = BaseImage._scale_offset(ee_image, exp_image.band_properties)
             im_dtype = 'float64'
         else:
-            im_dtype = self.dtype
+            im_dtype = exp_image.dtype
 
         resampling = ResamplingMethod(resampling)
-        if resampling != self._default_resampling:
-            if not self.has_fixed_projection:
+        if resampling != BaseImage._default_resampling:
+            if not exp_image.has_fixed_projection:
                 raise ValueError(
                     'This image has no fixed projection and cannot be resampled.  If this image is a composite, '
                     'you can resample the component images used to create the composite.'
                 )
             ee_image = utils.resample(ee_image, resampling)
         # TODO: only do this if there is a change?  Or do we need to standardise the bands?
-        ee_image = self._convert_dtype(ee_image, dtype=dtype or im_dtype)
+        ee_image = BaseImage._convert_dtype(ee_image, dtype=dtype or im_dtype)
 
         # configure the export parameter values
-        crs = crs or self.crs
+        crs = crs or exp_image.crs
         if not crs_transform and not shape:
             # if none of crs_transform, shape, region or scale are specified, then set region and scale to defaults
-            region = region or self.footprint
-            scale = scale or self.scale
+            region = region or exp_image.footprint
+            scale = scale or exp_image.scale
 
-            if (crs == self.crs) and (scale == self.scale):
+            if (crs == exp_image.crs) and (scale == exp_image.scale):
                 # if crs_transform & shape are not already specified, and crs & scale match this image's crs & scale,
-                # then set crs_transform and shape to export on this image's (self) pixel grid
-                if region == self.footprint:
-                    crs_transform = self.transform
-                    shape = self.shape
+                # then set crs_transform and shape to export on export image's pixel grid
+                if region == exp_image.footprint:
+                    crs_transform = exp_image.transform
+                    shape = exp_image.shape
                 else:
                     # find a crs_transform and shape that encompasses region
                     if isinstance(region, ee.Geometry):
                         region = region.getInfo()
                     region_crs = region['crs']['properties']['name'] if 'crs' in region else 'EPSG:4326'
                     region_bounds = warp.transform_bounds(region_crs, utils.rio_crs(crs), *features.bounds(region))
-                    region_win = windows.from_bounds(*region_bounds, transform=self.transform)
+                    region_win = windows.from_bounds(*region_bounds, transform=exp_image.transform)
                     region_win = utils.expand_window_to_grid(region_win)
-                    crs_transform = self.transform * rio.Affine.translation(region_win.col_off, region_win.row_off)
+                    crs_transform = exp_image.transform * rio.Affine.translation(region_win.col_off, region_win.row_off)
                     shape = (region_win.height, region_win.width)
 
                 # prevent exporting with region & scale now that crs_transform and shape are set
@@ -516,12 +526,13 @@ class BaseImage:
         crs_transform = crs_transform[:6] if crs_transform else None
         dimensions = shape[::-1] if shape else None
         export_kwargs = dict(
-            crs=crs, crs_transform=crs_transform, dimensions=dimensions, region=region, scale=scale,
+            crs=crs, crs_transform=crs_transform, dimensions=dimensions, region=region, scale=scale, bands=bands,
             fileFormat='GeoTIFF', filePerBand=False
         )
         # drop items with values==None
         export_kwargs = {k: v for k, v in export_kwargs.items() if v is not None}
         logger.debug(f'ee.Image.prepare_for_export() params: {export_kwargs}')
+        # TODO: prepare_for_export does not seem to be used in ee internals any more
         ee_image, _ = ee_image.prepare_for_export(export_kwargs)
         return BaseImage(ee_image)
 
@@ -556,13 +567,12 @@ class BaseImage:
             profile.update(bigtiff=True)
         return exp_image, profile
 
-    @staticmethod
     def _get_tile_shape(
-        exp_image: 'BaseImage', max_tile_size: Optional[float] = None, max_tile_dim: Optional[int] = None
+        self, max_tile_size: Optional[float] = None, max_tile_dim: Optional[int] = None
     ) -> Tuple[Tuple[int, int], int]:  # yapf: disable
         """
-        Return a tile shape and number of tiles for a given BaseImage, such that the tile shape satisfies GEE
-        download limits, and is 'square-ish'.
+        Return a tile shape and number of tiles, such that the tile shape satisfies GEE download limits, and is
+        'square-ish'.
         """
         # convert max_tile_size from MB to bytes & set to EE default if None
         if max_tile_size and (max_tile_size > BaseImage._ee_max_tile_size):
@@ -579,15 +589,15 @@ class BaseImage:
         max_tile_dim = max_tile_dim or BaseImage._ee_max_tile_dim   # set max_tile_dim to EE default if None
 
         # find the total number of tiles the image must be divided into to satisfy max_tile_size
-        image_shape = np.array(exp_image.shape, dtype='int64')
-        dtype_size = np.dtype(exp_image.dtype).itemsize
-        image_size = exp_image.size
-        if exp_image.dtype.endswith('int8'):
+        image_shape = np.array(self.shape, dtype='int64')
+        dtype_size = np.dtype(self.dtype).itemsize
+        image_size = self.size
+        if self.dtype.endswith('int8'):
             # workaround for GEE overestimate of *int8 dtype download sizes
             dtype_size *= 2
             image_size *= 2
 
-        pixel_size = dtype_size * exp_image.count
+        pixel_size = dtype_size * self.count
 
         num_tile_shape = np.array([1, 1], dtype='int64')
         tile_size = image_size
@@ -647,12 +657,11 @@ class BaseImage:
                 dataset.set_band_description(band_i + 1, clean_band_dict['name'])
             dataset.update_tags(band_i + 1, **clean_band_dict)
 
-    @staticmethod
-    def _tiles(exp_image: 'BaseImage', tile_shape: Tuple[int, int]) -> Iterator[Tile]:
+    def _tiles(self, tile_shape: Tuple[int, int]) -> Iterator[Tile]:
         """
         Iterator over downloadable image tiles.
 
-        Divides an image into adjoining tiles no bigger than `tile_shape`.
+        Divides the image into adjoining tiles no bigger than `tile_shape`.
 
         Parameters
         ----------
@@ -669,13 +678,13 @@ class BaseImage:
         """
 
         # split the image up into tiles of at most `tile_shape` dimension
-        image_shape = exp_image.shape
+        image_shape = self.shape
         start_range = product(range(0, image_shape[0], tile_shape[0]), range(0, image_shape[1], tile_shape[1]))
         for tile_start in start_range:
             tile_stop = np.clip(np.add(tile_start, tile_shape), a_min=None, a_max=image_shape)
             clip_tile_shape = (tile_stop - tile_start).tolist()  # tolist is just to convert to native int
             tile_window = windows.Window(tile_start[1], tile_start[0], clip_tile_shape[1], clip_tile_shape[0])
-            yield Tile(exp_image, tile_window)
+            yield Tile(self, tile_window)
 
     @staticmethod
     def monitor_export(task: ee.batch.Task, label: str = None):
@@ -768,6 +777,8 @@ class BaseImage:
            `float64`). Defaults to auto select a minimal type that can represent the range of pixel values.
         scale_offset: bool, optional
             Whether to apply any EE band scales and offsets to the image.
+        bands: list of str, optional
+            List of bands to export.
 
         Returns
         -------
@@ -783,7 +794,7 @@ class BaseImage:
             )
 
         if logger.getEffectiveLevel() <= logging.DEBUG:
-            logger.debug(f'Uncompressed size: {self._str_format_size(exp_image.size)}')
+            logger.debug(f'Uncompressed size: {BaseImage._str_format_size(exp_image.size)}')
 
         # create export task and start
         type = ExportType(type)
@@ -809,7 +820,7 @@ class BaseImage:
 
         task.start()
         if wait:  # wait for completion
-            self.monitor_export(task)
+            BaseImage.monitor_export(task)
         return task
 
     def download(
@@ -865,6 +876,8 @@ class BaseImage:
            `float64`). Defaults to auto select a minimal type that can represent the range of pixel values.
         scale_offset: bool, optional
             Whether to apply any EE band scales and offsets to the image.
+        bands: list of str, optional
+            List of bands to download.
         """
 
         max_threads = num_threads or min(32, (os.cpu_count() or 1) + 4)
@@ -880,7 +893,7 @@ class BaseImage:
         exp_image, profile = self._prepare_for_download(**kwargs)
 
         # get the dimensions of an image tile that will satisfy GEE download limits
-        tile_shape, num_tiles = self._get_tile_shape(exp_image, max_tile_size=max_tile_size, max_tile_dim=max_tile_dim)
+        tile_shape, num_tiles = exp_image._get_tile_shape(max_tile_size=max_tile_size, max_tile_dim=max_tile_dim)
 
         # find raw size of the download data (less than the actual download size as the image data is zipped in a
         # compressed geotiff)
@@ -889,16 +902,16 @@ class BaseImage:
             dtype_size = np.dtype(exp_image.dtype).itemsize
             raw_tile_size = tile_shape[0] * tile_shape[1] * exp_image.count * dtype_size
             logger.debug(f'{filename.name}:')
-            logger.debug(f'Uncompressed size: {self._str_format_size(raw_download_size)}')
+            logger.debug(f'Uncompressed size: {BaseImage._str_format_size(raw_download_size)}')
             logger.debug(f'Num. tiles: {num_tiles}')
             logger.debug(f'Tile shape: {tile_shape}')
-            logger.debug(f'Tile size: {self._str_format_size(int(raw_tile_size))}')
+            logger.debug(f'Tile size: {BaseImage._str_format_size(int(raw_tile_size))}')
 
         if raw_download_size > 1e9:
             # warn if the download is large (>1GB)
             logger.warning(
                 f'Consider adjusting `region`, `scale` and/or `dtype` to reduce the {filename.name}'
-                f' download size (raw: {self._str_format_size(raw_download_size)}).'
+                f' download size (raw: {BaseImage._str_format_size(raw_download_size)}).'
             )
 
         # configure the progress bar to monitor raw/uncompressed download size
@@ -925,7 +938,7 @@ class BaseImage:
 
             with ThreadPoolExecutor(max_workers=max_threads) as executor:
                 # Run the tile downloads in a thread pool
-                tiles = self._tiles(exp_image, tile_shape=tile_shape)
+                tiles = exp_image._tiles(tile_shape=tile_shape)
                 futures = [executor.submit(download_tile, tile) for tile in tiles]
                 try:
                     for future in as_completed(futures):
@@ -937,5 +950,5 @@ class BaseImage:
 
             bar.update(bar.total - bar.n)   # ensure the bar reaches 100%
             # populate GeoTIFF metadata and build overviews
-            self._write_metadata(out_ds)
-            self._build_overviews(out_ds)
+            exp_image._write_metadata(out_ds)
+            BaseImage._build_overviews(out_ds)
