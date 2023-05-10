@@ -778,7 +778,7 @@ class BaseImage:
         scale_offset: bool, optional
             Whether to apply any EE band scales and offsets to the image.
         bands: list of str, optional
-            List of bands to export.
+            List of band names to export.
 
         Returns
         -------
@@ -877,7 +877,7 @@ class BaseImage:
         scale_offset: bool, optional
             Whether to apply any EE band scales and offsets to the image.
         bands: list of str, optional
-            List of bands to download.
+            List of band names to download.
         """
 
         max_threads = num_threads or min(32, (os.cpu_count() or 1) + 4)
