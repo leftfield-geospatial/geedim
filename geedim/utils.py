@@ -109,13 +109,13 @@ def split_id(image_id: str) -> Tuple[str, str]:
 
 
 @contextmanager
-def suppress_rio_warn_logs():
-    """ A context manager that sets the `rasterio` logging level to ERROR, then returns it to its original value. """
+def suppress_rio_logs(level: int = logging.ERROR):
+    """ A context manager that sets the `rasterio` logging level, then returns it to its original value. """
     try:
         # GEE sets GeoTIFF `colorinterp` tags incorrectly. This suppresses `rasterio` warning relating to this:
         # 'Sum of Photometric type-related color channels and ExtraSamples doesn't match SamplesPerPixel'
         rio_level = logging.getLogger('rasterio').getEffectiveLevel()
-        logging.getLogger('rasterio').setLevel(logging.ERROR)
+        logging.getLogger('rasterio').setLevel(level)
         yield
     finally:
         logging.getLogger('rasterio').setLevel(rio_level)
@@ -137,7 +137,7 @@ def get_bounds(filename: pathlib.Path, expand: float = 5):
     dict
         Geojson polygon.
     """
-    with suppress_rio_warn_logs(), rio.Env(GTIFF_FORCE_RGBA=False), rio.open(filename) as im:
+    with suppress_rio_logs(), rio.Env(GTIFF_FORCE_RGBA=False), rio.open(filename) as im:
         bbox = im.bounds
         if (im.crs.linear_units == "metre") and (expand > 0):  # expand the bounding box
             expand_x = (bbox.right - bbox.left) * expand / 100.0
