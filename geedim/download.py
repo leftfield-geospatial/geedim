@@ -616,9 +616,9 @@ class BaseImage:
     def _build_overviews(self, filename: Union[str, pathlib.Path], max_num_levels: int = 8, min_ovw_pixels: int = 256):
         """ Build internal overviews, downsampled by successive powers of 2, for a given filename. """
 
-        # TODO: revisit multi-threaded overviews on rio/gdal update
-        # build overviews in a single threaded environment (currently rio/gdal reports errors when building overviews
-        # with GDAL_NUM_THREADS='ALL_CPUs')
+        # TODO: revisit multi-threaded overviews on gdal update
+        # build overviews in a single threaded environment (currently gdal reports errors when building overviews
+        # with GDAL_NUM_THREADS='ALL_CPUs' - see https://github.com/OSGeo/gdal/issues/7921)
         env_dict = dict(GTIFF_FORCE_RGBA=False, COMPRESS_OVERVIEW='DEFLATE')
         if self.size >= 4e9:
             env_dict.update(BIGTIFF_OVERVIEW=True)
@@ -630,7 +630,8 @@ class BaseImage:
             min_level_shape_pow2 = int(np.log2(min_ovw_pixels))
             num_ovw_levels = np.min([max_num_levels, max_ovw_levels - min_level_shape_pow2])
             ovw_levels = [2**m for m in range(1, num_ovw_levels + 1)]
-            ds.build_overviews(ovw_levels, RioResampling.average)
+            with utils.suppress_rio_logs(logging.CRITICAL):
+                ds.build_overviews(ovw_levels, RioResampling.average)
 
     def _write_metadata(self, dataset: rio.io.DatasetWriter):
         """ Write Earth Engine and STAC metadata to an open rasterio dataset. """
