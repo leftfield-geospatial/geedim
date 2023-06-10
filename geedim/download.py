@@ -613,19 +613,24 @@ class BaseImage:
         tile_shape = tuple(tile_shape.tolist())
         return tile_shape, num_tiles
 
-    @staticmethod
-    def _build_overviews(dataset: rio.io.DatasetWriter, max_num_levels: int = 8, min_ovw_pixels: int = 256):
-        """ Build internal overviews, downsampled by successive powers of 2, for an open rasterio dataset. """
-        if dataset.closed:
-            raise IOError('Image dataset is closed')
+    def _build_overviews(self, filename: Union[str, pathlib.Path], max_num_levels: int = 8, min_ovw_pixels: int = 256):
+        """ Build internal overviews, downsampled by successive powers of 2, for a given filename. """
 
-        # limit overviews so that the highest level has at least 2**8=256 pixels along the shortest dimension,
-        # and so there are no more than 8 levels.
-        max_ovw_levels = int(np.min(np.log2(dataset.shape)))
-        min_level_shape_pow2 = int(np.log2(min_ovw_pixels))
-        num_ovw_levels = np.min([max_num_levels, max_ovw_levels - min_level_shape_pow2])
-        ovw_levels = [2**m for m in range(1, num_ovw_levels + 1)]
-        dataset.build_overviews(ovw_levels, RioResampling.average)
+        # TODO: revisit multi-threaded overviews on rio/gdal update
+        # build overviews in a single threaded environment (currently rio/gdal reports errors when building overviews
+        # with GDAL_NUM_THREADS='ALL_CPUs')
+        env_dict = dict(GTIFF_FORCE_RGBA=False, COMPRESS_OVERVIEW='DEFLATE')
+        if self.size >= 4e9:
+            env_dict.update(BIGTIFF_OVERVIEW=True)
+
+        with rio.Env(**env_dict), rio.open(filename, 'r+') as ds:
+            # limit overviews so that the highest level has at least 2**8=256 pixels along the shortest dimension,
+            # and so there are no more than 8 levels.
+            max_ovw_levels = int(np.min(np.log2(ds.shape)))
+            min_level_shape_pow2 = int(np.log2(min_ovw_pixels))
+            num_ovw_levels = np.min([max_num_levels, max_ovw_levels - min_level_shape_pow2])
+            ovw_levels = [2**m for m in range(1, num_ovw_levels + 1)]
+            ds.build_overviews(ovw_levels, RioResampling.average)
 
     def _write_metadata(self, dataset: rio.io.DatasetWriter):
         """ Write Earth Engine and STAC metadata to an open rasterio dataset. """
@@ -949,6 +954,8 @@ class BaseImage:
                     raise ex
 
             bar.update(bar.total - bar.n)   # ensure the bar reaches 100%
-            # populate GeoTIFF metadata and build overviews
+            # populate GeoTIFF metadata
             exp_image._write_metadata(out_ds)
-            BaseImage._build_overviews(out_ds)
+
+        # build overviews
+        exp_image._build_overviews(filename)

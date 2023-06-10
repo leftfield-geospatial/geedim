@@ -82,6 +82,7 @@ class ExportType(str, Enum):
     cloud = 'cloud'
     """ Export to Google Cloud Storage. """
 
+
 class SpectralDistanceMetric(str, Enum):
     """ Enumeration for the spectral distance metric. """
     sam = 'sam'
