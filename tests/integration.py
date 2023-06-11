@@ -82,15 +82,17 @@ def test_geeml_integration(tmp_path: Path):
 
     # test we can download the image with a max_tile_size of 16 MB
     gd_image.download(
-        out_file, crs='EPSG:4326', region=region, scale=10, dtype='float64',overwrite=True, max_tile_size=16,
+        out_file, crs='EPSG:4326', region=region, scale=10, dtype='float64', overwrite=True, max_tile_size=16,
     )
     assert out_file.exists()
     with rio.open(out_file, 'r') as ds:
         assert ds.count == 4
         assert ds.dtypes[0] == 'float64'
         assert np.isnan(ds.nodata)
-        assert ds.transform.xoff == pytest.approx(region['coordinates'][0][0][0])
-        assert ds.transform.yoff == pytest.approx(region['coordinates'][0][2][1])
+        region_cnrs = np.array(region['coordinates'][0])
+        region_bounds = rio.coords.BoundingBox(*region_cnrs.min(axis=0), *region_cnrs.max(axis=0))
+        for bi in range(4):
+            assert ds.bounds[bi] == pytest.approx(region_bounds[bi], abs=1e-3)
 
 
 def test_cli_asset_export(l8_image_id, region_25ha_file: Path, runner: CliRunner, tmp_path: Path):
