@@ -91,8 +91,8 @@ def test_geeml_integration(tmp_path: Path):
         assert np.isnan(ds.nodata)
         region_cnrs = np.array(region['coordinates'][0])
         region_bounds = rio.coords.BoundingBox(*region_cnrs.min(axis=0), *region_cnrs.max(axis=0))
-        for bi in range(4):
-            assert ds.bounds[bi] == pytest.approx(region_bounds[bi], abs=1e-3)
+        for bn, bv in ds.bounds._asdict().items():
+            assert bv == pytest.approx(region_bounds._asdict()[bn], abs=1e-3)
 
 
 def test_cli_asset_export(l8_image_id, region_25ha_file: Path, runner: CliRunner, tmp_path: Path):
