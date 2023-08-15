@@ -26,6 +26,7 @@ jobs:
         timeout-minutes: 5
         env:
           EE_SERVICE_ACC_PRIVATE_KEY: ${{ secrets.EE_SERVICE_ACC_PRIVATE_KEY }}
+        shell: bash
         run: |
           geedim --version
           geedim --help
