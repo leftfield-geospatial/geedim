@@ -22,7 +22,7 @@ jobs:
         channels: conda-forge
         channel-priority: true
         activate-environment: test
-        mamba-version: ">=1.4"
+        mamba-version: "<1.4"
     - name: Install geedim
       run: |
         mamba info
