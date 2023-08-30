@@ -77,7 +77,7 @@ class Tile:
         response: requests.Response, optional
             Response to a get request on the tile download url.
         bar: tqdm, optional
-            tqdm propgress bar instance to update with incremental (0-1) download progress.
+            tqdm progress bar instance to update with incremental (0-1) download progress.
 
         Returns
         -------

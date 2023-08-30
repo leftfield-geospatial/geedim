@@ -96,7 +96,7 @@ def test_refl_stac_item(image_id: str, stac_catalog: StacCatalog, request: pytes
     has_center_wavelength = ['center_wavelength' in bd for bd in stac_item.band_props.values()]
     assert sum(has_center_wavelength) >= 7
     for band_dict in stac_item.band_props.values():
-        if re.search('^B\d|^SR_B\d|^Nadir_Reflectance_Band\d', band_dict['name']):
+        if re.search(r'^B\d|^SR_B\d|^Nadir_Reflectance_Band\d', band_dict['name']):
             assert 'center_wavelength' in band_dict
             assert 'scale' in band_dict
 

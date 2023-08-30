@@ -58,14 +58,14 @@ def compatible_collections(names: List[str]) -> bool:
     names = list(set(names))  # reduce to unique values
     start_name = names[0]
     name_matches = [True]
-    landsat_regex = re.compile('(LANDSAT/\w{2})(\d{2})(/.*)')
+    landsat_regex = re.compile(r'(LANDSAT/\w{2})(\d{2})(/.*)')
     start_landsat_match = landsat_regex.search(start_name)
     for name in names[1:]:
         name_match = False
         if start_name == name:
             name_match = True
         elif start_landsat_match:
-            landsat_regex = re.compile(f'{start_landsat_match.groups()[0]}\d\d{start_landsat_match.groups()[-1]}')
+            landsat_regex = re.compile(rf'{start_landsat_match.groups()[0]}\d\d{start_landsat_match.groups()[-1]}')
             if landsat_regex.search(name):
                 name_match = True
         name_matches.append(name_match)

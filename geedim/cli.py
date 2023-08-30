@@ -61,7 +61,7 @@ class ChainedCommand(click.Command):
         sub_strings = {
             '\b\n': '\n\b',                 # convert from RST friendly to click literal (unwrapped) block marker
             r'\| ': '',                     # strip RST literal (unwrapped) marker in e.g. tables and bullet lists
-            '\n\.\. _.*:\n': '',            # strip RST ref directive '\n.. _<name>:\n'
+            '\n\\.\\. _.*:\n': '',            # strip RST ref directive '\n.. _<name>:\n'
             '::': ':',                      # convert from RST '::' to ':'
             '``(.*?)``': r'\g<1>',          # convert from RST '``literal``' to 'literal'
             ':option:`(.*?)( <.*?>)?`': r'\g<1>',  # convert ':option:`--name <group-command --name>`' to '--name'
