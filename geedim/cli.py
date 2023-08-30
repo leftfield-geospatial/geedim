@@ -57,15 +57,16 @@ class ChainedCommand(click.Command):
         """ Strip some RST markup from the help text for CLI display.  Assumes no grid tables. """
         if not hasattr(self, 'click_wrap_text'):
             self.click_wrap_text = click.formatting.wrap_text
+
         sub_strings = {
             '\b\n': '\n\b',                 # convert from RST friendly to click literal (unwrapped) block marker
             r'\| ': '',                     # strip RST literal (unwrapped) marker in e.g. tables and bullet lists
             '\n\.\. _.*:\n': '',            # strip RST ref directive '\n.. _<name>:\n'
-            '`(.*?) <(.*?)>`_': r'\g<1>',   # convert from RST cross-ref '`<name> <<link>>`_' to 'name'
             '::': ':',                      # convert from RST '::' to ':'
             '``(.*?)``': r'\g<1>',          # convert from RST '``literal``' to 'literal'
             ':option:`(.*?)( <.*?>)?`': r'\g<1>',  # convert ':option:`--name <group-command --name>`' to '--name'
             ':option:`(.*?)`': r'\g<1>',    # convert ':option:`--name`' to '--name'
+            '`([^<]*) <([^>]*)>`_': r'\g<1>',  # convert from RST cross-ref '`<name> <<link>>`_' to 'name'
         }  # yapf: disable
 
         def reformat_text(text, width, **kwargs):
