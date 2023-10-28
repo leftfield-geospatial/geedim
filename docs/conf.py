@@ -20,8 +20,8 @@ from geedim.schema import cloud_coll_table
 # -- Project information -----------------------------------------------------
 
 project = 'geedim'
-copyright = '2022, Dugal Harris'
-author = 'Dugal Harris'
+copyright = '2022-2023, Leftfield Geospatial'
+author = 'Leftfield Geospatial'
 
 # The full version, including alpha/beta/rc tags
 release = __version__
