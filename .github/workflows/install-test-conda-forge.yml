@@ -9,27 +9,30 @@ jobs:
     runs-on: ${{ matrix.os }}
     defaults:
       run:
-        shell: bash -l {0}
+        shell: bash -el {0}
     strategy:
       fail-fast: false
       matrix:
         os: [ macos-latest, ubuntu-latest, windows-latest ]
         python-version: [ '3.9', '3.10', '3.11' ]
     steps:
-    - uses: conda-incubator/setup-miniconda@v3
+
+    - name: Set up conda
+      uses: conda-incubator/setup-miniconda@v3
       with:
         python-version: ${{ matrix.python-version }}
         channels: conda-forge
-        channel-priority: true
-        activate-environment: test
-        mamba-version: "*"
-    - name: Install geedim
+        channel-priority: strict
+        activate-environment: geedim-test
+        conda-solver: libmamba
+
+    - name: Install package
       run: |
-        mamba info
-        mamba list
-        mamba install -c conda-forge geedim>=1.7.2
-        mamba list
-    - name: Test geedim
+        conda info
+        conda install geedim>=1.7.2
+        conda list
+
+    - name: Run tests
       timeout-minutes: 5
       env:
         EE_SERVICE_ACC_PRIVATE_KEY: ${{ secrets.EE_SERVICE_ACC_PRIVATE_KEY }}
