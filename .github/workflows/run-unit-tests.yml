@@ -46,7 +46,7 @@ jobs:
       env:
         EE_SERVICE_ACC_PRIVATE_KEY: ${{ secrets.EE_SERVICE_ACC_PRIVATE_KEY }}
       run: |
-        python -m pytest -n 4 --durations=10 --cov=geedim --cov-report=term-missing --cov-report=xml:coverage.xml ./tests
+        python -m pytest -n auto --durations=10 --cov=geedim --cov-report=term-missing --cov-report=xml:coverage.xml ./tests
 
     - name: Upload coverage
       uses: codecov/codecov-action@v3
