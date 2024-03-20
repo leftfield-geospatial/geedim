@@ -8,7 +8,9 @@ on:
   pull_request:
     branches: [ main ]
   workflow_dispatch:
- 
+  schedule:
+    - cron: '0 2 * * 1'  # run weekly
+
 jobs:
   test:
     runs-on: ${{ matrix.os }}
@@ -49,7 +51,7 @@ jobs:
         python -m pytest -n auto --durations=10 --cov=geedim --cov-report=term-missing --cov-report=xml:coverage.xml ./tests
 
     - name: Upload coverage
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v4
       with:
         fail_ci_if_error: false
         files: ./coverage.xml
