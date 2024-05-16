@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.8', '3.11']
+        python-version: ['3.8', '3.12']
         os: [ macos-latest, ubuntu-latest, windows-latest ]
 
     steps:
@@ -56,3 +56,4 @@ jobs:
         fail_ci_if_error: true
         files: ./coverage.xml
         token: ${{ secrets.CODECOV_TOKEN }}
+        verbose: true
