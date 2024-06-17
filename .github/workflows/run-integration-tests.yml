@@ -24,22 +24,6 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
 
-#      - name: Install geedim from PyPI
-#        run: |
-#          python -m pip install --upgrade pip pytest geedim
-#
-#      - name: Test geedim download CLI
-#        timeout-minutes: 10
-#        env:
-#          EE_SERVICE_ACC_PRIVATE_KEY: ${{ secrets.EE_SERVICE_ACC_PRIVATE_KEY }}
-#        run: |
-#          geedim --version
-#          geedim --help
-#          geedim download -i LANDSAT/LC08/C02/T1_TOA/LC08_001004_20140609 --scale 100 -o
-#          test -f ./LANDSAT-LC08-C02-T1_TOA-LC08_001004_20140609.tif && echo "File exists"
-#          pwd
-#          ls -l
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -78,25 +62,6 @@ jobs:
           channel-priority: strict
           activate-environment: geedim-test
           conda-solver: libmamba
-
-#      - name: Install geedim
-#        run: |
-#          mamba info
-#          mamba install -c conda-forge geedim=1.7.3 pytest
-#          # force an update to the latest versions
-#          mamba update -c conda-forge geedim --force-reinstall
-#          mamba list
-#      - name: Test geedim download CLI
-#        timeout-minutes: 10
-#        env:
-#          EE_SERVICE_ACC_PRIVATE_KEY: ${{ secrets.EE_SERVICE_ACC_PRIVATE_KEY }}
-#        run: |
-#          geedim --version
-#          geedim --help
-#          geedim download -i LANDSAT/LC08/C02/T1_TOA/LC08_001004_20140609 --scale 100 -o
-#          test -f ./LANDSAT-LC08-C02-T1_TOA-LC08_001004_20140609.tif && echo "File exists"
-#          pwd
-#          ls -l
 
       - name: Install dependencies
         run: |
