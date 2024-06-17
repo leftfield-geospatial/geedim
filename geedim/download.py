@@ -434,6 +434,7 @@ class BaseImage:
         BaseImage
             Prepared image.
         """
+        # TODO: allow setting a custom nodata value with ee.Image.unmask() - see #21
 
         # Check for parameter combination errors.
         # This necessarily duplicates some of what is done in ee.Image.getDownloadURL, so that errors are raised
@@ -471,7 +472,7 @@ class BaseImage:
                 # If one or more specified bands don't exist, raise an error
                 raise ValueError(f'The band(s) {list(band_diff)} don\'t exist.')
 
-        # Create a new BaseImage of band subset is specified.  This is done here so that crs, scale etc
+        # Create a new BaseImage if band subset is specified.  This is done here so that crs, scale etc
         # parameters used below will have the values specific to bands.
         exp_image = BaseImage(self.ee_image.select(bands)) if bands else self
 
@@ -569,7 +570,7 @@ class BaseImage:
 
     def _get_tile_shape(
         self, max_tile_size: Optional[float] = None, max_tile_dim: Optional[int] = None
-    ) -> Tuple[Tuple[int, int], int]:  # yapf: disable
+    ) -> Tuple[Tuple, int]:  # yapf: disable
         """
         Return a tile shape and number of tiles, such that the tile shape satisfies GEE download limits, and is
         'square-ish'.
@@ -609,7 +610,7 @@ class BaseImage:
             tile_size = tile_shape[0] * tile_shape[1] * pixel_size
 
         tile_shape[tile_shape > max_tile_dim] = max_tile_dim
-        num_tiles = int(np.product(np.ceil(image_shape / tile_shape)))
+        num_tiles = int(np.prod(np.ceil(image_shape / tile_shape)))
         tile_shape = tuple(tile_shape.tolist())
         return tile_shape, num_tiles
 
