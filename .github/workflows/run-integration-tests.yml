@@ -12,7 +12,7 @@ jobs:
       max-parallel: 2
       matrix:
         os: [ macos-latest, ubuntu-latest, windows-latest ]
-        python-version: [ '3.8', '3.11' ]
+        python-version: [ '3.8', '3.12' ]
 
     steps:
       - name: Check out repository
@@ -64,7 +64,7 @@ jobs:
       max-parallel: 2
       matrix:
         os: [ macos-latest, ubuntu-latest, windows-latest ]
-        python-version: [ '3.8', '3.11' ]
+        python-version: [ '3.8', '3.12' ]
 
     steps:
       - name: Check out repository
@@ -82,7 +82,7 @@ jobs:
 #      - name: Install geedim
 #        run: |
 #          mamba info
-#          mamba install -c conda-forge geedim=1.7.2 pytest
+#          mamba install -c conda-forge geedim=1.7.3 pytest
 #          # force an update to the latest versions
 #          mamba update -c conda-forge geedim --force-reinstall
 #          mamba list
