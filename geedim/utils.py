@@ -302,7 +302,7 @@ def resample(ee_image: ee.Image, method: ResamplingMethod) -> ee.Image:
 
 
 def retry_session(
-    retries: int = 3, backoff_factor: float = 0.3, status_forcelist: Tuple = (429, 500, 502, 503, 504),
+    retries: int = 5, backoff_factor: float = 0.3, status_forcelist: Tuple = (429, 500, 502, 503, 504),
     session: requests.Session = None
 ) -> requests.Session:
     """ requests session configured for retries. """
