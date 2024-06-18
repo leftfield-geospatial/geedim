@@ -94,7 +94,7 @@ class Tile:
         raw_download_size = self._shape[0] * self._shape[1] * self._exp_image.count * dtype_size
         download_size = int(response.headers.get('content-length', 0))
 
-        if download_size == 0 or not response.ok:
+        if download_size == 0 or not response.status_code == 200:
             resp_dict = response.json()
             if 'error' in resp_dict and 'message' in resp_dict['error']:
                 msg = resp_dict['error']['message']
@@ -110,12 +110,21 @@ class Tile:
 
         # download zip into buffer
         zip_buffer = BytesIO()
-        for data in response.iter_content(chunk_size=10240):
-            zip_buffer.write(data)
-            if bar is not None:
-                # update with raw download progress (0-1)
-                bar.update(raw_download_size * (len(data) / download_size))
-        zip_buffer.flush()
+        downloaded_size = 0
+        with response:
+            for data in response.iter_content(chunk_size=10240):
+                zip_buffer.write(data)
+                if bar is not None:
+                    # update with raw download progress (0-1)
+                    bar.update(raw_download_size * (len(data) / download_size))
+                downloaded_size += len(data)
+            zip_buffer.flush()
+
+        if downloaded_size < download_size:
+            raise IOError(
+                f'Incomplete read: {downloaded_size} bytes read, {download_size-downloaded_size} '
+                f'more expected.'
+            )
 
         # extract geotiff from zipped buffer into another buffer
         zip_file = zipfile.ZipFile(zip_buffer)
