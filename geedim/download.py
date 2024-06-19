@@ -952,7 +952,7 @@ class BaseImage:
                         future.result()
                 except Exception as ex:
                     logger.info(f'Exception: {str(ex)}\nCancelling...')
-                    executor.shutdown(wait=False)
+                    executor.shutdown(wait=False, cancel_futures=True)
                     raise ex
 
             bar.update(bar.total - bar.n)   # ensure the bar reaches 100%
