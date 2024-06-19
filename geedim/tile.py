@@ -64,7 +64,7 @@ class Tile:
                     filePerBand=False, fileFormat='GeoTIFF'
                 )
             )
-        return session.get(url, stream=True), url
+        return session.get(url, stream=True, timeout=(30, 300)), url
 
     def download(self, session=None, response=None, bar: tqdm = None):
         """
@@ -120,15 +120,19 @@ class Tile:
                 downloaded_size += len(data)
             zip_buffer.flush()
 
+        # check downloaded size matches the header content-length
         if downloaded_size < download_size:
             raise IOError(
                 f'Incomplete read: {downloaded_size} bytes read, {download_size-downloaded_size} '
-                f'more expected.'
+                f'more expected. URL: {response.url}.'
             )
 
         # extract geotiff from zipped buffer into another buffer
-        zip_file = zipfile.ZipFile(zip_buffer)
-        ext_buffer = BytesIO(zip_file.read(zip_file.filelist[0]))
+        try:
+            zip_file = zipfile.ZipFile(zip_buffer)
+            ext_buffer = BytesIO(zip_file.read(zip_file.filelist[0]))
+        except zipfile.BadZipfile as ex:
+            raise IOError(f'Bad tile zip from URL: {response.url}.') from ex
 
         # read the geotiff with a rasterio memory file
         env = rio.Env(GDAL_NUM_THREADS='ALL_CPUs', GTIFF_FORCE_RGBA=False)
