@@ -87,21 +87,10 @@ compositing are supported on the following collections:
 Installation
 ------------
 
-Requirements
-~~~~~~~~~~~~
-
 ``geedim`` is a python 3 package, and requires users to be registered with `Google Earth
 Engine <https://signup.earthengine.google.com>`__.
 
-conda
-~~~~~
-
-Under Windows, using ``conda`` is the easiest way to resolve binary dependencies. The
-`Miniconda <https://docs.conda.io/en/latest/miniconda.html>`__ installation provides a minimal ``conda``.
-
-.. code:: shell
-
-   conda install -c conda-forge geedim
+It can be installed with `pip <https://pip.pypa.io/>`_ or `conda <https://docs.anaconda.com/free/miniconda/>`_.
 
 pip
 ~~~
@@ -109,6 +98,13 @@ pip
 .. code:: shell
 
    pip install geedim
+
+conda
+~~~~~
+
+.. code:: shell
+
+   conda install -c conda-forge geedim
 
 Authentication
 ~~~~~~~~~~~~~~
@@ -243,7 +239,7 @@ Example
 License
 -------
 
-This project is licensed under the terms of the `Apache-2.0 License <LICENSE>`__.
+This project is licensed under the terms of the `Apache-2.0 License <https://github.com/leftfield-geospatial/geedim/blob/main/LICENSE>`__.
 
 Contributing
 ------------
