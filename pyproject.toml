@@ -1,6 +1,55 @@
-[build-system]
-requires = [
-    "setuptools>=42",
-    "wheel"
+[project]
+name = 'geedim'
+description = 'Search, composite and download Google Earth Engine imagery.'
+readme = 'README.rst'
+requires-python = '>=3.6'
+dependencies = [
+    'numpy>=1.19',
+    'rasterio>=1.1',
+    'click>=8',
+    'tqdm>=4.6',
+    'earthengine-api>=0.1.2',
+    'requests>=2.2',
+    'tabulate>=0.8'
 ]
-build-backend = "setuptools.build_meta"
+authors = [{name = 'Leftfield Geospatial'}]
+keywords = [
+    'earth engine', 'satellite imagery', 'search', 'download', 'composite', 'cloud', 'shadow'
+]
+classifiers = [
+    'Programming Language :: Python :: 3',
+    'License :: OSI Approved :: Apache Software License',
+    'Operating System :: OS Independent',
+]
+dynamic = ['version']
+
+[project.scripts]
+geedim = 'geedim.cli:cli'
+
+[project.optional-dependencies]
+tests = ['pytest', 'pytest-xdist']
+docs = ['sphinx', 'sphinx-click', 'sphinx-rtd-theme', 'nbsphinx', 'ipykernel', 'jupyter-sphinx']
+
+[project.urls]
+Homepage = 'https://github.com/leftfield-geospatial/geedim'
+Documentation = "https://geedim.readthedocs.org"
+Source = 'https://github.com/leftfield-geospatial/geedim'
+Changelog = 'https://github.com/leftfield-geospatial/geedim/releases'
+Issues = 'https://github.com/leftfield-geospatial/geedim/issues'
+
+[build-system]
+requires = ['setuptools']
+build-backend = 'setuptools.build_meta'
+
+[tool.setuptools]
+packages = ['geedim']
+
+[tool.setuptools.dynamic]
+version = {attr = 'geedim.version.__version__'}
+
+[tool.setuptools.package-data]
+geedim = ['data/ee_stac_urls.json']
+
+[tool.black]
+line-length = 120
+skip-string-normalization = true
