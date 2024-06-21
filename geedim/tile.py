@@ -61,59 +61,9 @@ class Tile:
         """rasterio tile window into the source image."""
         return self._window
 
-    def _get_download_url_response(self, session=None):
-        """Get tile download response."""
-        session = session if session else requests
-        with self._ee_lock:
-            url = self._exp_image.ee_image.getDownloadURL(
-                dict(
-                    crs=self._exp_image.crs,
-                    crs_transform=tuple(self._transform)[:6],
-                    dimensions=self._shape[::-1],
-                    filePerBand=False,
-                    fileFormat='GeoTIFF',
-                )
-            )
-        return session.get(url, stream=True, timeout=(30, 300))
-
-    def download(
-        self,
-        session: requests.Session = None,
-        response: requests.Response = None,
-        bar: tqdm = None,
-        max_retries: int = 5,
-        backoff_factor: float = 2.0,
-    ):
-        """
-        Download the image tile into a numpy array.
-
-        Parameters
-        ----------
-        session: requests.Session, optional
-            requests session to use for downloading
-        response: requests.Response, optional
-            Response to a get request on the tile download url.
-        bar: tqdm, optional
-            tqdm progress bar instance to update with incremental (0-1) download progress.
-        max_retries: int, optional
-            Number of times to retry downloading the tile.  This is independent of the ``session``, which may have its
-            own retry configuration.
-        backoff_factor: float, optional
-            Backoff factor to apply between tile download retries.  The delay between retries is: {backoff_factor} *
-            (2 ** ({number of previous retries})) seconds.  This is independent of the ``session``, which may have its
-            own retry configuration.
-
-        Returns
-        -------
-        array: numpy.ndarray
-            3D numpy array of the tile pixel data with bands down the first dimension.
-        """
-        session = session or requests
-
-        # get image download response
-        response = response or self._get_download_url_response(session=session)
-
-        # raise an error if the tile cannot be downloaded
+    @staticmethod
+    def _raise_for_status(response: requests.Response):
+        """Raise a TileError if the tile cannot be downloaded."""
         download_size = int(response.headers.get('content-length', 0))
         if download_size == 0 or not response.status_code == 200:
             msg = f'Error downloading tile: {response.status_code} - {response.reason}. URL: {response.url}.'
@@ -134,49 +84,114 @@ class Tile:
 
             raise TileError(msg)
 
+    def _download_to_array(self, url: str, session: requests.Session = None, bar: tqdm = None) -> np.ndarray:
+        """Download the image tile into a numpy array."""
+        # get image download response
+        session = session or requests
+        response = session.get(url, stream=True, timeout=(30, 300))
+
+        # raise a TileError if the tile cannot be downloaded
+        self._raise_for_status(response)
+
         # find raw download size
+        download_size = int(response.headers.get('content-length', 0))
         dtype_size = np.dtype(self._exp_image.dtype).itemsize
         raw_download_size = self._shape[0] * self._shape[1] * self._exp_image.count * dtype_size
 
-        # download and read the tile, with retries
-        for retry in range(max_retries + 1):
+        # download and unzip the tile
+        downloaded_size = 0
+        try:
+            # download zip into buffer
             zip_buffer = BytesIO()
-            downloaded_size = 0
-            try:
-                # download zip into buffer
-                with response:
-                    for data in response.iter_content(chunk_size=10240):
-                        zip_buffer.write(data)
-                        if bar is not None:
-                            # update with raw download progress (0-1)
-                            bar.update(raw_download_size * (len(data) / download_size))
-                        downloaded_size += len(data)
-                    zip_buffer.flush()
+            for data in response.iter_content(chunk_size=10240):
+                if bar:
+                    # update with raw download progress (0-1)
+                    bar.update(raw_download_size * (len(data) / download_size))
+                zip_buffer.write(data)
+                downloaded_size += len(data)
+            zip_buffer.flush()
 
-                # extract GeoTIFF bytes from zipped buffer
-                zip_file = zipfile.ZipFile(zip_buffer)
+            # extract GeoTIFF bytes from zipped buffer
+            with zipfile.ZipFile(zip_buffer, 'r') as zip_file:
                 gtiff_bytes = zip_file.read(zip_file.filelist[0])
+
+        except (RequestException, zipfile.BadZipfile):
+            if bar:
+                # reverse progress bar
+                bar.update(-raw_download_size * (downloaded_size / download_size))
+                pass
+            raise
+
+        # read the tile array from the GeoTIFF bytes, via a rasterio memory file
+        env = rio.Env(GDAL_NUM_THREADS='ALL_CPUs', GTIFF_FORCE_RGBA=False)
+        with utils.suppress_rio_logs(), env, MemoryFile(gtiff_bytes) as mem_file:
+            with mem_file.open() as ds:
+                array = ds.read()
+                if (array.dtype == np.dtype('float32')) or (array.dtype == np.dtype('float64')):
+                    # GEE sets nodata to -inf for float data types, (but does not populate the nodata field).
+                    # rasterio won't allow nodata=-inf, so this is a workaround to change nodata to nan at
+                    # source.
+                    array[np.isinf(array)] = np.nan
+        return array
+
+    def download(
+        self,
+        session: requests.Session = None,
+        bar: tqdm = None,
+        max_retries: int = 5,
+        backoff_factor: float = 2.0,
+    ) -> np.ndarray:
+        """
+        Download the image tile into a numpy array.
+
+        Parameters
+        ----------
+        session: requests.Session, optional
+            requests session to use for downloading
+        bar: tqdm, optional
+            tqdm progress bar instance to update with incremental (0-1) download progress.
+        max_retries: int, optional
+            Number of times to retry downloading the tile.  This is independent of the ``session``, which may have its
+            own retry configuration.
+        backoff_factor: float, optional
+            Backoff factor to apply between tile download retries.  The delay between retries is: {backoff_factor} *
+            (2 ** ({number of previous retries})) seconds.  This is independent of the ``session``, which may have its
+            own retry configuration.
+
+        Returns
+        -------
+        array: numpy.ndarray
+            3D numpy array of the tile pixel data with bands down the first dimension.
+        """
+        session = session or requests
+
+        # get download URL
+        with self._ee_lock:
+            url = self._exp_image.ee_image.getDownloadURL(
+                dict(
+                    crs=self._exp_image.crs,
+                    crs_transform=tuple(self._transform)[:6],
+                    dimensions=self._shape[::-1],
+                    filePerBand=False,
+                    fileFormat='GeoTIFF',
+                )
+            )
+
+        # download and read the tile, with retries
+        array = None
+        for retry in range(max_retries + 1):
+            try:
+                array = self._download_to_array(url, session=session, bar=bar)
+                break
 
             except (RequestException, zipfile.BadZipfile) as ex:
                 if retry < max_retries:
                     # retry tile download
-                    bar.update(-raw_download_size * (downloaded_size / download_size))  # reverse progress bar
                     time.sleep(backoff_factor * (2**retry))
                     logger.warning(
-                        f'Tile downloaded failed, retry {retry + 1} of {max_retries}.  URL: {response.url}. {str(ex)}'
+                        f'Tile downloaded failed, retry {retry + 1} of {max_retries}.  URL: {url}. {str(ex)}.'
                     )
                 else:
-                    raise TileError(f'Tile download failed, reached the maximum retries.  URL: {response.url}.') from ex
+                    raise TileError(f'Tile download failed, reached the maximum retries.  URL: {url}.') from ex
 
-            else:
-                # read the tile array from the GeoTIFF bytes, via a rasterio memory file
-                env = rio.Env(GDAL_NUM_THREADS='ALL_CPUs', GTIFF_FORCE_RGBA=False)
-                with utils.suppress_rio_logs(), env, MemoryFile(gtiff_bytes) as mem_file:
-                    with mem_file.open() as ds:
-                        array = ds.read()
-                        if (array.dtype == np.dtype('float32')) or (array.dtype == np.dtype('float64')):
-                            # GEE sets nodata to -inf for float data types, (but does not populate the nodata field).
-                            # rasterio won't allow nodata=-inf, so this is a workaround to change nodata to nan at
-                            # source.
-                            array[np.isinf(array)] = np.nan
-                return array
+        return array
