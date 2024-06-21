@@ -14,7 +14,6 @@
    limitations under the License.
 """
 
-##
 import logging
 import os
 import pathlib
@@ -29,9 +28,9 @@ from typing import Tuple, Dict, List, Union, Iterator, Optional
 import ee
 import numpy as np
 import rasterio as rio
+from rasterio import windows, features, warp
 from rasterio.crs import CRS
 from rasterio.enums import Resampling as RioResampling
-from rasterio import windows, features, warp
 from tqdm import TqdmWarning
 from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
@@ -101,26 +100,26 @@ class BaseImage:
 
     @property
     def _ee_info(self) -> Dict:
-        """ Earth Engine image metadata. """
+        """Earth Engine image metadata."""
         if self.__ee_info is None:
             self.__ee_info = self._ee_image.getInfo()
         return self.__ee_info
 
     @property
     def _min_projection(self) -> Dict:
-        """ Projection information corresponding to the minimum scale band. """
+        """Projection information corresponding to the minimum scale band."""
         if not self.__min_projection:
             self.__min_projection = self._get_projection(self._ee_info, min_scale=True)
         return self.__min_projection
 
     @property
     def _stac(self) -> Optional[StacItem]:
-        """ Image STAC info.  None if there is no Earth Engine STAC entry for the image / image's collection. """
+        """Image STAC info.  None if there is no Earth Engine STAC entry for the image / image's collection."""
         return StacCatalog().get_item(self.id)
 
     @property
     def ee_image(self) -> ee.Image:
-        """ Encapsulated Earth Engine image. """
+        """Encapsulated Earth Engine image."""
         return self._ee_image
 
     @ee_image.setter
@@ -132,7 +131,7 @@ class BaseImage:
 
     @property
     def id(self) -> Optional[str]:
-        """ Earth Engine image ID.  None if the image ``system:id`` property is not set. """
+        """Earth Engine image ID.  None if the image ``system:id`` property is not set."""
         if self._id:  # avoid a call to getInfo() if _id is set
             return self._id
         else:
@@ -140,7 +139,7 @@ class BaseImage:
 
     @property
     def date(self) -> Optional[datetime]:
-        """ Image capture date & time.  None if the image ``system:time_start`` property is not set. """
+        """Image capture date & time.  None if the image ``system:time_start`` property is not set."""
         if 'system:time_start' in self.properties:
             return datetime.utcfromtimestamp(self.properties['system:time_start'] / 1000)
         else:
@@ -148,7 +147,7 @@ class BaseImage:
 
     @property
     def name(self) -> Optional[str]:
-        """ Image name (the :attr:`id` with slashes replaced by dashes). """
+        """Image name (the :attr:`id` with slashes replaced by dashes)."""
         return self.id.replace('/', '-') if self.id else None
 
     @property
@@ -160,12 +159,12 @@ class BaseImage:
 
     @property
     def scale(self) -> Optional[float]:
-        """ Minimum scale (m) of image bands. None if the image has no fixed projection. """
+        """Minimum scale (m) of image bands. None if the image has no fixed projection."""
         return self._min_projection['scale']
 
     @property
     def footprint(self) -> Optional[Dict]:
-        """ Geojson polygon of the image extent.  None if the image is a composite. """
+        """Geojson polygon of the image extent.  None if the image is a composite."""
         if ('properties' not in self._ee_info) or ('system:footprint' not in self._ee_info['properties']):
             return None
         footprint = self._ee_info['properties']['system:footprint']
@@ -181,29 +180,29 @@ class BaseImage:
 
     @property
     def shape(self) -> Optional[Tuple[int, int]]:
-        """ (row, column) pixel dimensions of the minimum scale band. None if the image has no fixed projection. """
+        """(row, column) pixel dimensions of the minimum scale band. None if the image has no fixed projection."""
         return self._min_projection['shape']
 
     @property
     def count(self) -> int:
-        """ Number of image bands. """
+        """Number of image bands."""
         return len(self._ee_info['bands']) if 'bands' in self._ee_info else None
 
     @property
     def transform(self) -> Optional[rio.Affine]:
-        """ Geo-transform of the minimum scale band. None if the image has no fixed projection. """
+        """Geo-transform of the minimum scale band. None if the image has no fixed projection."""
         return self._min_projection['transform']
 
     @property
     def dtype(self) -> str:
-        """ Minimum size data type able to represent the image values. """
+        """Minimum size data type able to represent the image values."""
         if not self._min_dtype:
             self._min_dtype = self._get_min_dtype(self._ee_info)
         return self._min_dtype
 
     @property
     def size(self) -> Optional[int]:
-        """ Image size (bytes).  None if the image has no fixed projection. """
+        """Image size (bytes).  None if the image has no fixed projection."""
         if not self.shape:
             return None
         dtype_size = np.dtype(self.dtype).itemsize
@@ -211,37 +210,41 @@ class BaseImage:
 
     @property
     def has_fixed_projection(self) -> bool:
-        """ True if the image has a fixed projection, otherwise False. """
+        """True if the image has a fixed projection, otherwise False."""
         return self.scale is not None
 
     @property
     def properties(self) -> Dict:
-        """ Earth Engine image properties. """
+        """Earth Engine image properties."""
         return self._ee_info['properties'] if 'properties' in self._ee_info else {}
 
     @property
     def band_properties(self) -> List[Dict]:
-        """ Merged STAC and Earth Engine band properties. """
+        """Merged STAC and Earth Engine band properties."""
         return self._get_band_properties()
 
     @property
     def refl_bands(self) -> Optional[List[str]]:
-        """ List of spectral / reflectance bands, if any. """
+        """List of spectral / reflectance bands, if any."""
         if not self._stac:
             return None
         return [bname for bname, bdict in self._stac.band_props.items() if 'center_wavelength' in bdict]
 
     @property
     def profile(self) -> Dict:
-        """ Rasterio image profile. """
+        """Rasterio image profile."""
         return dict(
-            crs=self.crs, transform=self.transform, width=self.shape[1], height=self.shape[0], dtype=self.dtype,
-            count=self.count
+            crs=self.crs,
+            transform=self.transform,
+            width=self.shape[1],
+            height=self.shape[0],
+            dtype=self.dtype,
+            count=self.count,
         )
 
     @property
     def bounded(self) -> bool:
-        """ True if the image is bounded, otherwise False. """
+        """True if the image is bounded, otherwise False."""
         # TODO: an unbounded region could also have these bounds
         unbounded_bounds = (-180, -90, 180, 90)
         return (self.footprint is not None) and (features.bounds(self.footprint) != unbounded_bounds)
@@ -272,12 +275,15 @@ class BaseImage:
 
     @staticmethod
     def _get_min_dtype(ee_info: Dict) -> str:
-        """ Return the minimum size rasterio data type corresponding to a given Earth Engine image info dictionary. """
+        """Return the minimum size rasterio data type corresponding to a given Earth Engine image info dictionary."""
+
         def get_min_int_dtype(band_info: List[Dict]) -> Optional[str]:
-            """ Return the minimum integer dtype for the given band information. """
+            """Return the minimum integer dtype for the given band information."""
             # create a list of integer min/max values
             int_minmax = [
-                minmax for band_dict in band_info if band_dict['data_type']['precision'] == 'int'
+                minmax
+                for band_dict in band_info
+                if band_dict['data_type']['precision'] == 'int'
                 for minmax in (int(band_dict['data_type']['min']), int(band_dict['data_type']['max']))
             ]  # yapf: disable
 
@@ -319,10 +325,16 @@ class BaseImage:
 
     @staticmethod
     def _convert_dtype(ee_image: ee.Image, dtype: str) -> ee.Image:
-        """ Convert the data type of an Earth Engine image to a specified type. """
+        """Convert the data type of an Earth Engine image to a specified type."""
         conv_dict = dict(
-            float32=ee.Image.toFloat, float64=ee.Image.toDouble, uint8=ee.Image.toUint8, int8=ee.Image.toInt8,
-            uint16=ee.Image.toUint16, int16=ee.Image.toInt16, uint32=ee.Image.toUint32, int32=ee.Image.toInt32,
+            float32=ee.Image.toFloat,
+            float64=ee.Image.toDouble,
+            uint8=ee.Image.toUint8,
+            int8=ee.Image.toInt8,
+            uint16=ee.Image.toUint16,
+            int16=ee.Image.toInt16,
+            uint32=ee.Image.toUint32,
+            int32=ee.Image.toInt32,
         )
         if dtype not in conv_dict:
             raise TypeError(f'Unsupported dtype: {dtype}')
@@ -330,7 +342,7 @@ class BaseImage:
         return conv_dict[dtype](ee_image)
 
     def _get_band_properties(self) -> List[Dict]:
-        """ Merge Earth Engine and STAC band properties for this image. """
+        """Merge Earth Engine and STAC band properties for this image."""
         band_ids = [bd['id'] for bd in self._ee_info['bands']]
         if self._stac:
             stac_bands_props = self._stac.band_props
@@ -365,8 +377,8 @@ class BaseImage:
             return ee_image
 
         # make band scale and offset dicts
-        scale_dict = {bp['name']: bp['scale'] if 'scale' in bp else 1. for bp in band_properties}
-        offset_dict = {bp['name']: bp['offset'] if 'offset' in bp else 0. for bp in band_properties}
+        scale_dict = {bp['name']: bp['scale'] if 'scale' in bp else 1.0 for bp in band_properties}
+        offset_dict = {bp['name']: bp['offset'] if 'offset' in bp else 0.0 for bp in band_properties}
 
         if all([s == 1 for s in scale_dict.values()]) and all([o == 0 for o in offset_dict.values()]):
             # all scales==1 and all offsets==0
@@ -389,9 +401,16 @@ class BaseImage:
         return ee.Image(adj_im.copyProperties(ee_image, ee_image.propertyNames()))
 
     def _prepare_for_export(
-        self, crs: str = None, crs_transform: Tuple[float] = None, shape: Tuple[int, int] = None, region: Dict =
-        None, scale: float = None, resampling: ResamplingMethod = _default_resampling, dtype: str = None,
-        scale_offset: bool = False, bands: List[str] = None,
+        self,
+        crs: str = None,
+        crs_transform: Tuple[float] = None,
+        shape: Tuple[int, int] = None,
+        region: Dict = None,
+        scale: float = None,
+        resampling: ResamplingMethod = _default_resampling,
+        dtype: str = None,
+        scale_offset: bool = False,
+        bands: List[str] = None,
     ) -> 'BaseImage':
         """
         Prepare the encapsulated image for export/download.  Will reproject, resample, clip and convert the image
@@ -452,8 +471,7 @@ class BaseImage:
             # if the image has no footprint (i.e. it is 'unbounded'), either region; or crs, crs_transform and shape
             # must be specified
             raise ValueError(
-                f'This image is unbounded, you need to specify a region; or a crs, crs_transform and '
-                f'shape.'
+                f'This image is unbounded, you need to specify a region; or a crs, crs_transform and shape.'
             )
 
         if not scale and not shape and self.crs == 'EPSG:4326':
@@ -527,8 +545,14 @@ class BaseImage:
         crs_transform = crs_transform[:6] if crs_transform else None
         dimensions = shape[::-1] if shape else None
         export_kwargs = dict(
-            crs=crs, crs_transform=crs_transform, dimensions=dimensions, region=region, scale=scale, bands=bands,
-            fileFormat='GeoTIFF', filePerBand=False
+            crs=crs,
+            crs_transform=crs_transform,
+            dimensions=dimensions,
+            region=region,
+            scale=scale,
+            bands=bands,
+            fileFormat='GeoTIFF',
+            filePerBand=False,
         )
         # drop items with values==None
         export_kwargs = {k: v for k, v in export_kwargs.items() if v is not None}
@@ -559,9 +583,18 @@ class BaseImage:
         )  # yapf: disable
         nodata = nodata_dict[exp_image.dtype] if set_nodata else None
         profile = dict(
-            driver='GTiff', dtype=exp_image.dtype, nodata=nodata, width=exp_image.shape[1], height=exp_image.shape[0],
-            count=exp_image.count, crs=CRS.from_string(utils.rio_crs(exp_image.crs)), transform=exp_image.transform,
-            compress='deflate', interleave='band', tiled=True, photometric='MINISBLACK',
+            driver='GTiff',
+            dtype=exp_image.dtype,
+            nodata=nodata,
+            width=exp_image.shape[1],
+            height=exp_image.shape[0],
+            count=exp_image.count,
+            crs=CRS.from_string(utils.rio_crs(exp_image.crs)),
+            transform=exp_image.transform,
+            compress='deflate',
+            interleave='band',
+            tiled=True,
+            photometric='MINISBLACK',
         )
         # add BIGTIFF support if the uncompressed image is bigger than 4GB
         if exp_image.size >= 4e9:
@@ -587,7 +620,7 @@ class BaseImage:
                 f'`max_tile_dim` must be less than or equal to the Earth Engine download limit of '
                 f'{BaseImage._ee_max_tile_size} pixels.'
             )
-        max_tile_dim = max_tile_dim or BaseImage._ee_max_tile_dim   # set max_tile_dim to EE default if None
+        max_tile_dim = max_tile_dim or BaseImage._ee_max_tile_dim  # set max_tile_dim to EE default if None
 
         # find the total number of tiles the image must be divided into to satisfy max_tile_size
         image_shape = np.array(self.shape, dtype='int64')
@@ -615,7 +648,7 @@ class BaseImage:
         return tile_shape, num_tiles
 
     def _build_overviews(self, filename: Union[str, pathlib.Path], max_num_levels: int = 8, min_ovw_pixels: int = 256):
-        """ Build internal overviews, downsampled by successive powers of 2, for a given filename. """
+        """Build internal overviews, downsampled by successive powers of 2, for a given filename."""
 
         # TODO: revisit multi-threaded overviews on gdal update
         # build overviews in a single threaded environment (currently gdal reports errors when building overviews
@@ -635,12 +668,12 @@ class BaseImage:
                 ds.build_overviews(ovw_levels, RioResampling.average)
 
     def _write_metadata(self, dataset: rio.io.DatasetWriter):
-        """ Write Earth Engine and STAC metadata to an open rasterio dataset. """
+        """Write Earth Engine and STAC metadata to an open rasterio dataset."""
         if dataset.closed:
             raise IOError('Image dataset is closed')
 
         # replace 'system:*' property keys with 'system-*', and remove footprint if its there
-        properties = {k.replace(':', '-'):v for k, v in self.properties.items()}
+        properties = {k.replace(':', '-'): v for k, v in self.properties.items()}
         if 'system-footprint' in properties:
             properties.pop('system-footprint')
         dataset.update_tags(**properties)
@@ -649,7 +682,7 @@ class BaseImage:
             dataset.update_tags(LICENSE=self._stac.license)
 
         def clean_text(text, width=80) -> str:
-            """ Return a shortened tidied string. """
+            """Return a shortened tidied string."""
             if not isinstance(text, str):
                 return text
             text = text.split('.')[0] if len(text) > width else text
@@ -807,8 +840,12 @@ class BaseImage:
         type = ExportType(type)
         if type == ExportType.drive:
             task = ee.batch.Export.image.toDrive(
-                image=exp_image.ee_image, description=filename[:100], folder=folder, fileNamePrefix=filename,
-                maxPixels=1e9, formatOptions=dict(cloudOptimized=True),
+                image=exp_image.ee_image,
+                description=filename[:100],
+                folder=folder,
+                fileNamePrefix=filename,
+                maxPixels=1e9,
+                formatOptions=dict(cloudOptimized=True),
             )
         elif type == ExportType.asset:
             # if folder is specified create an EE asset ID from it and filename,
@@ -817,11 +854,14 @@ class BaseImage:
             # fix description for when filename is asset id with forward slashes
             description = filename.replace('/', '-')[:100]
             task = ee.batch.Export.image.toAsset(
-                image=exp_image.ee_image, description=description, assetId=asset_id, maxPixels=1e9,
+                image=exp_image.ee_image, description=description, assetId=asset_id, maxPixels=1e9
             )
         else:
             task = ee.batch.Export.image.toCloudStorage(
-                image=exp_image.ee_image, description=filename[:100], bucket=folder, maxPixels=1e9,
+                image=exp_image.ee_image,
+                description=filename[:100],
+                bucket=folder,
+                maxPixels=1e9,
                 formatOptions=dict(cloudOptimized=True),
             )
 
@@ -831,8 +871,13 @@ class BaseImage:
         return task
 
     def download(
-        self, filename: Union[pathlib.Path, str], overwrite: bool = False, num_threads: Optional[int] = None,
-        max_tile_size: Optional[float] = None, max_tile_dim: Optional[int] = None, **kwargs
+        self,
+        filename: Union[pathlib.Path, str],
+        overwrite: bool = False,
+        num_threads: Optional[int] = None,
+        max_tile_size: Optional[float] = None,
+        max_tile_dim: Optional[int] = None,
+        **kwargs,
     ):
         """
         Download the encapsulated image to a GeoTiff file.
@@ -930,7 +975,7 @@ class BaseImage:
             desc=desc, total=raw_download_size, bar_format=bar_format, dynamic_ncols=True, unit_scale=True, unit='B'
         )
 
-        session = utils.retry_session(5)
+        session = utils.retry_session()
         warnings.filterwarnings('ignore', category=TqdmWarning)
         # redirect logging through tqdm
         redir_tqdm = logging_redirect_tqdm([logging.getLogger(__package__)], tqdm_class=type(bar))
@@ -938,7 +983,7 @@ class BaseImage:
         with redir_tqdm, env, rio.open(filename, 'w', **profile) as out_ds, bar:
 
             def download_tile(tile):
-                """Download a tile and write into the destination GeoTIFF. """
+                """Download a tile and write into the destination GeoTIFF."""
                 tile_array = tile.download(session=session, bar=bar)
                 with out_lock:
                     out_ds.write(tile_array, window=tile.window)
@@ -955,7 +1000,7 @@ class BaseImage:
                     executor.shutdown(wait=False, cancel_futures=True)
                     raise ex
 
-            bar.update(bar.total - bar.n)   # ensure the bar reaches 100%
+            bar.update(bar.total - bar.n)  # ensure the bar reaches 100%
             # populate GeoTIFF metadata
             exp_image._write_metadata(out_ds)
 

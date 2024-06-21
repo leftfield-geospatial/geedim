@@ -13,27 +13,29 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
-import logging
-from contextlib import contextmanager
+
 import itertools
 import json
+import logging
 import os
 import pathlib
 import sys
 import time
+from contextlib import contextmanager
 from threading import Thread
 from typing import Tuple, Optional
 
 import ee
+import numpy as np
 import rasterio as rio
 import requests
-from geedim.enums import ResamplingMethod
-from rasterio.warp import transform_geom
 from rasterio.env import GDALVersion
+from rasterio.warp import transform_geom
 from rasterio.windows import Window
 from requests.adapters import HTTPAdapter, Retry
-import numpy as np
 from tqdm.auto import tqdm
+
+from geedim.enums import ResamplingMethod
 
 if '__file__' in globals():
     root_path = pathlib.Path(__file__).absolute().parents[1]
@@ -42,7 +44,8 @@ else:
 
 _GDAL_AT_LEAST_35 = GDALVersion.runtime().at_least("3.5")
 
-def Initialize(opt_url: Optional[str]='https://earthengine-highvolume.googleapis.com', **kwargs):
+
+def Initialize(opt_url: Optional[str] = 'https://earthengine-highvolume.googleapis.com', **kwargs):
     """
     Initialise Earth Engine.
 
@@ -76,7 +79,7 @@ def Initialize(opt_url: Optional[str]='https://earthengine-highvolume.googleapis
 
 
 def singleton(cls):
-    """ Class decorator to make it a singleton. """
+    """Class decorator to make it a singleton."""
     instances = {}
 
     def getinstance() -> cls:
@@ -110,7 +113,7 @@ def split_id(image_id: str) -> Tuple[str, str]:
 
 @contextmanager
 def suppress_rio_logs(level: int = logging.ERROR):
-    """ A context manager that sets the `rasterio` logging level, then returns it to its original value. """
+    """A context manager that sets the `rasterio` logging level, then returns it to its original value."""
     try:
         # GEE sets GeoTIFF `colorinterp` tags incorrectly. This suppresses `rasterio` warning relating to this:
         # 'Sum of Photometric type-related color channels and ExtraSamples doesn't match SamplesPerPixel'
@@ -149,8 +152,10 @@ def get_bounds(filename: pathlib.Path, expand: float = 5):
             bbox_expand = bbox
 
         coordinates = [
-            [bbox_expand.right, bbox_expand.bottom], [bbox_expand.right, bbox_expand.top],
-            [bbox_expand.left, bbox_expand.top], [bbox_expand.left, bbox_expand.bottom],
+            [bbox_expand.right, bbox_expand.bottom],
+            [bbox_expand.right, bbox_expand.top],
+            [bbox_expand.left, bbox_expand.top],
+            [bbox_expand.left, bbox_expand.bottom],
             [bbox_expand.right, bbox_expand.bottom],
         ]
 
@@ -236,7 +241,7 @@ class Spinner(Thread):
         self.join()
 
     def run(self):
-        """ Run the spinner thread. """
+        """Run the spinner thread."""
         cursors_it = itertools.cycle('/-\|')
 
         while self._run:
@@ -254,12 +259,12 @@ class Spinner(Thread):
         self._file.flush()
 
     def start(self):
-        """ Start the spinner thread. """
+        """Start the spinner thread."""
         self._run = True
         Thread.start(self)
 
     def stop(self):
-        """ Stop the spinner thread. """
+        """Stop the spinner thread."""
         self._run = False
 
 
@@ -292,7 +297,7 @@ def resample(ee_image: ee.Image, method: ResamplingMethod) -> ee.Image:
     has_fixed_proj = proj.crs().compareTo('EPSG:4326').neq(0).Or(proj.nominalScale().toInt64().neq(111319))
 
     def _resample(ee_image: ee.Image) -> ee.Image:
-        """ Resample the given image, allowing for additional 'average' method. """
+        """Resample the given image, allowing for additional 'average' method."""
         if method == ResamplingMethod.average:
             return ee_image.reduceResolution(reducer=ee.Reducer.mean(), maxPixels=1024)
         else:
@@ -302,10 +307,12 @@ def resample(ee_image: ee.Image, method: ResamplingMethod) -> ee.Image:
 
 
 def retry_session(
-    retries: int = 5, backoff_factor: float = 2., status_forcelist: Tuple = (429, 500, 502, 503, 504),
-    session: requests.Session = None
+    retries: int = 5,
+    backoff_factor: float = 2.0,
+    status_forcelist: Tuple = (429, 500, 502, 503, 504),
+    session: requests.Session = None,
 ) -> requests.Session:
-    """ requests session configured for retries. """
+    """requests session configured for retries."""
     session = session or requests.Session()
     retry = Retry(
         total=retries, read=retries, connect=retries, backoff_factor=backoff_factor, status_forcelist=status_forcelist
@@ -342,7 +349,7 @@ def expand_window_to_grid(win: Window, expand_pixels: Tuple[int, int] = (0, 0)) 
 
 
 def rio_crs(crs: str) -> str:
-    """ Convert a GEE CRS string to a rasterio compatible CRS string. """
+    """Convert a GEE CRS string to a rasterio compatible CRS string."""
     if crs == 'SR-ORG:6974':
         # This is a workaround for https://issuetracker.google.com/issues/194561313, that replaces the alleged GEE
         # SR-ORG:6974 with actual (rasterio) SR-ORG:6842. WKT taken from

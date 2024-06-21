@@ -16,12 +16,16 @@
 
 
 class GeedimError(Exception):
-    """ Base exception class. """
+    """Base exception class."""
 
 
 class UnfilteredError(GeedimError):
-    """ Raised when attempting to retrieve the properties of an unfiltered image collection. """
+    """Raised when attempting to retrieve the properties of an unfiltered image collection."""
 
 
 class InputImageError(GeedimError):
-    """ Raised when there is a problem with the images making up a collection. """
+    """Raised when there is a problem with the images making up a collection."""
+
+
+class TileError(GeedimError):
+    """Raised when there is a problem downloading an image tile."""
