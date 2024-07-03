@@ -52,7 +52,7 @@ supported_dtypes = ['uint8', 'uint16', 'uint32', 'int8', 'int16', 'int32', 'floa
 
 
 class BaseImage:
-    _float_nodata = float('nan')
+    _float_nodata = float('-inf')
     _desc_width = 50
     _default_resampling = ResamplingMethod.near
     _ee_max_tile_size = 32
@@ -984,6 +984,9 @@ class BaseImage:
 
             def download_tile(tile):
                 """Download a tile and write into the destination GeoTIFF."""
+                # Note: due to an Earth Engine bug (https://issuetracker.google.com/issues/350528377), tile_array is
+                # float64 for uint32 and int64 exp_image types.  The tile_array nodata value is as it should be
+                # though, so conversion to the exp_image / GeoTIFF type happens ok below.
                 tile_array = tile.download(session=session, bar=bar)
                 with out_lock:
                     out_ds.write(tile_array, window=tile.window)

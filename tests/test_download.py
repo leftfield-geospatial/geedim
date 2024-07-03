@@ -466,18 +466,15 @@ def test_prepare_for_download(base_image: str, request: pytest.FixtureRequest):
         ('int16', -(2**15)),
         ('uint32', 0),
         ('int32', -(2**31)),
-        ('float32', float('nan')),
-        ('float64', float('nan')),
+        ('float32', float('-inf')),
+        ('float64', float('-inf')),
     ],
 )
 def test_prepare_nodata(user_fix_base_image: BaseImage, region_25ha: Dict, dtype: str, exp_nodata: float):
     """Test BaseImage._prepare_for_download() sets rasterio profile nodata correctly for different dtypes."""
     exp_image, exp_profile = user_fix_base_image._prepare_for_download(region=region_25ha, scale=30, dtype=dtype)
     assert exp_image.dtype == dtype
-    if np.isnan(exp_profile['nodata']):
-        assert np.isnan(exp_nodata)
-    else:
-        assert exp_profile['nodata'] == exp_nodata
+    assert exp_profile['nodata'] == exp_nodata
 
 
 @pytest.mark.parametrize(
