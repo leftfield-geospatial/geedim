@@ -13,10 +13,12 @@
     See the License for the specific language governing permissions and
     limitations under the License.
 """
+
 import logging
 from typing import Dict
 
 import ee
+
 import geedim.schema
 from geedim.download import BaseImage
 from geedim.enums import CloudMaskMethod
@@ -160,25 +162,23 @@ class MaskedImage(BaseImage):
             reducer="sum", geometry=region, crs=proj, scale=scale, bestEffort=True, maxPixels=1e6
         )
 
-        fill_portion = (
-            ee.Number(sums.get('FILL_MASK')).divide(ee.Number(sums.get('REGION_SUM'))).multiply(100)
-        )
+        fill_portion = ee.Number(sums.get('FILL_MASK')).divide(ee.Number(sums.get('REGION_SUM'))).multiply(100)
 
         # set the encapsulated image properties
         self.ee_image = self.ee_image.set('FILL_PORTION', fill_portion)
         # set CLOUDLESS_PORTION=100 for the generic case, where cloud/shadow masking is not supported
-        self.ee_image = self.ee_image.set('CLOUDLESS_PORTION', 100.)
+        self.ee_image = self.ee_image.set('CLOUDLESS_PORTION', 100.0)
 
     def mask_clouds(self):
-        """ Apply the cloud/shadow mask if supported, otherwise apply the fill mask. """
+        """Apply the cloud/shadow mask if supported, otherwise apply the fill mask."""
         self.ee_image = self.ee_image.updateMask(self.ee_image.select('FILL_MASK'))
 
 
 class CloudMaskedImage(MaskedImage):
-    """ A base class for encapsulating cloud/shadow masked images. """
+    """A base class for encapsulating cloud/shadow masked images."""
 
     def _cloud_dist(self, cloudless_mask: ee.Image = None, max_cloud_dist: float = 5000) -> ee.Image:
-        """ Find the cloud/shadow distance in units of 10m. """
+        """Find the cloud/shadow distance in units of 10m."""
         if not cloudless_mask:
             cloudless_mask = self.ee_image.select('CLOUDLESS_MASK')
         proj = get_projection(self.ee_image, min_scale=False)  # use maximum scale projection to save processing time
@@ -190,9 +190,11 @@ class CloudMaskedImage(MaskedImage):
         cloud_pix = ee.Number(max_cloud_dist).divide(proj.nominalScale()).round()  # cloud_dist in pixels
 
         # Find distance to nearest cloud/shadow (units of 10m).
-        cloud_dist = cloud_shadow_mask.fastDistanceTransform(
-            neighborhood=cloud_pix, units='pixels', metric='squared_euclidean'
-        ).sqrt().multiply(proj.nominalScale().divide(10))
+        cloud_dist = (
+            cloud_shadow_mask.fastDistanceTransform(neighborhood=cloud_pix, units='pixels', metric='squared_euclidean')
+            .sqrt()
+            .multiply(proj.nominalScale().divide(10))
+        )
 
         # Reproject to force calculation at correct scale.
         cloud_dist = cloud_dist.reproject(crs=proj, scale=proj.nominalScale()).rename('CLOUD_DIST')
@@ -218,7 +220,7 @@ class CloudMaskedImage(MaskedImage):
         if not region:
             region = self.ee_image.geometry()  # use the image footprint
 
-        proj = get_projection(self.ee_image, min_scale=False)  # get projection of minimum scale band
+        proj = get_projection(self.ee_image, min_scale=False)  # get projection of maximum scale band
         # If _proj_scale is set, use that as the scale, otherwise use the proj.nomimalScale().  For non-composite images
         # these should be the same value.  For composite images, there is no `fixed` projection, hence the
         # need for _proj_scale.
@@ -234,9 +236,7 @@ class CloudMaskedImage(MaskedImage):
         sums = stats_image.reduceRegion(
             reducer="sum", geometry=region, crs=proj, scale=scale, bestEffort=True, maxPixels=1e6
         ).rename(['FILL_MASK', 'CLOUDLESS_MASK'], ['FILL_PORTION', 'CLOUDLESS_PORTION'])
-        fill_portion = (
-            ee.Number(sums.get('FILL_PORTION')).divide(ee.Number(sums.get('REGION_SUM'))).multiply(100)
-        )
+        fill_portion = ee.Number(sums.get('FILL_PORTION')).divide(ee.Number(sums.get('REGION_SUM'))).multiply(100)
         cloudless_portion = (
             ee.Number(sums.get('CLOUDLESS_PORTION')).divide(ee.Number(sums.get('FILL_PORTION'))).multiply(100)
         )
@@ -255,7 +255,7 @@ class CloudMaskedImage(MaskedImage):
         raise NotImplementedError('This virtual method should be overridden by derived classes.')
 
     def mask_clouds(self):
-        """ Apply the cloud/shadow mask. """
+        """Apply the cloud/shadow mask."""
         self.ee_image = self.ee_image.updateMask(self.ee_image.select('CLOUDLESS_MASK'))
 
 
@@ -315,12 +315,20 @@ class LandsatImage(CloudMaskedImage):
 
 
 class Sentinel2ClImage(CloudMaskedImage):
-    """ Base class for cloud/shadow masking of Sentinel-2 TOA and SR images. """
+    """Base class for cloud/shadow masking of Sentinel-2 TOA and SR images."""
 
     def _aux_image(
-        self, s2_toa: bool = False, mask_cirrus: bool = True, mask_shadows: bool = True,
-        mask_method: CloudMaskMethod = CloudMaskMethod.cloud_prob, prob: float = 60, dark: float = 0.15,
-        shadow_dist: int = 1000, buffer: int = 50, cdi_thresh: float = None, max_cloud_dist: int = 5000
+        self,
+        s2_toa: bool = False,
+        mask_cirrus: bool = True,
+        mask_shadows: bool = True,
+        mask_method: CloudMaskMethod = CloudMaskMethod.cloud_prob,
+        prob: float = 60,
+        dark: float = 0.15,
+        shadow_dist: int = 1000,
+        buffer: int = 50,
+        cdi_thresh: float = None,
+        max_cloud_dist: int = 5000,
     ) -> ee.Image:
         """
         Derive cloud, shadow and validity masks for the encapsulated image.
@@ -365,9 +373,17 @@ class Sentinel2ClImage(CloudMaskedImage):
         mask_method = CloudMaskMethod(mask_method)
 
         def get_cloud_prob(ee_im):
-            """Get the cloud probability image from COPERNICUS/S2_CLOUD_PROBABILITY that corresponds to `ee_im`."""
+            """Get the cloud probability image from COPERNICUS/S2_CLOUD_PROBABILITY that corresponds to `ee_im`, if it
+            exists.  Otherwise, get a 100% probability.
+            """
+            # create a default 100% cloud probability image to revert to if the cloud probability image does not exist
+            # (use a 10m projection to prevent any issue with _set_region_stats() etc auto-scale)
+            default_cloud_prob = ee.Image(100).setDefaultProjection(ee_im.select('QA10').projection())
+
+            # get the cloud probability image if it exists, otherwise revert to default_cloud_prob
             filt = ee.Filter.eq('system:index', ee_im.get('system:index'))
             cloud_prob = ee.ImageCollection('COPERNICUS/S2_CLOUD_PROBABILITY').filter(filt).first()
+            cloud_prob = ee.Image(ee.List([cloud_prob, default_cloud_prob]).reduce(ee.Reducer.firstNonNull()))
             return cloud_prob.rename('CLOUD_PROB')
 
         def get_cloud_mask(ee_im, cloud_prob=None):
@@ -379,6 +395,9 @@ class Sentinel2ClImage(CloudMaskedImage):
             else:
                 qa = ee_im.select('QA60')
                 cloud_mask = qa.bitwiseAnd(1 << 10).neq(0)
+                # set cloud_mask to true for images post Feb 2022 when QA60 was no longer populated
+                qa_invalid = ee_im.date().difference(ee.Date('2022-02-01'), 'days').gt(0)
+                cloud_mask = cloud_mask.bitwiseOr(qa_invalid)
                 if mask_cirrus:
                     cloud_mask = cloud_mask.Or(qa.bitwiseAnd(1 << 11).neq(0))
             return cloud_mask.rename('CLOUD_MASK')
@@ -393,7 +412,7 @@ class Sentinel2ClImage(CloudMaskedImage):
             else:
                 # get the Sentinel-2 TOA image that corresponds to ee_im
                 idx = ee_im.get('system:index')
-                s2_toa_image = (ee.ImageCollection('COPERNICUS/S2').filter(ee.Filter.eq('system:index', idx)).first())
+                s2_toa_image = ee.ImageCollection('COPERNICUS/S2').filter(ee.Filter.eq('system:index', idx)).first()
             cdi_image = ee.Algorithms.Sentinel2.CDI(s2_toa_image)
             return cdi_image.lt(cdi_thresh).rename('CDI_CLOUD_MASK')
 
@@ -401,6 +420,7 @@ class Sentinel2ClImage(CloudMaskedImage):
             """Given a cloud mask, get a shadow mask for ee_im."""
             dark_mask = ee_im.select('B8').lt(dark * 1e4)
             if not s2_toa:
+                # exclude water
                 dark_mask = ee_im.select('SCL').neq(6).And(dark_mask)
 
             proj = get_projection(ee_im, min_scale=False)
@@ -454,21 +474,21 @@ class Sentinel2ClImage(CloudMaskedImage):
 
 
 class Sentinel2SrClImage(Sentinel2ClImage):
-    """ Class for cloud/shadow masking of Sentinel-2 SR (COPERNICUS/S2_SR) images. """
+    """Class for cloud/shadow masking of Sentinel-2 SR (COPERNICUS/S2_SR) images."""
 
     def _aux_image(self, s2_toa: bool = False, **kwargs) -> ee.Image:
         return Sentinel2ClImage._aux_image(self, s2_toa=False, **kwargs)
 
 
 class Sentinel2ToaClImage(Sentinel2ClImage):
-    """ Class for cloud/shadow masking of Sentinel-2 TOA (COPERNICUS/S2) images. """
+    """Class for cloud/shadow masking of Sentinel-2 TOA (COPERNICUS/S2) images."""
 
     def _aux_image(self, s2_toa: bool = False, **kwargs) -> ee.Image:
         return Sentinel2ClImage._aux_image(self, s2_toa=True, **kwargs)
 
 
 def class_from_id(image_id: str) -> type:
-    """ Return the *Image class that corresponds to the provided Earth Engine image/collection ID. """
+    """Return the *Image class that corresponds to the provided Earth Engine image/collection ID."""
     ee_coll_name, _ = split_id(image_id)
     if image_id in geedim.schema.collection_schema:
         return geedim.schema.collection_schema[image_id]['image_type']
