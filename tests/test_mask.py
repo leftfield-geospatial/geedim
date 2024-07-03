@@ -288,7 +288,7 @@ def test_s2_no_cloud_prob(s2_sr_hm_image_id: str, region_100ha: dict):
     ee_image = ee.Image(s2_sr_hm_image_id)
     ee_image = ee_image.set('system:index', 'unknown')  # prevent linking to cloud probability
     masked_image = Sentinel2SrClImage(ee_image, mask_method='cloud-prob')
-    masked_image._set_region_stats(region_100ha)
+    masked_image._set_region_stats(region_100ha, scale=60)
 
     assert masked_image.properties is not None
     assert masked_image.properties['CLOUDLESS_PORTION'] == pytest.approx(0, abs=1)
@@ -301,7 +301,7 @@ def test_s2_no_qa(s2_sr_hm_image_id: str, region_100ha: dict):
     masked_image = MaskedImage.from_id(
         'COPERNICUS/S2_SR_HARMONIZED/20240426T080609_20240426T083054_T34HEJ', mask_method='qa'
     )
-    masked_image._set_region_stats(region_100ha)
+    masked_image._set_region_stats(region_100ha, scale=60)
 
     assert masked_image.properties is not None
     assert masked_image.properties['CLOUDLESS_PORTION'] == pytest.approx(0, abs=1)
