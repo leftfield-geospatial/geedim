@@ -13,31 +13,35 @@
     See the License for the specific language governing permissions and
     limitations under the License.
 """
-import ee
-from pathlib import Path
-from httplib2 import Http
+
 import json
+from pathlib import Path
+
+import ee
 import numpy as np
+import pytest
 import rasterio as rio
+from click.testing import CliRunner
+from httplib2 import Http
+from rasterio.coords import BoundingBox
 from rasterio.crs import CRS
 from rasterio.features import bounds
 from rasterio.warp import transform_geom
-from rasterio.coords import BoundingBox
-from click.testing import CliRunner
-import pytest
+
 import geedim as gd
-from geedim import utils, cli
+from geedim import cli, utils
+from geedim.download import BaseImage
 
 
 @pytest.fixture(scope='session', autouse=True)
 def ee_init():
-    """ Override the ee_init fixture, so that we only initialise as geemap does, below. """
+    """Override the ee_init fixture, so that we only initialise as geemap does, below."""
     return
 
 
 def test_geemap_integration(tmp_path: Path):
-    """ Simulate the geemap download example. """
-    gd.Initialize(opt_url=None, http_transport=Http())    # a replica of geemap Initialize
+    """Simulate the geemap download example."""
+    gd.Initialize(opt_url=None, http_transport=Http())  # a replica of geemap Initialize
     ee_image = ee.ImageCollection("LANDSAT/LC08/C02/T1_TOA").first()
     gd_image = gd.download.BaseImage(ee_image)
     out_file = tmp_path.joinpath('landsat.tif')
@@ -47,27 +51,29 @@ def test_geemap_integration(tmp_path: Path):
 
 
 def test_geeml_integration(tmp_path: Path):
-    """ Test the geeml `user memory limit exceeded` example. """
+    """Test the geeml `user memory limit exceeded` example."""
     gd.Initialize()
     region = {
         'geodesic': False,
         'crs': {'type': 'name', 'properties': {'name': 'EPSG:4326'}},
         'type': 'Polygon',
-        'coordinates': [[
-            [6.030749828407996, 53.66867883985145],
-            [6.114742307473171, 53.66867883985145],
-            [6.114742307473171, 53.76381042843971],
-            [6.030749828407996, 53.76381042843971],
-            [6.030749828407996, 53.66867883985145]
-        ]]
+        'coordinates': [
+            [
+                [6.030749828407996, 53.66867883985145],
+                [6.114742307473171, 53.66867883985145],
+                [6.114742307473171, 53.76381042843971],
+                [6.030749828407996, 53.76381042843971],
+                [6.030749828407996, 53.66867883985145],
+            ]
+        ],
     }  # yapf: disable
 
     ee_image = (
-        ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED').
-        filterDate('2019-01-01', '2020-01-01').
-        filterBounds(region).
-        select(['B4', 'B3', 'B2', 'B8']).
-        reduce(ee.Reducer.percentile([35]))
+        ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+        .filterDate('2019-01-01', '2020-01-01')
+        .filterBounds(region)
+        .select(['B4', 'B3', 'B2', 'B8'])
+        .reduce(ee.Reducer.percentile([35]))
     )  # yapf: disable
 
     gd_image = gd.download.BaseImage(ee_image)
@@ -82,7 +88,13 @@ def test_geeml_integration(tmp_path: Path):
 
     # test we can download the image with a max_tile_size of 16 MB
     gd_image.download(
-        out_file, crs='EPSG:4326', region=region, scale=10, dtype='float64', overwrite=True, max_tile_size=16,
+        out_file,
+        crs='EPSG:4326',
+        region=region,
+        scale=10,
+        dtype='float64',
+        overwrite=True,
+        max_tile_size=16,
     )
     assert out_file.exists()
     with rio.open(out_file, 'r') as ds:
@@ -94,14 +106,14 @@ def test_geeml_integration(tmp_path: Path):
         # sometimes the top/bottom bounds of the dataset are swapped, so extract and compare UL and BR corners
         print(f'region_bounds: {region_bounds}')
         print(f'ds.bounds: {ds.bounds}')
-        ds_ul = np.array([min(ds.bounds.left,ds.bounds.right), min(ds.bounds.top,ds.bounds.bottom)])
-        ds_lr = np.array([max(ds.bounds.left,ds.bounds.right), max(ds.bounds.top,ds.bounds.bottom)])
+        ds_ul = np.array([min(ds.bounds.left, ds.bounds.right), min(ds.bounds.top, ds.bounds.bottom)])
+        ds_lr = np.array([max(ds.bounds.left, ds.bounds.right), max(ds.bounds.top, ds.bounds.bottom)])
         assert region_cnrs.min(axis=0) == pytest.approx(ds_ul, abs=1e-3)
         assert region_cnrs.max(axis=0) == pytest.approx(ds_lr, abs=1e-3)
 
 
 def test_cli_asset_export(l8_image_id, region_25ha_file: Path, runner: CliRunner, tmp_path: Path):
-    """  Export a test image to an asset using the CLI. """
+    """Export a test image to an asset using the CLI."""
     # create a randomly named folder to allow parallel tests without overwriting the same asset
     gd.Initialize()
     folder = f'geedim/int_test_asset_export_{np.random.randint(1 << 31)}'
@@ -118,7 +130,7 @@ def test_cli_asset_export(l8_image_id, region_25ha_file: Path, runner: CliRunner
             f'--dtype uint16 --mask --resampling bilinear --wait --type asset'
         )
         result = runner.invoke(cli.cli, cli_str.split())
-        assert (result.exit_code == 0)
+        assert result.exit_code == 0
         assert ee.data.getAsset(test_asset_id) is not None
 
         # download the asset image
@@ -139,13 +151,43 @@ def test_cli_asset_export(l8_image_id, region_25ha_file: Path, runner: CliRunner
     with open(region_25ha_file) as f:
         region = json.load(f)
     with rio.open(download_filename, 'r') as im:
-        im : rio.DatasetReader
+        im: rio.DatasetReader
         exp_region = transform_geom('EPSG:4326', im.crs, region)
         exp_bounds = BoundingBox(*bounds(exp_region))
         assert im.crs == CRS.from_string(crs)
         assert im.transform[0] == scale
         assert im.count > 1
         assert (
-            (im.bounds[0] <= exp_bounds[0]) and (im.bounds[1] <= exp_bounds[1]) and
-            (im.bounds[2] >= exp_bounds[2]) and (im.bounds[3] >= exp_bounds[3])
+            (im.bounds[0] <= exp_bounds[0])
+            and (im.bounds[1] <= exp_bounds[1])
+            and (im.bounds[2] >= exp_bounds[2])
+            and (im.bounds[3] >= exp_bounds[3])
         )
+
+
+@pytest.mark.parametrize('dtype', ['float32', 'float64', 'uint8', 'int8', 'uint16', 'int16', 'uint32', 'int32'])
+def test_ee_geotiff_nodata(dtype: str, l9_image_id: str):
+    """Test the nodata value of the Earth Engine GeoTIFF returned by ``ee.data.computePixels()`` or
+    ``ee.Image.getDownloadUrl()`` equals the geedim expected value (see
+    https://issuetracker.google.com/issues/350528377 for context).
+    """
+    # use geedim to prepare an image for downloading as dtype
+    gd.Initialize()
+    masked_image = gd.MaskedImage.from_id(l9_image_id)
+    shape = (10, 10)
+    exp_image, profile = masked_image._prepare_for_download(shape=shape, dtype=dtype)
+
+    # download a small tile with ee.data.computePixels
+    request = {
+        'expression': exp_image.ee_image,
+        'bandIds': ['SR_B3'],
+        'grid': {'dimensions': {'width': shape[1], 'height': shape[0]}},
+        'fileFormat': 'GEO_TIFF',
+    }
+    im_bytes = ee.data.computePixels(request)
+
+    # test nodata with rasterio
+    with rio.MemoryFile(im_bytes) as mf, mf.open() as ds:
+        assert ds.nodata == profile['nodata']
+        # test the EE dtype is not lower precision compared to expected dtype
+        assert np.promote_types(profile['dtype'], ds.dtypes[0]) == ds.dtypes[0]
