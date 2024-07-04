@@ -100,7 +100,7 @@ def test_geeml_integration(tmp_path: Path):
     with rio.open(out_file, 'r') as ds:
         assert ds.count == 4
         assert ds.dtypes[0] == 'float64'
-        assert np.isnan(ds.nodata)
+        assert np.isinf(ds.nodata)
         region_cnrs = np.array(region['coordinates'][0])
         region_bounds = rio.coords.BoundingBox(*region_cnrs.min(axis=0), *region_cnrs.max(axis=0))
         # sometimes the top/bottom bounds of the dataset are swapped, so extract and compare UL and BR corners
