@@ -127,11 +127,19 @@ def s2_sr_hm_image_id() -> str:
 
 
 @pytest.fixture(scope='session')
-def s2_sr_hm_noqa_image_id() -> str:
-    """Harmonised Sentinel-2 SR EE ID for image with no QA* data, that covers `region_*ha` with partial cloud
+def s2_sr_hm_qa_mask_image_id() -> str:
+    """Harmonised Sentinel-2 SR EE ID for image with masked QA* data, that covers `region_*ha` with partial cloud
     cover.
     """
     return 'COPERNICUS/S2_SR_HARMONIZED/20240426T080609_20240426T083054_T34HEJ'
+
+
+@pytest.fixture(scope='session')
+def s2_sr_hm_qa_zero_image_id() -> str:
+    """Harmonised Sentinel-2 SR EE ID for image with zero QA* data, that covers `region_*ha` with partial cloud
+    cover.
+    """
+    return 'COPERNICUS/S2_SR_HARMONIZED/20230407T080611_20230407T083613_T34HEJ'
 
 
 @pytest.fixture(scope='session')
@@ -261,15 +269,22 @@ def s2_sr_hm_nocp_masked_image(s2_sr_hm_image_id) -> MaskedImage:
     """Harmonised Sentinel-2 SR MaskedImage with no corresponding cloud probability, that covers `region_*ha` with
     partial cloud cover.
     """
+    # create an image with unknown id to prevent linking to cloud probability
     ee_image = ee.Image(s2_sr_hm_image_id)
-    ee_image = ee_image.set('system:index', 'unknown')  # prevent linking to cloud probability
+    ee_image = ee_image.set('system:index', 'COPERNICUS/S2_HARMONIZED/unknown')
     return Sentinel2SrClImage(ee_image, mask_method='cloud-prob')
 
 
 @pytest.fixture(scope='session')
-def s2_sr_hm_noqa_masked_image(s2_sr_hm_noqa_image_id) -> MaskedImage:
-    """Harmonised Sentinel-2 SR MaskedImage with empty QA* bands, that covers `region_*ha` with partial cloud cover."""
-    return MaskedImage.from_id(s2_sr_hm_noqa_image_id, mask_method='qa')
+def s2_sr_hm_qa_mask_masked_image(s2_sr_hm_qa_mask_image_id: str) -> MaskedImage:
+    """Harmonised Sentinel-2 SR MaskedImage with masked QA* bands, that covers `region_*ha` with partial cloud cover."""
+    return MaskedImage.from_id(s2_sr_hm_qa_mask_image_id, mask_method='qa')
+
+
+@pytest.fixture(scope='session')
+def s2_sr_hm_qa_zero_masked_image(s2_sr_hm_qa_zero_image_id: str) -> MaskedImage:
+    """Harmonised Sentinel-2 SR MaskedImage with zero QA* bands, that covers `region_*ha` with partial cloud cover."""
+    return MaskedImage.from_id(s2_sr_hm_qa_zero_image_id, mask_method='qa')
 
 
 @pytest.fixture(scope='session')
