@@ -73,8 +73,6 @@ class MaskedImage(BaseImage):
             Maximum distance (m) to look for clouds when forming the 'cloud distance' band.  Valid for
             Sentinel-2 images.
         """
-        # TODO: consider adding proj_scale parameter here, rather than in _set_region_stats, then it can be re-used in
-        #  S2 cloud masking and distance
         BaseImage.__init__(self, ee_image)
         self._ee_projection = None
         self._add_aux_bands(**kwargs)  # add any mask and cloud distance bands
@@ -109,7 +107,6 @@ class MaskedImage(BaseImage):
         MaskedImage
             A MaskedImage, or sub-class instance.
         """
-
         cls = class_from_id(image_id)
         ee_image = ee.Image(image_id)
         gd_image = cls(ee_image, **kwargs)
@@ -150,7 +147,9 @@ class MaskedImage(BaseImage):
         region : dict, ee.Geometry, optional
             Region inside of which to find statistics.  If not specified, the image footprint is used.
         scale: float, optional
-            Re-project to this scale when finding statistics.
+            Re-project to this scale when finding statistics.  Defaults to the scale of
+            :attr:`~MaskedImage._ee_proj`.  Should be provided if the encapsulated image is a composite / without a
+            fixed projection.
         """
         if not region:
             region = self.ee_image.geometry()  # use the image footprint
@@ -190,8 +189,8 @@ class CloudMaskedImage(MaskedImage):
         cloud_shadow_mask = cloudless_mask.Not()
         cloud_pix = ee.Number(max_cloud_dist).divide(self._ee_proj.nominalScale()).round()  # cloud_dist in pixels
 
-        # Find distance to nearest cloud/shadow (units of 10m).  cloudless_mask is itself masked for validity, so
-        # finding distances to invalid areas is avoided.
+        # Find distance to nearest cloud/shadow (units of 10m).  Distances are found for all pixels, including masked /
+        # invalid pixels, which are treated as 0 (non cloud/shadow).
         cloud_dist = (
             cloud_shadow_mask.fastDistanceTransform(neighborhood=cloud_pix, units='pixels', metric='squared_euclidean')
             .sqrt()
@@ -199,10 +198,10 @@ class CloudMaskedImage(MaskedImage):
         )
 
         # Reproject to force calculation at correct scale.
-        cloud_dist = cloud_dist.reproject(
-            crs=self._ee_proj,
-            scale=self._ee_proj.nominalScale(),
-        ).rename('CLOUD_DIST')
+        cloud_dist = cloud_dist.reproject(crs=self._ee_proj, scale=self._ee_proj.nominalScale()).rename('CLOUD_DIST')
+
+        # Prevent use of invalid pixels.
+        cloud_dist = cloud_dist.updateMask(cloudless_mask.mask())
 
         # Clip cloud_dist to max_cloud_dist.
         cloud_dist = cloud_dist.where(cloud_dist.gt(ee.Image(max_cloud_dist / 10)), max_cloud_dist / 10)
@@ -220,7 +219,9 @@ class CloudMaskedImage(MaskedImage):
         region : dict, ee.Geometry, optional
             Region inside of which to find statistics.  If not specified, the image footprint is used.
         scale: float, optional
-            Re-project to this scale when finding statistics.
+            Re-project to this scale when finding statistics.  Defaults to the scale of
+            :attr:`~MaskedImage._ee_proj`.  Should be provided if the encapsulated image is a composite / without a
+            fixed projection.
         """
         if not region:
             region = self.ee_image.geometry()  # use the image footprint
@@ -393,10 +394,12 @@ class Sentinel2ClImage(CloudMaskedImage):
             """Get the cloud probability image from COPERNICUS/S2_CLOUD_PROBABILITY that corresponds to `ee_im`, if it
             exists.  Otherwise, get a 100% probability.
             """
-            # default 100% cloud probability image
-            default_cloud_prob = ee.Image(100)
+            # default masked cloud probability image
+            default_cloud_prob = ee.Image().updateMask(0)
 
             # get the cloud probability image if it exists, otherwise revert to default_cloud_prob
+            # (ee.Image.linkCollection() has a similar functionality but the masked image it returns when cloud
+            # probability doesn't exist is 0 rather than nodata on download)
             filt = ee.Filter.eq('system:index', ee_im.get('system:index'))
             cloud_prob = ee.ImageCollection('COPERNICUS/S2_CLOUD_PROBABILITY').filter(filt).first()
             cloud_prob = ee.Image(ee.List([cloud_prob, default_cloud_prob]).reduce(ee.Reducer.firstNonNull()))
@@ -410,11 +413,12 @@ class Sentinel2ClImage(CloudMaskedImage):
                     cloud_prob = get_cloud_prob(ee_im)
                 cloud_mask = cloud_prob.gte(prob)
             else:
-                # find cloud mask, setting to true for images post Feb 2022 when QA60 was no longer populated
-                qa_invalid = ee.Number(ee_im.date().difference(ee.Date('2022-02-01'), 'days').gt(0))
-                qa = ee_im.select('QA60')
-                cloud_mask = qa.bitwiseAnd(1 << 10).neq(0).bitwiseOr(qa_invalid)
+                # mask QA60 if it is post Feb 2022 to invalidate the cloud mask (post Feb 2022 QA60 is no longer
+                # populated and may be masked / transparent or zero).
+                qa_valid = ee.Number(ee_im.date().difference(ee.Date('2022-02-01'), 'days').lt(0))
+                qa = ee_im.select('QA60').updateMask(qa_valid)
 
+                cloud_mask = qa.bitwiseAnd(1 << 10).neq(0)
                 if mask_cirrus:
                     cloud_mask = cloud_mask.Or(qa.bitwiseAnd(1 << 11).neq(0))
 
@@ -451,14 +455,20 @@ class Sentinel2ClImage(CloudMaskedImage):
             shadow_azimuth = ee.Number(-90).add(ee.Number(ee_im.get('MEAN_SOLAR_AZIMUTH_ANGLE')))
             proj_pixels = ee.Number(shadow_dist).divide(self._ee_proj.nominalScale()).round()
 
-            # Project the cloud mask in the direction of the shadows it will cast.
+            # Project the cloud mask in the direction of the shadows it will cast (can project the mask into invalid
+            # areas).
             cloud_cast_proj = cloud_mask.directionalDistanceTransform(shadow_azimuth, proj_pixels).select('distance')
 
-            # reproject to force calculation at the correct scale
-            cloud_cast_mask = cloud_cast_proj.mask().reproject(
-                crs=self._ee_proj.crs(), scale=self._ee_proj.nominalScale()
-            )
-            return cloud_cast_mask.And(dark_mask).rename('SHADOW_MASK')
+            # Reproject to force calculation at the correct scale.
+            cloud_cast_mask = cloud_cast_proj.mask().reproject(crs=self._ee_proj, scale=self._ee_proj.nominalScale())
+
+            # Remove any projections in invalid areas.
+            cloud_cast_mask = cloud_cast_mask.updateMask(cloud_mask.mask())
+
+            # Find shadow mask as intersection between projected clouds and dark areas.
+            shadow_mask = cloud_cast_mask.And(dark_mask)
+
+            return shadow_mask.rename('SHADOW_MASK')
 
         # combine the various masks
         ee_image = self.ee_image
