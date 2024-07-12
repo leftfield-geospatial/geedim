@@ -388,6 +388,7 @@ class Sentinel2ClImage(CloudMaskedImage):
         ee.Image
             An Earth Engine image containing *_MASK and CLOUD_DIST bands.
         """
+        # TODO: add warning about post Feb 2022 validity when qa method is used
         mask_method = CloudMaskMethod(mask_method)
 
         def get_cloud_prob(ee_im):
