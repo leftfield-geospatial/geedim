@@ -13,14 +13,16 @@
     See the License for the specific language governing permissions and
     limitations under the License.
 """
+
 import logging
 from typing import Dict
 
 import ee
+
 import geedim.schema
 from geedim.download import BaseImage
 from geedim.enums import CloudMaskMethod
-from geedim.utils import split_id, get_projection
+from geedim.utils import get_projection, split_id
 
 logger = logging.getLogger(__name__)
 
@@ -71,14 +73,22 @@ class MaskedImage(BaseImage):
             Maximum distance (m) to look for clouds when forming the 'cloud distance' band.  Valid for
             Sentinel-2 images.
         """
-        # TODO: consider adding proj_scale parameter here, rather than in _set_region_stats, then it can be re-used in
-        #  S2 cloud masking and distance
         BaseImage.__init__(self, ee_image)
+        self._ee_projection = None
         self._add_aux_bands(**kwargs)  # add any mask and cloud distance bands
         if region:
             self._set_region_stats(region)
         if mask:
             self.mask_clouds()
+
+    @property
+    def _ee_proj(self) -> ee.Projection:
+        """Projection to use for mask calculations and statistics."""
+        if self._ee_projection is None:
+            # use the minimum scale projection for the base class / generic case (excludes non-fixed projections with
+            # 1 deg. scales)
+            self._ee_projection = get_projection(self._ee_image, min_scale=True)
+        return self._ee_projection
 
     @staticmethod
     def from_id(image_id: str, **kwargs) -> 'MaskedImage':
@@ -97,7 +107,6 @@ class MaskedImage(BaseImage):
         MaskedImage
             A MaskedImage, or sub-class instance.
         """
-
         cls = class_from_id(image_id)
         ee_image = ee.Image(image_id)
         gd_image = cls(ee_image, **kwargs)
@@ -138,64 +147,61 @@ class MaskedImage(BaseImage):
         region : dict, ee.Geometry, optional
             Region inside of which to find statistics.  If not specified, the image footprint is used.
         scale: float, optional
-            Re-project to this scale when finding statistics.
+            Re-project to this scale when finding statistics.  Defaults to the scale of
+            :attr:`~MaskedImage._ee_proj`.  Should be provided if the encapsulated image is a composite / without a
+            fixed projection.
         """
         if not region:
             region = self.ee_image.geometry()  # use the image footprint
 
-        proj = get_projection(self.ee_image, min_scale=False)  # get projection of minimum scale band
-        # If _proj_scale is set, use that as the scale, otherwise use the proj.nomimalScale().  For non-composite images
-        # these should be the same value.  For composite images, there is no `fixed` projection, hence the
-        # need for _proj_scale.
-        scale = scale or proj.nominalScale()
+        # composite images have no fixed projection (scale = 1deg) and need the scale kwarg
+        scale = scale or self._ee_proj.nominalScale()
 
         # Find the fill portion as the (sum over the region of FILL_MASK) divided by (sum over the region of a constant
-        # image (==1)).  We take this approach rather than using a mean reducer, as this does not find the mean over
-        # the region, but the mean over the part of the region covered by the image.
-        stats_image = ee.Image(
-            [self.ee_image.select('FILL_MASK').unmask(), ee.Image(1).rename('REGION_SUM')]
-        )  # yapf: disable
+        # image (==1)).  Note that a mean reducer, does not find the mean over the region, but the mean over the part
+        # of the region covered by the image.
+        stats_image = ee.Image([self.ee_image.select('FILL_MASK').unmask(), ee.Image(1).rename('REGION_SUM')])
         # Note: sometimes proj has no EPSG in crs(), hence use crs=proj and not crs=proj.crs() below
         sums = stats_image.reduceRegion(
-            reducer="sum", geometry=region, crs=proj, scale=scale, bestEffort=True, maxPixels=1e6
+            reducer="sum", geometry=region, crs=self._ee_proj, scale=scale, bestEffort=True, maxPixels=1e6
         )
 
-        fill_portion = (
-            ee.Number(sums.get('FILL_MASK')).divide(ee.Number(sums.get('REGION_SUM'))).multiply(100)
-        )
+        fill_portion = ee.Number(sums.get('FILL_MASK')).divide(ee.Number(sums.get('REGION_SUM'))).multiply(100)
 
         # set the encapsulated image properties
         self.ee_image = self.ee_image.set('FILL_PORTION', fill_portion)
         # set CLOUDLESS_PORTION=100 for the generic case, where cloud/shadow masking is not supported
-        self.ee_image = self.ee_image.set('CLOUDLESS_PORTION', 100.)
+        self.ee_image = self.ee_image.set('CLOUDLESS_PORTION', 100.0)
 
     def mask_clouds(self):
-        """ Apply the cloud/shadow mask if supported, otherwise apply the fill mask. """
+        """Apply the cloud/shadow mask if supported, otherwise apply the fill mask."""
         self.ee_image = self.ee_image.updateMask(self.ee_image.select('FILL_MASK'))
 
 
 class CloudMaskedImage(MaskedImage):
-    """ A base class for encapsulating cloud/shadow masked images. """
+    """A base class for encapsulating cloud/shadow masked images."""
 
     def _cloud_dist(self, cloudless_mask: ee.Image = None, max_cloud_dist: float = 5000) -> ee.Image:
-        """ Find the cloud/shadow distance in units of 10m. """
+        """Find the cloud/shadow distance in units of 10m."""
         if not cloudless_mask:
             cloudless_mask = self.ee_image.select('CLOUDLESS_MASK')
-        proj = get_projection(self.ee_image, min_scale=False)  # use maximum scale projection to save processing time
 
-        # Note that initial *MASK bands before any call to mask_clouds(), are themselves masked, so this cloud/shadow
-        # mask excludes (i.e. masks) already masked pixels.  This avoids finding distance to e.g. scanline errors in
-        # Landsat-7.
         cloud_shadow_mask = cloudless_mask.Not()
-        cloud_pix = ee.Number(max_cloud_dist).divide(proj.nominalScale()).round()  # cloud_dist in pixels
+        cloud_pix = ee.Number(max_cloud_dist).divide(self._ee_proj.nominalScale()).round()  # cloud_dist in pixels
 
-        # Find distance to nearest cloud/shadow (units of 10m).
-        cloud_dist = cloud_shadow_mask.fastDistanceTransform(
-            neighborhood=cloud_pix, units='pixels', metric='squared_euclidean'
-        ).sqrt().multiply(proj.nominalScale().divide(10))
+        # Find distance to nearest cloud/shadow (units of 10m).  Distances are found for all pixels, including masked /
+        # invalid pixels, which are treated as 0 (non cloud/shadow).
+        cloud_dist = (
+            cloud_shadow_mask.fastDistanceTransform(neighborhood=cloud_pix, units='pixels', metric='squared_euclidean')
+            .sqrt()
+            .multiply(self._ee_proj.nominalScale().divide(10))
+        )
 
         # Reproject to force calculation at correct scale.
-        cloud_dist = cloud_dist.reproject(crs=proj, scale=proj.nominalScale()).rename('CLOUD_DIST')
+        cloud_dist = cloud_dist.reproject(crs=self._ee_proj, scale=self._ee_proj.nominalScale()).rename('CLOUD_DIST')
+
+        # Prevent use of invalid pixels.
+        cloud_dist = cloud_dist.updateMask(cloudless_mask.mask())
 
         # Clip cloud_dist to max_cloud_dist.
         cloud_dist = cloud_dist.where(cloud_dist.gt(ee.Image(max_cloud_dist / 10)), max_cloud_dist / 10)
@@ -213,30 +219,27 @@ class CloudMaskedImage(MaskedImage):
         region : dict, ee.Geometry, optional
             Region inside of which to find statistics.  If not specified, the image footprint is used.
         scale: float, optional
-            Re-project to this scale when finding statistics.
+            Re-project to this scale when finding statistics.  Defaults to the scale of
+            :attr:`~MaskedImage._ee_proj`.  Should be provided if the encapsulated image is a composite / without a
+            fixed projection.
         """
         if not region:
             region = self.ee_image.geometry()  # use the image footprint
 
-        proj = get_projection(self.ee_image, min_scale=False)  # get projection of minimum scale band
-        # If _proj_scale is set, use that as the scale, otherwise use the proj.nomimalScale().  For non-composite images
-        # these should be the same value.  For composite images, there is no `fixed` projection, hence the
-        # need for _proj_scale.
-        scale = scale or proj.nominalScale()
+        # composite images have no fixed projection (scale = 1deg) and need the scale kwarg
+        scale = scale or self._ee_proj.nominalScale()
 
-        # Find the fill portion as the (sum over the region of FILL_MASK) divided by (sum over the region of a constant
-        # image (==1)).  We take this approach rather than using a mean reducer, as this does not find the mean over
-        # the region, but the mean over the part of the region covered by the image.  Then we find cloudless portion
-        # as portion of fill that is cloudless.
+        # Find the fill portion as the (sum over the region of FILL_MASK) divided by (sum over the region of a
+        # constant image (==1)).  Then find cloudless portion as portion of fill that is cloudless.  Note that a mean
+        # reducer, does not find the mean over the region, but the mean over the part of the region covered by the
+        # image.
         stats_image = ee.Image(
             [self.ee_image.select(['FILL_MASK', 'CLOUDLESS_MASK']).unmask(), ee.Image(1).rename('REGION_SUM')]
-        )  # yapf: disable
-        sums = stats_image.reduceRegion(
-            reducer="sum", geometry=region, crs=proj, scale=scale, bestEffort=True, maxPixels=1e6
-        ).rename(['FILL_MASK', 'CLOUDLESS_MASK'], ['FILL_PORTION', 'CLOUDLESS_PORTION'])
-        fill_portion = (
-            ee.Number(sums.get('FILL_PORTION')).divide(ee.Number(sums.get('REGION_SUM'))).multiply(100)
         )
+        sums = stats_image.reduceRegion(
+            reducer="sum", geometry=region, crs=self._ee_proj, scale=scale, bestEffort=True, maxPixels=1e6
+        ).rename(['FILL_MASK', 'CLOUDLESS_MASK'], ['FILL_PORTION', 'CLOUDLESS_PORTION'])
+        fill_portion = ee.Number(sums.get('FILL_PORTION')).divide(ee.Number(sums.get('REGION_SUM'))).multiply(100)
         cloudless_portion = (
             ee.Number(sums.get('CLOUDLESS_PORTION')).divide(ee.Number(sums.get('FILL_PORTION'))).multiply(100)
         )
@@ -255,7 +258,7 @@ class CloudMaskedImage(MaskedImage):
         raise NotImplementedError('This virtual method should be overridden by derived classes.')
 
     def mask_clouds(self):
-        """ Apply the cloud/shadow mask. """
+        """Apply the cloud/shadow mask."""
         self.ee_image = self.ee_image.updateMask(self.ee_image.select('CLOUDLESS_MASK'))
 
 
@@ -270,6 +273,13 @@ class LandsatImage(CloudMaskedImage):
     * LANDSAT/LC08/C02/T1_L2
     * LANDSAT/LC09/C02/T1_L2
     """
+
+    @property
+    def _ee_proj(self) -> ee.Projection:
+        if self._ee_projection is None:
+            # use the default projection (all landsat bands have same scale)
+            self._ee_projection = self._ee_image.projection()
+        return self._ee_projection
 
     def _aux_image(self, mask_shadows: bool = True, mask_cirrus: bool = True, max_cloud_dist: int = 5000) -> ee.Image:
         """
@@ -315,12 +325,28 @@ class LandsatImage(CloudMaskedImage):
 
 
 class Sentinel2ClImage(CloudMaskedImage):
-    """ Base class for cloud/shadow masking of Sentinel-2 TOA and SR images. """
+    """Base class for cloud/shadow masking of Sentinel-2 TOA and SR images."""
+
+    @property
+    def _ee_proj(self) -> ee.Projection:
+        if self._ee_projection is None:
+            # use the B1 projection with maximum scale (60m) to reduce processing times (some S2 images have empty QA
+            # bands with no fixed projection, so utils.get_projection(min_scale=False) should not be used here).
+            self._ee_projection = self._ee_image.select(0).projection()
+        return self._ee_projection
 
     def _aux_image(
-        self, s2_toa: bool = False, mask_cirrus: bool = True, mask_shadows: bool = True,
-        mask_method: CloudMaskMethod = CloudMaskMethod.cloud_prob, prob: float = 60, dark: float = 0.15,
-        shadow_dist: int = 1000, buffer: int = 50, cdi_thresh: float = None, max_cloud_dist: int = 5000
+        self,
+        s2_toa: bool = False,
+        mask_cirrus: bool = True,
+        mask_shadows: bool = True,
+        mask_method: CloudMaskMethod = CloudMaskMethod.cloud_prob,
+        prob: float = 60,
+        dark: float = 0.15,
+        shadow_dist: int = 1000,
+        buffer: int = 50,
+        cdi_thresh: float = None,
+        max_cloud_dist: int = 5000,
     ) -> ee.Image:
         """
         Derive cloud, shadow and validity masks for the encapsulated image.
@@ -362,12 +388,23 @@ class Sentinel2ClImage(CloudMaskedImage):
         ee.Image
             An Earth Engine image containing *_MASK and CLOUD_DIST bands.
         """
+        # TODO: add warning about post Feb 2022 validity when qa method is used
         mask_method = CloudMaskMethod(mask_method)
 
         def get_cloud_prob(ee_im):
-            """Get the cloud probability image from COPERNICUS/S2_CLOUD_PROBABILITY that corresponds to `ee_im`."""
+            """Get the cloud probability image from COPERNICUS/S2_CLOUD_PROBABILITY that corresponds to `ee_im`, if it
+            exists.  Otherwise, get a 100% probability.
+            """
+            # default masked cloud probability image
+            default_cloud_prob = ee.Image().updateMask(0)
+
+            # get the cloud probability image if it exists, otherwise revert to default_cloud_prob
+            # (ee.Image.linkCollection() has a similar functionality but the masked image it returns when cloud
+            # probability doesn't exist is 0 rather than nodata on download)
             filt = ee.Filter.eq('system:index', ee_im.get('system:index'))
             cloud_prob = ee.ImageCollection('COPERNICUS/S2_CLOUD_PROBABILITY').filter(filt).first()
+            cloud_prob = ee.Image(ee.List([cloud_prob, default_cloud_prob]).reduce(ee.Reducer.firstNonNull()))
+
             return cloud_prob.rename('CLOUD_PROB')
 
         def get_cloud_mask(ee_im, cloud_prob=None):
@@ -377,10 +414,15 @@ class Sentinel2ClImage(CloudMaskedImage):
                     cloud_prob = get_cloud_prob(ee_im)
                 cloud_mask = cloud_prob.gte(prob)
             else:
-                qa = ee_im.select('QA60')
+                # mask QA60 if it is post Feb 2022 to invalidate the cloud mask (post Feb 2022 QA60 is no longer
+                # populated and may be masked / transparent or zero).
+                qa_valid = ee.Number(ee_im.date().difference(ee.Date('2022-02-01'), 'days').lt(0))
+                qa = ee_im.select('QA60').updateMask(qa_valid)
+
                 cloud_mask = qa.bitwiseAnd(1 << 10).neq(0)
                 if mask_cirrus:
                     cloud_mask = cloud_mask.Or(qa.bitwiseAnd(1 << 11).neq(0))
+
             return cloud_mask.rename('CLOUD_MASK')
 
         def get_cdi_cloud_mask(ee_im):
@@ -393,7 +435,7 @@ class Sentinel2ClImage(CloudMaskedImage):
             else:
                 # get the Sentinel-2 TOA image that corresponds to ee_im
                 idx = ee_im.get('system:index')
-                s2_toa_image = (ee.ImageCollection('COPERNICUS/S2').filter(ee.Filter.eq('system:index', idx)).first())
+                s2_toa_image = ee.ImageCollection('COPERNICUS/S2').filter(ee.Filter.eq('system:index', idx)).first()
             cdi_image = ee.Algorithms.Sentinel2.CDI(s2_toa_image)
             return cdi_image.lt(cdi_thresh).rename('CDI_CLOUD_MASK')
 
@@ -401,29 +443,39 @@ class Sentinel2ClImage(CloudMaskedImage):
             """Given a cloud mask, get a shadow mask for ee_im."""
             dark_mask = ee_im.select('B8').lt(dark * 1e4)
             if not s2_toa:
+                # exclude water
                 dark_mask = ee_im.select('SCL').neq(6).And(dark_mask)
 
-            proj = get_projection(ee_im, min_scale=False)
             # Note:
             # S2 MEAN_SOLAR_AZIMUTH_ANGLE (SAA) appears to be measured clockwise with 0 at N (i.e. shadow goes in the
             # opposite direction), directionalDistanceTransform() angle appears to be measured clockwise with 0 at W.
             # So we need to add/subtract 180 to SAA to get shadow angle in S2 convention, then add 90 to get
-            # directionalDistanceTransform() convention i.e. we need to add -180 + 90 = -90 to the SAA.  This is not
+            # directionalDistanceTransform() convention i.e. we need to add -180 + 90 = -90 to SAA.  This is not
             # the same as in the EE tutorial which is 90-SAA
             # (https://developers.google.com/earth-engine/tutorials/community/sentinel-2-s2cloudless).
             shadow_azimuth = ee.Number(-90).add(ee.Number(ee_im.get('MEAN_SOLAR_AZIMUTH_ANGLE')))
-            proj_pixels = ee.Number(shadow_dist).divide(proj.nominalScale()).round()
-            # Project the cloud mask in the direction of the shadows it will cast.
-            cloud_cast_proj = cloud_mask.directionalDistanceTransform(shadow_azimuth, proj_pixels).select('distance')
-            # The reproject is necessary to force calculation at the correct scale - the coarse proj scale is used to
-            # improve processing times.
-            cloud_cast_mask = cloud_cast_proj.mask().reproject(crs=proj.crs(), scale=proj.nominalScale())
-            return cloud_cast_mask.And(dark_mask).rename('SHADOW_MASK')
+            proj_pixels = ee.Number(shadow_dist).divide(self._ee_proj.nominalScale()).round()
 
-        # gather and combine the various masks
+            # Project the cloud mask in the direction of the shadows it will cast (can project the mask into invalid
+            # areas).
+            cloud_cast_proj = cloud_mask.directionalDistanceTransform(shadow_azimuth, proj_pixels).select('distance')
+
+            # Reproject to force calculation at the correct scale.
+            cloud_cast_mask = cloud_cast_proj.mask().reproject(crs=self._ee_proj, scale=self._ee_proj.nominalScale())
+
+            # Remove any projections in invalid areas.
+            cloud_cast_mask = cloud_cast_mask.updateMask(cloud_mask.mask())
+
+            # Find shadow mask as intersection between projected clouds and dark areas.
+            shadow_mask = cloud_cast_mask.And(dark_mask)
+
+            return shadow_mask.rename('SHADOW_MASK')
+
+        # combine the various masks
         ee_image = self.ee_image
         cloud_prob = get_cloud_prob(ee_image) if mask_method == CloudMaskMethod.cloud_prob else None
         cloud_mask = get_cloud_mask(ee_image, cloud_prob=cloud_prob)
+
         if cdi_thresh is not None:
             cloud_mask = cloud_mask.And(get_cdi_cloud_mask(ee_image))
         if mask_shadows:
@@ -434,9 +486,11 @@ class Sentinel2ClImage(CloudMaskedImage):
 
         # do a morphological opening type operation that removes small (20m) blobs from the mask and then dilates
         cloud_shadow_mask = cloud_shadow_mask.focal_min(20, units='meters').focal_max(buffer, units='meters')
+
         # derive a fill mask from the Earth Engine mask for the surface reflectance bands
         fill_mask = ee_image.select('B.*').mask().reduce(ee.Reducer.allNonZero())
-        # Clip this mask to the image footprint.  (Without this step we get memory limit errors on download.)
+
+        # clip this mask to the image footprint (without this step we get memory limit errors on download)
         fill_mask = fill_mask.clip(ee_image.geometry()).rename('FILL_MASK')
 
         # combine all masks into cloudless_mask
@@ -454,21 +508,21 @@ class Sentinel2ClImage(CloudMaskedImage):
 
 
 class Sentinel2SrClImage(Sentinel2ClImage):
-    """ Class for cloud/shadow masking of Sentinel-2 SR (COPERNICUS/S2_SR) images. """
+    """Class for cloud/shadow masking of Sentinel-2 SR (COPERNICUS/S2_SR) images."""
 
     def _aux_image(self, s2_toa: bool = False, **kwargs) -> ee.Image:
         return Sentinel2ClImage._aux_image(self, s2_toa=False, **kwargs)
 
 
 class Sentinel2ToaClImage(Sentinel2ClImage):
-    """ Class for cloud/shadow masking of Sentinel-2 TOA (COPERNICUS/S2) images. """
+    """Class for cloud/shadow masking of Sentinel-2 TOA (COPERNICUS/S2) images."""
 
     def _aux_image(self, s2_toa: bool = False, **kwargs) -> ee.Image:
         return Sentinel2ClImage._aux_image(self, s2_toa=True, **kwargs)
 
 
 def class_from_id(image_id: str) -> type:
-    """ Return the *Image class that corresponds to the provided Earth Engine image/collection ID. """
+    """Return the *Image class that corresponds to the provided Earth Engine image/collection ID."""
     ee_coll_name, _ = split_id(image_id)
     if image_id in geedim.schema.collection_schema:
         return geedim.schema.collection_schema[image_id]['image_type']

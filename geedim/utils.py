@@ -23,7 +23,7 @@ import sys
 import time
 from contextlib import contextmanager
 from threading import Thread
-from typing import Tuple, Optional
+from typing import Optional, Tuple
 
 import ee
 import numpy as np
@@ -164,7 +164,7 @@ def get_bounds(filename: pathlib.Path, expand: float = 5):
     return src_bbox_wgs84
 
 
-def get_projection(image, min_scale=True):
+def get_projection(image: ee.Image, min_scale: bool = True) -> ee.Projection:
     """
     Get the min/max scale projection of image bands.  Server side - no calls to getInfo().
     Adapted from from https://github.com/gee-community/gee_tools, MIT license.
@@ -186,23 +186,11 @@ def get_projection(image, min_scale=True):
         raise TypeError('image is not an instance of ee.Image')
 
     bands = image.bandNames()
+    scales = bands.map(lambda band: image.select(ee.String(band)).projection().nominalScale())
+    projs = bands.map(lambda band: image.select(ee.String(band)).projection())
+    projs = projs.sort(scales)
 
-    compare = ee.Number.lte if min_scale else ee.Number.gte
-    init_proj = image.select(0).projection()
-
-    def compare_scale(name, prev_proj):
-        """Server side comparison of band scales"""
-        prev_proj = ee.Projection(prev_proj)
-        prev_scale = prev_proj.nominalScale()
-
-        curr_proj = image.select([name]).projection()
-        curr_scale = ee.Number(curr_proj.nominalScale())
-
-        condition = compare(curr_scale, prev_scale)
-        comp_proj = ee.Algorithms.If(condition, curr_proj, prev_proj)
-        return ee.Projection(comp_proj)
-
-    return ee.Projection(bands.iterate(compare_scale, init_proj))
+    return ee.Projection(projs.get(0) if min_scale else projs.get(-1))
 
 
 class Spinner(Thread):

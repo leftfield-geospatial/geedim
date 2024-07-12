@@ -127,11 +127,6 @@ class Tile:
         with utils.suppress_rio_logs(), env, MemoryFile(gtiff_bytes) as mem_file:
             with mem_file.open() as ds:
                 array = ds.read()
-                if (array.dtype == np.dtype('float32')) or (array.dtype == np.dtype('float64')):
-                    # GEE sets nodata to -inf for float data types, (but does not populate the nodata field).
-                    # rasterio won't allow nodata=-inf, so this is a workaround to change nodata to nan at
-                    # source.
-                    array[np.isinf(array)] = np.nan
         return array
 
     def download(
