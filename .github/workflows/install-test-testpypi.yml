@@ -31,6 +31,6 @@ jobs:
           geedim --help
           geedim search --help
           geedim search -c l8-c2-l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 composite -cm q-mosaic --mask download --scale 30 --crs EPSG:3857 -o
-          test -f LANDSAT-LC08-C02-T1_L2-2019_02_04-2019_02_20-Q-MOSAIC-COMP.tif && echo "Test OK"
+          dir -f LANDSAT-LC08-C02-T1_L2-2019_02_04-2019_02_20-Q-MOSAIC-COMP.tif && echo "Test OK"
           pwd
           ls -R
