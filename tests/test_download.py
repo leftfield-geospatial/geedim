@@ -127,7 +127,6 @@ def _test_export_profile(exp_profile, tgt_profile, transform_shape=False):
         assert exp_profile[key] == tgt_profile[key]
 
     assert utils.rio_crs(exp_profile['crs']) == utils.rio_crs(tgt_profile['crs'])
-
     assert exp_profile['transform'][0] == tgt_profile['transform'][0]
 
     if transform_shape:

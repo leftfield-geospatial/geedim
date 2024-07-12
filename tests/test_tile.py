@@ -74,7 +74,7 @@ def zipped_gtiff_bytes(mock_base_image: BaseImageLike) -> bytes:
             **rio.default_gtiff_profile,
             width=mock_base_image.shape[1],
             height=mock_base_image.shape[0],
-            count=mock_base_image.count
+            count=mock_base_image.count,
         ) as ds:
             ds.write(array)
         with zipfile.ZipFile(zip_buffer, 'a', zipfile.ZIP_DEFLATED, False) as zf:
