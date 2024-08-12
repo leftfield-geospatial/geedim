@@ -190,7 +190,7 @@ def gedi_cth_image_id() -> str:
 @pytest.fixture(scope='session')
 def landsat_ndvi_image_id() -> str:
     """Landsat 8-day NDVI composite EE image iD.  Composite in WGS84 with underlying 30m scale."""
-    return 'LANDSAT/LC08/C01/T1_8DAY_NDVI/20211219'
+    return 'LANDSAT/COMPOSITES/C02/T1_L2_8DAY_NDVI/20211211'
 
 
 @pytest.fixture(scope='session')
