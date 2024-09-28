@@ -17,7 +17,6 @@
 import io
 import json
 import logging
-import zipfile
 from collections import namedtuple
 
 import ee
@@ -64,23 +63,23 @@ def mock_ee_image(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(scope='module')
-def zipped_gtiff_bytes(mock_base_image: BaseImageLike) -> bytes:
-    """Zipped GeoTIFF bytes for ``mock_base_image``."""
-    zip_buffer = io.BytesIO()
+def gtiff_bytes(mock_base_image: BaseImageLike) -> bytes:
+    """GeoTIFF bytes for ``mock_base_image``."""
     array = np.ones((mock_base_image.count, *mock_base_image.shape)) * np.array([1, 2, 3]).reshape(-1, 1, 1)
 
-    with rio.MemoryFile() as mem_file:
-        with mem_file.open(
-            **rio.default_gtiff_profile,
-            width=mock_base_image.shape[1],
-            height=mock_base_image.shape[0],
-            count=mock_base_image.count,
-        ) as ds:
-            ds.write(array)
-        with zipfile.ZipFile(zip_buffer, 'a', zipfile.ZIP_DEFLATED, False) as zf:
-            zf.writestr('test.tif', mem_file.read())
+    buf = io.BytesIO()
+    with rio.open(
+        buf,
+        'w',
+        **rio.default_gtiff_profile,
+        width=mock_base_image.shape[1],
+        height=mock_base_image.shape[0],
+        count=mock_base_image.count,
+    ) as ds:
+        ds.write(array)
 
-    return zip_buffer.getvalue()
+    buf.seek(0)
+    return buf.read()
 
 
 def test_create(mock_base_image: BaseImageLike):
@@ -129,7 +128,7 @@ def test_mem_limit_error(synth_tile: Tile, mock_ee_image: None):
     assert msg in str(ex.value)
 
 
-def test_retry(synth_tile: Tile, mock_ee_image: None, zipped_gtiff_bytes: bytes, caplog: pytest.LogCaptureFixture):
+def test_retry(synth_tile: Tile, mock_ee_image: None, gtiff_bytes: bytes, caplog: pytest.LogCaptureFixture):
     """Test downloading retries invalid tiles until it succeeds."""
     # create progress bar
     dtype_size = np.dtype(synth_tile._exp_image.dtype).itemsize
@@ -141,12 +140,12 @@ def test_retry(synth_tile: Tile, mock_ee_image: None, zipped_gtiff_bytes: bytes,
     for _ in range(5):
         response = requests.Response()
         response.status_code = 200
-        response.headers = {'content-length': str(len(zipped_gtiff_bytes))}
+        response.headers = {'content-length': str(len(gtiff_bytes))}
         response.raw = io.BytesIO(b'error')
         responses.append(response)
 
     # make the last response valid
-    responses[-1].raw = io.BytesIO(zipped_gtiff_bytes)
+    responses[-1].raw = io.BytesIO(gtiff_bytes)
 
     # patch session.get() to pop and return a mocked response from the list
     session = retry_session()
@@ -169,10 +168,10 @@ def test_retry(synth_tile: Tile, mock_ee_image: None, zipped_gtiff_bytes: bytes,
     assert bar.n == pytest.approx(raw_download_size, rel=0.01)
 
     # test retry logs
-    assert 'retry' in caplog.text and 'zip' in caplog.text
+    assert 'retry' in caplog.text and 'not recognized' in caplog.text
 
 
-def test_retry_error(synth_tile: Tile, mock_ee_image: None, zipped_gtiff_bytes: bytes):
+def test_retry_error(synth_tile: Tile, mock_ee_image: None, gtiff_bytes: bytes):
     """Test downloading raises an error when the maximum retries are reached."""
     # create progress bar
     dtype_size = np.dtype(synth_tile._exp_image.dtype).itemsize
