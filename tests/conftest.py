@@ -157,7 +157,7 @@ def s2_image_ids(s2_sr_image_id, s2_toa_image_id, s2_sr_hm_image_id, s2_toa_hm_i
 @pytest.fixture(scope='session')
 def modis_nbar_image_id() -> str:
     """Global MODIS NBAR image ID.  WGS84 @ 500m."""
-    return 'MODIS/006/MCD43A4/2022_01_01'
+    return 'MODIS/061/MCD43A4/2022_01_01'
 
 
 @pytest.fixture(scope='session')

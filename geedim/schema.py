@@ -13,9 +13,12 @@
     See the License for the specific language governing permissions and
     limitations under the License.
 """
+
+from textwrap import wrap
+
 # schema definitions for MaskedImage.from_id(), geedim <-> EE collection names, and search properties
 from tabulate import tabulate
-from textwrap import wrap
+
 import geedim.mask
 
 # yapf: disable
@@ -112,11 +115,11 @@ collection_schema = {
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED',
         'description': 'Harmonised Sentinel-2, level 2A, surface reflectance.'
     },
-    'MODIS/006/MCD43A4': {
+    'MODIS/061/MCD43A4': {
         'gd_coll_name': 'modis-nbar',
         'prop_schema': default_prop_schema,
         'image_type': geedim.mask.MaskedImage,
-        'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/MODIS_006_MCD43A4',
+        'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD43A4',
         'description': 'MODIS nadir BRDF adjusted daily reflectance.'
     }
 }
@@ -136,7 +139,7 @@ cloud_coll_names = [k for k, v in collection_schema.items() if v['image_type'] !
 
 
 def cli_cloud_coll_table() -> str:
-    """ Return a table of cloud/shadow mask supported collections for use in CLI help strings. """
+    """Return a table of cloud/shadow mask supported collections for use in CLI help strings."""
     headers = dict(gd_coll_name='geedim name', ee_coll_name='EE name')
     data = []
     for key, val in collection_schema.items():
@@ -161,7 +164,7 @@ def cloud_coll_table(descr_join='\n') -> str:
     for key, val in collection_schema.items():
         if val['image_type'] != geedim.mask.MaskedImage:
             ee_coll_name = '\n'.join(wrap(f'`{key} <{val["ee_url"]}>`_', width=40))
-            descr = descr_join.join(wrap(val['description'], width=60))   # for RTD multiline table
+            descr = descr_join.join(wrap(val['description'], width=60))  # for RTD multiline table
             data.append(dict(ee_coll_name=ee_coll_name, descr=descr))
 
     return tabulate(data, headers=headers, tablefmt='grid')
