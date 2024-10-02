@@ -29,12 +29,12 @@ import rasterio.crs as rio_crs
 from click.core import ParameterSource
 from rasterio.errors import CRSError
 
-from geedim import schema, Initialize, version
+from geedim import Initialize, schema, version
 from geedim.collection import MaskedCollection
-from geedim.download import BaseImage, supported_dtypes
-from geedim.enums import CloudMaskMethod, CompositeMethod, ResamplingMethod, ExportType
+from geedim.download import _nodata_vals, BaseImage
+from geedim.enums import CloudMaskMethod, CompositeMethod, ExportType, ResamplingMethod
 from geedim.mask import MaskedImage
-from geedim.utils import get_bounds, Spinner, asset_id
+from geedim.utils import asset_id, get_bounds, Spinner
 
 logger = logging.getLogger(__name__)
 
@@ -248,7 +248,7 @@ scale_option = click.option(
 dtype_option = click.option(
     '-dt',
     '--dtype',
-    type=click.Choice(supported_dtypes, case_sensitive=False),
+    type=click.Choice(_nodata_vals.keys(), case_sensitive=False),
     default=None,
     show_default='smallest data type able to represent the range of pixel values.',
     help='Data type to convert image(s) to.',

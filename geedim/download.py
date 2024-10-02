@@ -45,17 +45,26 @@ from geedim.tile import Tile
 
 logger = logging.getLogger(__name__)
 
-supported_dtypes = ['uint8', 'uint16', 'uint32', 'int8', 'int16', 'int32', 'float32', 'float64']
-""" Supported image data types for downloading/exporting. """
+_nodata_vals = dict(
+    uint8=0,
+    uint16=0,
+    uint32=0,
+    int8=np.iinfo('int8').min,
+    int16=np.iinfo('int16').min,
+    int32=np.iinfo('int32').min,
+    # int64=np.iinfo('int64').min,
+    float32=float('-inf'),
+    float64=float('-inf'),
+)
+"""Nodata values for supported download / export dtypes. """
 # Note:
-# - while gdal >= 3.5 supports *int64 data type, there is a rasterio bug retrieving the *int64 nodata value,
+# - while gdal >= 3.5 supports *int64 data type, there is a rasterio bug passing the *int64 nodata value,
 # so geedim will not support these types for now.
-# - the ordering of the list above is relevant to the auto dtype and should be: unsigned ints smallest - largest,
+# - the ordering of the keys above is relevant to the auto dtype and should be: unsigned ints smallest - largest,
 # signed ints smallest to largest, float types smallest to largest.
 
 
 class BaseImage:
-    _float_nodata = float('-inf')
     _desc_width = 50
     _default_resampling = ResamplingMethod.near
     _ee_max_tile_size = 32
@@ -308,7 +317,7 @@ class BaseImage:
             min_value = np.nanmin(int_minmax)
             max_value = np.nanmax(int_minmax)
 
-            for dtype in supported_dtypes[:-2]:
+            for dtype in list(_nodata_vals.keys())[:-2]:
                 if (min_value >= np.iinfo(dtype).min) and (max_value <= np.iinfo(dtype).max):
                     return dtype
             return 'float64'
@@ -351,6 +360,7 @@ class BaseImage:
             int16=ee.Image.toInt16,
             uint32=ee.Image.toUint32,
             int32=ee.Image.toInt32,
+            # int64=ee.Image.toInt64,
         )
         if dtype not in conv_dict:
             raise TypeError(f'Unsupported dtype: {dtype}')
@@ -624,17 +634,7 @@ class BaseImage:
         # resample, convert, clip and reproject image according to download params
         exp_image = self._prepare_for_export(**kwargs)
         # see float nodata workaround note in Tile.download(...)
-        nodata_dict = dict(
-            float32=self._float_nodata,
-            float64=self._float_nodata,
-            uint8=0,
-            int8=np.iinfo('int8').min,
-            uint16=0,
-            int16=np.iinfo('int16').min,
-            uint32=0,
-            int32=np.iinfo('int32').min,
-        )  # yapf: disable
-        nodata = nodata_dict[exp_image.dtype] if set_nodata else None
+        nodata = _nodata_vals[exp_image.dtype] if set_nodata else None
         profile = dict(
             driver='GTiff',
             dtype=exp_image.dtype,

@@ -17,19 +17,18 @@
 import copy
 import pathlib
 from datetime import datetime
-from typing import Dict, Tuple, List
+from typing import Dict, List, Tuple
 
 import ee
 import numpy as np
 import pytest
 import rasterio as rio
-from rasterio import Affine, windows
-from rasterio import features, warp
+from rasterio import Affine, features, warp, windows
 from rasterio.crs import CRS
 
 from geedim import utils
-from geedim.download import BaseImage
-from geedim.enums import ResamplingMethod, ExportType
+from geedim.download import _nodata_vals, BaseImage
+from geedim.enums import ExportType, ResamplingMethod
 
 
 class BaseImageLike:
@@ -456,19 +455,7 @@ def test_prepare_for_download(base_image: str, request: pytest.FixtureRequest):
     assert exp_profile['nodata'] is not None
 
 
-@pytest.mark.parametrize(
-    'dtype, exp_nodata',
-    [
-        ('uint8', 0),
-        ('int8', -(2**7)),
-        ('uint16', 0),
-        ('int16', -(2**15)),
-        ('uint32', 0),
-        ('int32', -(2**31)),
-        ('float32', float('-inf')),
-        ('float64', float('-inf')),
-    ],
-)
+@pytest.mark.parametrize('dtype, exp_nodata', _nodata_vals.items())
 def test_prepare_nodata(user_fix_base_image: BaseImage, region_25ha: Dict, dtype: str, exp_nodata: float):
     """Test BaseImage._prepare_for_download() sets rasterio profile nodata correctly for different dtypes."""
     exp_image, exp_profile = user_fix_base_image._prepare_for_download(region=region_25ha, scale=30, dtype=dtype)
