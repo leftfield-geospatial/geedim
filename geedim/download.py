@@ -14,29 +14,32 @@
    limitations under the License.
 """
 
+from __future__ import annotations
+
 import logging
 import os
 import pathlib
 import threading
 import time
 import warnings
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed, ThreadPoolExecutor
 from datetime import datetime
 from itertools import product
-from typing import Tuple, Dict, List, Union, Iterator, Optional
+from typing import Dict, Iterator, List, Optional, Tuple, Union
 
 import ee
 import numpy as np
 import rasterio as rio
-from rasterio import windows, features, warp
+from rasterio import features, windows
 from rasterio.crs import CRS
 from rasterio.enums import Resampling as RioResampling
+from rasterio.warp import transform_bounds
 from tqdm import TqdmWarning
 from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 from geedim import utils
-from geedim.enums import ResamplingMethod, ExportType
+from geedim.enums import ExportType, ResamplingMethod
 from geedim.stac import StacCatalog, StacItem
 from geedim.tile import Tile
 
@@ -164,6 +167,7 @@ class BaseImage:
 
     @property
     def footprint(self) -> Optional[Dict]:
+        # TODO: "None if image has no fixed projection"?  Standardise these docs.
         """Geojson polygon of the image extent.  None if the image is a composite."""
         if ('properties' not in self._ee_info) or ('system:footprint' not in self._ee_info['properties']):
             return None
@@ -177,6 +181,18 @@ class BaseImage:
             footprint['type'] = 'Polygon'
 
         return self._ee_info['properties']['system:footprint']
+
+    @property
+    def bounds(self) -> tuple[float, ...] | None:
+        """(left, bottom, right, top) bounds in :attr:`~BaseImage.crs` coordinates.  None if the image has no fixed
+        projection.
+        """
+        if not self.shape:
+            return None
+
+        ji = np.array([[0, 0], [self.shape[1], 0], [self.shape[1], self.shape[0]], [0, self.shape[0]]]).T
+        xy = self.transform * ji
+        return *np.min(xy, axis=1).tolist(), *np.max(xy, axis=1).tolist()
 
     @property
     def shape(self) -> Optional[Tuple[int, int]]:
@@ -400,18 +416,86 @@ class BaseImage:
         # copy original ee_image properties and return
         return ee.Image(adj_im.copyProperties(ee_image, ee_image.propertyNames()))
 
+    def _get_export_spatial_params(
+        self, crs: str = None, shape: tuple[int, int] = None, region: dict | ee.Geometry = None, scale: float = None
+    ) -> tuple[tuple[float], tuple[int, int]]:
+        """Return ``crs_transform`` and ``shape`` for the given spatial parameters."""
+
+        def _transform_bounds(src_crs: str | rio.CRS, dst_crs: str | rio.CRS, *bounds) -> tuple[float, ...]:
+            """Transform ``bounds`` from ``src_crs`` to ``dst_crs``."""
+            return transform_bounds(utils.rio_crs(src_crs), utils.rio_crs(dst_crs), *bounds)
+
+        # find region bounds in export CRS
+        region_bounds = None
+        if region:
+            if isinstance(region, ee.Geometry):
+                region = region.getInfo()
+            region_crs = region['crs']['properties']['name'] if 'crs' in region else 'EPSG:4326'
+            region_bounds = features.bounds(region)
+            region_bounds = _transform_bounds(region_crs, crs, *region_bounds)
+
+        # find footprint bounds in export CRS
+        footprint_bounds = None
+        if self.bounds:
+            footprint_bounds = _transform_bounds(self.crs, crs, *self.bounds)
+
+        # derive export bounds from region / footprint bounds
+        if region_bounds and footprint_bounds:
+            # prevent exporting areas outside image bounds by intersecting region & footprint (also avoids an EE
+            # mem limit issue downloading S2 regions outside image bounds)
+            bounds = (
+                *np.fmax(region_bounds[:2], footprint_bounds[:2]),
+                *np.fmin(region_bounds[2:], footprint_bounds[2:]),
+            )
+        else:
+            # export entire image if region not provided (region is required if there's no footprint / fixed
+            # projection)
+            bounds = region_bounds or footprint_bounds
+
+        # find (x, y) scale, standardising on a positive x axis and negative y axis
+        if shape:
+            scale = ((bounds[2] - bounds[0]) / shape[1], -(bounds[3] - bounds[1]) / shape[0])
+        else:
+            scale = scale or self.scale
+            scale = (scale, -scale)
+
+        # create crs_transform from export bounds & scale
+        if crs == self.crs and np.all(np.abs(scale) == self.scale):
+            # Use the source pixel grid when exporting in source CRS and scale.
+            # Create a standard UL origin transform equivalent / equal to self.transform to give pixel coords with a
+            # fixed relationship to xy coords.
+            crs_transform_ = rio.Affine.translation(footprint_bounds[0], footprint_bounds[3]) * rio.Affine.scale(*scale)
+
+            # find export bounds & crs_transform on source grid such that new bounds contain non-grid bounds
+            ul = crs_transform_ * np.floor(~crs_transform_ * (bounds[0], bounds[3])).tolist()
+            br = crs_transform_ * np.ceil(~crs_transform_ * (bounds[2], bounds[1])).tolist()
+            bounds = (ul[0], br[1], br[0], ul[1])
+            crs_transform = rio.Affine.translation(*ul) * rio.Affine.scale(*scale)
+        else:
+            crs_transform = rio.Affine.translation(bounds[0], bounds[3]) * rio.Affine.scale(*scale)
+
+        # find shape if not given
+        if not shape:
+            shape = (bounds[3] - bounds[1]) / scale[0], (bounds[2] - bounds[0]) / abs(scale[1])
+            # in some cases (e.g. MODIS) shape will be 1 pixel bigger than the ee.Image.prepare_for_export()
+            # equivalent due to floating pt errors with ceil() below
+            shape = np.ceil(shape).astype('int').tolist()
+
+        return crs_transform, shape
+
     def _prepare_for_export(
         self,
         crs: str = None,
         crs_transform: Tuple[float] = None,
         shape: Tuple[int, int] = None,
-        region: Dict = None,
+        region: dict | ee.Geometry = None,
         scale: float = None,
         resampling: ResamplingMethod = _default_resampling,
         dtype: str = None,
         scale_offset: bool = False,
         bands: List[str] = None,
     ) -> 'BaseImage':
+        # TODO: update docs param combinations and don't repeat the whole download() docstring
         """
         Prepare the encapsulated image for export/download.  Will reproject, resample, clip and convert the image
         according to the provided parameters.
@@ -434,8 +518,8 @@ class BaseImage:
             this transform.
         shape: tuple of int, optional
             (height, width) dimensions to export (pixels).
-        region : dict, geojson, ee.Geometry, optional
-            Region of interest (WGS84) to export.  Defaults to the image footprint, when available.
+        region: dict, ee.Geometry, optional
+            Region to export as a GeoJSON dictionary or ``ee.Geometry``.  Defaults to the image footprint, if available.
         scale : float, optional
             Pixel scale (m) to export to.  Where image bands have different scales, all are re-projected to this scale.
             Ignored if ``crs`` and ``crs_transform`` are specified.  Defaults to use the minimum scale of
@@ -481,7 +565,7 @@ class BaseImage:
             raise ValueError(f'This image is in EPSG:4326, you need to specify a scale (in meters); or a shape.')
 
         if scale and shape:
-            # This error is raised in later calls to ee.Image.getInfo(), but is neater to raise here first
+            # This error is raised in later calls to ee.Image.getDownloadUrl(), but is neater to raise here first
             raise ValueError('You can specify one of scale or shape, but not both.')
 
         if bands:
@@ -494,7 +578,14 @@ class BaseImage:
         # parameters used below will have the values specific to bands.
         exp_image = BaseImage(self.ee_image.select(bands)) if bands else self
 
-        # perform image scale/offset, dtype and resampling operations
+        # configure the export spatial parameters
+        crs = crs or exp_image.crs
+        if not crs_transform:
+            crs_transform, shape = exp_image._get_export_spatial_params(crs, shape, region, scale)
+        else:
+            shape = shape or exp_image.shape
+
+        # apply export scale/offset, dtype and resampling
         ee_image = exp_image.ee_image
         if scale_offset:
             ee_image = BaseImage._scale_offset(ee_image, exp_image.band_properties)
@@ -513,52 +604,14 @@ class BaseImage:
         # TODO: only do this if there is a change?  Or do we need to standardise the bands?
         ee_image = BaseImage._convert_dtype(ee_image, dtype=dtype or im_dtype)
 
-        # configure the export parameter values
-        crs = crs or exp_image.crs
-        if not crs_transform and not shape:
-            # if none of crs_transform, shape, region or scale are specified, then set region and scale to defaults
-            region = region or exp_image.footprint
-            scale = scale or exp_image.scale
-
-            if (crs == exp_image.crs) and (scale == exp_image.scale):
-                # if crs_transform & shape are not already specified, and crs & scale match this image's crs & scale,
-                # then set crs_transform and shape to export on export image's pixel grid
-                if region == exp_image.footprint:
-                    crs_transform = exp_image.transform
-                    shape = exp_image.shape
-                else:
-                    # find a crs_transform and shape that encompasses region
-                    if isinstance(region, ee.Geometry):
-                        region = region.getInfo()
-                    region_crs = region['crs']['properties']['name'] if 'crs' in region else 'EPSG:4326'
-                    region_bounds = warp.transform_bounds(region_crs, utils.rio_crs(crs), *features.bounds(region))
-                    region_win = windows.from_bounds(*region_bounds, transform=exp_image.transform)
-                    region_win = utils.expand_window_to_grid(region_win)
-                    crs_transform = exp_image.transform * rio.Affine.translation(region_win.col_off, region_win.row_off)
-                    shape = (region_win.height, region_win.width)
-
-                # prevent exporting with region & scale now that crs_transform and shape are set
-                region = None
-                scale = None
-
-        # create the export parameter dict
-        crs_transform = crs_transform[:6] if crs_transform else None
-        dimensions = shape[::-1] if shape else None
-        export_kwargs = dict(
-            crs=crs,
-            crs_transform=crs_transform,
-            dimensions=dimensions,
-            region=region,
-            scale=scale,
-            bands=bands,
-            fileFormat='GeoTIFF',
-            filePerBand=False,
+        # apply export spatial parameters
+        crs_transform = crs_transform[:6]
+        ee_image = ee_image.reproject(crs, crsTransform=crs_transform)
+        region = ee.Geometry.Rectangle(
+            [0, 0, shape[1], shape[0]], proj=ee_image.projection(), geodesic=False, evenOdd=True
         )
-        # drop items with values==None
-        export_kwargs = {k: v for k, v in export_kwargs.items() if v is not None}
-        logger.debug(f'ee.Image.prepare_for_export() params: {export_kwargs}')
-        # TODO: prepare_for_export does not seem to be used in ee internals any more
-        ee_image, _ = ee_image.prepare_for_export(export_kwargs)
+        ee_image = ee_image.clipToBoundsAndScale(region)
+
         return BaseImage(ee_image)
 
     def _prepare_for_download(self, set_nodata: bool = True, **kwargs) -> Tuple['BaseImage', Dict]:
@@ -650,10 +703,8 @@ class BaseImage:
     def _build_overviews(self, filename: Union[str, pathlib.Path], max_num_levels: int = 8, min_ovw_pixels: int = 256):
         """Build internal overviews, downsampled by successive powers of 2, for a given filename."""
 
-        # TODO: revisit multi-threaded overviews on gdal update
-        # build overviews in a single threaded environment (currently gdal reports errors when building overviews
-        # with GDAL_NUM_THREADS='ALL_CPUs' - see https://github.com/OSGeo/gdal/issues/7921)
-        env_dict = dict(GTIFF_FORCE_RGBA=False, COMPRESS_OVERVIEW='DEFLATE')
+        # build overviews
+        env_dict = dict(GTIFF_FORCE_RGBA=False, COMPRESS_OVERVIEW='DEFLATE', GDAL_NUM_THREADS='ALL_CPUS')
         if self.size >= 4e9:
             env_dict.update(BIGTIFF_OVERVIEW=True)
 
@@ -669,6 +720,7 @@ class BaseImage:
 
     def _write_metadata(self, dataset: rio.io.DatasetWriter):
         """Write Earth Engine and STAC metadata to an open rasterio dataset."""
+        # TODO: Xee with rioxarray writes an html description - can we do the same?
         if dataset.closed:
             raise IOError('Image dataset is closed')
 
@@ -804,8 +856,8 @@ class BaseImage:
             this transform.
         shape: tuple of int, optional
             (height, width) dimensions to export (pixels).
-        region : dict, geojson, ee.Geometry, optional
-            Region of interest (WGS84) to export.  Defaults to the image footprint, when available.
+        region: dict, ee.Geometry, optional
+            Region to export as a GeoJSON dictionary or ``ee.Geometry``.  Defaults to the image footprint, if available.
         scale : float, optional
             Pixel scale (m) to export to.  Where image bands have different scales, all are re-projected to this scale.
             Ignored if ``crs`` and ``crs_transform`` are specified.  Defaults to use the minimum scale of
@@ -910,13 +962,13 @@ class BaseImage:
             WKT or EPSG specification of CRS to export to.  Where image bands have different CRSs, all are
             re-projected to this CRS. Defaults to use the CRS of the minimum scale band if available.
         crs_transform: tuple of float, list of float, rio.Affine, optional
-            List of 6 numbers specifying an affine transform in the specified CRS.  In row-major order:
+            List of 6 numbers specifying an affine transform in the given CRS.  In row-major order:
             [xScale, xShearing, xTranslation, yShearing, yScale, yTranslation].  All bands are re-projected to
             this transform.
         shape: tuple of int, optional
             (height, width) dimensions to export (pixels).
-        region : dict, geojson, ee.Geometry, optional
-            Region of interest (WGS84) to export.  Defaults to the image footprint, when available.
+        region: dict, ee.Geometry, optional
+            Region to export as a GeoJSON dictionary or ``ee.Geometry``.  Defaults to the image footprint, if available.
         scale : float, optional
             Pixel scale (m) to export to.  Where image bands have different scales, all are re-projected to this scale.
             Ignored if ``crs`` and ``crs_transform`` are specified.  Defaults to use the minimum scale of
@@ -931,7 +983,7 @@ class BaseImage:
         bands: list of str, optional
             List of band names to download.
         """
-
+        # TODO: allow bands to be band indexes too
         max_threads = num_threads or min(32, (os.cpu_count() or 1) + 4)
         out_lock = threading.Lock()
         filename = pathlib.Path(filename)
