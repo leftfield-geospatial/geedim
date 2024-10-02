@@ -14,24 +14,27 @@
     limitations under the License.
 """
 
+from __future__ import annotations
+
 import logging
 import re
+import textwrap as wrap
 from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Union
 
 import ee
 import tabulate
-import textwrap as wrap
+from tabulate import DataRow, Line, TableFormat
+
 from geedim import schema
-from geedim.medoid import medoid
 from geedim.download import BaseImage
-from geedim.enums import ResamplingMethod, CompositeMethod
-from geedim.errors import UnfilteredError, InputImageError
-from geedim.mask import MaskedImage, class_from_id
+from geedim.enums import CompositeMethod, ResamplingMethod
+from geedim.errors import InputImageError, UnfilteredError
+from geedim.mask import class_from_id, MaskedImage
+from geedim.medoid import medoid
 from geedim.stac import StacCatalog, StacItem
-from geedim.utils import split_id, resample
-from tabulate import TableFormat, Line, DataRow
+from geedim.utils import resample, split_id
 
 logger = logging.getLogger(__name__)
 tabulate.MIN_PADDING = 0
@@ -46,7 +49,7 @@ _table_fmt = TableFormat(
     headerrow=DataRow("", " ", ""),
     datarow=DataRow("", " ", ""),
     padding=0,
-    with_header_hide=["lineabove", "linebelow"]
+    with_header_hide=["lineabove", "linebelow"],
 )  # yapf: disable
 
 
@@ -73,7 +76,7 @@ def compatible_collections(names: List[str]) -> bool:
 
 
 def parse_date(date: Union[datetime, str], var_name=None) -> datetime:
-    """ Convert a string to a datetime, raising an exception if it is in the wrong format. """
+    """Convert a string to a datetime, raising an exception if it is in the wrong format."""
     var_name = var_name or 'date'
     if isinstance(date, str):
         try:
@@ -84,7 +87,7 @@ def parse_date(date: Union[datetime, str], var_name=None) -> datetime:
 
 
 def abbreviate(name: str) -> str:
-    """ Return an acronym for a string in camel or snake case. """
+    """Return an acronym for a string in camel or snake case."""
     name = name.strip()
     if len(name) <= 5:
         return name
@@ -198,6 +201,7 @@ class MaskedCollection:
             if isinstance(image_obj, str):
                 im_dict_list.append(dict(ee_image=ee.Image(image_obj), id=image_obj, has_date=True))
             elif isinstance(image_obj, ee.Image):
+                # TODO: combine all getInfo() calls into one
                 ee_info = image_obj.getInfo()
                 ee_id = ee_info['id'] if 'id' in ee_info else None
                 has_date = ('properties' in ee_info) and ('system:time_start' in ee_info['properties'])
@@ -226,14 +230,14 @@ class MaskedCollection:
 
     @property
     def stac(self) -> Union[StacItem, None]:
-        """ STAC info, if any.  """
+        """STAC info, if any."""
         if not self._stac and (self.name in StacCatalog().url_dict):
             self._stac = StacCatalog().get_item(self.name)
         return self._stac
 
     @property
     def stats_scale(self) -> Union[float, None]:
-        """ Scale to use for re-projections when finding region statistics. """
+        """Scale to use for re-projections when finding region statistics."""
         if not self.stac:
             return None
         if not self._stats_scale:
@@ -245,12 +249,12 @@ class MaskedCollection:
 
     @property
     def ee_collection(self) -> ee.ImageCollection:
-        """ Earth Engine image collection. """
+        """Earth Engine image collection."""
         return self._ee_collection
 
     @property
     def name(self) -> str:
-        """ Name of the encapsulated Earth Engine image collection. """
+        """Name of the encapsulated Earth Engine image collection."""
         if not self._name:
             ee_info = self._ee_collection.first().getInfo()
             self._name = split_id(ee_info['id'])[0] if ee_info and 'id' in ee_info else 'None'
@@ -258,7 +262,7 @@ class MaskedCollection:
 
     @property
     def image_type(self) -> type:
-        """ :class:`~geedim.mask.MaskedImage` class or sub-class corresponding to images in :attr:`ee_collection`. """
+        """:class:`~geedim.mask.MaskedImage` class or sub-class corresponding to images in :attr:`ee_collection`."""
         if not self._image_type:
             self._image_type = class_from_id(self.name)
         return self._image_type
@@ -279,7 +283,7 @@ class MaskedCollection:
 
     @property
     def properties_table(self) -> str:
-        """ :attr:`properties` formatted as a printable table string. """
+        """:attr:`properties` formatted as a printable table string."""
         return self._get_properties_table(self.properties)
 
     @property
@@ -308,7 +312,7 @@ class MaskedCollection:
 
     @property
     def schema_table(self) -> str:
-        """ :attr:`schema` formatted as a printable table string. """
+        """:attr:`schema` formatted as a printable table string."""
         table_list = []
         for prop_name, prop_dict in self.schema.items():
             description = '\n'.join(wrap.wrap(prop_dict['description'], 50))
@@ -318,13 +322,13 @@ class MaskedCollection:
 
     @property
     def refl_bands(self) -> Union[List[str], None]:
-        """ List of spectral / reflectance band names, if any. """
+        """List of spectral / reflectance band names, if any."""
         if not self.stac:
             return None
         return [bname for bname, bdict in self.stac.band_props.items() if 'center_wavelength' in bdict]
 
     def _get_properties(self, ee_collection: ee.ImageCollection, schema=None) -> Dict:
-        """ Retrieve properties of images in a given Earth Engine image collection. """
+        """Retrieve properties of images in a given Earth Engine image collection."""
         if not schema:
             schema = self.schema
 
@@ -375,8 +379,13 @@ class MaskedCollection:
         return tabulate.tabulate(abbrev_props, headers='keys', floatfmt='.2f', tablefmt=_table_fmt)
 
     def _prepare_for_composite(
-        self, method: CompositeMethod, mask: bool = True, resampling: Union[ResamplingMethod, str] = None,
-        date: str = None, region: Dict = None, **kwargs
+        self,
+        method: CompositeMethod,
+        mask: bool = True,
+        resampling: Union[ResamplingMethod, str] = None,
+        date: str = None,
+        region: dict | ee.Geometry = None,
+        **kwargs,
     ) -> ee.ImageCollection:
         """
         Prepare the Earth Engine collection for compositing. See :meth:`~MaskedCollection.composite` for
@@ -399,7 +408,7 @@ class MaskedCollection:
             )
 
         def prepare_image(ee_image: ee.Image):
-            """ Prepare an Earth Engine image for use in compositing. """
+            """Prepare an Earth Engine image for use in compositing."""
             if date and (method in self._sort_methods):
                 date_dist = ee.Number(ee_image.get('system:time_start')).subtract(ee.Date(date).millis()).abs()
                 ee_image = ee_image.set('DATE_DIST', date_dist)
@@ -430,8 +439,14 @@ class MaskedCollection:
         return ee_collection
 
     def search(
-        self, start_date: Union[datetime, str] = None, end_date: Union[datetime, str] = None, region: Dict = None,
-        fill_portion: float = None, cloudless_portion: float = None, custom_filter: str = None, **kwargs
+        self,
+        start_date: datetime | str = None,
+        end_date: datetime | str = None,
+        region: dict | ee.Geometry = None,
+        fill_portion: float = None,
+        cloudless_portion: float = None,
+        custom_filter: str = None,
+        **kwargs,
     ) -> 'MaskedCollection':
         """
         Search for images based on date, region, filled/cloudless portion, and custom criteria.
@@ -449,8 +464,8 @@ class MaskedCollection:
         end_date : datetime, str, optional
             End date (UTC).  In '%Y-%m-%d' format if a string.  If None, ``end_date`` is set to a day after
             ``start_date``.
-        region : dict, ee.Geometry
-            Polygon in WGS84 specifying a region that images should intersect.
+        region: dict, ee.Geometry
+            Region that images should intersect as a GeoJSON dictionary or ``ee.Geometry``.
         fill_portion: float, optional
             Lower limit on the portion of region that contains filled/valid image pixels (%).
         cloudless_portion: float, optional
@@ -473,7 +488,7 @@ class MaskedCollection:
             logger.warning('Specifying `start_date` and `region` will improve the search speed.')
 
         def set_region_stats(ee_image: ee.Image):
-            """ Find filled and cloud/shadow free portions inside the search region for a given image.  """
+            """Find filled and cloud/shadow free portions inside the search region for a given image."""
             gd_image = self.image_type(ee_image, **kwargs)
             gd_image._set_region_stats(region, scale=self.stats_scale)
             return gd_image.ee_image
@@ -523,9 +538,13 @@ class MaskedCollection:
         return gd_collection
 
     def composite(
-        self, method: Union[CompositeMethod, str] = None, mask: bool = True,
-        resampling: Union[ResamplingMethod, str] = None, date: Union[datetime, str] = None, region: dict = None,
-        **kwargs
+        self,
+        method: CompositeMethod | str = None,
+        mask: bool = True,
+        resampling: ResamplingMethod | str = None,
+        date: datetime | str = None,
+        region: dict | ee.Geometry = None,
+        **kwargs,
     ) -> MaskedImage:
         """
         Create a composite image from the encapsulated image collection.
@@ -543,16 +562,16 @@ class MaskedCollection:
             Resampling method to use on collection images prior to compositing.  If None, `near` resampling is used
             (the default).  See :class:`~geedim.enums.ResamplingMethod` for available options.
         date: datetime, str, optional
-            Sort collection images by their absolute difference in capture time from this date.  Useful for
-            prioritising pixels from images closest to this date.  Valid for the `q-mosaic`, `mosaic` and
-            `medoid` ``method`` only.  If None, no time difference sorting is done (the default).
-        region: dict, optional
-            Sort collection images by the portion of their pixels that are cloudless, and inside this geojson polygon.
-            This is useful to prioritise pixels from the least cloudy image(s). Valid for the `q-mosaic` `mosaic`, and
-            `medoid` ``method`` only.  If collection has no cloud/shadow mask support, images are sorted by the portion
-            of their pixels that are valid, and inside ``region``. If None, no cloudless/valid portion sorting is done
-            (the default).  If ``date`` and ``region`` are not specified, collection images are sorted by their capture
-            date.
+            Sort collection images by their absolute difference in capture time from this date.  Pioritises pixels
+            from images closest to this date.  Valid for the `q-mosaic`, `mosaic` and `medoid` ``method`` only.  If
+            None, no time difference sorting is done (the default).
+        region: dict, ee.Geometry, optional
+            Sort collection images by the portion of their pixels that are cloudless, and inside this region.  Can be
+            a GeoJSON dictionary or ee.Geometry.  Prioritises pixels from the least cloudy image(s). Valid for the
+            `q-mosaic`, `mosaic`, and `medoid` ``method`` only.  If collection has no cloud/shadow mask support,
+            images are sorted by the portion of their pixels that are valid, and inside ``region``. If None,
+            no cloudless/valid portion sorting is done (the default).  If ``date`` and ``region`` are not specified,
+            collection images are sorted by their capture date.
         **kwargs
             Optional cloud/shadow masking parameters - see :meth:`geedim.mask.MaskedImage.__init__` for details.
 

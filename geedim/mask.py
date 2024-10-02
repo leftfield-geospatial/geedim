@@ -14,8 +14,9 @@
     limitations under the License.
 """
 
+from __future__ import annotations
+
 import logging
-from typing import Dict
 
 import ee
 
@@ -32,7 +33,7 @@ logger = logging.getLogger(__name__)
 class MaskedImage(BaseImage):
     _default_mask = False
 
-    def __init__(self, ee_image: ee.Image, mask: bool = _default_mask, region: dict = None, **kwargs):
+    def __init__(self, ee_image: ee.Image, mask: bool = _default_mask, region: dict | ee.Geometry = None, **kwargs):
         """
         A class for describing, masking and downloading an Earth Engine image.
 
@@ -42,9 +43,9 @@ class MaskedImage(BaseImage):
             Earth Engine image to encapsulate.
         mask: bool, optional
             Whether to mask the image.
-        region: dict, optional
-            A geojson polygon inside of which to find statistics for the image.  These values are stored in the image
-            properties. If None, statistics are not found (the default).
+        region: dict, ee.Geometry, optional
+            Region in which to find statistics for the image, as a GeoJSON dictionary or ``ee.Geometry``.  Statistics
+            are stored in the image properties. If None, statistics are not found (the default).
 
         **kwargs
             Cloud/shadow masking parameters - see below:
@@ -137,15 +138,16 @@ class MaskedImage(BaseImage):
             ee.Algorithms.If(overwrite, self.ee_image.addBands(aux_image, overwrite=True), self.ee_image)
         )
 
-    def _set_region_stats(self, region: Dict = None, scale: float = None):
+    def _set_region_stats(self, region: dict | ee.Geometry = None, scale: float = None):
         """
         Set FILL_PORTION and CLOUDLESS_PORTION on the encapsulated image for the specified region.  Derived classes
         should override this method and set CLOUDLESS_PORTION, and/or other statistics they support.
 
         Parameters
         ----------
-        region : dict, ee.Geometry, optional
-            Region inside of which to find statistics.  If not specified, the image footprint is used.
+        region: dict, ee.Geometry, optional
+            Region in which to find statistics for the image, as a GeoJSON dictionary or ``ee.Geometry``.  If not
+            specified, the image footprint is used.
         scale: float, optional
             Re-project to this scale when finding statistics.  Defaults to the scale of
             :attr:`~MaskedImage._ee_proj`.  Should be provided if the encapsulated image is a composite / without a
@@ -210,14 +212,15 @@ class CloudMaskedImage(MaskedImage):
         # download.
         return cloud_dist.toUint16().rename('CLOUD_DIST')
 
-    def _set_region_stats(self, region: Dict = None, scale: float = None):
+    def _set_region_stats(self, region: dict | ee.Geometry = None, scale: float = None):
         """
         Set FILL_PORTION and CLOUDLESS_PORTION on the encapsulated image for the specified region.
 
         Parameters
         ----------
-        region : dict, ee.Geometry, optional
-            Region inside of which to find statistics.  If not specified, the image footprint is used.
+        region: dict, ee.Geometry, optional
+            Region in which to find statistics for the image, as a GeoJSON dictionary or ``ee.Geometry``.  If not
+            specified, the image footprint is used.
         scale: float, optional
             Re-project to this scale when finding statistics.  Defaults to the scale of
             :attr:`~MaskedImage._ee_proj`.  Should be provided if the encapsulated image is a composite / without a
