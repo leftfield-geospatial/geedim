@@ -430,7 +430,7 @@ def test_mask_clouds(masked_image: str, region_100ha: Dict, tmp_path, request: p
     masked_image: MaskedImage = request.getfixturevalue(masked_image)
     filename = tmp_path.joinpath(f'test_image.tif')
     masked_image.mask_clouds()
-    proj_scale = masked_image._ee_proj.nominalScale()
+    proj_scale = masked_image._ee_proj.nominalScale().getInfo()
     masked_image.download(filename, region=region_100ha, dtype='float32', scale=proj_scale)
     assert filename.exists()
 
@@ -457,7 +457,7 @@ def test_s2_mask_clouds_missing_data(masked_image: str, region_100ha: Dict, tmp_
     masked_image: MaskedImage = request.getfixturevalue(masked_image)
     filename = tmp_path.joinpath(f'test_image.tif')
     masked_image.mask_clouds()
-    proj_scale = masked_image._ee_proj.nominalScale()
+    proj_scale = masked_image._ee_proj.nominalScale().getInfo()
     masked_image.download(filename, region=region_100ha, dtype='float32', scale=proj_scale)
     assert filename.exists()
 
