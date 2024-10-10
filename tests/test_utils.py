@@ -19,29 +19,29 @@ from typing import Dict
 
 import ee
 import pytest
-from geedim import MaskedImage
-from geedim.enums import ResamplingMethod
-from geedim.utils import split_id, get_projection, get_bounds, Spinner, resample, asset_id
 from rasterio.features import bounds
 
+from geedim import MaskedImage
+from geedim.enums import ResamplingMethod
+from geedim.utils import asset_id, get_bounds, get_projection, resample, Spinner, split_id
 from .conftest import get_image_std
 
 
 @pytest.mark.parametrize('id, exp_split', [('A/B/C', ('A/B', 'C')), ('ABC', ('', 'ABC')), (None, (None, None))])
 def test_split_id(id, exp_split):
-    """ Test split_id(). """
+    """Test split_id()."""
     assert split_id(id) == exp_split
 
 
 def test_get_bounds(const_image_25ha_file, region_25ha):
-    """ Test get_bounds(). """
+    """Test get_bounds()."""
     raster_bounds = bounds(get_bounds(const_image_25ha_file, expand=0))
     test_bounds = bounds(region_25ha)
-    assert raster_bounds == pytest.approx(test_bounds, abs=.001)
+    assert raster_bounds == pytest.approx(test_bounds, abs=0.001)
 
 
 def test_get_projection(s2_sr_masked_image):
-    """ Test get_projection().  """
+    """Test get_projection()."""
     min_proj = get_projection(s2_sr_masked_image.ee_image, min_scale=True)
     min_crs = min_proj.crs().getInfo()
     min_scale = min_proj.nominalScale().getInfo()
@@ -56,7 +56,7 @@ def test_get_projection(s2_sr_masked_image):
 
 
 def test_spinner():
-    """ Test Spinner class. """
+    """Test Spinner class."""
     spinner = Spinner(label='test', interval=0.1)
     assert not spinner.is_alive()
     with spinner:
@@ -79,45 +79,47 @@ def test_spinner():
 def test_resample_fixed(
     image_id: str, method: ResamplingMethod, std_scale: float, region_10000ha: Dict, request: pytest.FixtureRequest
 ):
-    """ Test that resample() smooths images with a fixed projection. """
+    """Test that resample() smooths images with a fixed projection."""
     image_id = request.getfixturevalue(image_id)
     before_image = ee.Image(image_id)
     after_image = resample(before_image, method)
 
-    assert (
-        get_image_std(after_image, region_10000ha, std_scale) < get_image_std(before_image, region_10000ha, std_scale)
+    assert get_image_std(after_image, region_10000ha, std_scale) < get_image_std(
+        before_image, region_10000ha, std_scale
     )
 
 
 @pytest.mark.parametrize(
-    'masked_image, method, std_scale', [
+    'masked_image, method, std_scale',
+    [
         ('user_masked_image', ResamplingMethod.bilinear, 100),
-        ('landsat_ndvi_masked_image', ResamplingMethod.average, 60)
-    ]
+        ('landsat_ndvi_masked_image', ResamplingMethod.average, 60),
+    ],
 )
 def test_resample_comp(
     masked_image: str, method: ResamplingMethod, std_scale: float, region_10000ha: Dict, request: pytest.FixtureRequest
 ):
-    """ Test that resample() leaves composite images unaltered. """
+    """Test that resample() leaves composite images unaltered."""
     masked_image: MaskedImage = request.getfixturevalue(masked_image)
     before_image = masked_image.ee_image
     after_image = resample(before_image, method)
 
-    assert (
-        get_image_std(after_image, region_10000ha, std_scale) == get_image_std(before_image, region_10000ha, std_scale)
+    assert get_image_std(after_image, region_10000ha, std_scale) == get_image_std(
+        before_image, region_10000ha, std_scale
     )
 
 
 @pytest.mark.parametrize(
-    'filename, folder, exp_id', [
+    'filename, folder, exp_id',
+    [
         ('file', 'folder', 'projects/folder/assets/file'),
         ('fp1/fp2/fp3', 'folder', 'projects/folder/assets/fp1-fp2-fp3'),
         ('file', 'folder/sub-folder', 'projects/folder/assets/sub-folder/file'),
         ('file', None, 'file'),
         ('projects/folder/assets/file', None, 'projects/folder/assets/file'),
-    ]
+    ],
 )
 def test_asset_id(filename: str, folder: str, exp_id: str):
-    """ Test asset_id() works as expected. """
+    """Test asset_id() works as expected."""
     id = asset_id(filename, folder)
     assert id == exp_id

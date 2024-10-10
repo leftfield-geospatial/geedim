@@ -14,6 +14,8 @@
    limitations under the License.
 """
 
+from __future__ import annotations
+
 import itertools
 import json
 import logging
@@ -29,8 +31,8 @@ import ee
 import numpy as np
 import rasterio as rio
 import requests
+from rasterio import warp
 from rasterio.env import GDALVersion
-from rasterio.warp import transform_geom
 from rasterio.windows import Window
 from requests.adapters import HTTPAdapter, Retry
 from tqdm.auto import tqdm
@@ -114,6 +116,8 @@ def split_id(image_id: str) -> Tuple[str, str]:
 @contextmanager
 def suppress_rio_logs(level: int = logging.ERROR):
     """A context manager that sets the `rasterio` logging level, then returns it to its original value."""
+    # TODO: this should not be necessary if logging level changes are limited to geedim.  if it has to be used,
+    #  it should be made thread-safe.
     try:
         # GEE sets GeoTIFF `colorinterp` tags incorrectly. This suppresses `rasterio` warning relating to this:
         # 'Sum of Photometric type-related color channels and ExtraSamples doesn't match SamplesPerPixel'
@@ -160,7 +164,7 @@ def get_bounds(filename: pathlib.Path, expand: float = 5):
         ]
 
         bbox_expand_dict = dict(type="Polygon", coordinates=[coordinates])
-        src_bbox_wgs84 = transform_geom(im.crs, "WGS84", bbox_expand_dict)  # convert to WGS84 geojson
+        src_bbox_wgs84 = warp.transform_geom(im.crs, "WGS84", bbox_expand_dict)  # convert to WGS84 geojson
     return src_bbox_wgs84
 
 
@@ -336,23 +340,23 @@ def expand_window_to_grid(win: Window, expand_pixels: Tuple[int, int] = (0, 0)) 
     return exp_win
 
 
-def rio_crs(crs: str) -> str:
+def rio_crs(crs: str | rio.CRS) -> str | rio.CRS:
     """Convert a GEE CRS string to a rasterio compatible CRS string."""
     if crs == 'SR-ORG:6974':
         # This is a workaround for https://issuetracker.google.com/issues/194561313, that replaces the alleged GEE
-        # SR-ORG:6974 with actual (rasterio) SR-ORG:6842. WKT taken from
-        # https://spatialreference.org/ref/sr-org/modis-sinusoidal/html/.
+        # SR-ORG:6974 with actual WKT for SR-ORG:6842 taken from
+        # https://github.com/OSGeo/spatialreference.org/blob/master/scripts/sr-org.json.
         crs = """PROJCS["Sinusoidal",
-GEOGCS["GCS_Undefined",
-    DATUM["Undefined",
-        SPHEROID["User_Defined_Spheroid",6371007.181,0.0]],
-    PRIMEM["Greenwich",0.0],
-    UNIT["Degree",0.0174532925199433]],
-PROJECTION["Sinusoidal"],
-PARAMETER["False_Easting",0.0],
-PARAMETER["False_Northing",0.0],
-PARAMETER["Central_Meridian",0.0],
-UNIT["Meter",1.0]]"""
+        GEOGCS["GCS_Undefined",
+            DATUM["Undefined",
+                SPHEROID["User_Defined_Spheroid",6371007.181,0.0]],
+            PRIMEM["Greenwich",0.0],
+            UNIT["Degree",0.0174532925199433]],
+        PROJECTION["Sinusoidal"],
+        PARAMETER["False_Easting",0.0],
+        PARAMETER["False_Northing",0.0],
+        PARAMETER["Central_Meridian",0.0],
+        UNIT["Meter",1.0]]"""
     return crs
 
 
