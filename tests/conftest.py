@@ -156,7 +156,7 @@ def s2_image_ids(s2_sr_image_id, s2_toa_image_id, s2_sr_hm_image_id, s2_toa_hm_i
 
 @pytest.fixture(scope='session')
 def modis_nbar_image_id() -> str:
-    """Global MODIS NBAR image ID.  WGS84 @ 500m."""
+    """Global MODIS NBAR image ID."""
     return 'MODIS/061/MCD43A4/2022_01_01'
 
 
@@ -191,6 +191,12 @@ def gedi_cth_image_id() -> str:
 def landsat_ndvi_image_id() -> str:
     """Landsat 8-day NDVI composite EE image iD.  Composite in WGS84 with underlying 30m scale."""
     return 'LANDSAT/COMPOSITES/C02/T1_L2_8DAY_NDVI/20211211'
+
+
+@pytest.fixture(scope='session')
+def google_dyn_world_image_id(s2_sr_hm_image_id) -> str:
+    """Google Dynamic World EE ID.  10m with positive y-axis transform."""
+    return 'GOOGLE/DYNAMICWORLD/V1/' + s2_sr_hm_image_id.split('/')[-1]
 
 
 @pytest.fixture(scope='session')
