@@ -20,7 +20,7 @@ import logging
 import re
 import textwrap as wrap
 from collections import OrderedDict
-from datetime import datetime, timedelta, UTC
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Union
 
 import ee
@@ -80,7 +80,7 @@ def parse_date(date: Union[datetime, str], var_name=None) -> datetime:
     var_name = var_name or 'date'
     if isinstance(date, str):
         try:
-            date = datetime.strptime(date, '%Y-%m-%d').replace(tzinfo=UTC)
+            date = datetime.strptime(date, '%Y-%m-%d').replace(tzinfo=timezone.utc)
         except ValueError:
             raise ValueError(f'{var_name} should be a datetime instance or UTC string with format: "%Y-%m-%d"')
     return date
@@ -371,7 +371,7 @@ class MaskedCollection:
             for prop_name, key_dict in schema.items():
                 if prop_name in im_prop_dict:
                     if prop_name == 'system:time_start':  # convert timestamp to date string
-                        dt = datetime.fromtimestamp(im_prop_dict[prop_name] / 1000, tz=UTC)
+                        dt = datetime.fromtimestamp(im_prop_dict[prop_name] / 1000, tz=timezone.utc)
                         abbrev_dict[key_dict['abbrev']] = datetime.strftime(dt, '%Y-%m-%d %H:%M')
                     else:
                         abbrev_dict[key_dict['abbrev']] = im_prop_dict[prop_name]
@@ -616,7 +616,7 @@ class MaskedCollection:
         comp_image = comp_image.set('INPUT_IMAGES', 'TABLE:\n' + props_str)
 
         # construct an ID for the composite
-        dates = [datetime.fromtimestamp(item['system:time_start'] / 1000, tz=UTC) for item in props.values()]
+        dates = [datetime.fromtimestamp(item['system:time_start'] / 1000, tz=timezone.utc) for item in props.values()]
         start_date = min(dates).strftime('%Y_%m_%d')
         end_date = max(dates).strftime('%Y_%m_%d')
 

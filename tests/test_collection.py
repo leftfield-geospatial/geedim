@@ -14,7 +14,7 @@
     limitations under the License.
 """
 
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from typing import Dict, List, Union
 
 import ee
@@ -659,7 +659,7 @@ def test_composite_date(image_list: str, request: pytest.FixtureRequest):
     gd_collection = MaskedCollection.from_list(image_list)
     # assumes the image_list's are in date order
     first_date = datetime.fromtimestamp(
-        gd_collection.ee_collection.first().get('system:time_start').getInfo() / 1000, tz=UTC
+        gd_collection.ee_collection.first().get('system:time_start').getInfo() / 1000, tz=timezone.utc
     )
     comp_im = gd_collection.composite()
     assert comp_im.date == first_date

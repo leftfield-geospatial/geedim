@@ -23,7 +23,7 @@ import threading
 import time
 import warnings
 from concurrent.futures import as_completed, ThreadPoolExecutor
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from itertools import product
 from typing import Dict, Iterator, List, Optional, Tuple, Union
 
@@ -164,7 +164,7 @@ class BaseImage:
     def date(self) -> datetime | None:
         """Image capture date & time.  None if the image ``system:time_start`` property is not set."""
         if 'system:time_start' in self.properties:
-            return datetime.fromtimestamp(self.properties['system:time_start'] / 1000, tz=UTC)
+            return datetime.fromtimestamp(self.properties['system:time_start'] / 1000, tz=timezone.utc)
         else:
             return None
 

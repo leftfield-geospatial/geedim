@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 import pathlib
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from itertools import product
 from typing import Dict, List
 
@@ -232,7 +232,9 @@ def test_s2_props(s2_sr_base_image: BaseImage):
     assert s2_sr_base_image.scale == min_band_info['crs_transform'][0]
     assert s2_sr_base_image.transform == Affine(*min_band_info['crs_transform'])
     assert s2_sr_base_image.shape == tuple(min_band_info['dimensions'][::-1])
-    assert s2_sr_base_image.date == datetime.fromtimestamp(s2_sr_base_image.properties['system:time_start'] / 1000, UTC)
+    assert s2_sr_base_image.date == datetime.fromtimestamp(
+        s2_sr_base_image.properties['system:time_start'] / 1000, timezone.utc
+    )
     assert s2_sr_base_image.size is not None
     assert s2_sr_base_image.footprint is not None
     assert s2_sr_base_image.footprint['type'] == 'Polygon'
