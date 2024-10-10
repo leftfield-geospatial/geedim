@@ -20,7 +20,7 @@ import logging
 import re
 import textwrap as wrap
 from collections import OrderedDict
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from typing import Dict, List, Union
 
 import ee
@@ -80,9 +80,9 @@ def parse_date(date: Union[datetime, str], var_name=None) -> datetime:
     var_name = var_name or 'date'
     if isinstance(date, str):
         try:
-            date = datetime.strptime(date, '%Y-%m-%d')
+            date = datetime.strptime(date, '%Y-%m-%d').replace(tzinfo=UTC)
         except ValueError:
-            raise ValueError(f'{var_name} should be a datetime instance or a string with format: "%Y-%m-%d"')
+            raise ValueError(f'{var_name} should be a datetime instance or UTC string with format: "%Y-%m-%d"')
     return date
 
 
@@ -371,7 +371,7 @@ class MaskedCollection:
             for prop_name, key_dict in schema.items():
                 if prop_name in im_prop_dict:
                     if prop_name == 'system:time_start':  # convert timestamp to date string
-                        dt = datetime.utcfromtimestamp(im_prop_dict[prop_name] / 1000)
+                        dt = datetime.fromtimestamp(im_prop_dict[prop_name] / 1000, tz=UTC)
                         abbrev_dict[key_dict['abbrev']] = datetime.strftime(dt, '%Y-%m-%d %H:%M')
                     else:
                         abbrev_dict[key_dict['abbrev']] = im_prop_dict[prop_name]
@@ -580,12 +580,7 @@ class MaskedCollection:
         MaskedImage
             Composite image.
         """
-
-        if isinstance(date, str):
-            try:
-                date = datetime.strptime(date, '%Y-%m-%d')
-            except ValueError:
-                raise ValueError('`date` should be a datetime instance or a string with format: "%Y-%m-%d"')
+        date = parse_date(date, 'date')
 
         if method is None:
             method = CompositeMethod.mosaic if self.image_type == MaskedImage else CompositeMethod.q_mosaic
@@ -621,7 +616,7 @@ class MaskedCollection:
         comp_image = comp_image.set('INPUT_IMAGES', 'TABLE:\n' + props_str)
 
         # construct an ID for the composite
-        dates = [datetime.utcfromtimestamp(item['system:time_start'] / 1000) for item in props.values()]
+        dates = [datetime.fromtimestamp(item['system:time_start'] / 1000, tz=UTC) for item in props.values()]
         start_date = min(dates).strftime('%Y_%m_%d')
         end_date = max(dates).strftime('%Y_%m_%d')
 
@@ -634,8 +629,7 @@ class MaskedCollection:
         comp_image = comp_image.set('system:index', comp_id)  # sets 'properties'->'system:index'
 
         # set the composite capture time to the capture time of the first input image.
-        # note that we must specify the timezone as utc, otherwise .timestamp() assumes local time.
-        timestamp = min(dates).replace(tzinfo=timezone.utc).timestamp() * 1000
+        timestamp = min(dates).timestamp() * 1000
         comp_image = comp_image.set('system:time_start', timestamp)
         gd_comp_image = self.image_type(comp_image)
         gd_comp_image._id = comp_id  # avoid getInfo() for id property

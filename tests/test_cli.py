@@ -161,7 +161,7 @@ def test_search(
     start_date = datetime.strptime(start_date, '%Y-%m-%d')
     end_date = datetime.strptime(end_date, '%Y-%m-%d')
     im_dates = np.array(
-        [datetime.utcfromtimestamp(im_props['system:time_start'] / 1000) for im_props in properties.values()]
+        [datetime.fromtimestamp(im_props['system:time_start'] / 1000) for im_props in properties.values()]
     )
     # test FILL_PORTION in expected range
     im_fill_portions = np.array([im_props['FILL_PORTION'] for im_props in properties.values()])

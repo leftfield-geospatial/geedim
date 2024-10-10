@@ -14,7 +14,7 @@
     limitations under the License.
 """
 
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Dict, List, Union
 
 import ee
@@ -235,7 +235,7 @@ def test_search(
     start_date = datetime.strptime(start_date, '%Y-%m-%d')
     end_date = datetime.strptime(end_date, '%Y-%m-%d')
     im_dates = np.array(
-        [datetime.utcfromtimestamp(im_props['system:time_start'] / 1000) for im_props in properties.values()]
+        [datetime.fromtimestamp(im_props['system:time_start'] / 1000) for im_props in properties.values()]
     )
     # test FILL_PORTION in expected range
     im_fill_portions = np.array([im_props['FILL_PORTION'] for im_props in properties.values()])
@@ -269,7 +269,7 @@ def test_search_no_end_date(region_100ha):
     end_date = datetime.strptime('2022-01-04', '%Y-%m-%d')
     properties = searched_collection.properties
     im_dates = np.array(
-        [datetime.utcfromtimestamp(im_props['system:time_start'] / 1000) for im_props in properties.values()]
+        [datetime.fromtimestamp(im_props['system:time_start'] / 1000) for im_props in properties.values()]
     )
     assert len(properties) > 0
     assert np.all(im_dates >= start_date) and np.all(im_dates < end_date)
@@ -355,7 +355,7 @@ def test_search_no_fill_or_cloudless_portion(
     start_date = datetime.strptime(start_date, '%Y-%m-%d')
     end_date = datetime.strptime(end_date, '%Y-%m-%d')
     im_dates = np.array(
-        [datetime.utcfromtimestamp(im_props['system:time_start'] / 1000) for im_props in properties.values()]
+        [datetime.fromtimestamp(im_props['system:time_start'] / 1000) for im_props in properties.values()]
     )
     # test FILL_PORTION and CLOUDLESS_PORTION are not in properties
     prop_keys = list(properties.values())[0].keys()
@@ -402,7 +402,7 @@ def test_composite_region_date_ordering(image_list, method, region, date, reques
     elif date:
         # test images are ordered by time difference with `date`
         im_dates = np.array(
-            [datetime.utcfromtimestamp(im_props['system:time_start'] / 1000) for im_props in properties.values()]
+            [datetime.fromtimestamp(im_props['system:time_start'] / 1000) for im_props in properties.values()]
         )
         comp_date = datetime.strptime(date, '%Y-%m-%d')
         im_date_diff = np.abs(comp_date - im_dates)
@@ -658,8 +658,8 @@ def test_composite_date(image_list: str, request: pytest.FixtureRequest):
     image_list: List = request.getfixturevalue(image_list)
     gd_collection = MaskedCollection.from_list(image_list)
     # assumes the image_list's are in date order
-    first_date = datetime.utcfromtimestamp(
-        gd_collection.ee_collection.first().get('system:time_start').getInfo() / 1000
+    first_date = datetime.fromtimestamp(
+        gd_collection.ee_collection.first().get('system:time_start').getInfo() / 1000, tz=UTC
     )
     comp_im = gd_collection.composite()
     assert comp_im.date == first_date
