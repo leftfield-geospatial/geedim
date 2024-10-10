@@ -125,12 +125,12 @@ class BaseImage:
     def _ee_info(self) -> Dict:
         """Earth Engine image metadata."""
         if self.__ee_info is None:
-            self.__ee_info = self._ee_image.getInfo()
+            self.__ee_info = self._get_ee_info(self._ee_image)
         return self.__ee_info
 
     @property
     def _min_projection(self) -> Dict:
-        """Projection information corresponding to the minimum scale band."""
+        """Projection information of the minimum scale band."""
         if not self.__min_projection:
             self.__min_projection = self._get_projection(self._ee_info, min_scale=True)
         return self.__min_projection
@@ -180,7 +180,7 @@ class BaseImage:
 
     @property
     def scale(self) -> Optional[float]:
-        """Minimum scale of the image bands, in units of the CRS. None if the image has no fixed projection."""
+        """Minimum scale of the image bands (meters). None if the image has no fixed projection."""
         return self._min_projection['scale']
 
     @property
@@ -213,11 +213,6 @@ class BaseImage:
     def transform(self) -> Optional[rio.Affine]:
         """Geo-transform of the minimum scale band. None if the image has no fixed projection."""
         return self._min_projection['transform']
-
-    @property
-    def index(self) -> int | None:
-        """Index of the minimum scale band (0 based). None if the image has no fixed projection."""
-        return self._min_projection['index']
 
     @property
     def dtype(self) -> str:
@@ -271,9 +266,24 @@ class BaseImage:
     @property
     def bounded(self) -> bool:
         """True if the image is bounded, otherwise False."""
-        # TODO: an unbounded region could also have these bounds
         unbounded_bounds = (-180, -90, 180, 90)
         return (self.footprint is not None) and (features.bounds(self.footprint) != unbounded_bounds)
+
+    @staticmethod
+    def _get_ee_info(ee_image: ee.Image) -> dict:
+        """Retrieve ``ee_image`` image description, with band scales in meters, in one call to ``getInfo()``."""
+
+        def band_scale(band_name):
+            """Return ``ee_image`` scale in meters for the band named ``band_name``."""
+            return ee_image.select(ee.String(band_name)).projection().nominalScale()
+
+        scales = ee_image.bandNames().map(band_scale)
+        scales, ee_info = ee.List([scales, ee_image]).getInfo()
+
+        # zip scales into ee_info band dictionaries
+        for scale, bdict in zip(scales, ee_info.get('bands', [])):
+            bdict['scale'] = scale
+        return ee_info
 
     @staticmethod
     def _get_projection(ee_info: Dict, min_scale=True) -> Dict:
@@ -281,24 +291,26 @@ class BaseImage:
         Return the projection information corresponding to the min/max scale band of a given Earth Engine image info
         dictionary.
         """
-        projection_info = dict(index=None, crs=None, transform=None, shape=None, scale=None)
-        if 'bands' in ee_info:
-            # get scale & crs corresponding to min/max scale band
-            scales = np.array([abs(bd['crs_transform'][0]) for bd in ee_info['bands']])
+        proj_info = dict(index=None, crs=None, transform=None, shape=None, scale=None)
+        if 'bands' in ee_info and len(ee_info['bands']) > 0:
+            xress = np.array([abs(bd['crs_transform'][0]) for bd in ee_info['bands']])
+            scales = np.array([bd['scale'] for bd in ee_info['bands']])
             crss = np.array([bd['crs'] for bd in ee_info['bands']])
-            fixed_idx = (crss != 'EPSG:4326') | (scales != 1)
+            fixed_idx = (crss != 'EPSG:4326') | (xress != 1)
+
+            # set properties if there is a fixed projection
             if sum(fixed_idx) > 0:
                 idx = np.argmin(scales[fixed_idx]) if min_scale else np.argmax(scales[fixed_idx])
-                projection_info['index'] = int(idx)
                 band_info = np.array(ee_info['bands'])[fixed_idx][idx]
-                projection_info['scale'] = (abs(band_info['crs_transform'][0]) + abs(band_info['crs_transform'][4])) / 2
-                projection_info['crs'] = band_info['crs']
+                proj_info['scale'] = float(scales[fixed_idx][idx])
+                proj_info['crs'] = band_info['crs']
                 if 'dimensions' in band_info:
-                    projection_info['shape'] = tuple(band_info['dimensions'][::-1])
-                projection_info['transform'] = rio.Affine(*band_info['crs_transform'])
+                    proj_info['shape'] = tuple(band_info['dimensions'][::-1])
+                proj_info['transform'] = rio.Affine(*band_info['crs_transform'])
                 if ('origin' in band_info) and not np.any(np.isnan(band_info['origin'])):
-                    projection_info['transform'] *= rio.Affine.translation(*band_info['origin'])
-        return projection_info
+                    proj_info['transform'] *= rio.Affine.translation(*band_info['origin'])
+
+        return proj_info
 
     @staticmethod
     def _get_min_dtype(ee_info: Dict) -> str:
@@ -483,29 +495,27 @@ class BaseImage:
         """
         # TODO: allow setting a custom nodata value with ee.Image.unmask() - see #21
 
-        # Check for parameter combination errors.
-        # This duplicates some of what is done in ee.Image.getDownloadURL, so that errors are raised before tile
-        # creation & download.
+        # Prevent exporting images with no fixed projection unless arguments defining the export pixel grid and
+        # bounds are provided.  While EE allows this, the default argument values are not sensible for most use cases.
         if (not crs or not region or not (scale or shape)) and (not crs or not crs_transform or not shape):
             if not self.has_fixed_projection:
-                # if the image has no fixed projection, either crs, region, & scale or shape; or crs, crs_transform and
-                # shape must be specified
                 raise ValueError(
                     f'This image does not have a fixed projection, you need to specify a crs, region & scale / shape; '
                     f'or a crs, crs_transform & shape.'
                 )
 
+        # Prevent exporting unbounded images without arguments defining the export bounds.  EE also prevents this (for
+        # the full image) in ee.Image.getDownloadUrl().
         if (not region and (not crs_transform or not shape)) and (not self.bounded):
-            # if the image is unbounded, either region; or crs, crs_transform and shape must be specified
             raise ValueError(f'This image is unbounded, you need to specify a region; or a crs_transform and shape.')
 
         if scale and shape:
             raise ValueError('You can specify one of scale or shape, but not both.')
 
         if bands:
+            # If one or more specified bands don't exist, raise an error
             band_diff = set(bands).difference([band_prop['name'] for band_prop in self.band_properties])
             if len(band_diff) > 0:
-                # If one or more specified bands don't exist, raise an error
                 raise ValueError(f'The band(s) {list(band_diff)} don\'t exist.')
 
         # Create a new BaseImage if band subset is specified.  This is done here so that crs, scale etc
@@ -517,9 +527,8 @@ class BaseImage:
             # Only pass crs to ee.Image.prepare_for_export() when it is different from the source.  Passing same crs
             # as source does not maintain the source pixel grid.
             crs = crs if crs != exp_image.crs else None
-            # Default scale to the EE scale in meters of the minimum scale band. Note that
-            # ee.Image.prepare_for_export() expects a scale in meters while BaseImage.scale is in units of the CRS.
-            scale = scale or exp_image.ee_image.select(exp_image.index).projection().nominalScale()
+            # Default scale to the scale in meters of the minimum scale band.
+            scale = scale or exp_image.scale
         else:
             # crs argument is required with crs_transform
             crs = crs or exp_image.crs
