@@ -21,7 +21,6 @@ import os
 import pathlib
 import threading
 import time
-import warnings
 from concurrent.futures import as_completed, ThreadPoolExecutor
 from datetime import datetime, timezone
 from itertools import product
@@ -33,8 +32,6 @@ import rasterio as rio
 from rasterio import features, windows
 from rasterio.crs import CRS
 from rasterio.enums import Resampling as RioResampling
-from rasterio.warp import transform_bounds
-from tqdm import TqdmWarning
 from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
@@ -61,18 +58,6 @@ _nodata_vals = dict(
 # so geedim will not support these types for now.
 # - the ordering of the keys above is relevant to the auto dtype and should be: unsigned ints smallest - largest,
 # signed ints smallest to largest, float types smallest to largest.
-
-
-def _transform_bounds(src_crs: str | rio.CRS, dst_crs: str | rio.CRS, *bounds) -> tuple[float, ...]:
-    """Transform a ``bounds`` from ``src_crs`` to ``dst_crs``."""
-    return transform_bounds(utils.rio_crs(src_crs), utils.rio_crs(dst_crs), *bounds)
-
-
-def _array_bounds(shape: tuple[int, int] | np.ndarray, transform: rio.Affine) -> tuple[float, ...]:
-    """Return (left, bottom, right, top) bounds for the given array ``shape`` and ``transform``."""
-    ji = np.array([[0, 0], [shape[1], 0], [shape[1], shape[0]], [0, shape[0]]]).T
-    xy = transform * ji
-    return *np.min(xy, axis=1).tolist(), *np.max(xy, axis=1).tolist()
 
 
 class BaseImage:
@@ -232,6 +217,8 @@ class BaseImage:
     @property
     def has_fixed_projection(self) -> bool:
         """True if the image has a fixed projection, otherwise False."""
+        # TODO: make a common server side fn that can be used in e.g. utils.get_projection, and utils.resample,
+        #  and then retrieved client side in e.g. _ee_info
         return self.scale is not None
 
     @property
@@ -451,7 +438,7 @@ class BaseImage:
         scale_offset: bool = False,
         bands: List[str] = None,
     ) -> 'BaseImage':
-        # TODO: update docs param combinations and don't repeat the whole download() docstring
+        # TODO: don't repeat the argument docstrings on internal code
         """
         Prepare the encapsulated image for export/download.  Will reproject, resample, clip and convert the image
         according to the provided parameters.
@@ -559,7 +546,6 @@ class BaseImage:
         export_kwargs = {k: v for k, v in export_kwargs.items() if v is not None}
         ee_image, _ = ee_image.prepare_for_export(export_kwargs)
 
-        # TODO: warn if export footprint lies outside source?
         return BaseImage(ee_image)
 
     def _prepare_for_download(self, set_nodata: bool = True, **kwargs) -> Tuple['BaseImage', Dict]:
@@ -618,7 +604,6 @@ class BaseImage:
         dtype_size = np.dtype(self.dtype).itemsize
         image_size = self.size
         if self.dtype.endswith('int8'):
-            # TODO: still necessary?
             # workaround for GEE overestimate of *int8 dtype download sizes
             dtype_size *= 2
             image_size *= 2
@@ -967,7 +952,6 @@ class BaseImage:
         )
 
         session = utils.retry_session()
-        warnings.filterwarnings('ignore', category=TqdmWarning)
         # redirect logging through tqdm
         redir_tqdm = logging_redirect_tqdm([logging.getLogger(__package__)], tqdm_class=type(bar))
         env = rio.Env(GDAL_NUM_THREADS='ALL_CPUs', GTIFF_FORCE_RGBA=False)
