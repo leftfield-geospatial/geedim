@@ -130,7 +130,7 @@ class MaskedCollection:
         self._stats_scale = None
 
     @classmethod
-    def from_name(cls, name: str, add_props: List[str] = None) -> 'MaskedCollection':
+    def from_name(cls, name: str, add_props: List[str] = None) -> MaskedCollection:
         """
         Create a MaskedCollection instance from an Earth Engine image collection name.
 
@@ -147,16 +147,7 @@ class MaskedCollection:
             A MaskedCollection instance.
         """
         # this is separate from __init__ for consistency with MaskedImage.from_id()
-        if (name == 'COPERNICUS/S2') or (name == 'COPERNICUS/S2_SR'):
-            # Recent images in S2_SR do not always have matching images in S2_CLOUD_PROBABILITY (which is needed for
-            # 'cloud_prob' cloud masking), so this is a special case to return a filtered S2/S2_SR collection that has
-            # matching images in S2_CLOUD_PROBABILITY.
-            cloud_prob_coll = ee.ImageCollection('COPERNICUS/S2_CLOUD_PROBABILITY')
-            s2_coll = ee.ImageCollection(name)
-            filt = ee.Filter.equals(leftField='system:index', rightField='system:index')
-            ee_collection = ee.ImageCollection(ee.Join.simple().apply(s2_coll, cloud_prob_coll, filt))
-        else:
-            ee_collection = ee.ImageCollection(name)
+        ee_collection = ee.ImageCollection(name)
         gd_collection = cls(ee_collection, add_props=add_props)
         gd_collection._name = name
         return gd_collection
@@ -164,7 +155,7 @@ class MaskedCollection:
     @classmethod
     def from_list(
         cls, image_list: List[Union[str, MaskedImage, ee.Image]], add_props: List[str] = None
-    ) -> 'MaskedCollection':
+    ) -> MaskedCollection:
         """
         Create a MaskedCollection instance from a list of Earth Engine image ID strings, ``ee.Image`` instances and/or
         :class:`~geedim.mask.MaskedImage` instances.  The list may include composite images, as created with
@@ -447,7 +438,7 @@ class MaskedCollection:
         cloudless_portion: float = None,
         custom_filter: str = None,
         **kwargs,
-    ) -> 'MaskedCollection':
+    ) -> MaskedCollection:
         """
         Search for images based on date, region, filled/cloudless portion, and custom criteria.
 
