@@ -13,6 +13,7 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
+
 from enum import Enum
 
 
@@ -21,6 +22,7 @@ class CompositeMethod(str, Enum):
     Enumeration for the compositing method, i.e. the method for finding a composite pixel from the stack of
     corresponding input image pixels.
     """
+
     q_mosaic = 'q-mosaic'
     """ 
     Use the unmasked pixel with the highest cloud distance (distance to nearest cloud). Where more than one pixel has 
@@ -46,18 +48,53 @@ class CompositeMethod(str, Enum):
     mean = 'mean'
     """ Use the mean of the unmasked pixels. """
 
+    def __repr__(self):
+        return self._name_
+
+    def __str__(self):
+        return self._name_
+
 
 class CloudMaskMethod(str, Enum):
-    """ Enumeration for the Sentinel-2 cloud masking method. """
+    """Enumeration for the Sentinel-2 cloud masking method."""
+
     cloud_prob = 'cloud-prob'
-    """ Threshold the corresponding image from the Sentinel-2 cloud probability collection. """
+    """Threshold the Sentinel-2 Cloud Probability image."""
 
     qa = 'qa'
-    """ Use the `QA60` quality assessment band. """
+    """Bit mask the `QA60` quality assessment band."""
+
+    cloud_score = 'cloud-score'
+    """Threshold the Sentinel-2 Cloud Score+ image."""
+
+    def __repr__(self):
+        return self._name_
+
+    def __str__(self):
+        return self._name_
+
+
+class CloudScoreBand(str, Enum):
+    """Enumeration for the Sentinel-2 Cloud Score+ band used with the :attr:`~CloudMaskMethod.cloud_score` cloud
+    masking method.
+    """
+
+    cs = 'cs'
+    """Pixel quality score based on spectral distance from a (theoretical) clear reference."""
+
+    cs_cdf = 'cs_cdf'
+    """Value of the cumulative distribution function of possible cs values for the estimated cs value."""
+
+    def __repr__(self):
+        return self._name_
+
+    def __str__(self):
+        return self._name_
 
 
 class ResamplingMethod(str, Enum):
-    """ Enumeration for the resampling method. """
+    """Enumeration for the resampling method."""
+
     near = 'near'
     """ Nearest neighbour. """
 
@@ -70,9 +107,16 @@ class ResamplingMethod(str, Enum):
     average = 'average'
     """ Average (recommended for downsampling). """
 
+    def __repr__(self):
+        return self._name_
+
+    def __str__(self):
+        return self._name_
+
 
 class ExportType(str, Enum):
-    """ Enumeration for the export type. """
+    """Enumeration for the export type."""
+
     drive = 'drive'
     """ Export to Google Drive. """
 
@@ -82,9 +126,16 @@ class ExportType(str, Enum):
     cloud = 'cloud'
     """ Export to Google Cloud Storage. """
 
+    def __repr__(self):
+        return self._name_
+
+    def __str__(self):
+        return self._name_
+
 
 class SpectralDistanceMetric(str, Enum):
-    """ Enumeration for the spectral distance metric. """
+    """Enumeration for the spectral distance metric."""
+
     sam = 'sam'
     """ Spectral angle mapper. """
 
@@ -97,3 +148,8 @@ class SpectralDistanceMetric(str, Enum):
     emd = 'emd'
     """ Earth movers distance. """
 
+    def __repr__(self):
+        return self._name_
+
+    def __str__(self):
+        return self._name_
