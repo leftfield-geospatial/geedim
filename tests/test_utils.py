@@ -24,7 +24,6 @@ from rasterio.features import bounds
 from geedim import MaskedImage
 from geedim.enums import ResamplingMethod
 from geedim.utils import asset_id, get_bounds, get_projection, resample, Spinner, split_id
-from .conftest import get_image_std
 
 
 @pytest.mark.parametrize('id, exp_split', [('A/B/C', ('A/B', 'C')), ('ABC', ('', 'ABC')), (None, (None, None))])
@@ -67,46 +66,61 @@ def test_spinner():
     assert not spinner.is_alive()
 
 
-# yapf: disable
 @pytest.mark.parametrize(
-    'image_id, method, std_scale', [
-        ('l9_image_id', ResamplingMethod.bilinear, 30),
-        ('s2_sr_image_id', ResamplingMethod.average, 60),
-        ('modis_nbar_image_id', ResamplingMethod.bicubic, 500),
-    ]
+    'image_id, method, scale',
+    [
+        ('l9_image_id', ResamplingMethod.bilinear, 15),
+        ('s2_sr_hm_image_id', ResamplingMethod.average, 25),
+        ('modis_nbar_image_id', ResamplingMethod.bicubic, 100),
+    ],
 )
-# yapf: enable
 def test_resample_fixed(
-    image_id: str, method: ResamplingMethod, std_scale: float, region_10000ha: Dict, request: pytest.FixtureRequest
+    image_id: str, method: ResamplingMethod, scale: float, region_100ha: Dict, request: pytest.FixtureRequest
 ):
     """Test that resample() smooths images with a fixed projection."""
     image_id = request.getfixturevalue(image_id)
-    before_image = ee.Image(image_id)
-    after_image = resample(before_image, method)
+    source_im = ee.Image(image_id)
+    resampled_im = resample(source_im, method)
 
-    assert get_image_std(after_image, region_10000ha, std_scale) < get_image_std(
-        before_image, region_10000ha, std_scale
-    )
+    # find mean of std deviations of bands for each image
+    crs = source_im.select(0).projection().crs()
+    stds = []
+    for im in [source_im, resampled_im]:
+        im = im.reproject(crs=crs, scale=scale)  # required to resample at scale
+        std = im.reduceRegion('stdDev', geometry=region_100ha).values().reduce('mean')
+        stds.append(std)
+    stds = ee.List(stds).getInfo()
+
+    # test resampled_im is smoother than source_im
+    assert stds[1] < stds[0]
 
 
 @pytest.mark.parametrize(
-    'masked_image, method, std_scale',
+    'masked_image, method, scale',
     [
-        ('user_masked_image', ResamplingMethod.bilinear, 100),
-        ('landsat_ndvi_masked_image', ResamplingMethod.average, 60),
+        ('user_masked_image', ResamplingMethod.bilinear, 50),
+        ('landsat_ndvi_masked_image', ResamplingMethod.average, 50),
     ],
 )
 def test_resample_comp(
-    masked_image: str, method: ResamplingMethod, std_scale: float, region_10000ha: Dict, request: pytest.FixtureRequest
+    masked_image: str, method: ResamplingMethod, scale: float, region_100ha: Dict, request: pytest.FixtureRequest
 ):
     """Test that resample() leaves composite images unaltered."""
     masked_image: MaskedImage = request.getfixturevalue(masked_image)
-    before_image = masked_image.ee_image
-    after_image = resample(before_image, method)
+    source_im = masked_image.ee_image
+    resampled_im = resample(source_im, method)
 
-    assert get_image_std(after_image, region_10000ha, std_scale) == get_image_std(
-        before_image, region_10000ha, std_scale
-    )
+    # find mean of std deviations of bands for each image
+    crs = source_im.select(0).projection().crs()
+    stds = []
+    for im in [source_im, resampled_im]:
+        im = im.reproject(crs=crs, scale=scale)  # required to resample at scale
+        std = im.reduceRegion('stdDev', geometry=region_100ha).values().reduce('mean')
+        stds.append(std)
+    stds = ee.List(stds).getInfo()
+
+    # test no change between resampled_im and source_im
+    assert stds[1] == stds[0]
 
 
 @pytest.mark.parametrize(
