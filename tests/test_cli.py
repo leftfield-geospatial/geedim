@@ -36,29 +36,13 @@ from geedim.utils import asset_id
 
 
 @pytest.fixture()
-def l4_5_image_id_list(l4_image_id, l5_image_id) -> List[str]:
-    """A list of landsat 4 & 5 image ID's."""
-    return [l4_image_id, l5_image_id]
-
-
-@pytest.fixture()
-def l8_9_image_id_list(l8_image_id, l9_image_id) -> List[str]:
+def l8_9_image_ids(l8_image_id, l9_image_id) -> List[str]:
     """A list of landsat 8 & 9 image ID's."""
     return [l8_image_id, l9_image_id]
 
 
 @pytest.fixture()
-def s2_sr_image_id_list() -> List[str]:
-    """A list of Sentinel-2 SR image IDs."""
-    return [
-        'COPERNICUS/S2_SR/20211004T080801_20211004T083709_T34HEJ',
-        'COPERNICUS/S2_SR/20211123T081241_20211123T083704_T34HEJ',
-        'COPERNICUS/S2_SR/20220107T081229_20220107T083059_T34HEJ',
-    ]
-
-
-@pytest.fixture()
-def gedi_image_id_list() -> List[str]:
+def gedi_image_ids() -> List[str]:
     """A list of GEDI canopy top height ID's."""
     return [
         'LARSE/GEDI/GEDI02_A_002_MONTHLY/202008_018E_036S',
@@ -180,21 +164,21 @@ def test_config_search_s2(region_10000ha_file: pathlib.Path, runner: CliRunner, 
     """Test `config` sub-command chained with `search` of Sentinel-2 affects CLOUDLESS_PORTION as expected."""
     results_file = tmp_path.joinpath('search_results.json')
     name = 'COPERNICUS/S2_SR'
-    cl_portion_list = []
-    for prob in [40, 80]:
+    cl_portions = []
+    for score in [0.4, 0.8]:
         cli_str = (
-            f'config --prob {prob} search -c {name} -s 2022-01-01 -e 2022-02-01 -r {region_10000ha_file} -fp -op '
-            f'{results_file}'
+            f'config -mm cloud-score --score {score} search -c {name} -s 2022-01-01 -e 2022-02-01 '
+            f'-r {region_10000ha_file} -fp -op {results_file}'
         )
         result = runner.invoke(cli, cli_str.split())
         assert result.exit_code == 0
         assert results_file.exists()
         with open(results_file, 'r') as f:
             properties = json.load(f)
-        cl_portion_list.append(np.array([prop_dict['CLOUDLESS_PORTION'] for prop_dict in properties.values()]))
+        cl_portions.append(np.array([prop_dict['CLOUDLESS_PORTION'] for prop_dict in properties.values()]))
 
-    assert np.any(cl_portion_list[0] < cl_portion_list[1])
-    assert not np.any(cl_portion_list[0] > cl_portion_list[1])
+    assert np.any(cl_portions[0] > cl_portions[1])
+    assert not np.any(cl_portions[0] < cl_portions[1])
 
 
 def test_config_search_l9(region_10000ha_file: pathlib.Path, runner: CliRunner, tmp_path: pathlib.Path):
@@ -329,7 +313,7 @@ def test_search_cloudless_portion_no_value(region_25ha_file: pathlib.Path, runne
         ('gedi_cth_image_id', 'region_25ha_file'),
         ('modis_nbar_image_id', 'region_25ha_file'),
     ],
-)  # yapf: disable
+)
 def test_download_region_defaults(
     image_id: str, region_file: pathlib.Path, tmp_path: pathlib.Path, runner: CliRunner, request
 ):
@@ -386,11 +370,11 @@ def test_download_crs_transform(
 
 
 def test_download_like(
-    l8_image_id: str, s2_sr_image_id: str, region_25ha_file: pathlib.Path, tmp_path: pathlib.Path, runner: CliRunner
+    l8_image_id: str, s2_sr_hm_image_id: str, region_25ha_file: pathlib.Path, tmp_path: pathlib.Path, runner: CliRunner
 ):
     """Test image download using --like."""
     l8_file = tmp_path.joinpath(l8_image_id.replace('/', '-') + '.tif')
-    s2_file = tmp_path.joinpath(s2_sr_image_id.replace('/', '-') + '.tif')
+    s2_file = tmp_path.joinpath(s2_sr_hm_image_id.replace('/', '-') + '.tif')
 
     # download the landsat 8 image to be the template
     # TODO: make a synthetic template to save time
@@ -400,7 +384,7 @@ def test_download_like(
     assert l8_file.exists()
 
     # download the sentinel 2 image like the landsat 8 image
-    s2_cli_str = f'download -i {s2_sr_image_id} --like {l8_file} -dd {tmp_path}'
+    s2_cli_str = f'download -i {s2_sr_hm_image_id} --like {l8_file} -dd {tmp_path}'
     result = runner.invoke(cli, s2_cli_str.split())
     assert result.exit_code == 0
     assert s2_file.exists()
@@ -418,7 +402,7 @@ def test_download_like(
         ('l5_image_id', 'region_25ha_file', 'EPSG:3857', 30, 'uint16', None, False, 'near', False, 16, 10000),
         ('l9_image_id', 'region_25ha_file', 'EPSG:3857', 30, 'float32', None, False, 'near', True, 32, 10000),
         (
-            's2_toa_image_id',
+            's2_toa_hm_image_id',
             'region_25ha_file',
             'EPSG:3857',
             10,
@@ -488,10 +472,10 @@ def test_download_params(
 
 
 def test_max_tile_size_error(
-    s2_sr_image_id: str, region_100ha_file: pathlib.Path, tmp_path: pathlib.Path, runner: CliRunner, request
+    s2_sr_hm_image_id: str, region_100ha_file: pathlib.Path, tmp_path: pathlib.Path, runner: CliRunner, request
 ):
     """Test image download with max_tile_size > EE limit raises an EE error."""
-    cli_str = f'download -i {s2_sr_image_id} -r {region_100ha_file} -dd {tmp_path} -mts 100'
+    cli_str = f'download -i {s2_sr_hm_image_id} -r {region_100ha_file} -dd {tmp_path} -mts 100'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0
     assert isinstance(result.exception, ValueError)
@@ -499,10 +483,10 @@ def test_max_tile_size_error(
 
 
 def test_max_tile_dim_error(
-    s2_sr_image_id: str, region_100ha_file: pathlib.Path, tmp_path: pathlib.Path, runner: CliRunner, request
+    s2_sr_hm_image_id: str, region_100ha_file: pathlib.Path, tmp_path: pathlib.Path, runner: CliRunner, request
 ):
     """Test image download with max_tile_dim > EE limit raises an EE error."""
-    cli_str = f'download -i {s2_sr_image_id} -r {region_100ha_file} -dd {tmp_path} -mtd 100000'
+    cli_str = f'download -i {s2_sr_hm_image_id} -r {region_100ha_file} -dd {tmp_path} -mtd 100000'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0
     assert isinstance(result.exception, ValueError)
@@ -550,7 +534,7 @@ def test_export_asset_no_folder_error(l8_image_id: str, region_25ha_file: pathli
     assert '--folder' in result.output
 
 
-@pytest.mark.parametrize('image_list, scale', [('s2_sr_image_id_list', 10), ('l8_9_image_id_list', 30)])
+@pytest.mark.parametrize('image_list, scale', [('s2_sr_hm_image_ids', 10), ('l8_9_image_ids', 30)])
 def test_composite_defaults(
     image_list: str,
     scale: float,
@@ -582,10 +566,10 @@ def test_composite_defaults(
 @pytest.mark.parametrize(
     'image_list, method, region_file, date, mask, resampling, download_scale',
     [
-        ('s2_sr_image_id_list', 'mosaic', None, '2021-10-01', True, 'near', 10),
-        ('l8_9_image_id_list', 'q-mosaic', 'region_25ha_file', None, True, 'bilinear', 30),
-        ('l8_9_image_id_list', 'medoid', 'region_25ha_file', None, True, 'near', 30),
-        ('gedi_image_id_list', 'medoid', None, None, True, 'bilinear', 25),
+        ('s2_sr_hm_image_ids', 'mosaic', None, '2021-10-01', True, 'near', 10),
+        ('l8_9_image_ids', 'q-mosaic', 'region_25ha_file', None, True, 'bilinear', 30),
+        ('l8_9_image_ids', 'medoid', 'region_25ha_file', None, True, 'near', 30),
+        ('gedi_image_ids', 'medoid', None, None, True, 'bilinear', 25),
     ],
 )
 def test_composite_params(
