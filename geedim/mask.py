@@ -17,12 +17,13 @@
 from __future__ import annotations
 
 import logging
+import warnings
 
 import ee
 
 import geedim.schema
 from geedim.download import BaseImage
-from geedim.enums import CloudMaskMethod
+from geedim.enums import CloudMaskMethod, CloudScoreBand
 from geedim.utils import get_projection, split_id
 
 logger = logging.getLogger(__name__)
@@ -53,7 +54,8 @@ class MaskedImage(BaseImage):
             Whether to mask cirrus clouds.  Valid for Landsat 8-9 images, and for Sentinel-2 images with
             the `qa` ``mask_method``.
         mask_shadows: bool, optional
-            Whether to mask cloud shadows.
+            Whether to mask cloud shadows.  Valid for Landsat images, and for Sentinel-2 images with
+            the `qa` or `cloud-prob` ``mask_method``.
         mask_method: CloudMaskMethod, str, optional
             Method used to mask clouds.  Valid for Sentinel-2 images.  See :class:`~geedim.enums.CloudMaskMethod` for
             details.
@@ -61,18 +63,25 @@ class MaskedImage(BaseImage):
             Cloud probability threshold (%). Valid for Sentinel-2 images with the `cloud-prob` ``mask-method``.
         dark: float, optional
             NIR threshold [0-1]. NIR values below this threshold are potential cloud shadows.  Valid for Sentinel-2
-            images.
+            images with the `qa` or `cloud-prob` ``mask_method``.
         shadow_dist: int, optional
-            Maximum distance (m) to look for cloud shadows from cloud edges.  Valid for Sentinel-2 images.
+            Maximum distance (m) to look for cloud shadows from cloud edges.  Valid for Sentinel-2 images with the `qa`
+            or `cloud-prob` ``mask_method``.
         buffer: int, optional
-            Distance (m) to dilate cloud/shadow.  Valid for Sentinel-2 images.
+            Distance (m) to dilate cloud/shadow.  Valid for Sentinel-2 images with the `qa` or `cloud-prob`
+            ``mask_method``.
         cdi_thresh: float, optional
             Cloud Displacement Index threshold. Values below this threshold are considered potential clouds.
-            If this parameter is not specified (=None), the index is not used.  Valid for Sentinel-2 images.
-            See https://developers.google.com/earth-engine/apidocs/ee-algorithms-sentinel2-cdi for details.
+            If this parameter is not specified (=None), the index is not used.  Valid for Sentinel-2 images with the
+            `qa` or `cloud-prob` ``mask_method``.  See
+            https://developers.google.com/earth-engine/apidocs/ee-algorithms-sentinel2-cdi for details.
         max_cloud_dist: int, optional
             Maximum distance (m) to look for clouds when forming the 'cloud distance' band.  Valid for
             Sentinel-2 images.
+        score: float, optional
+            Cloud Score+ threshold.  Valid for Sentinel-2 images with the `cloud-score` ``mask-method``.
+        cs_band: CloudScoreBand, str, optional
+            Cloud Score+ band to threshold.  Valid for Sentinel-2 images with the `cloud-score` ``mask-method``.
         """
         BaseImage.__init__(self, ee_image)
         self._ee_projection = None
@@ -343,124 +352,59 @@ class Sentinel2ClImage(CloudMaskedImage):
         s2_toa: bool = False,
         mask_cirrus: bool = True,
         mask_shadows: bool = True,
-        mask_method: CloudMaskMethod = CloudMaskMethod.cloud_prob,
+        mask_method: CloudMaskMethod = CloudMaskMethod.cloud_score,
         prob: float = 60,
         dark: float = 0.15,
         shadow_dist: int = 1000,
         buffer: int = 50,
         cdi_thresh: float = None,
         max_cloud_dist: int = 5000,
+        score: float = 0.6,
+        cs_band: CloudScoreBand = CloudScoreBand.cs,
     ) -> ee.Image:
+        """Derive cloud, shadow and validity masks for the encapsulated image.
+
+        Parts adapted from https://github.com/r-earthengine/ee_extra, under Apache 2.0 license.
         """
-        Derive cloud, shadow and validity masks for the encapsulated image.
-
-        Adapted from https://github.com/r-earthengine/ee_extra, under Apache 2.0 license.
-
-        Parameters
-        ----------
-        s2_toa : bool, optional
-            S2 TOA/SR collection.  Set to True if this image is from COPERNICUS/S2, or False if it is from
-            COPERNICUS/S2_SR.
-        mask_cirrus: bool, optional
-            Whether to mask cirrus clouds.  Valid for Landsat 8-9 images, and for Sentinel-2 images with
-            the `qa` ``mask_method``.
-        mask_shadows: bool, optional
-            Whether to mask cloud shadows.
-        mask_method: CloudMaskMethod, str, optional
-            Method used to mask clouds.  Valid for Sentinel-2 images.  See :class:`~geedim.enums.CloudMaskMethod` for
-            details.
-        prob: float, optional
-            Cloud probability threshold (%). Valid for Sentinel-2 images with the `cloud-prob` ``mask-method``.
-        dark: float, optional
-            NIR threshold [0-1]. NIR values below this threshold are potential cloud shadows.  Valid for Sentinel-2
-            images.
-        shadow_dist: int, optional
-            Maximum distance (m) to look for cloud shadows from cloud edges.  Valid for Sentinel-2 images.
-        buffer: int, optional
-            Distance (m) to dilate cloud/shadow.  Valid for Sentinel-2 images.
-        cdi_thresh: float, optional
-            Cloud Displacement Index threshold. Values below this threshold are considered potential clouds.
-            If this parameter is not specified (=None), the index is not used.  Valid for Sentinel-2 images.
-            See https://developers.google.com/earth-engine/apidocs/ee-algorithms-sentinel2-cdi for details.
-        max_cloud_dist: int, optional
-            Maximum distance (m) to look for clouds when forming the 'cloud distance' band.  Valid for
-            Sentinel-2 images.
-
-        Returns
-        -------
-        ee.Image
-            An Earth Engine image containing *_MASK and CLOUD_DIST bands.
-        """
-        # TODO: add warning about post Feb 2022 validity when qa method is used
         mask_method = CloudMaskMethod(mask_method)
+        if mask_method is not CloudMaskMethod.cloud_score:
+            warnings.warn(
+                f"The '{mask_method}' mask method is deprecated and will be removed in a future release.  Please "
+                f"switch to 'cloud-score'.",
+                category=FutureWarning,
+            )
 
-        def get_cloud_prob(ee_im):
-            """Get the cloud probability image from COPERNICUS/S2_CLOUD_PROBABILITY that corresponds to `ee_im`, if it
-            exists.  Otherwise, get a 100% probability.
+        def match_image(ee_image: ee.Image, collection: str, band: str, match_prop: str = 'system:index') -> ee.Image:
+            """Return an image from ``collection`` matching ``ee_image`` with single ``band`` selected, or a fully
+            masked image if no match is found.
             """
-            # default masked cloud probability image
-            default_cloud_prob = ee.Image().updateMask(0)
+            # default fully masked image
+            default = ee.Image().updateMask(0)
+            default = default.rename(band)
 
-            # get the cloud probability image if it exists, otherwise revert to default_cloud_prob
-            # (ee.Image.linkCollection() has a similar functionality but the masked image it returns when cloud
-            # probability doesn't exist is 0 rather than nodata on download)
-            filt = ee.Filter.eq('system:index', ee_im.get('system:index'))
-            cloud_prob = ee.ImageCollection('COPERNICUS/S2_CLOUD_PROBABILITY').filter(filt).first()
-            cloud_prob = ee.Image(ee.List([cloud_prob, default_cloud_prob]).reduce(ee.Reducer.firstNonNull()))
+            # find matching image
+            filt = ee.Filter.eq(match_prop, ee_image.get(match_prop))
+            match = ee.ImageCollection(collection).filter(filt).first()
 
-            return cloud_prob.rename('CLOUD_PROB')
+            # revert to default if no match found
+            match = ee.Image(ee.List([match, default]).reduce(ee.Reducer.firstNonNull()))
+            return match.select(band)
 
-        def get_cloud_mask(ee_im, cloud_prob=None):
-            """Get the cloud mask for ee_im"""
-            if mask_method == CloudMaskMethod.cloud_prob:
-                if not cloud_prob:
-                    cloud_prob = get_cloud_prob(ee_im)
-                cloud_mask = cloud_prob.gte(prob)
-            else:
-                # mask QA60 if it is post Feb 2022 to invalidate the cloud mask (post Feb 2022 QA60 is no longer
-                # populated and may be masked / transparent or zero).
-                qa_valid = ee.Number(ee_im.date().difference(ee.Date('2022-02-01'), 'days').lt(0))
-                qa = ee_im.select('QA60').updateMask(qa_valid)
+        def cloud_cast_shadow_mask(ee_image: ee.Image, cloud_mask: ee.Image) -> ee.Image:
+            """Create & return a shadow mask for ``ee_image`` by projecting shadows from ``cloud_mask``.
 
-                cloud_mask = qa.bitwiseAnd(1 << 10).neq(0)
-                if mask_cirrus:
-                    cloud_mask = cloud_mask.Or(qa.bitwiseAnd(1 << 11).neq(0))
-
-            return cloud_mask.rename('CLOUD_MASK')
-
-        def get_cdi_cloud_mask(ee_im):
+            Adapted from https://developers.google.com/earth-engine/tutorials/community/sentinel-2-s2cloudless.
             """
-            Get a CDI cloud mask for ee_im.
-            See https://developers.google.com/earth-engine/apidocs/ee-algorithms-sentinel2-cdi for more detail.
-            """
-            if s2_toa:
-                s2_toa_image = ee_im
-            else:
-                # get the Sentinel-2 TOA image that corresponds to ee_im
-                idx = ee_im.get('system:index')
-                s2_toa_image = ee.ImageCollection('COPERNICUS/S2').filter(ee.Filter.eq('system:index', idx)).first()
-            cdi_image = ee.Algorithms.Sentinel2.CDI(s2_toa_image)
-            return cdi_image.lt(cdi_thresh).rename('CDI_CLOUD_MASK')
-
-        def get_shadow_mask(ee_im, cloud_mask):
-            """Given a cloud mask, get a shadow mask for ee_im."""
-            dark_mask = ee_im.select('B8').lt(dark * 1e4)
+            dark_mask = ee_image.select('B8').lt(dark * 1e4)
             if not s2_toa:
                 # exclude water
-                dark_mask = ee_im.select('SCL').neq(6).And(dark_mask)
+                dark_mask = ee_image.select('SCL').neq(6).And(dark_mask)
 
-            # Note:
-            # S2 MEAN_SOLAR_AZIMUTH_ANGLE (SAA) appears to be measured clockwise with 0 at N (i.e. shadow goes in the
-            # opposite direction), directionalDistanceTransform() angle appears to be measured clockwise with 0 at W.
-            # So we need to add/subtract 180 to SAA to get shadow angle in S2 convention, then add 90 to get
-            # directionalDistanceTransform() convention i.e. we need to add -180 + 90 = -90 to SAA.  This is not
-            # the same as in the EE tutorial which is 90-SAA
-            # (https://developers.google.com/earth-engine/tutorials/community/sentinel-2-s2cloudless).
-            shadow_azimuth = ee.Number(-90).add(ee.Number(ee_im.get('MEAN_SOLAR_AZIMUTH_ANGLE')))
+            # Find shadow direction.  Note that the angle convention depends on the reproject args below.
+            shadow_azimuth = ee.Number(90).subtract(ee.Number(ee_image.get('MEAN_SOLAR_AZIMUTH_ANGLE')))
+
+            # Project the cloud mask in the shadow direction (can project the mask into invalid areas).
             proj_pixels = ee.Number(shadow_dist).divide(self._ee_proj.nominalScale()).round()
-
-            # Project the cloud mask in the direction of the shadows it will cast (can project the mask into invalid
-            # areas).
             cloud_cast_proj = cloud_mask.directionalDistanceTransform(shadow_azimuth, proj_pixels).select('distance')
 
             # Reproject to force calculation at the correct scale.
@@ -474,40 +418,93 @@ class Sentinel2ClImage(CloudMaskedImage):
 
             return shadow_mask.rename('SHADOW_MASK')
 
-        # combine the various masks
-        ee_image = self.ee_image
-        cloud_prob = get_cloud_prob(ee_image) if mask_method == CloudMaskMethod.cloud_prob else None
-        cloud_mask = get_cloud_mask(ee_image, cloud_prob=cloud_prob)
+        def qa_cloud_mask(ee_image: ee.Image) -> ee.Image:
+            """Create & return a cloud mask for ``ee_image`` using the QA60 band."""
+            # mask QA60 if it is between Feb 2022 - Feb 2024 to invalidate the cloud mask (QA* bands are not populated
+            # over this period and may be masked / transparent or zero).
+            qa_valid = (
+                ee_image.date()
+                .difference(ee.Date('2022-02-01'), 'days')
+                .lt(0)
+                .Or(ee_image.date().difference(ee.Date('2024-02-01'), 'days').gt(0))
+            )
+            qa = ee_image.select('QA60').updateMask(qa_valid)
 
-        if cdi_thresh is not None:
-            cloud_mask = cloud_mask.And(get_cdi_cloud_mask(ee_image))
-        if mask_shadows:
-            shadow_mask = get_shadow_mask(ee_image, cloud_mask)
-            cloud_shadow_mask = cloud_mask.Or(shadow_mask)
-        else:
-            cloud_shadow_mask = cloud_mask
+            cloud_mask = qa.bitwiseAnd(1 << 10).neq(0)
+            if mask_cirrus:
+                cloud_mask = cloud_mask.Or(qa.bitwiseAnd(1 << 11).neq(0))
 
-        # do a morphological opening type operation that removes small (20m) blobs from the mask and then dilates
-        cloud_shadow_mask = cloud_shadow_mask.focal_min(20, units='meters').focal_max(buffer, units='meters')
+            return cloud_mask.rename('CLOUD_MASK')
+
+        def cloud_prob_cloud_mask(ee_image: ee.Image) -> tuple[ee.Image, ee.Image]:
+            """Return the cloud probability thresholded cloud mask, and cloud probability image for ``ee_image``."""
+            cloud_prob = match_image(ee_image, 'COPERNICUS/S2_CLOUD_PROBABILITY', 'probability')
+            cloud_mask = cloud_prob.gte(prob)
+            return cloud_mask.rename('CLOUD_MASK'), cloud_prob.rename('CLOUD_PROB')
+
+        def cloud_score_cloud_shadow_mask(ee_image: ee.Image) -> tuple[ee.Image, ee.Image]:
+            """Return the cloud score thresholded cloud mask, and cloud score image for ``ee_image``."""
+            cloud_score = match_image(ee_image, 'GOOGLE/CLOUD_SCORE_PLUS/V1/S2_HARMONIZED', cs_band.name)
+            cloud_shadow_mask = cloud_score.lte(score)
+            return cloud_shadow_mask.rename('CLOUD_SHADOW_MASK'), cloud_score.rename('CLOUD_SCORE')
+
+        def cdi_cloud_mask(ee_image: ee.Image) -> ee.Image:
+            """Return the CDI cloud mask for ``ee_image``.
+            See https://developers.google.com/earth-engine/apidocs/ee-algorithms-sentinel2-cdi for detail.
+            """
+            if s2_toa:
+                s2_toa_image = ee_image
+            else:
+                # get the Sentinel-2 TOA image that corresponds to ``ee_image``
+                idx = ee_image.get('system:index')
+                s2_toa_image = ee.ImageCollection('COPERNICUS/S2').filter(ee.Filter.eq('system:index', idx)).first()
+            cdi_image = ee.Algorithms.Sentinel2.CDI(s2_toa_image)
+            return cdi_image.lt(cdi_thresh).rename('CDI_CLOUD_MASK')
+
+        def cloud_shadow_masks(ee_image: ee.Image) -> dict[str, ee.Image]:
+            """Return a dictionary of cloud/shadow masks & related images for ``ee_image``."""
+            aux_bands = {}
+            if mask_method is CloudMaskMethod.cloud_score:
+                aux_bands['cloud_shadow'], aux_bands['score'] = cloud_score_cloud_shadow_mask(ee_image)
+            else:
+                if mask_method is CloudMaskMethod.qa:
+                    aux_bands['cloud'] = qa_cloud_mask(ee_image)
+                else:
+                    aux_bands['cloud'], aux_bands['prob'] = cloud_prob_cloud_mask(ee_image)
+
+                if cdi_thresh is not None:
+                    aux_bands['cloud'] = aux_bands['cloud'].And(cdi_cloud_mask(ee_image))
+
+                aux_bands['shadow'] = cloud_cast_shadow_mask(ee_image, aux_bands['cloud'])
+
+                if mask_shadows:
+                    aux_bands['cloud_shadow'] = aux_bands['cloud'].Or(aux_bands['shadow'])
+                else:
+                    aux_bands['cloud_shadow'] = aux_bands['cloud']
+                    aux_bands.pop('shadow', None)
+
+                # do a morphological opening that removes small (20m) blobs from the mask and then dilates
+                aux_bands['cloud_shadow'] = (
+                    aux_bands['cloud_shadow'].focal_min(20, units='meters').focal_max(buffer, units='meters')
+                )
+            return aux_bands
+
+        # get cloud/shadow etc bands
+        aux_bands = cloud_shadow_masks(self.ee_image)
 
         # derive a fill mask from the Earth Engine mask for the surface reflectance bands
-        fill_mask = ee_image.select('B.*').mask().reduce(ee.Reducer.allNonZero())
+        aux_bands['fill'] = self.ee_image.select('B.*').mask().reduce(ee.Reducer.allNonZero())
 
-        # clip this mask to the image footprint (without this step we get memory limit errors on download)
-        fill_mask = fill_mask.clip(ee_image.geometry()).rename('FILL_MASK')
+        # clip fill mask to the image footprint (without this step we get memory limit errors on download)
+        aux_bands['fill'] = aux_bands['fill'].clip(self.ee_image.geometry()).rename('FILL_MASK')
 
-        # combine all masks into cloudless_mask
-        cloudless_mask = (cloud_shadow_mask.Not()).And(fill_mask).rename('CLOUDLESS_MASK')
+        # combine masks into cloudless_mask
+        aux_bands['cloudless'] = (aux_bands['cloud_shadow'].Not()).And(aux_bands['fill']).rename('CLOUDLESS_MASK')
+        aux_bands.pop('cloud_shadow')
 
         # construct and return the auxiliary image
-        aux_bands = [fill_mask, cloud_mask, cloudless_mask]
-        if mask_shadows:
-            aux_bands.append(shadow_mask)
-        if mask_method == CloudMaskMethod.cloud_prob:
-            aux_bands.append(cloud_prob)
-
-        cloud_dist = self._cloud_dist(cloudless_mask=cloudless_mask, max_cloud_dist=max_cloud_dist)
-        return ee.Image(aux_bands + [cloud_dist])
+        aux_bands['dist'] = self._cloud_dist(cloudless_mask=aux_bands['cloudless'], max_cloud_dist=max_cloud_dist)
+        return ee.Image(list(aux_bands.values()))
 
 
 class Sentinel2SrClImage(Sentinel2ClImage):
