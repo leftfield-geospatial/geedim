@@ -21,7 +21,6 @@ from tabulate import tabulate
 
 import geedim.mask
 
-# yapf: disable
 default_prop_schema = {
     'system:id': {'abbrev': 'ID', 'description': 'Earth Engine image id'},
     'system:time_start': {'abbrev': 'DATE', 'description': 'Image capture date/time (UTC)'},
@@ -32,23 +31,29 @@ landsat_prop_schema = {
     'system:id': {'abbrev': 'ID', 'description': 'Earth Engine image id'},
     'system:time_start': {'abbrev': 'DATE', 'description': 'Image capture date/time (UTC)'},
     'FILL_PORTION': {'abbrev': 'FILL', 'description': 'Portion of region pixels that are valid (%)'},
-    'CLOUDLESS_PORTION': {'abbrev': 'CLOUDLESS', 'description': 'Portion of filled pixels that are cloud/shadow free (%)'},
+    'CLOUDLESS_PORTION': {
+        'abbrev': 'CLOUDLESS',
+        'description': 'Portion of filled pixels that are cloud/shadow free (%)',
+    },
     'GEOMETRIC_RMSE_MODEL': {'abbrev': 'GRMSE', 'description': 'Orthorectification RMSE (m)'},
     'SUN_AZIMUTH': {'abbrev': 'SAA', 'description': 'Solar azimuth angle (deg)'},
-    'SUN_ELEVATION': {'abbrev': 'SEA', 'description': 'Solar elevation angle (deg)'}
+    'SUN_ELEVATION': {'abbrev': 'SEA', 'description': 'Solar elevation angle (deg)'},
 }
 
 s2_prop_schema = {
     'system:id': {'abbrev': 'ID', 'description': 'Earth Engine image id'},
     'system:time_start': {'abbrev': 'DATE', 'description': 'Image capture date/time (UTC)'},
     'FILL_PORTION': {'abbrev': 'FILL', 'description': 'Portion of region pixels that are valid (%)'},
-    'CLOUDLESS_PORTION': {'abbrev': 'CLOUDLESS', 'description': 'Portion of filled pixels that are cloud/shadow free (%)'},
+    'CLOUDLESS_PORTION': {
+        'abbrev': 'CLOUDLESS',
+        'description': 'Portion of filled pixels that are cloud/shadow free (%)',
+    },
     'RADIOMETRIC_QUALITY': {'abbrev': 'RADQ', 'description': 'Radiometric quality check'},
     'GEOMETRIC_QUALITY': {'abbrev': 'GEOMQ', 'description': 'Geometric quality check'},
     'MEAN_SOLAR_AZIMUTH_ANGLE': {'abbrev': 'SAA', 'description': 'Solar azimuth angle (deg)'},
     'MEAN_SOLAR_ZENITH_ANGLE': {'abbrev': 'SZA', 'description': 'Solar zenith angle (deg)'},
     'MEAN_INCIDENCE_AZIMUTH_ANGLE_B1': {'abbrev': 'VAA', 'description': 'View (B1) azimuth angle (deg)'},
-    'MEAN_INCIDENCE_ZENITH_ANGLE_B1': {'abbrev': 'VZA', 'description': 'View (B1) zenith angle (deg)'}
+    'MEAN_INCIDENCE_ZENITH_ANGLE_B1': {'abbrev': 'VZA', 'description': 'View (B1) zenith angle (deg)'},
 }
 
 collection_schema = {
@@ -57,73 +62,73 @@ collection_schema = {
         'prop_schema': landsat_prop_schema,
         'image_type': geedim.mask.LandsatImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT04_C02_T1_L2',
-        'description': 'Landsat 4, collection 2, tier 1, level 2 surface reflectance.'
+        'description': 'Landsat 4, collection 2, tier 1, level 2 surface reflectance.',
     },
     'LANDSAT/LT05/C02/T1_L2': {
         'gd_coll_name': 'l5-c2-l2',
         'prop_schema': landsat_prop_schema,
         'image_type': geedim.mask.LandsatImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT05_C02_T1_L2',
-        'description': 'Landsat 5, collection 2, tier 1, level 2 surface reflectance.'
+        'description': 'Landsat 5, collection 2, tier 1, level 2 surface reflectance.',
     },
     'LANDSAT/LE07/C02/T1_L2': {
         'gd_coll_name': 'l7-c2-l2',
         'prop_schema': landsat_prop_schema,
         'image_type': geedim.mask.LandsatImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LE07_C02_T1_L2',
-        'description': 'Landsat 7, collection 2, tier 1, level 2 surface reflectance.'
+        'description': 'Landsat 7, collection 2, tier 1, level 2 surface reflectance.',
     },
     'LANDSAT/LC08/C02/T1_L2': {
         'gd_coll_name': 'l8-c2-l2',
         'prop_schema': landsat_prop_schema,
         'image_type': geedim.mask.LandsatImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C02_T1_L2',
-        'description': 'Landsat 8, collection 2, tier 1, level 2 surface reflectance.'
+        'description': 'Landsat 8, collection 2, tier 1, level 2 surface reflectance.',
     },
     'LANDSAT/LC09/C02/T1_L2': {
         'gd_coll_name': 'l9-c2-l2',
         'prop_schema': landsat_prop_schema,
         'image_type': geedim.mask.LandsatImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC09_C02_T1_L2',
-        'description': 'Landsat 9, collection 2, tier 1, level 2 surface reflectance.'
+        'description': 'Landsat 9, collection 2, tier 1, level 2 surface reflectance.',
     },
     'COPERNICUS/S2': {
         'gd_coll_name': 's2-toa',
         'prop_schema': s2_prop_schema,
         'image_type': geedim.mask.Sentinel2ToaClImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2',
-        'description': 'Sentinel-2, level 1C, top of atmosphere reflectance.'
+        'description': 'Sentinel-2, level 1C, top of atmosphere reflectance.',
     },
     'COPERNICUS/S2_SR': {
         'gd_coll_name': 's2-sr',
         'prop_schema': s2_prop_schema,
         'image_type': geedim.mask.Sentinel2SrClImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR',
-        'description': 'Sentinel-2, level 2A, surface reflectance.'
+        'description': 'Sentinel-2, level 2A, surface reflectance.',
     },
     'COPERNICUS/S2_HARMONIZED': {
         'gd_coll_name': 's2-toa-hm',
         'prop_schema': s2_prop_schema,
         'image_type': geedim.mask.Sentinel2ToaClImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_HARMONIZED',
-        'description': 'Harmonised Sentinel-2, level 1C, top of atmosphere reflectance.'
+        'description': 'Harmonised Sentinel-2, level 1C, top of atmosphere reflectance.',
     },
     'COPERNICUS/S2_SR_HARMONIZED': {
         'gd_coll_name': 's2-sr-hm',
         'prop_schema': s2_prop_schema,
         'image_type': geedim.mask.Sentinel2SrClImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED',
-        'description': 'Harmonised Sentinel-2, level 2A, surface reflectance.'
+        'description': 'Harmonised Sentinel-2, level 2A, surface reflectance.',
     },
     'MODIS/061/MCD43A4': {
         'gd_coll_name': 'modis-nbar',
         'prop_schema': default_prop_schema,
         'image_type': geedim.mask.MaskedImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD43A4',
-        'description': 'MODIS nadir BRDF adjusted daily reflectance.'
-    }
+        'description': 'MODIS nadir BRDF adjusted daily reflectance.',
+    },
 }
-# yapf: enable
+
 
 # Dict to convert from geedim to Earth Engine collection names
 ee_to_gd = dict([(k, v['gd_coll_name']) for k, v in collection_schema.items()])
