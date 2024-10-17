@@ -265,6 +265,9 @@ def resample(ee_image: ee.Image, method: ResamplingMethod) -> ee.Image:
     Resample an ee.Image. Extends ee.Image.resample by only resampling when the image has a fixed projection, and by
     providing an additional 'average' method for downsampling.  This logic is performed server-side.
 
+    Note that for the :attr:`ResamplingMethod.average` ``method``, the returned image has a minimum scale default
+    projection.
+
     See https://developers.google.com/earth-engine/guides/resample for more info.
 
     Parameters
@@ -285,12 +288,15 @@ def resample(ee_image: ee.Image, method: ResamplingMethod) -> ee.Image:
         return ee_image
 
     # resample the image, if it has a fixed projection
-    proj = ee_image.select(0).projection()
+    proj = get_projection(ee_image, min_scale=True)
     has_fixed_proj = proj.crs().compareTo('EPSG:4326').neq(0).Or(proj.nominalScale().toInt64().neq(111319))
 
     def _resample(ee_image: ee.Image) -> ee.Image:
         """Resample the given image, allowing for additional 'average' method."""
         if method == ResamplingMethod.average:
+            # set the default projection to the minimum scale projection (required for e.g. S2 images that have
+            # non-fixed projection bands)
+            ee_image = ee_image.setDefaultProjection(proj)
             return ee_image.reduceResolution(reducer=ee.Reducer.mean(), maxPixels=1024)
         else:
             return ee_image.resample(method.value)
