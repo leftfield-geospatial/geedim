@@ -195,12 +195,11 @@ Composite the results of a Landsat-8 search, export to Earth Engine asset, and d
 
     geedim search -c l8-c2-l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 composite -cm q-mosaic export --type asset --folder <your cloud project> --scale 30 --crs EPSG:3857 download
 
-Search for Sentinel-2 SR images with a cloudless portion of at least 60%, using the ``qa`` mask-method to identify
-clouds:
+Search for Sentinel-2 SR images with a cloudless portion of at least 60%, using the ``cloud-score`` mask-method to identify clouds:
 
 .. code:: shell
 
-   geedim config --mask-method qa search -c s2-sr --cloudless-portion 60 -s 2022-01-01 -e 2022-01-14 --bbox 24 -34 24.5 -33.5
+   geedim config --mask-method cloud-score search -c s2-sr-hm --cloudless-portion 60 -s 2022-01-01 -e 2022-01-14 --bbox 24 -34 24.5 -33.5
 
 .. cli_end
 

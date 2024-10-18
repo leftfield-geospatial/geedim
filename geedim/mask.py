@@ -508,14 +508,14 @@ class Sentinel2ClImage(CloudMaskedImage):
 
 
 class Sentinel2SrClImage(Sentinel2ClImage):
-    """Class for cloud/shadow masking of Sentinel-2 SR (COPERNICUS/S2_SR) images."""
+    """Class for cloud/shadow masking of Sentinel-2 SR (COPERNICUS/S2_SR & COPERNICUS/S2_SR_HARMONIZED) images."""
 
     def _aux_image(self, s2_toa: bool = False, **kwargs) -> ee.Image:
         return Sentinel2ClImage._aux_image(self, s2_toa=False, **kwargs)
 
 
 class Sentinel2ToaClImage(Sentinel2ClImage):
-    """Class for cloud/shadow masking of Sentinel-2 TOA (COPERNICUS/S2) images."""
+    """Class for cloud/shadow masking of Sentinel-2 TOA (COPERNICUS/S2 & COPERNICUS/S2_HARMONIZED) images."""
 
     def _aux_image(self, s2_toa: bool = False, **kwargs) -> ee.Image:
         return Sentinel2ClImage._aux_image(self, s2_toa=True, **kwargs)

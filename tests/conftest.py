@@ -270,7 +270,7 @@ def s2_sr_hm_nocs_masked_image(s2_sr_hm_image_id) -> MaskedImage:
     """Harmonised Sentinel-2 SR MaskedImage with no corresponding cloud score, covering `region_*ha` with partial
     cloud/shadow.
     """
-    # create an image with unknown id to prevent linking to cloud probability
+    # create an image with unknown id to prevent linking to cloud score
     ee_image = ee.Image(s2_sr_hm_image_id)
     ee_image = ee_image.set('system:index', 'COPERNICUS/S2_HARMONIZED/unknown')
     return Sentinel2SrClImage(ee_image, mask_method='cloud-score')

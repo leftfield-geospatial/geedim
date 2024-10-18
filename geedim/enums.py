@@ -59,13 +59,13 @@ class CloudMaskMethod(str, Enum):
     """Enumeration for the Sentinel-2 cloud masking method."""
 
     cloud_prob = 'cloud-prob'
-    """Threshold the Sentinel-2 Cloud Probability image."""
+    """Threshold the Sentinel-2 Cloud Probability."""
 
     qa = 'qa'
     """Bit mask the `QA60` quality assessment band."""
 
     cloud_score = 'cloud-score'
-    """Threshold the Sentinel-2 Cloud Score+ image."""
+    """Threshold the Sentinel-2 Cloud Score+."""
 
     def __repr__(self):
         return self._name_

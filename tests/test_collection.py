@@ -267,7 +267,7 @@ def test_search_mult_kwargs(region_100ha):
     """
     start_date = '2022-01-01'
     end_date = '2022-01-10'
-    gd_collection = MaskedCollection.from_name('COPERNICUS/S2_SR')
+    gd_collection = MaskedCollection.from_name('COPERNICUS/S2_SR_HARMONIZED')
 
     def get_cloudless_portion(properties: Dict) -> List[float]:
         return [prop_dict['CLOUDLESS_PORTION'] for prop_dict in properties.values()]
@@ -642,7 +642,7 @@ def test_composite_mult_kwargs(region_100ha):
     When a search filtered collection is composited, test that masks change with different cloud/shadow kwargs i.e.
     test that image *_MASK bands are overwritten in the encapsulated collection.
     """
-    gd_collection = MaskedCollection.from_name('COPERNICUS/S2_SR')
+    gd_collection = MaskedCollection.from_name('COPERNICUS/S2_SR_HARMONIZED')
     filt_collection = gd_collection.search('2022-01-01', '2022-01-10', region_100ha)
 
     comp_ims = []

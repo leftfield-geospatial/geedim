@@ -46,7 +46,7 @@ def test_traverse_stac(stac_catalog: StacCatalog):
         'https://storage.googleapis.com/earthengine-stac/catalog/COPERNICUS/catalog.json', url_dict
     )
     assert len(url_dict) > 0
-    assert 'COPERNICUS/S2_SR' in url_dict
+    assert 'COPERNICUS/S2_SR_HARMONIZED' in url_dict
 
 
 @pytest.mark.parametrize(

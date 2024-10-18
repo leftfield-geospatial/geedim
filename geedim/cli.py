@@ -428,9 +428,9 @@ def config(ctx, **kwargs):
     For Sentinel-2 collections, ``--mask-method`` can be one of:
     \b
 
-        * | `cloud-prob`: Use a threshold on the corresponding Sentinel-2 cloud
-          | probability image.
-        * | `qa`: Use the Sentinel-2 `QA60` quality band.
+        * | `cloud-prob`: Threshold the Sentinel-2 Cloud Probability.
+        * | `qa`: Bit mask the `QA60` quality assessment band.
+        * | `cloud-score`: Threshold the Sentinel-2 Cloud Score+.
     \b
 
     Examples
