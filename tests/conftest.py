@@ -72,92 +72,74 @@ def const_image_25ha_file() -> pathlib.Path:
 
 @pytest.fixture(scope='session')
 def l4_image_id() -> str:
-    """Landsat-4 EE ID for image that covers `region_*ha`, with partial cloud cover only for `region10000ha`."""
+    """Landsat-4 EE ID for image that covering `region_*ha`, with partial cloud/shadow for `region10000ha` only."""
     return 'LANDSAT/LT04/C02/T1_L2/LT04_173083_19880310'
 
 
 @pytest.fixture(scope='session')
 def l5_image_id() -> str:
-    """Landsat-5 EE ID for image that covers `region_*ha` with partial cloud cover."""
-    return 'LANDSAT/LT05/C02/T1_L2/LT05_173083_20051112'  # 'LANDSAT/LT05/C02/T1_L2/LT05_173083_20070307'
+    """Landsat-5 EE ID for image covering `region_*ha` with partial cloud/shadow."""
+    return 'LANDSAT/LT05/C02/T1_L2/LT05_173083_20051112'
 
 
 @pytest.fixture(scope='session')
 def l7_image_id() -> str:
-    """Landsat-7 EE ID for image that covers `region_*ha` with partial cloud cover."""
-    return 'LANDSAT/LE07/C02/T1_L2/LE07_173083_20220119'  # 'LANDSAT/LE07/C02/T1_L2/LE07_173083_20200521'
+    """Landsat-7 EE ID for image covering `region_*ha` with partial cloud/shadow."""
+    return 'LANDSAT/LE07/C02/T1_L2/LE07_173083_20220119'
 
 
 @pytest.fixture(scope='session')
 def l8_image_id() -> str:
-    """Landsat-8 EE ID for image that covers `region_*ha` with partial cloud cover."""
-    return 'LANDSAT/LC08/C02/T1_L2/LC08_173083_20180217'  # 'LANDSAT/LC08/C02/T1_L2/LC08_173083_20171113'
+    """Landsat-8 EE ID for image covering `region_*ha` with partial cloud/shadow."""
+    return 'LANDSAT/LC08/C02/T1_L2/LC08_173083_20180217'
 
 
 @pytest.fixture(scope='session')
 def l9_image_id() -> str:
-    """Landsat-9 EE ID for image that covers `region_*ha` with partial cloud cover."""
-    return 'LANDSAT/LC09/C02/T1_L2/LC09_173083_20220308'  # 'LANDSAT/LC09/C02/T1_L2/LC09_173083_20220103'
+    """Landsat-9 EE ID for image covering `region_*ha` with partial cloud/shadow."""
+    return 'LANDSAT/LC09/C02/T1_L2/LC09_173083_20220308'
 
 
 @pytest.fixture(scope='session')
 def landsat_image_ids(l4_image_id, l5_image_id, l7_image_id, l8_image_id, l9_image_id) -> List[str]:
-    """Landsat4-9 EE IDs for images that covers `region_*ha` with partial cloud cover."""
+    """Landsat4-9 EE IDs for images covering `region_*ha` with partial cloud/shadow."""
     return [l4_image_id, l5_image_id, l7_image_id, l8_image_id, l9_image_id]
 
 
 @pytest.fixture(scope='session')
 def s2_sr_image_id() -> str:
-    """Sentinel-2 SR EE ID for image that covers `region_*ha` with partial cloud cover."""
-    # 'COPERNICUS/S2/20220107T081229_20220107T083059_T34HEJ'
-    return 'COPERNICUS/S2_SR/20211004T080801_20211004T083709_T34HEJ'
+    """Sentinel-2 SR EE ID for image with QA* data, covering `region_*ha` with partial cloud/shadow."""
+    return 'COPERNICUS/S2_SR/20200929T080731_20200929T083634_T34HEJ'
 
 
 @pytest.fixture(scope='session')
 def s2_toa_image_id() -> str:
-    """Sentinel-2 TOA EE ID for image that covers `region_*ha` with partial cloud cover."""
-    return 'COPERNICUS/S2/20220107T081229_20220107T083059_T34HEJ'
+    """Sentinel-2 TOA EE ID for image with QA* data, covering `region_*ha` with partial cloud/shadow."""
+    return 'COPERNICUS/S2/20210216T081011_20210216T083703_T34HEJ'
 
 
 @pytest.fixture(scope='session')
-def s2_sr_hm_image_id() -> str:
-    """Harmonised Sentinel-2 SR EE ID for image that covers `region_*ha` with partial cloud cover."""
-    # 'COPERNICUS/S2/20220107T081229_20220107T083059_T34HEJ'
-    return 'COPERNICUS/S2_SR_HARMONIZED/20211004T080801_20211004T083709_T34HEJ'
-
-
-@pytest.fixture(scope='session')
-def s2_sr_hm_qa_mask_image_id() -> str:
-    """Harmonised Sentinel-2 SR EE ID for image with masked QA* data, that covers `region_*ha` with partial cloud
-    cover.
-    """
-    return 'COPERNICUS/S2_SR_HARMONIZED/20240426T080609_20240426T083054_T34HEJ'
+def s2_sr_hm_image_id(s2_sr_image_id: str) -> str:
+    """Harmonised Sentinel-2 SR EE ID for image with QA* data, covering `region_*ha` with partial cloud/shadow."""
+    return 'COPERNICUS/S2_SR_HARMONIZED/' + s2_sr_image_id.split('/')[-1]
 
 
 @pytest.fixture(scope='session')
 def s2_sr_hm_qa_zero_image_id() -> str:
-    """Harmonised Sentinel-2 SR EE ID for image with zero QA* data, that covers `region_*ha` with partial cloud
-    cover.
-    """
-    return 'COPERNICUS/S2_SR_HARMONIZED/20230407T080611_20230407T083613_T34HEJ'
+    """Harmonised Sentinel-2 SR EE ID for image with zero QA* data, covering `region_*ha` with partial cloud/shadow."""
+    return 'COPERNICUS/S2_SR_HARMONIZED/20230721T080609_20230721T083101_T34HEJ'
 
 
 @pytest.fixture(scope='session')
-def s2_toa_hm_image_id() -> str:
-    """Harmonised Sentinel-2 TOA EE ID for image that covers `region_*ha` with partial cloud cover."""
-    return 'COPERNICUS/S2_HARMONIZED/20220107T081229_20220107T083059_T34HEJ'
-
-
-@pytest.fixture(scope='session')
-def s2_image_ids(s2_sr_image_id, s2_toa_image_id, s2_sr_hm_image_id, s2_toa_hm_image_id) -> List[str]:
-    """Sentinel-2 TOA/SR EE IDs for images that covers `region_*ha` with partial cloud cover."""
-    return [s2_sr_image_id, s2_toa_image_id, s2_sr_hm_image_id, s2_toa_hm_image_id]
+def s2_toa_hm_image_id(s2_toa_image_id: str) -> str:
+    """Harmonised Sentinel-2 TOA EE ID for image with QA* data, covering `region_*ha` with partial cloud/shadow."""
+    return 'COPERNICUS/S2_HARMONIZED/' + s2_toa_image_id.split('/')[-1]
 
 
 @pytest.fixture(scope='session')
 def modis_nbar_image_id() -> str:
-    """Global MODIS NBAR image ID.  WGS84 @ 500m."""
-    return 'MODIS/006/MCD43A4/2022_01_01'
+    """Global MODIS NBAR image ID."""
+    return 'MODIS/061/MCD43A4/2022_01_01'
 
 
 @pytest.fixture(scope='session')
@@ -194,6 +176,22 @@ def landsat_ndvi_image_id() -> str:
 
 
 @pytest.fixture(scope='session')
+def google_dyn_world_image_id(s2_sr_hm_image_id) -> str:
+    """Google Dynamic World EE ID.  10m with positive y-axis transform."""
+    return 'GOOGLE/DYNAMICWORLD/V1/' + s2_sr_hm_image_id.split('/')[-1]
+
+
+@pytest.fixture()
+def s2_sr_hm_image_ids(s2_sr_image_id: str, s2_toa_image_id: str) -> List[str]:
+    """A list of harmonised Sentinel-2 SR image IDs, covering `region_*ha` with partial cloud/shadow.."""
+    return [
+        'COPERNICUS/S2_SR_HARMONIZED/' + s2_sr_image_id.split('/')[-1],
+        'COPERNICUS/S2_SR_HARMONIZED/' + s2_toa_image_id.split('/')[-1],
+        'COPERNICUS/S2_SR_HARMONIZED/20191229T081239_20191229T083040_T34HEJ',
+    ]
+
+
+@pytest.fixture(scope='session')
 def generic_image_ids(
     modis_nbar_image_id, gch_image_id, s1_sar_image_id, gedi_agb_image_id, gedi_cth_image_id, landsat_ndvi_image_id
 ) -> List[str]:
@@ -210,19 +208,19 @@ def generic_image_ids(
 
 @pytest.fixture(scope='session')
 def l4_masked_image(l4_image_id) -> MaskedImage:
-    """Landsat-4 MaskedImage that covers `region_*ha`, with partial cloud cover only for `region10000ha`."""
+    """Landsat-4 MaskedImage covering `region_*ha`, with partial cloud for `region10000ha` only."""
     return MaskedImage.from_id(l4_image_id)
 
 
 @pytest.fixture(scope='session')
 def l5_masked_image(l5_image_id) -> MaskedImage:
-    """Landsat-5 MaskedImage that covers `region_*ha` with partial cloud cover."""
+    """Landsat-5 MaskedImage covering `region_*ha` with partial cloud/shadow."""
     return MaskedImage.from_id(l5_image_id)
 
 
 @pytest.fixture(scope='session')
 def l7_masked_image(l7_image_id) -> MaskedImage:
-    """Landsat-7 MaskedImage that covers `region_*ha` with partial cloud cover."""
+    """Landsat-7 MaskedImage covering `region_*ha` with partial cloud/shadow."""
     return MaskedImage.from_id(l7_image_id)
 
 
@@ -234,40 +232,32 @@ def l8_masked_image(l8_image_id) -> MaskedImage:
 
 @pytest.fixture(scope='session')
 def l9_masked_image(l9_image_id) -> MaskedImage:
-    """Landsat-9 MaskedImage that covers `region_*ha` with partial cloud cover."""
+    """Landsat-9 MaskedImage covering `region_*ha` with partial cloud/shadow."""
     return MaskedImage.from_id(l9_image_id)
 
 
 @pytest.fixture(scope='session')
-def landsat_masked_images(
-    l4_masked_image, l5_masked_image, l7_masked_image, l8_masked_image, l9_masked_image
-) -> List[MaskedImage]:  # yapf: disable
-    """Landsat4-9 MaskedImage's that cover `region_*ha` with partial cloud cover."""
-    return [l4_masked_image, l5_masked_image, l7_masked_image, l8_masked_image, l9_masked_image]
-
-
-@pytest.fixture(scope='session')
 def s2_sr_masked_image(s2_sr_image_id) -> MaskedImage:
-    """Sentinel-2 SR MaskedImage that covers `region_*ha` with partial cloud cover."""
+    """Sentinel-2 SR MaskedImage with QA* data, covering `region_*ha` with partial cloud/shadow."""
     return MaskedImage.from_id(s2_sr_image_id)
 
 
 @pytest.fixture(scope='session')
 def s2_toa_masked_image(s2_toa_image_id) -> MaskedImage:
-    """Sentinel-2 TOA MaskedImage that covers `region_*ha` with partial cloud cover."""
+    """Sentinel-2 TOA MaskedImage with QA* data, covering `region_*ha` with partial cloud/shadow."""
     return MaskedImage.from_id(s2_toa_image_id)
 
 
 @pytest.fixture(scope='session')
 def s2_sr_hm_masked_image(s2_sr_hm_image_id) -> MaskedImage:
-    """Harmonised Sentinel-2 SR MaskedImage that covers `region_*ha` with partial cloud cover."""
+    """Harmonised Sentinel-2 SR MaskedImage with QA* data, covering `region_*ha` with partial cloud/shadow."""
     return MaskedImage.from_id(s2_sr_hm_image_id)
 
 
 @pytest.fixture(scope='session')
 def s2_sr_hm_nocp_masked_image(s2_sr_hm_image_id) -> MaskedImage:
-    """Harmonised Sentinel-2 SR MaskedImage with no corresponding cloud probability, that covers `region_*ha` with
-    partial cloud cover.
+    """Harmonised Sentinel-2 SR MaskedImage with no corresponding cloud probability, covering `region_*ha` with partial
+    cloud/shadow.
     """
     # create an image with unknown id to prevent linking to cloud probability
     ee_image = ee.Image(s2_sr_hm_image_id)
@@ -276,29 +266,26 @@ def s2_sr_hm_nocp_masked_image(s2_sr_hm_image_id) -> MaskedImage:
 
 
 @pytest.fixture(scope='session')
-def s2_sr_hm_qa_mask_masked_image(s2_sr_hm_qa_mask_image_id: str) -> MaskedImage:
-    """Harmonised Sentinel-2 SR MaskedImage with masked QA* bands, that covers `region_*ha` with partial cloud cover."""
-    return MaskedImage.from_id(s2_sr_hm_qa_mask_image_id, mask_method='qa')
+def s2_sr_hm_nocs_masked_image(s2_sr_hm_image_id) -> MaskedImage:
+    """Harmonised Sentinel-2 SR MaskedImage with no corresponding cloud score, covering `region_*ha` with partial
+    cloud/shadow.
+    """
+    # create an image with unknown id to prevent linking to cloud score
+    ee_image = ee.Image(s2_sr_hm_image_id)
+    ee_image = ee_image.set('system:index', 'COPERNICUS/S2_HARMONIZED/unknown')
+    return Sentinel2SrClImage(ee_image, mask_method='cloud-score')
 
 
 @pytest.fixture(scope='session')
 def s2_sr_hm_qa_zero_masked_image(s2_sr_hm_qa_zero_image_id: str) -> MaskedImage:
-    """Harmonised Sentinel-2 SR MaskedImage with zero QA* bands, that covers `region_*ha` with partial cloud cover."""
+    """Harmonised Sentinel-2 SR MaskedImage with zero QA* bands, covering `region_*ha` with partial cloud/shadow."""
     return MaskedImage.from_id(s2_sr_hm_qa_zero_image_id, mask_method='qa')
 
 
 @pytest.fixture(scope='session')
 def s2_toa_hm_masked_image(s2_toa_hm_image_id) -> MaskedImage:
-    """Harmonised Sentinel-2 TOA MaskedImage that covers `region_*ha` with partial cloud cover."""
+    """Harmonised Sentinel-2 TOA MaskedImage with QA* data, covering `region_*ha` with partial cloud/shadow."""
     return MaskedImage.from_id(s2_toa_hm_image_id)
-
-
-@pytest.fixture(scope='session')
-def s2_masked_images(
-    s2_sr_masked_image, s2_toa_masked_image, s2_sr_hm_masked_image, s2_toa_hm_masked_image
-) -> List[MaskedImage]:  # yapf: disable
-    """Sentinel-2 TOA and SR MaskedImage's that cover `region_*ha` with partial cloud cover."""
-    return [s2_sr_masked_image, s2_toa_masked_image, s2_sr_hm_masked_image, s2_toa_hm_masked_image]
 
 
 @pytest.fixture(scope='session')
@@ -343,26 +330,6 @@ def landsat_ndvi_masked_image(landsat_ndvi_image_id) -> MaskedImage:
     return MaskedImage.from_id(landsat_ndvi_image_id)
 
 
-@pytest.fixture(scope='session')
-def generic_masked_images(
-    modis_nbar_masked_image,
-    gch_masked_image,
-    s1_sar_masked_image,
-    gedi_agb_masked_image,
-    gedi_cth_masked_image,
-    landsat_ndvi_masked_image,
-) -> List[MaskedImage]:
-    """A list of various non-cloud/shadow MaskedImage's."""
-    return [
-        modis_nbar_masked_image,
-        gch_masked_image,
-        s1_sar_masked_image,
-        gedi_agb_masked_image,
-        gedi_cth_masked_image,
-        landsat_ndvi_masked_image,
-    ]
-
-
 @pytest.fixture
 def runner():
     """click runner for command line execution."""
@@ -385,19 +352,3 @@ def region_100ha_file() -> pathlib.Path:
 def region_10000ha_file() -> pathlib.Path:
     """Path to region_10000ha geojson file."""
     return root_path.joinpath('tests/data/region_10000ha.geojson')
-
-
-def get_image_std(ee_image: ee.Image, region: Dict, std_scale: float):
-    """
-    Helper function to return the mean of the local/neighbourhood image std. dev., over a region.  This serves as a
-    measure of image smoothness.
-    """
-    # Note that for Sentinel-2 images, only the 20m and 60m bands get resampled by EE (and hence smoothed), so
-    # here B1 @ 60m is used for testing.
-    test_image = ee_image.select(0)
-    proj = test_image.projection()
-    std_image = test_image.reduceNeighborhood(reducer='stdDev', kernel=ee.Kernel.square(2)).rename('TEST')
-    mean_std_image = std_image.reduceRegion(
-        reducer='mean', geometry=region, crs=proj.crs(), scale=std_scale, bestEffort=True, maxPixels=1e6
-    )
-    return mean_std_image.get('TEST').getInfo()

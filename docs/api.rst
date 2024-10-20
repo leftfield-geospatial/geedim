@@ -20,10 +20,7 @@ Initialisation
 Searching image collections
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-`Any Earth Engine image collection <https://developers.google.com/earth-engine/datasets/catalog>`_ can be searched with
-:class:`~geedim.collection.MaskedCollection`.  Here, we search for
-`Landsat-8 surface reflectance <https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C02_T1_L2>`_
-images over Stellenbosch, South Africa.
+`Any Earth Engine image collection <https://developers.google.com/earth-engine/datasets/catalog>`_ can be searched with :class:`~geedim.collection.MaskedCollection`.  Here, we search for `Landsat-8 surface reflectance <https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C02_T1_L2>`_ images over Stellenbosch, South Africa.
 
 .. literalinclude:: examples/api_getting_started.py
     :language: python
@@ -58,8 +55,7 @@ The output:
 Image creation and download
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Images can be created, masked and downloaded with the :class:`~geedim.mask.MaskedImage` class.  Typically, one would
-pass the Earth Engine image ID to :meth:`.MaskedImage.from_id` to create the image.
+Images can be created, masked and downloaded with the :class:`~geedim.mask.MaskedImage` class.  Typically, one would pass the Earth Engine image ID to :meth:`.MaskedImage.from_id` to create the image.
 
 .. literalinclude:: examples/api_getting_started.py
     :language: python
@@ -69,13 +65,10 @@ pass the Earth Engine image ID to :meth:`.MaskedImage.from_id` to create the ima
 Compositing
 ^^^^^^^^^^^
 
-Let's form a cloud/shadow-free composite of the search result images, using the *q-mosaic* method, then download
-the result.  By specifying the ``region`` parameter to :meth:`.MaskedCollection.composite`, we prioritise selection
-of pixels from the least cloudy images when forming the composite.
+Let's form a cloud/shadow-free composite of the search result images, using the *q-mosaic* method, then download the result.  By specifying the ``region`` parameter to :meth:`.MaskedCollection.composite`, we prioritise selection of pixels from the least cloudy images when forming the composite.
 
 .. note::
-    When downloading composite images, the ``region``, ``crs`` and ``scale`` parameters must be specified, as the image
-    has no fixed (known) projection.
+    When downloading composite images, the ``region``, ``crs`` and ``scale`` parameters must be specified, as the image has no fixed (known) projection.
 
 .. literalinclude:: examples/api_getting_started.py
     :language: python
@@ -92,7 +85,7 @@ take optional cloud/shadow masking ``**kwargs``.  See :meth:`.MaskedImage.__init
 parameters.
 
 Here, we create and download a cloud/shadow masked
-`Sentinel-2 image <https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR>`_, specifying a cloud probability threshold of 30%.
+`Sentinel-2 image <https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR>`_, specifying a cloud score threshold of 0.7.
 
 .. literalinclude:: examples/api_getting_started.py
     :language: python

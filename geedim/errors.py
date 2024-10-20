@@ -29,3 +29,7 @@ class InputImageError(GeedimError):
 
 class TileError(GeedimError):
     """Raised when there is a problem downloading an image tile."""
+
+
+class GeedimWarning(UserWarning):
+    """Base warning class."""

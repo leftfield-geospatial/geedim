@@ -195,12 +195,11 @@ Composite the results of a Landsat-8 search, export to Earth Engine asset, and d
 
     geedim search -c l8-c2-l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 composite -cm q-mosaic export --type asset --folder <your cloud project> --scale 30 --crs EPSG:3857 download
 
-Search for Sentinel-2 SR images with a cloudless portion of at least 60%, using the ``qa`` mask-method to identify
-clouds:
+Search for Sentinel-2 SR images with a cloudless portion of at least 60%, using the ``cloud-score`` mask-method to identify clouds:
 
 .. code:: shell
 
-   geedim config --mask-method qa search -c s2-sr --cloudless-portion 60 -s 2022-01-01 -e 2022-01-14 --bbox 24 -34 24.5 -33.5
+   geedim config --mask-method cloud-score search -c s2-sr-hm --cloudless-portion 60 -s 2022-01-01 -e 2022-01-14 --bbox 24 -34 24.5 -33.5
 
 .. cli_end
 
@@ -223,18 +222,18 @@ Example
    }
 
    # make collection and search, reporting cloudless portions
-   coll = gd.MaskedCollection.from_name('COPERNICUS/S2_SR')
+   coll = gd.MaskedCollection.from_name('COPERNICUS/S2_SR_HARMONIZED')
    coll = coll.search('2019-01-10', '2019-01-21', region, cloudless_portion=0)
    print(coll.schema_table)
    print(coll.properties_table)
 
    # create and download an image
-   im = gd.MaskedImage.from_id('COPERNICUS/S2_SR/20190115T080251_20190115T082230_T35HKC')
+   im = gd.MaskedImage.from_id('COPERNICUS/S2_SR_HARMONIZED/20190115T080251_20190115T082230_T35HKC')
    im.download('s2_image.tif', region=region)
 
    # composite search results and download
    comp_im = coll.composite()
-   comp_im.download('s2_comp_image.tif', region=region, crs='EPSG:32735', scale=30)
+   comp_im.download('s2_comp_image.tif', region=region, crs='EPSG:32735', scale=10)
 
 License
 -------

@@ -17,15 +17,15 @@
 import logging
 import threading
 import time
-import zipfile
 from io import BytesIO
 
 import numpy as np
 import rasterio as rio
 import requests
-from rasterio import Affine, MemoryFile
+from rasterio import Affine
+from rasterio.errors import RasterioIOError
 from rasterio.windows import Window
-from requests.exceptions import RequestException, JSONDecodeError
+from requests.exceptions import JSONDecodeError, RequestException
 from tqdm.auto import tqdm
 
 from geedim import utils
@@ -98,36 +98,32 @@ class Tile:
         dtype_size = np.dtype(self._exp_image.dtype).itemsize
         raw_download_size = self._shape[0] * self._shape[1] * self._exp_image.count * dtype_size
 
-        # download and unzip the tile
+        # download & read the tile
         downloaded_size = 0
+        buf = BytesIO()
         try:
-            # download zip into buffer
-            zip_buffer = BytesIO()
+            # download gtiff into buffer
             for data in response.iter_content(chunk_size=10240):
                 if bar:
                     # update with raw download progress (0-1)
                     bar.update(raw_download_size * (len(data) / download_size))
-                zip_buffer.write(data)
+                buf.write(data)
                 downloaded_size += len(data)
-            zip_buffer.flush()
+            buf.flush()
 
-            # extract GeoTIFF bytes from zipped buffer
-            with zipfile.ZipFile(zip_buffer, 'r') as zip_file:
-                gtiff_bytes = zip_file.read(zip_file.filelist[0])
+            # read the tile array from the GeoTIFF buffer
+            buf.seek(0)
+            env = rio.Env(GDAL_NUM_THREADS='ALL_CPUs', GTIFF_FORCE_RGBA=False)
+            with utils.suppress_rio_logs(), env, rio.open(buf, 'r') as ds:
+                array = ds.read()
+            return array
 
-        except (RequestException, zipfile.BadZipfile):
+        except (RequestException, RasterioIOError):
             if bar:
                 # reverse progress bar
                 bar.update(-raw_download_size * (downloaded_size / download_size))
                 pass
             raise
-
-        # read the tile array from the GeoTIFF bytes, via a rasterio memory file
-        env = rio.Env(GDAL_NUM_THREADS='ALL_CPUs', GTIFF_FORCE_RGBA=False)
-        with utils.suppress_rio_logs(), env, MemoryFile(gtiff_bytes) as mem_file:
-            with mem_file.open() as ds:
-                array = ds.read()
-        return array
 
     def download(
         self,
@@ -161,32 +157,22 @@ class Tile:
         session = session or requests
 
         # get download URL
-        with self._ee_lock:
-            url = self._exp_image.ee_image.getDownloadURL(
-                dict(
-                    crs=self._exp_image.crs,
-                    crs_transform=tuple(self._transform)[:6],
-                    dimensions=self._shape[::-1],
-                    filePerBand=False,
-                    fileFormat='GeoTIFF',
-                )
+        url = self._exp_image.ee_image.getDownloadURL(
+            dict(
+                crs=self._exp_image.crs,
+                crs_transform=tuple(self._transform)[:6],
+                dimensions=self._shape[::-1],
+                format='GEO_TIFF',
             )
+        )
 
         # download and read the tile, with retries
-        array = None
         for retry in range(max_retries + 1):
             try:
-                array = self._download_to_array(url, session=session, bar=bar)
-                break
-
-            except (RequestException, zipfile.BadZipfile) as ex:
+                return self._download_to_array(url, session=session, bar=bar)
+            except (RequestException, RasterioIOError) as ex:
                 if retry < max_retries:
-                    # retry tile download
                     time.sleep(backoff_factor * (2**retry))
-                    logger.warning(
-                        f'Tile downloaded failed, retry {retry + 1} of {max_retries}.  URL: {url}. {str(ex)}.'
-                    )
+                    logger.warning(f'Tile download failed, retry {retry + 1} of {max_retries}.  URL: {url}. {str(ex)}.')
                 else:
                     raise TileError(f'Tile download failed, reached the maximum retries.  URL: {url}.') from ex
-
-        return array

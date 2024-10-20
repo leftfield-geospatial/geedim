@@ -14,45 +14,53 @@
    limitations under the License.
 """
 
+from __future__ import annotations
+
 import logging
 import os
 import pathlib
 import threading
 import time
-import warnings
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from concurrent.futures import as_completed, ThreadPoolExecutor
+from datetime import datetime, timezone
 from itertools import product
-from typing import Tuple, Dict, List, Union, Iterator, Optional
+from typing import Dict, Iterator, List, Optional, Tuple, Union
 
 import ee
 import numpy as np
 import rasterio as rio
-from rasterio import windows, features, warp
+from rasterio import features, windows
 from rasterio.crs import CRS
 from rasterio.enums import Resampling as RioResampling
-from tqdm import TqdmWarning
 from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 from geedim import utils
-from geedim.enums import ResamplingMethod, ExportType
+from geedim.enums import ExportType, ResamplingMethod
 from geedim.stac import StacCatalog, StacItem
 from geedim.tile import Tile
 
 logger = logging.getLogger(__name__)
 
-supported_dtypes = ['uint8', 'uint16', 'uint32', 'int8', 'int16', 'int32', 'float32', 'float64']
-""" Supported image data types for downloading/exporting. """
+_nodata_vals = dict(
+    uint8=0,
+    uint16=0,
+    uint32=0,
+    int8=np.iinfo('int8').min,
+    int16=np.iinfo('int16').min,
+    int32=np.iinfo('int32').min,
+    float32=float('-inf'),
+    float64=float('-inf'),
+)
+"""Nodata values for supported download / export dtypes. """
 # Note:
-# - while gdal >= 3.5 supports *int64 data type, there is a rasterio bug retrieving the *int64 nodata value,
+# - while gdal >= 3.5 supports *int64 data type, there is a rasterio bug that casts the *int64 nodata value to float,
 # so geedim will not support these types for now.
-# - the ordering of the list above is relevant to the auto dtype and should be: unsigned ints smallest - largest,
+# - the ordering of the keys above is relevant to the auto dtype and should be: unsigned ints smallest - largest,
 # signed ints smallest to largest, float types smallest to largest.
 
 
 class BaseImage:
-    _float_nodata = float('-inf')
     _desc_width = 50
     _default_resampling = ResamplingMethod.near
     _ee_max_tile_size = 32
@@ -102,12 +110,12 @@ class BaseImage:
     def _ee_info(self) -> Dict:
         """Earth Engine image metadata."""
         if self.__ee_info is None:
-            self.__ee_info = self._ee_image.getInfo()
+            self.__ee_info = self._get_ee_info(self._ee_image)
         return self.__ee_info
 
     @property
     def _min_projection(self) -> Dict:
-        """Projection information corresponding to the minimum scale band."""
+        """Projection information of the minimum scale band."""
         if not self.__min_projection:
             self.__min_projection = self._get_projection(self._ee_info, min_scale=True)
         return self.__min_projection
@@ -138,10 +146,10 @@ class BaseImage:
             return self._ee_info['id'] if 'id' in self._ee_info else None
 
     @property
-    def date(self) -> Optional[datetime]:
+    def date(self) -> datetime | None:
         """Image capture date & time.  None if the image ``system:time_start`` property is not set."""
         if 'system:time_start' in self.properties:
-            return datetime.utcfromtimestamp(self.properties['system:time_start'] / 1000)
+            return datetime.fromtimestamp(self.properties['system:time_start'] / 1000, tz=timezone.utc)
         else:
             return None
 
@@ -152,19 +160,17 @@ class BaseImage:
 
     @property
     def crs(self) -> Optional[str]:
-        """
-        Image CRS corresponding to minimum scale band, as an EPSG string. None if the image has no fixed projection.
-        """
+        """CRS of the minimum scale band. None if the image has no fixed projection."""
         return self._min_projection['crs']
 
     @property
     def scale(self) -> Optional[float]:
-        """Minimum scale (m) of image bands. None if the image has no fixed projection."""
+        """Minimum scale of the image bands (meters). None if the image has no fixed projection."""
         return self._min_projection['scale']
 
     @property
     def footprint(self) -> Optional[Dict]:
-        """Geojson polygon of the image extent.  None if the image is a composite."""
+        """GeoJSON polygon of the image extent.  None if the image has no fixed projection."""
         if ('properties' not in self._ee_info) or ('system:footprint' not in self._ee_info['properties']):
             return None
         footprint = self._ee_info['properties']['system:footprint']
@@ -179,7 +185,7 @@ class BaseImage:
         return self._ee_info['properties']['system:footprint']
 
     @property
-    def shape(self) -> Optional[Tuple[int, int]]:
+    def shape(self) -> tuple[int, int]:
         """(row, column) pixel dimensions of the minimum scale band. None if the image has no fixed projection."""
         return self._min_projection['shape']
 
@@ -211,6 +217,8 @@ class BaseImage:
     @property
     def has_fixed_projection(self) -> bool:
         """True if the image has a fixed projection, otherwise False."""
+        # TODO: make a common server side fn that can be used in e.g. utils.get_projection, and utils.resample,
+        #  and then retrieved client side in e.g. _ee_info
         return self.scale is not None
 
     @property
@@ -245,9 +253,24 @@ class BaseImage:
     @property
     def bounded(self) -> bool:
         """True if the image is bounded, otherwise False."""
-        # TODO: an unbounded region could also have these bounds
         unbounded_bounds = (-180, -90, 180, 90)
         return (self.footprint is not None) and (features.bounds(self.footprint) != unbounded_bounds)
+
+    @staticmethod
+    def _get_ee_info(ee_image: ee.Image) -> dict:
+        """Retrieve ``ee_image`` image description, with band scales in meters, in one call to ``getInfo()``."""
+
+        def band_scale(band_name):
+            """Return ``ee_image`` scale in meters for the band named ``band_name``."""
+            return ee_image.select(ee.String(band_name)).projection().nominalScale()
+
+        scales = ee_image.bandNames().map(band_scale)
+        scales, ee_info = ee.List([scales, ee_image]).getInfo()
+
+        # zip scales into ee_info band dictionaries
+        for scale, bdict in zip(scales, ee_info.get('bands', [])):
+            bdict['scale'] = scale
+        return ee_info
 
     @staticmethod
     def _get_projection(ee_info: Dict, min_scale=True) -> Dict:
@@ -255,23 +278,26 @@ class BaseImage:
         Return the projection information corresponding to the min/max scale band of a given Earth Engine image info
         dictionary.
         """
-        projection_info = dict(crs=None, transform=None, shape=None, scale=None)
-        if 'bands' in ee_info:
-            # get scale & crs corresponding to min/max scale band
-            scales = np.array([abs(bd['crs_transform'][0]) for bd in ee_info['bands']])
+        proj_info = dict(index=None, crs=None, transform=None, shape=None, scale=None)
+        if 'bands' in ee_info and len(ee_info['bands']) > 0:
+            xress = np.array([abs(bd['crs_transform'][0]) for bd in ee_info['bands']])
+            scales = np.array([bd['scale'] for bd in ee_info['bands']])
             crss = np.array([bd['crs'] for bd in ee_info['bands']])
-            fixed_idx = (crss != 'EPSG:4326') | (scales != 1)
+            fixed_idx = (crss != 'EPSG:4326') | (xress != 1)
+
+            # set properties if there is a fixed projection
             if sum(fixed_idx) > 0:
                 idx = np.argmin(scales[fixed_idx]) if min_scale else np.argmax(scales[fixed_idx])
                 band_info = np.array(ee_info['bands'])[fixed_idx][idx]
-                projection_info['scale'] = abs(band_info['crs_transform'][0])
-                projection_info['crs'] = band_info['crs']
+                proj_info['scale'] = float(scales[fixed_idx][idx])
+                proj_info['crs'] = band_info['crs']
                 if 'dimensions' in band_info:
-                    projection_info['shape'] = band_info['dimensions'][::-1]
-                projection_info['transform'] = rio.Affine(*band_info['crs_transform'])
+                    proj_info['shape'] = tuple(band_info['dimensions'][::-1])
+                proj_info['transform'] = rio.Affine(*band_info['crs_transform'])
                 if ('origin' in band_info) and not np.any(np.isnan(band_info['origin'])):
-                    projection_info['transform'] *= rio.Affine.translation(*band_info['origin'])
-        return projection_info
+                    proj_info['transform'] *= rio.Affine.translation(*band_info['origin'])
+
+        return proj_info
 
     @staticmethod
     def _get_min_dtype(ee_info: Dict) -> str:
@@ -285,14 +311,14 @@ class BaseImage:
                 for band_dict in band_info
                 if band_dict['data_type']['precision'] == 'int'
                 for minmax in (int(band_dict['data_type']['min']), int(band_dict['data_type']['max']))
-            ]  # yapf: disable
+            ]
 
             if len(int_minmax) == 0:
                 return None
             min_value = np.nanmin(int_minmax)
             max_value = np.nanmax(int_minmax)
 
-            for dtype in supported_dtypes[:-2]:
+            for dtype in list(_nodata_vals.keys())[:-2]:
                 if (min_value >= np.iinfo(dtype).min) and (max_value <= np.iinfo(dtype).max):
                     return dtype
             return 'float64'
@@ -314,8 +340,7 @@ class BaseImage:
 
     @staticmethod
     def _str_format_size(byte_size: float, units=['bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB']) -> str:
-        """
-        Returns a human readable string representation of a given byte size.
+        """Returns a human readable string representation of a given byte size.
         Adapted from https://stackoverflow.com/questions/1094841/get-human-readable-version-of-file-size.
         """
         if byte_size < 1000:
@@ -335,6 +360,7 @@ class BaseImage:
             int16=ee.Image.toInt16,
             uint32=ee.Image.toUint32,
             int32=ee.Image.toInt32,
+            # int64=ee.Image.toInt64,
         )
         if dtype not in conv_dict:
             raise TypeError(f'Unsupported dtype: {dtype}')
@@ -403,15 +429,16 @@ class BaseImage:
     def _prepare_for_export(
         self,
         crs: str = None,
-        crs_transform: Tuple[float] = None,
+        crs_transform: Tuple[float, ...] = None,
         shape: Tuple[int, int] = None,
-        region: Dict = None,
+        region: dict | ee.Geometry = None,
         scale: float = None,
         resampling: ResamplingMethod = _default_resampling,
         dtype: str = None,
         scale_offset: bool = False,
         bands: List[str] = None,
     ) -> 'BaseImage':
+        # TODO: don't repeat the argument docstrings on internal code
         """
         Prepare the encapsulated image for export/download.  Will reproject, resample, clip and convert the image
         according to the provided parameters.
@@ -434,12 +461,12 @@ class BaseImage:
             this transform.
         shape: tuple of int, optional
             (height, width) dimensions to export (pixels).
-        region : dict, geojson, ee.Geometry, optional
-            Region of interest (WGS84) to export.  Defaults to the image footprint, when available.
+        region: dict, ee.Geometry, optional
+            Region to export as a GeoJSON dictionary or ``ee.Geometry``.  Defaults to the image footprint, if available.
         scale : float, optional
             Pixel scale (m) to export to.  Where image bands have different scales, all are re-projected to this scale.
-            Ignored if ``crs`` and ``crs_transform`` are specified.  Defaults to use the minimum scale of
-            image bands if available.
+            Ignored if ``crs`` and ``crs_transform`` are specified.  Defaults to the minimum scale of image bands
+            if available.
         resampling : ResamplingMethod, optional
             Resampling method - see :class:`~geedim.enums.ResamplingMethod` for available options.
         dtype: str, optional
@@ -455,46 +482,45 @@ class BaseImage:
         """
         # TODO: allow setting a custom nodata value with ee.Image.unmask() - see #21
 
-        # Check for parameter combination errors.
-        # This necessarily duplicates some of what is done in ee.Image.getDownloadURL, so that errors are raised
-        # before tile creation & download.
-        if (not crs or not region or not scale) and (not crs or not crs_transform or not shape):
+        # Prevent exporting images with no fixed projection unless arguments defining the export pixel grid and
+        # bounds are provided.  While EE allows this, the default argument values are not sensible for most use cases.
+        if (not crs or not region or not (scale or shape)) and (not crs or not crs_transform or not shape):
             if not self.has_fixed_projection:
-                # if the image has no fixed projection, either crs, region, & scale; or crs, crs_transform and shape
-                # must be specified
                 raise ValueError(
-                    f'This image does not have a fixed projection, you need to specify a crs, region & scale; or a '
-                    f'crs, crs_transform & shape.'
+                    f'This image does not have a fixed projection, you need to specify a crs, region & scale / shape; '
+                    f'or a crs, crs_transform & shape.'
                 )
 
-        if (not region and (not crs or not crs_transform or not shape)) and (not self.bounded):
-            # if the image has no footprint (i.e. it is 'unbounded'), either region; or crs, crs_transform and shape
-            # must be specified
-            raise ValueError(
-                f'This image is unbounded, you need to specify a region; or a crs, crs_transform and shape.'
-            )
-
-        if not scale and not shape and self.crs == 'EPSG:4326':
-            # If the image is in EPSG:4326, either scale (in meters); or shape must be specified.
-            # Note that ee.Image.prepare_for_export() expects a scale in meters, but if the image is EPSG:4326,
-            # the default scale is in degrees.
-            raise ValueError(f'This image is in EPSG:4326, you need to specify a scale (in meters); or a shape.')
+        # Prevent exporting unbounded images without arguments defining the export bounds.  EE also prevents this (for
+        # the full image) in ee.Image.getDownloadUrl().
+        if (not region and (not crs_transform or not shape)) and (not self.bounded):
+            raise ValueError(f'This image is unbounded, you need to specify a region; or a crs_transform and shape.')
 
         if scale and shape:
-            # This error is raised in later calls to ee.Image.getInfo(), but is neater to raise here first
             raise ValueError('You can specify one of scale or shape, but not both.')
 
         if bands:
+            # If one or more specified bands don't exist, raise an error
             band_diff = set(bands).difference([band_prop['name'] for band_prop in self.band_properties])
             if len(band_diff) > 0:
-                # If one or more specified bands don't exist, raise an error
                 raise ValueError(f'The band(s) {list(band_diff)} don\'t exist.')
 
         # Create a new BaseImage if band subset is specified.  This is done here so that crs, scale etc
-        # parameters used below will have the values specific to bands.
+        # parameters used below will have values specific to bands.
         exp_image = BaseImage(self.ee_image.select(bands)) if bands else self
 
-        # perform image scale/offset, dtype and resampling operations
+        # configure the export spatial parameters
+        if not crs_transform and not shape:
+            # Only pass crs to ee.Image.prepare_for_export() when it is different from the source.  Passing same crs
+            # as source does not maintain the source pixel grid.
+            crs = crs if crs != exp_image.crs else None
+            # Default scale to the scale in meters of the minimum scale band.
+            scale = scale or exp_image.scale
+        else:
+            # crs argument is required with crs_transform
+            crs = crs or exp_image.crs
+
+        # apply export scale/offset, dtype and resampling
         ee_image = exp_image.ee_image
         if scale_offset:
             ee_image = BaseImage._scale_offset(ee_image, exp_image.band_properties)
@@ -510,55 +536,16 @@ class BaseImage:
                     'you can resample the component images used to create the composite.'
                 )
             ee_image = utils.resample(ee_image, resampling)
-        # TODO: only do this if there is a change?  Or do we need to standardise the bands?
+
         ee_image = BaseImage._convert_dtype(ee_image, dtype=dtype or im_dtype)
 
-        # configure the export parameter values
-        crs = crs or exp_image.crs
-        if not crs_transform and not shape:
-            # if none of crs_transform, shape, region or scale are specified, then set region and scale to defaults
-            region = region or exp_image.footprint
-            scale = scale or exp_image.scale
-
-            if (crs == exp_image.crs) and (scale == exp_image.scale):
-                # if crs_transform & shape are not already specified, and crs & scale match this image's crs & scale,
-                # then set crs_transform and shape to export on export image's pixel grid
-                if region == exp_image.footprint:
-                    crs_transform = exp_image.transform
-                    shape = exp_image.shape
-                else:
-                    # find a crs_transform and shape that encompasses region
-                    if isinstance(region, ee.Geometry):
-                        region = region.getInfo()
-                    region_crs = region['crs']['properties']['name'] if 'crs' in region else 'EPSG:4326'
-                    region_bounds = warp.transform_bounds(region_crs, utils.rio_crs(crs), *features.bounds(region))
-                    region_win = windows.from_bounds(*region_bounds, transform=exp_image.transform)
-                    region_win = utils.expand_window_to_grid(region_win)
-                    crs_transform = exp_image.transform * rio.Affine.translation(region_win.col_off, region_win.row_off)
-                    shape = (region_win.height, region_win.width)
-
-                # prevent exporting with region & scale now that crs_transform and shape are set
-                region = None
-                scale = None
-
-        # create the export parameter dict
+        # apply export spatial parameters
         crs_transform = crs_transform[:6] if crs_transform else None
         dimensions = shape[::-1] if shape else None
-        export_kwargs = dict(
-            crs=crs,
-            crs_transform=crs_transform,
-            dimensions=dimensions,
-            region=region,
-            scale=scale,
-            bands=bands,
-            fileFormat='GeoTIFF',
-            filePerBand=False,
-        )
-        # drop items with values==None
+        export_kwargs = dict(crs=crs, crs_transform=crs_transform, dimensions=dimensions, region=region, scale=scale)
         export_kwargs = {k: v for k, v in export_kwargs.items() if v is not None}
-        logger.debug(f'ee.Image.prepare_for_export() params: {export_kwargs}')
-        # TODO: prepare_for_export does not seem to be used in ee internals any more
         ee_image, _ = ee_image.prepare_for_export(export_kwargs)
+
         return BaseImage(ee_image)
 
     def _prepare_for_download(self, set_nodata: bool = True, **kwargs) -> Tuple['BaseImage', Dict]:
@@ -571,17 +558,7 @@ class BaseImage:
         # resample, convert, clip and reproject image according to download params
         exp_image = self._prepare_for_export(**kwargs)
         # see float nodata workaround note in Tile.download(...)
-        nodata_dict = dict(
-            float32=self._float_nodata,
-            float64=self._float_nodata,
-            uint8=0,
-            int8=np.iinfo('int8').min,
-            uint16=0,
-            int16=np.iinfo('int16').min,
-            uint32=0,
-            int32=np.iinfo('int32').min,
-        )  # yapf: disable
-        nodata = nodata_dict[exp_image.dtype] if set_nodata else None
+        nodata = _nodata_vals[exp_image.dtype] if set_nodata else None
         profile = dict(
             driver='GTiff',
             dtype=exp_image.dtype,
@@ -603,7 +580,7 @@ class BaseImage:
 
     def _get_tile_shape(
         self, max_tile_size: Optional[float] = None, max_tile_dim: Optional[int] = None
-    ) -> Tuple[Tuple, int]:  # yapf: disable
+    ) -> Tuple[Tuple, int]:
         """
         Return a tile shape and number of tiles, such that the tile shape satisfies GEE download limits, and is
         'square-ish'.
@@ -650,10 +627,8 @@ class BaseImage:
     def _build_overviews(self, filename: Union[str, pathlib.Path], max_num_levels: int = 8, min_ovw_pixels: int = 256):
         """Build internal overviews, downsampled by successive powers of 2, for a given filename."""
 
-        # TODO: revisit multi-threaded overviews on gdal update
-        # build overviews in a single threaded environment (currently gdal reports errors when building overviews
-        # with GDAL_NUM_THREADS='ALL_CPUs' - see https://github.com/OSGeo/gdal/issues/7921)
-        env_dict = dict(GTIFF_FORCE_RGBA=False, COMPRESS_OVERVIEW='DEFLATE')
+        # build overviews
+        env_dict = dict(GTIFF_FORCE_RGBA=False, COMPRESS_OVERVIEW='DEFLATE', GDAL_NUM_THREADS='ALL_CPUS')
         if self.size >= 4e9:
             env_dict.update(BIGTIFF_OVERVIEW=True)
 
@@ -669,6 +644,7 @@ class BaseImage:
 
     def _write_metadata(self, dataset: rio.io.DatasetWriter):
         """Write Earth Engine and STAC metadata to an open rasterio dataset."""
+        # TODO: Xee with rioxarray writes an html description - can we do the same?
         if dataset.closed:
             raise IOError('Image dataset is closed')
 
@@ -804,8 +780,8 @@ class BaseImage:
             this transform.
         shape: tuple of int, optional
             (height, width) dimensions to export (pixels).
-        region : dict, geojson, ee.Geometry, optional
-            Region of interest (WGS84) to export.  Defaults to the image footprint, when available.
+        region: dict, ee.Geometry, optional
+            Region to export as a GeoJSON dictionary or ``ee.Geometry``.  Defaults to the image footprint, if available.
         scale : float, optional
             Pixel scale (m) to export to.  Where image bands have different scales, all are re-projected to this scale.
             Ignored if ``crs`` and ``crs_transform`` are specified.  Defaults to use the minimum scale of
@@ -910,13 +886,13 @@ class BaseImage:
             WKT or EPSG specification of CRS to export to.  Where image bands have different CRSs, all are
             re-projected to this CRS. Defaults to use the CRS of the minimum scale band if available.
         crs_transform: tuple of float, list of float, rio.Affine, optional
-            List of 6 numbers specifying an affine transform in the specified CRS.  In row-major order:
+            List of 6 numbers specifying an affine transform in the given CRS.  In row-major order:
             [xScale, xShearing, xTranslation, yShearing, yScale, yTranslation].  All bands are re-projected to
             this transform.
         shape: tuple of int, optional
             (height, width) dimensions to export (pixels).
-        region : dict, geojson, ee.Geometry, optional
-            Region of interest (WGS84) to export.  Defaults to the image footprint, when available.
+        region: dict, ee.Geometry, optional
+            Region to export as a GeoJSON dictionary or ``ee.Geometry``.  Defaults to the image footprint, if available.
         scale : float, optional
             Pixel scale (m) to export to.  Where image bands have different scales, all are re-projected to this scale.
             Ignored if ``crs`` and ``crs_transform`` are specified.  Defaults to use the minimum scale of
@@ -931,7 +907,7 @@ class BaseImage:
         bands: list of str, optional
             List of band names to download.
         """
-
+        # TODO: allow bands to be band indexes too
         max_threads = num_threads or min(32, (os.cpu_count() or 1) + 4)
         out_lock = threading.Lock()
         filename = pathlib.Path(filename)
@@ -976,7 +952,6 @@ class BaseImage:
         )
 
         session = utils.retry_session()
-        warnings.filterwarnings('ignore', category=TqdmWarning)
         # redirect logging through tqdm
         redir_tqdm = logging_redirect_tqdm([logging.getLogger(__package__)], tqdm_class=type(bar))
         env = rio.Env(GDAL_NUM_THREADS='ALL_CPUs', GTIFF_FORCE_RGBA=False)

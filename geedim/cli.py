@@ -29,12 +29,12 @@ import rasterio.crs as rio_crs
 from click.core import ParameterSource
 from rasterio.errors import CRSError
 
-from geedim import schema, Initialize, version
+from geedim import Initialize, schema, version
 from geedim.collection import MaskedCollection
-from geedim.download import BaseImage, supported_dtypes
-from geedim.enums import CloudMaskMethod, CompositeMethod, ResamplingMethod, ExportType
+from geedim.download import _nodata_vals, BaseImage
+from geedim.enums import CloudMaskMethod, CloudScoreBand, CompositeMethod, ExportType, ResamplingMethod
 from geedim.mask import MaskedImage
-from geedim.utils import get_bounds, Spinner, asset_id
+from geedim.utils import asset_id, get_bounds, Spinner
 
 logger = logging.getLogger(__name__)
 
@@ -169,26 +169,6 @@ def _region_cb(ctx, param, value):
     return value
 
 
-def _mask_method_cb(ctx, param, value):
-    """click callback to convert cloud mask method string to enum."""
-    return CloudMaskMethod(value)
-
-
-def _resampling_method_cb(ctx, param, value):
-    """click callback to convert resampling string to enum."""
-    return ResamplingMethod(value)
-
-
-def _comp_method_cb(ctx, param, value):
-    """click callback to convert composite method string to enum."""
-    return CompositeMethod(value) if value else None
-
-
-def _export_type_cb(ctx, param, value):
-    """click callback to convert export type string to enum."""
-    return ExportType(value)
-
-
 def _prepare_image_list(obj: SimpleNamespace, mask=False) -> List[MaskedImage,]:
     """Validate and prepare the obj.image_list for export/download.  Returns a list of MaskedImage objects."""
     if len(obj.image_list) == 0:
@@ -248,7 +228,7 @@ scale_option = click.option(
 dtype_option = click.option(
     '-dt',
     '--dtype',
-    type=click.Choice(supported_dtypes, case_sensitive=False),
+    type=click.Choice(_nodata_vals.keys(), case_sensitive=True),
     default=None,
     show_default='smallest data type able to represent the range of pixel values.',
     help='Data type to convert image(s) to.',
@@ -264,10 +244,9 @@ mask_option = click.option(
 resampling_option = click.option(
     '-rs',
     '--resampling',
-    type=click.Choice([rm.value for rm in ResamplingMethod], case_sensitive=True),
-    default=BaseImage._default_resampling.value,
+    type=click.Choice(ResamplingMethod, case_sensitive=True),
+    default=BaseImage._default_resampling,
     show_default=True,
-    callback=_resampling_method_cb,
     help='Resampling method.',
 )
 scale_offset_option = click.option(
@@ -340,16 +319,16 @@ def cli(ctx, verbose, quiet):
     '--mask-shadows/--no-mask-shadows',
     default=True,
     show_default=True,
-    help='Whether to mask cloud shadows.',
+    help='Whether to mask cloud shadows.  Valid for Landsat images, and, for Sentinel-2 images with the `qa` or '
+    '`cloud-prob` ``--mask-method``.',
 )
 @click.option(
     '-mm',
     '--mask-method',
-    type=click.Choice([cmm.value for cmm in CloudMaskMethod], case_sensitive=True),
-    default=CloudMaskMethod.cloud_prob.value,
+    type=click.Choice(CloudMaskMethod, case_sensitive=True),
+    default=CloudMaskMethod.cloud_score,
     show_default=True,
-    callback=_mask_method_cb,
-    help='Method used to mask clouds.  Valid for Sentinel-2 images. ',
+    help='Method used to mask clouds.  Valid for Sentinel-2 images.',
 )
 @click.option(
     '-p',
@@ -357,7 +336,7 @@ def cli(ctx, verbose, quiet):
     type=click.FloatRange(min=0, max=100),
     default=60,
     show_default=True,
-    help='Cloud probability threshold (%). Valid for Sentinel-2 images with the `cloud-prob` ``--mask-method``',
+    help='Cloud Probability threshold (%). Valid for Sentinel-2 images with the `cloud-prob` ``--mask-method``',
 )
 @click.option(
     '-d',
@@ -365,8 +344,8 @@ def cli(ctx, verbose, quiet):
     type=click.FloatRange(min=0, max=1),
     default=0.15,
     show_default=True,
-    help='NIR reflectance threshold for shadow masking. NIR values below this threshold are '
-    'potential cloud shadows.  Valid for Sentinel-2 images',
+    help='NIR reflectance threshold for shadow masking. NIR values below this threshold are potential cloud shadows. '
+    'Valid for Sentinel-2 images with the `qa` or `cloud-prob` ``--mask-method``.',
 )
 @click.option(
     '-sd',
@@ -374,7 +353,8 @@ def cli(ctx, verbose, quiet):
     type=click.INT,
     default=1000,
     show_default=True,
-    help='Maximum distance (m) to look for cloud shadows from cloud edges.  Valid for Sentinel-2 images.',
+    help='Maximum distance (m) to look for cloud shadows from cloud edges.  Valid for Sentinel-2 images with the `qa` '
+    'or `cloud-prob` ``--mask-method``.',
 )
 @click.option(
     '-b',
@@ -382,7 +362,8 @@ def cli(ctx, verbose, quiet):
     type=click.INT,
     default=50,
     show_default=True,
-    help='Distance (m) to dilate cloud/shadow.  Valid for Sentinel-2 images.',
+    help='Distance (m) to dilate cloud/shadow.  Valid for Sentinel-2 images with the `qa` or `cloud-prob` '
+    '``--mask-method``.',
 )
 @click.option(
     '-cdi',
@@ -390,7 +371,7 @@ def cli(ctx, verbose, quiet):
     type=click.FloatRange(min=-1, max=1),
     default=None,
     help='Cloud Displacement Index (CDI) threshold.  Values below this threshold are considered potential clouds.  '
-    'Valid for Sentinel-2 images.  By default, the CDI is not used.',
+    'Valid for Sentinel-2 images with the `qa` or `cloud-prob` ``--mask-method``.  By default, the CDI is not used.',
 )
 @click.option(
     '-mcd',
@@ -401,8 +382,24 @@ def cli(ctx, verbose, quiet):
     help='Maximum distance (m) to look for clouds.  Used to form the cloud distance band for the `q-mosaic` '
     'compositing ``--method``.',
 )
+@click.option(
+    '-s',
+    '--score',
+    type=click.FloatRange(min=0, max=1),
+    default=0.6,
+    show_default=True,
+    help='Cloud Score+ threshold.  Valid for Sentinel-2 images with the `cloud-score` ``--mask-method``',
+)
+@click.option(
+    '-cb',
+    '--cs-band',
+    type=click.Choice(CloudScoreBand, case_sensitive=True),
+    default=CloudScoreBand.cs,
+    show_default=True,
+    help='Cloud Score+ band to threshold. Valid for Sentinel-2 images with the `cloud-score` ``--mask-method``',
+)
 @click.pass_context
-def config(ctx, mask_cirrus, mask_shadows, mask_method, prob, dark, shadow_dist, buffer, cdi_thresh, max_cloud_dist):
+def config(ctx, **kwargs):
     # @formatter:off
     """
     Configure cloud/shadow masking.
@@ -431,9 +428,9 @@ def config(ctx, mask_cirrus, mask_shadows, mask_method, prob, dark, shadow_dist,
     For Sentinel-2 collections, ``--mask-method`` can be one of:
     \b
 
-        * | `cloud-prob`: Use a threshold on the corresponding Sentinel-2 cloud
-          | probability image.
-        * | `qa`: Use the Sentinel-2 `QA60` quality band.
+        * | `cloud-prob`: Threshold the Sentinel-2 Cloud Probability.
+        * | `qa`: Bit mask the `QA60` quality assessment band.
+        * | `cloud-score`: Threshold the Sentinel-2 Cloud Score+.
     \b
 
     Examples
@@ -760,10 +757,9 @@ def download(obj, image_id, bbox, region, like, download_dir, mask, max_tile_siz
 @click.option(
     '-t',
     '--type',
-    type=click.Choice([t.value for t in ExportType], case_sensitive=True),
+    type=click.Choice(ExportType, case_sensitive=True),
     default=BaseImage._default_export_type.value,
     show_default=True,
-    callback=_export_type_cb,
     help='Export type.',
 )
 @click.option(
@@ -881,9 +877,8 @@ def export(obj, image_id, type, folder, bbox, region, like, mask, wait, **kwargs
     '-cm',
     '--method',
     'method',
-    type=click.Choice([cm.value for cm in CompositeMethod], case_sensitive=False),
+    type=click.Choice(CompositeMethod, case_sensitive=False),
     default=None,
-    callback=_comp_method_cb,
     show_default='`q-mosaic` for cloud/shadow mask supported collections, `mosaic` otherwise.',
     help='Compositing method to use.',
 )
@@ -898,9 +893,8 @@ def export(obj, image_id, type, folder, bbox, region, like, mask, wait, **kwargs
 @click.option(
     '-rs',
     '--resampling',
-    type=click.Choice([rm.value for rm in ResamplingMethod], case_sensitive=True),
-    default=BaseImage._default_resampling.value,
-    callback=_resampling_method_cb,
+    type=click.Choice(ResamplingMethod, case_sensitive=True),
+    default=BaseImage._default_resampling,
     show_default=True,
     help='Resample images with this method before compositing.',
 )
