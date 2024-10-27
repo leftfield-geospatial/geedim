@@ -60,7 +60,7 @@ class MaskedImage(BaseImage):
             Method used to mask clouds.  Valid for Sentinel-2 images.  See :class:`~geedim.enums.CloudMaskMethod` for
             details.
         prob: float, optional
-            Cloud probability threshold (%). Valid for Sentinel-2 images with the `cloud-prob` ``mask-method``.
+            Cloud probability threshold (%). Valid for Sentinel-2 images with the `cloud-prob` ``mask_method``.
         dark: float, optional
             NIR threshold [0-1]. NIR values below this threshold are potential cloud shadows.  Valid for Sentinel-2
             images with the `qa` or `cloud-prob` ``mask_method``.
@@ -79,9 +79,9 @@ class MaskedImage(BaseImage):
             Maximum distance (m) to look for clouds when forming the 'cloud distance' band.  Valid for
             Sentinel-2 images.
         score: float, optional
-            Cloud Score+ threshold.  Valid for Sentinel-2 images with the `cloud-score` ``mask-method``.
+            Cloud Score+ threshold.  Valid for Sentinel-2 images with the `cloud-score` ``mask_method``.
         cs_band: CloudScoreBand, str, optional
-            Cloud Score+ band to threshold.  Valid for Sentinel-2 images with the `cloud-score` ``mask-method``.
+            Cloud Score+ band to threshold.  Valid for Sentinel-2 images with the `cloud-score` ``mask_method``.
         """
         BaseImage.__init__(self, ee_image)
         self._ee_projection = None
