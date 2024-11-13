@@ -10,7 +10,7 @@ dependencies = [
     'tqdm>=4.6',
     'earthengine-api>=0.1.379',
     'requests>=2.2',
-    'tabulate>=0.8'
+    'tabulate>=0.9'
 ]
 authors = [{name = 'Leftfield Geospatial'}]
 keywords = [
