@@ -22,7 +22,6 @@ import pytest
 from click.testing import CliRunner
 
 from geedim import Initialize, MaskedImage
-from geedim.mask import Sentinel2SrClImage
 from geedim.utils import root_path
 
 
@@ -38,7 +37,13 @@ def region_25ha() -> Dict:
     return {
         "type": "Polygon",
         "coordinates": [
-            [[21.6389, -33.4520], [21.6389, -33.4474], [21.6442, -33.4474], [21.6442, -33.4520], [21.6389, -33.4520]]
+            [
+                [21.6389, -33.4520],
+                [21.6389, -33.4474],
+                [21.6442, -33.4474],
+                [21.6442, -33.4520],
+                [21.6389, -33.4520],
+            ]
         ],
     }
 
@@ -49,7 +54,13 @@ def region_100ha() -> Dict:
     return {
         "type": "Polygon",
         "coordinates": [
-            [[21.6374, -33.4547], [21.6374, -33.4455], [21.6480, -33.4455], [21.6480, -33.4547], [21.6374, -33.4547]]
+            [
+                [21.6374, -33.4547],
+                [21.6374, -33.4455],
+                [21.6480, -33.4455],
+                [21.6480, -33.4547],
+                [21.6374, -33.4547],
+            ]
         ],
     }
 
@@ -60,7 +71,13 @@ def region_10000ha() -> Dict:
     return {
         "type": "Polygon",
         "coordinates": [
-            [[21.5893, -33.4964], [21.5893, -33.4038], [21.6960, -33.4038], [21.6960, -33.4964], [21.5893, -33.4964]]
+            [
+                [21.5893, -33.4964],
+                [21.5893, -33.4038],
+                [21.6960, -33.4038],
+                [21.6960, -33.4964],
+                [21.5893, -33.4964],
+            ]
         ],
     }
 
@@ -193,7 +210,12 @@ def s2_sr_hm_image_ids(s2_sr_image_id: str, s2_toa_image_id: str) -> List[str]:
 
 @pytest.fixture(scope='session')
 def generic_image_ids(
-    modis_nbar_image_id, gch_image_id, s1_sar_image_id, gedi_agb_image_id, gedi_cth_image_id, landsat_ndvi_image_id
+    modis_nbar_image_id,
+    gch_image_id,
+    s1_sar_image_id,
+    gedi_agb_image_id,
+    gedi_cth_image_id,
+    landsat_ndvi_image_id,
 ) -> List[str]:
     """A list of various EE image IDs for non-cloud/shadow masked images."""
     return [
@@ -262,7 +284,7 @@ def s2_sr_hm_nocp_masked_image(s2_sr_hm_image_id) -> MaskedImage:
     # create an image with unknown id to prevent linking to cloud probability
     ee_image = ee.Image(s2_sr_hm_image_id)
     ee_image = ee_image.set('system:index', 'COPERNICUS/S2_HARMONIZED/unknown')
-    return Sentinel2SrClImage(ee_image, mask_method='cloud-prob')
+    return MaskedImage(ee_image, mask_method='cloud-prob')
 
 
 @pytest.fixture(scope='session')
@@ -273,7 +295,7 @@ def s2_sr_hm_nocs_masked_image(s2_sr_hm_image_id) -> MaskedImage:
     # create an image with unknown id to prevent linking to cloud score
     ee_image = ee.Image(s2_sr_hm_image_id)
     ee_image = ee_image.set('system:index', 'COPERNICUS/S2_HARMONIZED/unknown')
-    return Sentinel2SrClImage(ee_image, mask_method='cloud-score')
+    return MaskedImage(ee_image, mask_method='cloud-score')
 
 
 @pytest.fixture(scope='session')
