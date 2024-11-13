@@ -79,7 +79,7 @@ def _test_downloaded_file(
                 and (ds.bounds[3] >= exp_bounds[3])
             )
         if crs:
-            assert CRS(ds.crs) == CRS.from_string(crs)
+            assert ds.crs == CRS.from_string(crs)
         if scale:
             assert abs(ds.transform[0]) == scale
         if dtype:
@@ -88,7 +88,8 @@ def _test_downloaded_file(
             refl_bands = [
                 i
                 for i in range(1, ds.count + 1)
-                if ('center_wavelength' in ds.tags(i)) and (float(ds.tags(i)['center_wavelength']) < 1)
+                if ('center_wavelength' in ds.tags(i))
+                and (float(ds.tags(i)['center_wavelength']) < 1)
             ]
             array = ds.read(refl_bands, masked=True)
             assert all(array.min(axis=(1, 2)) >= -0.5)
@@ -110,9 +111,25 @@ def _test_downloaded_file(
         ('LANDSAT/LT05/C02/T1_L2', '2005-01-01', '2006-02-01', 'region_100ha_file', 40, 50, True),
         ('COPERNICUS/S2_SR', '2022-01-01', '2022-01-15', 'region_100ha_file', 0, 50, True),
         ('COPERNICUS/S2', '2022-01-01', '2022-01-15', 'region_100ha_file', 50, 40, True),
-        ('COPERNICUS/S2_SR_HARMONIZED', '2022-01-01', '2022-01-15', 'region_100ha_file', 0, 50, True),
+        (
+            'COPERNICUS/S2_SR_HARMONIZED',
+            '2022-01-01',
+            '2022-01-15',
+            'region_100ha_file',
+            0,
+            50,
+            True,
+        ),
         ('COPERNICUS/S2_HARMONIZED', '2022-01-01', '2022-01-15', 'region_100ha_file', 50, 40, True),
-        ('LARSE/GEDI/GEDI02_A_002_MONTHLY', '2021-11-01', '2022-01-01', 'region_100ha_file', 1, 0, False),
+        (
+            'LARSE/GEDI/GEDI02_A_002_MONTHLY',
+            '2021-11-01',
+            '2022-01-01',
+            'region_100ha_file',
+            1,
+            0,
+            False,
+        ),
     ],
 )
 def test_search(
@@ -145,14 +162,19 @@ def test_search(
     start_date = datetime.strptime(start_date, '%Y-%m-%d')
     end_date = datetime.strptime(end_date, '%Y-%m-%d')
     im_dates = np.array(
-        [datetime.fromtimestamp(im_props['system:time_start'] / 1000) for im_props in properties.values()]
+        [
+            datetime.fromtimestamp(im_props['system:time_start'] / 1000)
+            for im_props in properties.values()
+        ]
     )
     # test FILL_PORTION in expected range
     im_fill_portions = np.array([im_props['FILL_PORTION'] for im_props in properties.values()])
     assert np.all(im_fill_portions >= fill_portion) and np.all(im_fill_portions <= 100)
     if is_csmask:  # is a cloud/shadow masked collection
         # test CLOUDLESS_PORTION in expected range
-        im_cl_portions = np.array([im_props['CLOUDLESS_PORTION'] for im_props in properties.values()])
+        im_cl_portions = np.array(
+            [im_props['CLOUDLESS_PORTION'] for im_props in properties.values()]
+        )
         assert np.all(im_cl_portions >= cloudless_portion) and np.all(im_cl_portions <= 100)
     # test search result image dates lie between `start_date` and `end_date`
     assert np.all(im_dates >= start_date) and np.all(im_dates < end_date)
@@ -160,7 +182,9 @@ def test_search(
     assert np.all(sorted(im_dates) == im_dates)
 
 
-def test_config_search_s2(region_10000ha_file: pathlib.Path, runner: CliRunner, tmp_path: pathlib.Path):
+def test_config_search_s2(
+    region_10000ha_file: pathlib.Path, runner: CliRunner, tmp_path: pathlib.Path
+):
     """Test `config` sub-command chained with `search` of Sentinel-2 affects CLOUDLESS_PORTION as expected."""
     results_file = tmp_path.joinpath('search_results.json')
     name = 'COPERNICUS/S2_SR'
@@ -175,13 +199,17 @@ def test_config_search_s2(region_10000ha_file: pathlib.Path, runner: CliRunner, 
         assert results_file.exists()
         with open(results_file, 'r') as f:
             properties = json.load(f)
-        cl_portions.append(np.array([prop_dict['CLOUDLESS_PORTION'] for prop_dict in properties.values()]))
+        cl_portions.append(
+            np.array([prop_dict['CLOUDLESS_PORTION'] for prop_dict in properties.values()])
+        )
 
     assert np.any(cl_portions[0] > cl_portions[1])
     assert not np.any(cl_portions[0] < cl_portions[1])
 
 
-def test_config_search_l9(region_10000ha_file: pathlib.Path, runner: CliRunner, tmp_path: pathlib.Path):
+def test_config_search_l9(
+    region_10000ha_file: pathlib.Path, runner: CliRunner, tmp_path: pathlib.Path
+):
     """Test `config` sub-command chained with `search` of Landsat-9 affects CLOUDLESS_PORTION as expected."""
     results_file = tmp_path.joinpath('search_results.json')
     name = 'LANDSAT/LC09/C02/T1_L2'
@@ -196,13 +224,17 @@ def test_config_search_l9(region_10000ha_file: pathlib.Path, runner: CliRunner, 
         assert results_file.exists()
         with open(results_file, 'r') as f:
             properties = json.load(f)
-        cl_portion_list.append(np.array([prop_dict['CLOUDLESS_PORTION'] for prop_dict in properties.values()]))
+        cl_portion_list.append(
+            np.array([prop_dict['CLOUDLESS_PORTION'] for prop_dict in properties.values()])
+        )
 
     assert np.any(cl_portion_list[0] < cl_portion_list[1])
     assert not np.any(cl_portion_list[0] > cl_portion_list[1])
 
 
-def test_region_bbox_search(region_100ha_file: pathlib.Path, runner: CliRunner, tmp_path: pathlib.Path):
+def test_region_bbox_search(
+    region_100ha_file: pathlib.Path, runner: CliRunner, tmp_path: pathlib.Path
+):
     """Test --bbox gives same search results as --region <geojson file>."""
 
     results_file = tmp_path.joinpath('search_results.json')
@@ -227,7 +259,9 @@ def test_region_bbox_search(region_100ha_file: pathlib.Path, runner: CliRunner, 
     assert props_list[0] == props_list[1]
 
 
-def test_raster_region_search(const_image_25ha_file, region_25ha_file, runner: CliRunner, tmp_path: pathlib.Path):
+def test_raster_region_search(
+    const_image_25ha_file, region_25ha_file, runner: CliRunner, tmp_path: pathlib.Path
+):
     """Test --region works with a raster file."""
 
     results_file = tmp_path.joinpath('search_results.json')
@@ -248,7 +282,9 @@ def test_raster_region_search(const_image_25ha_file, region_25ha_file, runner: C
     assert props_list[0].keys() == props_list[1].keys()
 
 
-def test_search_add_props_l9(region_25ha_file: pathlib.Path, runner: CliRunner, tmp_path: pathlib.Path):
+def test_search_add_props_l9(
+    region_25ha_file: pathlib.Path, runner: CliRunner, tmp_path: pathlib.Path
+):
     """Test --add-property generates results with the additional property keys."""
     results_file = tmp_path.joinpath('search_results.json')
     name = 'LANDSAT/LC09/C02/T1_L2'
@@ -265,7 +301,9 @@ def test_search_add_props_l9(region_25ha_file: pathlib.Path, runner: CliRunner, 
     assert all([add_prop in result.output for add_prop in add_props])
 
 
-def test_search_custom_filter_l9(region_25ha_file: pathlib.Path, runner: CliRunner, tmp_path: pathlib.Path):
+def test_search_custom_filter_l9(
+    region_25ha_file: pathlib.Path, runner: CliRunner, tmp_path: pathlib.Path
+):
     """Test --custom-filter filters the search results as specified."""
     results_file = tmp_path.joinpath('search_results.json')
     name = 'LANDSAT/LC09/C02/T1_L2'
@@ -285,7 +323,9 @@ def test_search_custom_filter_l9(region_25ha_file: pathlib.Path, runner: CliRunn
     assert all([prop[add_prop] > cc_thresh for prop in properties.values()])
 
 
-def test_search_cloudless_portion_no_value(region_25ha_file: pathlib.Path, runner: CliRunner, tmp_path: pathlib.Path):
+def test_search_cloudless_portion_no_value(
+    region_25ha_file: pathlib.Path, runner: CliRunner, tmp_path: pathlib.Path
+):
     """Test `search --cloudless-portion` gives the same results as `search --cloudless-portion 0`."""
     results_file = tmp_path.joinpath(f'search_results.json')
     name = 'LANDSAT/LC09/C02/T1_L2'
@@ -360,7 +400,9 @@ def test_download_crs_transform(
     crs_transform_str = ' '.join(map(str, crs_transform[:6]))
 
     # run the download
-    cli_str = f'download -i {image_id} -c {crs} -ct {crs_transform_str} -sh {shape_str} -dd {tmp_path}'
+    cli_str = (
+        f'download -i {image_id} -c {crs} -ct {crs_transform_str} -sh {shape_str} -dd {tmp_path}'
+    )
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code == 0
     assert out_file.exists()
@@ -370,7 +412,11 @@ def test_download_crs_transform(
 
 
 def test_download_like(
-    l8_image_id: str, s2_sr_hm_image_id: str, region_25ha_file: pathlib.Path, tmp_path: pathlib.Path, runner: CliRunner
+    l8_image_id: str,
+    s2_sr_hm_image_id: str,
+    region_25ha_file: pathlib.Path,
+    tmp_path: pathlib.Path,
+    runner: CliRunner,
 ):
     """Test image download using --like."""
     l8_file = tmp_path.joinpath(l8_image_id.replace('/', '-') + '.tif')
@@ -399,8 +445,32 @@ def test_download_like(
 @pytest.mark.parametrize(
     'image_id, region_file, crs, scale, dtype, bands, mask, resampling, scale_offset, max_tile_size, max_tile_dim',
     [
-        ('l5_image_id', 'region_25ha_file', 'EPSG:3857', 30, 'uint16', None, False, 'near', False, 16, 10000),
-        ('l9_image_id', 'region_25ha_file', 'EPSG:3857', 30, 'float32', None, False, 'near', True, 32, 10000),
+        (
+            'l5_image_id',
+            'region_25ha_file',
+            'EPSG:3857',
+            30,
+            'uint16',
+            None,
+            False,
+            'near',
+            False,
+            16,
+            10000,
+        ),
+        (
+            'l9_image_id',
+            'region_25ha_file',
+            'EPSG:3857',
+            30,
+            'float32',
+            None,
+            False,
+            'near',
+            True,
+            32,
+            10000,
+        ),
         (
             's2_toa_hm_image_id',
             'region_25ha_file',
@@ -414,7 +484,19 @@ def test_download_like(
             32,
             10000,
         ),
-        ('modis_nbar_image_id', 'region_100ha_file', 'EPSG:3857', 500, 'int32', None, False, 'bicubic', False, 4, 100),
+        (
+            'modis_nbar_image_id',
+            'region_100ha_file',
+            'EPSG:3857',
+            500,
+            'int32',
+            None,
+            False,
+            'bicubic',
+            False,
+            4,
+            100,
+        ),
         (
             'gedi_cth_image_id',
             'region_25ha_file',
@@ -428,7 +510,19 @@ def test_download_like(
             32,
             10000,
         ),
-        ('landsat_ndvi_image_id', 'region_25ha_file', 'EPSG:3857', 30, 'float64', None, True, 'near', False, 32, 10000),
+        (
+            'landsat_ndvi_image_id',
+            'region_25ha_file',
+            'EPSG:3857',
+            30,
+            'float64',
+            None,
+            True,
+            'near',
+            False,
+            32,
+            10000,
+        ),
     ],
 )  # yapf: disable
 def test_download_params(
@@ -467,12 +561,22 @@ def test_download_params(
         region = json.load(f)
     # test downloaded file readability and format
     _test_downloaded_file(
-        out_file, region=region, crs=crs, scale=scale, dtype=dtype, bands=bands, scale_offset=scale_offset
+        out_file,
+        region=region,
+        crs=crs,
+        scale=scale,
+        dtype=dtype,
+        bands=bands,
+        scale_offset=scale_offset,
     )
 
 
 def test_max_tile_size_error(
-    s2_sr_hm_image_id: str, region_100ha_file: pathlib.Path, tmp_path: pathlib.Path, runner: CliRunner, request
+    s2_sr_hm_image_id: str,
+    region_100ha_file: pathlib.Path,
+    tmp_path: pathlib.Path,
+    runner: CliRunner,
+    request,
 ):
     """Test image download with max_tile_size > EE limit raises an EE error."""
     cli_str = f'download -i {s2_sr_hm_image_id} -r {region_100ha_file} -dd {tmp_path} -mts 100'
@@ -483,7 +587,11 @@ def test_max_tile_size_error(
 
 
 def test_max_tile_dim_error(
-    s2_sr_hm_image_id: str, region_100ha_file: pathlib.Path, tmp_path: pathlib.Path, runner: CliRunner, request
+    s2_sr_hm_image_id: str,
+    region_100ha_file: pathlib.Path,
+    tmp_path: pathlib.Path,
+    runner: CliRunner,
+    request,
 ):
     """Test image download with max_tile_dim > EE limit raises an EE error."""
     cli_str = f'download -i {s2_sr_hm_image_id} -r {region_100ha_file} -dd {tmp_path} -mtd 100000'
@@ -523,7 +631,9 @@ def test_export_asset_params(l8_image_id: str, region_25ha_file: pathlib.Path, r
     assert result.exit_code == 0
 
 
-def test_export_asset_no_folder_error(l8_image_id: str, region_25ha_file: pathlib.Path, runner: CliRunner):
+def test_export_asset_no_folder_error(
+    l8_image_id: str, region_25ha_file: pathlib.Path, runner: CliRunner
+):
     """Test export to asset raises an error when no folder is specified."""
     cli_str = (
         f'export -i {l8_image_id} -r {region_25ha_file} --crs EPSG:3857 --scale 30 '
@@ -593,7 +703,9 @@ def test_composite_params(
     cli_comp_str += f' -r {region_file}' if region_file else ''
     cli_comp_str += f' -d {date}' if date else ''
     cli_comp_str += ' --mask' if mask else ' --no-mask'
-    cli_download_str = f'download -r {region_25ha_file} --crs EPSG:3857 --scale {download_scale} -dd {tmp_path}'
+    cli_download_str = (
+        f'download -r {region_25ha_file} --crs EPSG:3857 --scale {download_scale} -dd {tmp_path}'
+    )
     cli_str = cli_comp_str + ' ' + cli_download_str
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code == 0
@@ -611,7 +723,9 @@ def test_composite_params(
 def test_search_composite_download(region_25ha_file, runner: CliRunner, tmp_path: pathlib.Path):
     """Test chaining of `search`, `composite` and `download`."""
 
-    cli_search_str = f'search -c COPERNICUS/S1_GRD -s 2022-01-01 -e 2022-02-01 -r {region_25ha_file}'
+    cli_search_str = (
+        f'search -c COPERNICUS/S1_GRD -s 2022-01-01 -e 2022-02-01 -r {region_25ha_file}'
+    )
     cli_comp_str = f'composite --mask'
     cli_download_str = f'download --crs EPSG:3857 --scale 10 -dd {tmp_path}'
     cli_str = cli_search_str + ' ' + cli_comp_str + ' ' + cli_download_str
