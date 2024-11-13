@@ -14,23 +14,30 @@
     limitations under the License.
 """
 
+# schema definitions for MaskedImage.from_id(), geedim <-> EE collection names, and search properties
 from textwrap import wrap
 
-# schema definitions for MaskedImage.from_id(), geedim <-> EE collection names, and search properties
 from tabulate import tabulate
 
 import geedim.mask
 
+# TODO: reuse default_prop_schema in others
 default_prop_schema = {
-    'system:id': {'abbrev': 'ID', 'description': 'Earth Engine image id'},
+    'system:index': {'abbrev': 'INDEX', 'description': 'Earth Engine image index'},
     'system:time_start': {'abbrev': 'DATE', 'description': 'Image capture date/time (UTC)'},
-    'FILL_PORTION': {'abbrev': 'FILL', 'description': 'Portion of region pixels that are valid (%)'},
+    'FILL_PORTION': {
+        'abbrev': 'FILL',
+        'description': 'Portion of region pixels that are valid (%)',
+    },
 }
 
 landsat_prop_schema = {
-    'system:id': {'abbrev': 'ID', 'description': 'Earth Engine image id'},
+    'system:index': {'abbrev': 'INDEX', 'description': 'Earth Engine image index'},
     'system:time_start': {'abbrev': 'DATE', 'description': 'Image capture date/time (UTC)'},
-    'FILL_PORTION': {'abbrev': 'FILL', 'description': 'Portion of region pixels that are valid (%)'},
+    'FILL_PORTION': {
+        'abbrev': 'FILL',
+        'description': 'Portion of region pixels that are valid (%)',
+    },
     'CLOUDLESS_PORTION': {
         'abbrev': 'CLOUDLESS',
         'description': 'Portion of filled pixels that are cloud/shadow free (%)',
@@ -41,9 +48,12 @@ landsat_prop_schema = {
 }
 
 s2_prop_schema = {
-    'system:id': {'abbrev': 'ID', 'description': 'Earth Engine image id'},
+    'system:index': {'abbrev': 'INDEX', 'description': 'Earth Engine image index'},
     'system:time_start': {'abbrev': 'DATE', 'description': 'Image capture date/time (UTC)'},
-    'FILL_PORTION': {'abbrev': 'FILL', 'description': 'Portion of region pixels that are valid (%)'},
+    'FILL_PORTION': {
+        'abbrev': 'FILL',
+        'description': 'Portion of region pixels that are valid (%)',
+    },
     'CLOUDLESS_PORTION': {
         'abbrev': 'CLOUDLESS',
         'description': 'Portion of filled pixels that are cloud/shadow free (%)',
@@ -52,78 +62,84 @@ s2_prop_schema = {
     'GEOMETRIC_QUALITY': {'abbrev': 'GEOMQ', 'description': 'Geometric quality check'},
     'MEAN_SOLAR_AZIMUTH_ANGLE': {'abbrev': 'SAA', 'description': 'Solar azimuth angle (deg)'},
     'MEAN_SOLAR_ZENITH_ANGLE': {'abbrev': 'SZA', 'description': 'Solar zenith angle (deg)'},
-    'MEAN_INCIDENCE_AZIMUTH_ANGLE_B1': {'abbrev': 'VAA', 'description': 'View (B1) azimuth angle (deg)'},
-    'MEAN_INCIDENCE_ZENITH_ANGLE_B1': {'abbrev': 'VZA', 'description': 'View (B1) zenith angle (deg)'},
+    'MEAN_INCIDENCE_AZIMUTH_ANGLE_B1': {
+        'abbrev': 'VAA',
+        'description': 'View (B1) azimuth angle (deg)',
+    },
+    'MEAN_INCIDENCE_ZENITH_ANGLE_B1': {
+        'abbrev': 'VZA',
+        'description': 'View (B1) zenith angle (deg)',
+    },
 }
 
 collection_schema = {
     'LANDSAT/LT04/C02/T1_L2': {
         'gd_coll_name': 'l4-c2-l2',
         'prop_schema': landsat_prop_schema,
-        'image_type': geedim.mask.LandsatImage,
+        'image_type': geedim.mask._LandsatImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT04_C02_T1_L2',
         'description': 'Landsat 4, collection 2, tier 1, level 2 surface reflectance.',
     },
     'LANDSAT/LT05/C02/T1_L2': {
         'gd_coll_name': 'l5-c2-l2',
         'prop_schema': landsat_prop_schema,
-        'image_type': geedim.mask.LandsatImage,
+        'image_type': geedim.mask._LandsatImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT05_C02_T1_L2',
         'description': 'Landsat 5, collection 2, tier 1, level 2 surface reflectance.',
     },
     'LANDSAT/LE07/C02/T1_L2': {
         'gd_coll_name': 'l7-c2-l2',
         'prop_schema': landsat_prop_schema,
-        'image_type': geedim.mask.LandsatImage,
+        'image_type': geedim.mask._LandsatImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LE07_C02_T1_L2',
         'description': 'Landsat 7, collection 2, tier 1, level 2 surface reflectance.',
     },
     'LANDSAT/LC08/C02/T1_L2': {
         'gd_coll_name': 'l8-c2-l2',
         'prop_schema': landsat_prop_schema,
-        'image_type': geedim.mask.LandsatImage,
+        'image_type': geedim.mask._LandsatImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C02_T1_L2',
         'description': 'Landsat 8, collection 2, tier 1, level 2 surface reflectance.',
     },
     'LANDSAT/LC09/C02/T1_L2': {
         'gd_coll_name': 'l9-c2-l2',
         'prop_schema': landsat_prop_schema,
-        'image_type': geedim.mask.LandsatImage,
+        'image_type': geedim.mask._LandsatImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC09_C02_T1_L2',
         'description': 'Landsat 9, collection 2, tier 1, level 2 surface reflectance.',
     },
     'COPERNICUS/S2': {
         'gd_coll_name': 's2-toa',
         'prop_schema': s2_prop_schema,
-        'image_type': geedim.mask.Sentinel2ToaClImage,
+        'image_type': geedim.mask._Sentinel2ToaImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2',
         'description': 'Sentinel-2, level 1C, top of atmosphere reflectance.',
     },
     'COPERNICUS/S2_SR': {
         'gd_coll_name': 's2-sr',
         'prop_schema': s2_prop_schema,
-        'image_type': geedim.mask.Sentinel2SrClImage,
+        'image_type': geedim.mask._Sentinel2SrImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR',
         'description': 'Sentinel-2, level 2A, surface reflectance.',
     },
     'COPERNICUS/S2_HARMONIZED': {
         'gd_coll_name': 's2-toa-hm',
         'prop_schema': s2_prop_schema,
-        'image_type': geedim.mask.Sentinel2ToaClImage,
+        'image_type': geedim.mask._Sentinel2ToaImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_HARMONIZED',
         'description': 'Harmonised Sentinel-2, level 1C, top of atmosphere reflectance.',
     },
     'COPERNICUS/S2_SR_HARMONIZED': {
         'gd_coll_name': 's2-sr-hm',
         'prop_schema': s2_prop_schema,
-        'image_type': geedim.mask.Sentinel2SrClImage,
+        'image_type': geedim.mask._Sentinel2SrImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED',
         'description': 'Harmonised Sentinel-2, level 2A, surface reflectance.',
     },
     'MODIS/061/MCD43A4': {
         'gd_coll_name': 'modis-nbar',
         'prop_schema': default_prop_schema,
-        'image_type': geedim.mask.MaskedImage,
+        'image_type': geedim.mask._MaskedImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD43A4',
         'description': 'MODIS nadir BRDF adjusted daily reflectance.',
     },
@@ -140,7 +156,9 @@ gd_to_ee = dict([(v['gd_coll_name'], k) for k, v in collection_schema.items()])
 coll_names = dict(**gd_to_ee, **ee_to_gd)
 
 # A list of cloud/shadow mask supported EE collection names
-cloud_coll_names = [k for k, v in collection_schema.items() if v['image_type'] != geedim.mask.MaskedImage]
+cloud_coll_names = [
+    k for k, v in collection_schema.items() if v['image_type'] != geedim.mask.MaskedImage
+]
 
 
 def cli_cloud_coll_table() -> str:
@@ -160,7 +178,7 @@ def cloud_coll_table(descr_join='\n') -> str:
     * Use descr_join='\n\n' for RTD/Sphinx friendly formatting.
 
     Instructions for adding cloud/shadow supported collections to CLI help and github README:
-    * print(cli_cloud_coll_table()) and paste into cli.search() and  cli.config() command docstrings.
+    * print(cli_cloud_coll_table()) and paste into cli.search() and cli.config() command docstrings.
     * print(cloud_coll_table()) and paste into the README.
     * The equivalent RTD table is auto-generated in docs/conf.py.
     """
