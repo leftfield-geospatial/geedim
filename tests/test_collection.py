@@ -26,7 +26,7 @@ import pytest
 from geedim import schema
 from geedim.collection import MaskedCollection
 from geedim.enums import CompositeMethod, ResamplingMethod
-from geedim.errors import InputImageError, UnfilteredError
+from geedim.errors import InputImageError
 from geedim.mask import MaskedImage
 from geedim.utils import get_projection, split_id
 
@@ -48,6 +48,9 @@ def s2_sr_hm_images(s2_sr_hm_image_ids: list[str]) -> list[str | MaskedImage]:
     """A list of harmonised Sentinel-2 SR image IDs / MaskedImage's with QA* data, covering `region_*ha` with partial
     cloud/shadow.
     """
+    # TODO: to get a named ImageCollection that can mask clouds with just these images,
+    #  use ee.ImageCollection.filter(ee.Filter.inList).  this would be more for testing the new
+    #  ImageCollectionAccessor
     image_list = s2_sr_hm_image_ids.copy()
     image_list[-1] = MaskedImage.from_id(image_list[-1])
     return image_list
@@ -85,39 +88,21 @@ def test_from_name(name: str, request):
     assert gd_collection.ee_collection == ee.ImageCollection(name)
 
 
-def test_unfiltered_error(s2_sr_hm_image_id):
-    """Test UnfilteredError is raised when calling `properties` or `composite` on an unfiltered collection."""
-    gd_collection = MaskedCollection.from_name(split_id(s2_sr_hm_image_id)[0])
-    with pytest.raises(UnfilteredError):
-        _ = gd_collection.properties
-    with pytest.raises(UnfilteredError):
-        _ = gd_collection.composite()
-
-
 def test_from_list_errors(landsat_image_ids, user_masked_image):
-    """Test MaskedCollection.from_list() various error cases."""
+    """Test MaskedCollection.from_list() raises an error with images from incompatible
+    collections.
+    """
     with pytest.raises(InputImageError):
-        # test an error is raised when an image has no 'id'/'system:time_start' property
         MaskedCollection.from_list([landsat_image_ids[0], user_masked_image])
 
     with pytest.raises(InputImageError):
-        # test an error is raised when images are not from compatible collections
         MaskedCollection.from_list([*landsat_image_ids])
-
-    with pytest.raises(TypeError):
-        # test an error is raised when an image type is not recognised
-        MaskedCollection.from_list([landsat_image_ids[0], {}])
-
-    with pytest.raises(ValueError):
-        # test an error is raised when image list is empty
-        MaskedCollection.from_list([])
 
 
 @pytest.mark.parametrize('image_list', ['l4_5_images', 'l8_9_images'])
 def test_from_list_landsat(image_list: str, request):
-    """
-    Test MaskedCollection.from_list() works with landsat images from different, but spectrally compatible
-    collections.
+    """Test MaskedCollection.from_list() works with landsat images from different, but spectrally
+    compatible collections.
     """
     image_list: List = request.getfixturevalue(image_list)
     gd_collection = MaskedCollection.from_list(image_list)
@@ -181,7 +166,9 @@ def test_from_list_add_props(image_list: str, add_props: List, request: pytest.F
     assert len(gd_collection.schema) > len(schema.default_prop_schema)
     assert all([add_prop in gd_collection.schema.keys() for add_prop in add_props])
     assert all([gd_collection.schema[add_prop]['abbrev'] is not None for add_prop in add_props])
-    assert all([add_prop in list(gd_collection.properties.values())[0].keys() for add_prop in add_props])
+    assert all(
+        [add_prop in list(gd_collection.properties.values())[0].keys() for add_prop in add_props]
+    )
     assert gd_collection.properties_table is not None
     assert gd_collection.schema_table is not None
 
@@ -194,11 +181,26 @@ def test_from_list_add_props(image_list: str, add_props: List, request: pytest.F
         ('LANDSAT/LT05/C02/T1_L2', '2005-01-01', '2006-02-01', 'region_100ha', 40, 50, True),
         ('COPERNICUS/S2_SR', '2022-01-01', '2022-01-15', 'region_100ha', 0, 50, True),
         ('COPERNICUS/S2_HARMONIZED', '2022-01-01', '2022-01-15', 'region_100ha', 50, 40, True),
-        ('LARSE/GEDI/GEDI02_A_002_MONTHLY', '2021-08-01', '2021-09-01', 'region_100ha', 0.1, 0, False),
+        (
+            'LARSE/GEDI/GEDI02_A_002_MONTHLY',
+            '2021-08-01',
+            '2021-09-01',
+            'region_100ha',
+            0.1,
+            0,
+            False,
+        ),
     ],
 )
 def test_search(
-    name, start_date: str, end_date: str, region: str, fill_portion: float, cloudless_portion: float, is_csmask, request
+    name,
+    start_date: str,
+    end_date: str,
+    region: str,
+    fill_portion: float,
+    cloudless_portion: float,
+    is_csmask,
+    request,
 ):
     """
     Test MaskedCollection.search() with fill / cloudless portion filters gives valid results for different cloud/shadow
@@ -214,14 +216,19 @@ def test_search(
     start_date = datetime.strptime(start_date, '%Y-%m-%d')
     end_date = datetime.strptime(end_date, '%Y-%m-%d')
     im_dates = np.array(
-        [datetime.fromtimestamp(im_props['system:time_start'] / 1000) for im_props in properties.values()]
+        [
+            datetime.fromtimestamp(im_props['system:time_start'] / 1000)
+            for im_props in properties.values()
+        ]
     )
     # test FILL_PORTION in expected range
     im_fill_portions = np.array([im_props['FILL_PORTION'] for im_props in properties.values()])
     assert np.all(im_fill_portions >= fill_portion) and np.all(im_fill_portions <= 100)
     if is_csmask:  # is a cloud/shadow masked collection
         # test CLOUDLESS_PORTION in expected range
-        im_cl_portions = np.array([im_props['CLOUDLESS_PORTION'] for im_props in properties.values()])
+        im_cl_portions = np.array(
+            [im_props['CLOUDLESS_PORTION'] for im_props in properties.values()]
+        )
         assert np.all(im_cl_portions >= cloudless_portion) and np.all(im_cl_portions <= 100)
     # test search result image dates lie between `start_date` and `end_date`
     assert np.all(im_dates >= start_date) and np.all(im_dates < end_date)
@@ -233,7 +240,9 @@ def test_search(
 def test_empty_search(region_100ha):
     """Test MaskedCollection.search() for empty search results."""
     gd_collection = MaskedCollection.from_name('LANDSAT/LC09/C02/T1_L2')
-    searched_collection = gd_collection.search('2022-01-01', '2022-01-02', region_100ha, cloudless_portion=100)
+    searched_collection = gd_collection.search(
+        '2022-01-01', '2022-01-02', region_100ha, cloudless_portion=100
+    )
     assert searched_collection.properties is not None
     assert len(searched_collection.properties) == 0
     assert searched_collection.properties_table is not None
@@ -248,22 +257,18 @@ def test_search_no_end_date(region_100ha):
     end_date = datetime.strptime('2022-01-04', '%Y-%m-%d')
     properties = searched_collection.properties
     im_dates = np.array(
-        [datetime.fromtimestamp(im_props['system:time_start'] / 1000) for im_props in properties.values()]
+        [
+            datetime.fromtimestamp(im_props['system:time_start'] / 1000)
+            for im_props in properties.values()
+        ]
     )
     assert len(properties) > 0
     assert np.all(im_dates >= start_date) and np.all(im_dates < end_date)
 
 
-def test_search_date_error(region_100ha):
-    """Test MaskedCollection.search() raises an error when end date is on or before start date."""
-    gd_collection = MaskedCollection.from_name('LANDSAT/LC09/C02/T1_L2')
-    with pytest.raises(ValueError):
-        _ = gd_collection.search('2022-01-02', '2022-01-01', region_100ha)
-
-
 def test_search_mult_kwargs(region_100ha):
-    """
-    When a search filtered collection is searched again, test that masks change with different cloud/shadow kwargs.
+    """When a search filtered collection is searched again, test that masks change with different
+    cloud/shadow kwargs.
     """
     start_date = '2022-01-01'
     end_date = '2022-01-10'
@@ -272,22 +277,20 @@ def test_search_mult_kwargs(region_100ha):
     def get_cloudless_portion(properties: Dict) -> List[float]:
         return [prop_dict['CLOUDLESS_PORTION'] for prop_dict in properties.values()]
 
-    filt_collection = gd_collection.search(
-        start_date, end_date, region_100ha, mask_method='cloud-score', score=0.5, fill_portion=0
-    )
-    filt_coll_prob80 = filt_collection.search(
-        start_date, end_date, region_100ha, mask_method='cloud-score', score=0.5, fill_portion=0
-    )
-    filt_coll_prob40 = filt_collection.search(
-        start_date, end_date, region_100ha, mask_method='cloud-score', score=0.2, fill_portion=0
-    )
+    cl_portions = []
+    for score in [0.5, 0.5, 0.2]:
+        gd_collection = gd_collection.search(
+            start_date,
+            end_date,
+            region_100ha,
+            mask_method='cloud-score',
+            score=score,
+            fill_portion=0,
+        )
+        cl_portions.append(get_cloudless_portion(gd_collection.properties))
 
-    cp_ref = get_cloudless_portion(filt_collection.properties)
-    cp_prob80 = get_cloudless_portion(filt_coll_prob80.properties)
-    cp_prob40 = get_cloudless_portion(filt_coll_prob40.properties)
-
-    assert cp_ref == pytest.approx(cp_prob80, abs=1e-3)
-    assert cp_ref != pytest.approx(cp_prob40, abs=1e-1)
+    assert cl_portions[0] == pytest.approx(cl_portions[1], abs=1e-3)
+    assert cl_portions[0] != pytest.approx(cl_portions[2], abs=1e-1)
 
 
 def test_search_custom_filter(region_25ha):
@@ -299,7 +302,9 @@ def test_search_custom_filter(region_25ha):
     end_date = '2022-02-01'
     gd_collection = MaskedCollection.from_name('LANDSAT/LC09/C02/T1_L2')
     kwarg_coll = gd_collection.search(start_date, end_date, region_25ha, cloudless_portion=90)
-    cust_filt_coll = gd_collection.search(start_date, end_date, region_25ha, custom_filter='CLOUDLESS_PORTION>=90')
+    cust_filt_coll = gd_collection.search(
+        start_date, end_date, region_25ha, custom_filter='CLOUDLESS_PORTION>=90'
+    )
     assert (kwarg_coll.properties is not None) and (len(kwarg_coll.properties) > 0)
     assert kwarg_coll.properties == cust_filt_coll.properties
 
@@ -312,7 +317,9 @@ def test_search_add_props(region_25ha):
     gd_collection = MaskedCollection.from_name('LANDSAT/LC09/C02/T1_L2', add_props=add_props)
     searched_coll = gd_collection.search('2022-01-01', '2022-02-01', region_25ha)
     assert all([add_prop in searched_coll.schema.keys() for add_prop in add_props])
-    assert all([add_prop in list(searched_coll.properties.values())[0].keys() for add_prop in add_props])
+    assert all(
+        [add_prop in list(searched_coll.properties.values())[0].keys() for add_prop in add_props]
+    )
     assert searched_coll.properties_table is not None
     assert searched_coll.schema_table is not None
 
@@ -328,9 +335,8 @@ def test_search_add_props(region_25ha):
 def test_search_no_fill_or_cloudless_portion(
     name: str, start_date: str, end_date: str, region: str, request: pytest.FixtureRequest
 ):
-    """
-    Test MaskedCollection.search() without fill / cloudless portion filters gives valid results for different
-    collections.
+    """Test MaskedCollection.search() without fill / cloudless portion filters gives valid
+    results for different collections.
     """
     region: Dict = request.getfixturevalue(region)
     gd_collection = MaskedCollection.from_name(name)
@@ -340,7 +346,10 @@ def test_search_no_fill_or_cloudless_portion(
     start_date = datetime.strptime(start_date, '%Y-%m-%d')
     end_date = datetime.strptime(end_date, '%Y-%m-%d')
     im_dates = np.array(
-        [datetime.fromtimestamp(im_props['system:time_start'] / 1000) for im_props in properties.values()]
+        [
+            datetime.fromtimestamp(im_props['system:time_start'] / 1000)
+            for im_props in properties.values()
+        ]
     )
     # test FILL_PORTION and CLOUDLESS_PORTION are not in properties
     prop_keys = list(properties.values())[0].keys()
@@ -351,6 +360,21 @@ def test_search_no_fill_or_cloudless_portion(
     assert set(searched_collection.schema.keys()) >= set(list(properties.values())[0].keys())
     # test search result image dates are sorted
     assert np.all(sorted(im_dates) == im_dates)
+
+
+def test_search_errors():
+    """Test MaskedCollection.search() argument combination errors."""
+    gd_coll = MaskedCollection.from_name('COPERNICUS/S2_HARMONIZED')
+
+    # no start_date or region args
+    with pytest.raises(ValueError) as ex:
+        gd_coll.search()
+    assert 'region' in str(ex.value) and 'start_date' in str(ex.value)
+
+    # fill_portion/cloudless_portion but no region arg
+    with pytest.raises(ValueError) as ex:
+        gd_coll.search(start_date='2020-01-01', fill_portion=0)
+    assert 'fill_portion' in str(ex.value) and 'region' in str(ex.value)
 
 
 @pytest.mark.parametrize(
@@ -373,7 +397,7 @@ def test_composite_region_date_ordering(image_list, method, region, date, reques
     region: Dict = request.getfixturevalue(region) if region else None
     gd_collection = MaskedCollection.from_list(image_list)
     ee_collection = gd_collection._prepare_for_composite(method=method, date=date, region=region)
-    properties = gd_collection._get_properties(ee_collection)
+    properties = MaskedCollection(ee_collection).properties
     assert len(properties) == len(image_list)
 
     if region:
@@ -387,20 +411,29 @@ def test_composite_region_date_ordering(image_list, method, region, date, reques
     elif date:
         # test images are ordered by time difference with `date`
         im_dates = np.array(
-            [datetime.fromtimestamp(im_props['system:time_start'] / 1000) for im_props in properties.values()]
+            [
+                datetime.fromtimestamp(im_props['system:time_start'] / 1000)
+                for im_props in properties.values()
+            ]
         )
         comp_date = datetime.strptime(date, '%Y-%m-%d')
         im_date_diff = np.abs(comp_date - im_dates)
         assert all(sorted(im_date_diff, reverse=True) == im_date_diff)
 
 
-def _get_masked_portion(ee_image: ee.Image, proj: ee.Projection = None, region: dict = None) -> ee.Number:
-    """Return the valid portion of the ``ee_image`` inside ``region``.  Assumes the ``region`` is completely covered
-    by ``ee_image``.
+def _get_masked_portion(
+    ee_image: ee.Image, proj: ee.Projection = None, region: dict = None
+) -> ee.Number:
+    """Return the valid portion of the ``ee_image`` inside ``region``.  Assumes the ``region`` is
+    completely covered by ``ee_image``.
     """
     proj = proj or get_projection(ee_image)
-    ee_mask = ee_image.select('SR_B.*|B.*|rh.*').mask().reduce(ee.Reducer.allNonZero()).rename('EE_MASK')
-    mean = ee_mask.reduceRegion(reducer='mean', crs=proj, scale=proj.nominalScale(), geometry=region)
+    ee_mask = (
+        ee_image.select('SR_B.*|B.*|rh.*').mask().reduce(ee.Reducer.allNonZero()).rename('EE_MASK')
+    )
+    mean = ee_mask.reduceRegion(
+        reducer='mean', crs=proj, scale=proj.nominalScale(), geometry=region
+    )
     return ee.Number(mean.get('EE_MASK')).multiply(100)
 
 
@@ -420,13 +453,11 @@ def test_composite_mask(image_list, method, mask, region_100ha, request):
     """In MaskedImage.composite(), test masking of component and composite images with the `mask` parameter."""
     # TODO: combine >1 getInfo() calls into 1 for all tests
     # form the composite collection and image
-    image_list: List = request.getfixturevalue(image_list)
+    image_list: list = request.getfixturevalue(image_list)
     gd_collection = MaskedCollection.from_list(image_list)
     ee_collection = gd_collection._prepare_for_composite(method=method, mask=mask)
     composite_im = gd_collection.composite(method=method, mask=mask)
-    properties = gd_collection._get_properties(ee_collection)
     proj = get_projection(ee_collection.first(), min_scale=True)
-    assert len(properties) == len(image_list)
 
     def get_masked_portions(ee_image: ee.Image, portions: ee.List) -> ee.List:
         """Append the valid portion of ``ee_image`` to  ``portions``."""
@@ -436,8 +467,11 @@ def test_composite_mask(image_list, method, mask, region_100ha, request):
     # get the mask portions for the component and composite images
     component_portions = ee_collection.iterate(get_masked_portions, ee.List([]))
     composite_portion = _get_masked_portion(composite_im.ee_image, proj=proj, region=region_100ha)
-    component_portions, composite_portion = ee.List([component_portions, composite_portion]).getInfo()
+    component_portions, composite_portion = ee.List(
+        [component_portions, composite_portion]
+    ).getInfo()
     component_portions = np.array(component_portions)
+    assert len(component_portions) == len(image_list)
 
     # test masking of components and composite image
     if mask:
@@ -457,7 +491,9 @@ def test_composite_mask(image_list, method, mask, region_100ha, request):
         ('s2_sr_hm_nocs_masked_image', 'median', dict(mask_method='cloud-score')),
     ],
 )
-def test_s2_composite_mask_missing_data(masked_image: str, method: str, mask_kwargs: dict, region_100ha, request):
+def test_composite_s2_mask_missing_data(
+    masked_image: str, method: str, mask_kwargs: dict, region_100ha, request
+):
     """In MaskedImage.composite(), test when an S2 component image is fully masked due to missing cloud data,
     the composite image is also fully masked.
     """
@@ -468,19 +504,23 @@ def test_s2_composite_mask_missing_data(masked_image: str, method: str, mask_kwa
 
     ee_collection = gd_collection._prepare_for_composite(method=method, mask=True, **mask_kwargs)
     composite_im = gd_collection.composite(method=method, mask=True, **mask_kwargs)
-    properties = gd_collection._get_properties(ee_collection)
     proj = get_projection(ee_collection.first(), min_scale=True)
-    assert len(properties) == len(image_list)
 
     # get the mask portions for the component and composite images
-    component_portion = _get_masked_portion(ee_collection.first(), proj=proj, region=region_100ha).getInfo()
-    composite_portion = _get_masked_portion(composite_im.ee_image, proj=proj, region=region_100ha).getInfo()
+    component_portion = _get_masked_portion(
+        ee_collection.first(), proj=proj, region=region_100ha
+    ).getInfo()
+    composite_portion = _get_masked_portion(
+        composite_im.ee_image, proj=proj, region=region_100ha
+    ).getInfo()
 
     # test component and composite images are fully masked
     assert component_portion == composite_portion == 0
 
 
-def test_s2_composite_q_mosaic_missing_data(s2_sr_hm_nocs_masked_image: MaskedImage, region_100ha: dict):
+def test_composite_s2_q_mosaic_missing_data(
+    s2_sr_hm_nocs_masked_image: MaskedImage, region_100ha: dict
+):
     """In MaskedImage.composite(), test when an S2 component image is unmasked, but has masked CLOUD_DIST band due to
     missing cloud data, the composite image is fully masked with 'q-mosaic' method.
     """
@@ -491,13 +531,15 @@ def test_s2_composite_q_mosaic_missing_data(s2_sr_hm_nocs_masked_image: MaskedIm
     kwargs = dict(method='q-mosaic', mask_method='cloud-score', mask=False)
     ee_collection = gd_collection._prepare_for_composite(**kwargs)
     composite_im = gd_collection.composite(**kwargs)
-    properties = gd_collection._get_properties(ee_collection)
     proj = get_projection(ee_collection.first(), min_scale=True)
-    assert len(properties) == len(image_list)
 
     # get and test the mask portions for the component and composite images
-    component_portion = _get_masked_portion(ee_collection.first(), proj=proj, region=region_100ha).getInfo()
-    composite_portion = _get_masked_portion(composite_im.ee_image, proj=proj, region=region_100ha).getInfo()
+    component_portion = _get_masked_portion(
+        ee_collection.first(), proj=proj, region=region_100ha
+    ).getInfo()
+    composite_portion = _get_masked_portion(
+        composite_im.ee_image, proj=proj, region=region_100ha
+    ).getInfo()
     assert component_portion == pytest.approx(100, abs=1)
     assert composite_portion == 0
 
@@ -524,7 +566,9 @@ def test_composite_resampling(
     image_list: List = request.getfixturevalue(image_list)
     gd_collection = MaskedCollection.from_list(image_list)
     comp_im = gd_collection.composite(method=CompositeMethod.mosaic, mask=False)
-    comp_im_resampled = gd_collection.composite(method=CompositeMethod.mosaic, resampling=resampling, mask=False)
+    comp_im_resampled = gd_collection.composite(
+        method=CompositeMethod.mosaic, resampling=resampling, mask=False
+    )
 
     # find mean of std deviations of reflectance bands for each composite image
     crs = gd_collection.ee_collection.first().select(0).projection().crs()
@@ -546,12 +590,15 @@ def test_composite_s2_cloud_mask_params(s2_sr_hm_images, region_100ha):
     Sentinel2ClImage._aux_image().
     """
     gd_collection = MaskedCollection.from_list(s2_sr_hm_images)
-    comp_ims = []
+    proj = get_projection(gd_collection.ee_collection.first())
+    mask_portions = []
     for score in [0.3, 0.5]:
         comp_im = gd_collection.composite(mask_method='cloud-score', score=score)
-        comp_im._set_region_stats(region_100ha, scale=gd_collection.stats_scale)
-        comp_ims.append(comp_im)
-    assert comp_ims[0].properties['FILL_PORTION'] > comp_ims[1].properties['FILL_PORTION']
+        portion = _get_masked_portion(comp_im.ee_image, proj=proj, region=region_100ha)
+        mask_portions.append(portion)
+
+    mask_portions = ee.List(mask_portions).getInfo()
+    assert mask_portions[0] > mask_portions[1] > 0
 
 
 def test_composite_landsat_cloud_mask_params(l8_9_images, region_10000ha):
@@ -560,13 +607,15 @@ def test_composite_landsat_cloud_mask_params(l8_9_images, region_10000ha):
     LandsatImage._aux_image().
     """
     gd_collection = MaskedCollection.from_list(l8_9_images)
-    comp_im_wshadows = gd_collection.composite(mask_shadows=False)
-    comp_im_wshadows._set_region_stats(region_10000ha, scale=gd_collection.stats_scale)
-    comp_im_woshadows = gd_collection.composite(mask_shadows=True)
-    comp_im_woshadows._set_region_stats(region_10000ha, scale=gd_collection.stats_scale)
-    with_shadows_portion = comp_im_wshadows.properties['FILL_PORTION']
-    without_shadows_portion = comp_im_woshadows.properties['FILL_PORTION']
-    assert with_shadows_portion > without_shadows_portion
+    proj = gd_collection.ee_collection.first().projection()
+    mask_portions = []
+    for mask_shadows in [False, True]:
+        comp_im = gd_collection.composite(mask_shadows=mask_shadows)
+        mask_portion = _get_masked_portion(comp_im.ee_image, proj=proj, region=region_10000ha)
+        mask_portions.append(mask_portion)
+
+    mask_portions = ee.List(mask_portions).getInfo()
+    assert mask_portions[0] > mask_portions[1]
 
 
 @pytest.mark.parametrize(
@@ -575,10 +624,24 @@ def test_composite_landsat_cloud_mask_params(l8_9_images, region_10000ha):
         ('s2_sr_hm_images', CompositeMethod.q_mosaic, True, 'region_100ha', None, {}),
         ('s2_sr_hm_images', CompositeMethod.mosaic, True, None, '2021-10-01', {}),
         ('s2_sr_hm_images', CompositeMethod.medoid, False, None, None, {}),
-        ('s2_sr_hm_images', CompositeMethod.median, True, None, None, dict(mask_method='cloud-score', score=0.4)),
+        (
+            's2_sr_hm_images',
+            CompositeMethod.median,
+            True,
+            None,
+            None,
+            dict(mask_method='cloud-score', score=0.4),
+        ),
         ('l8_9_images', CompositeMethod.q_mosaic, True, 'region_100ha', None, {}),
         ('l8_9_images', CompositeMethod.mosaic, False, None, '2022-03-01', {}),
-        ('l8_9_images', CompositeMethod.medoid, True, None, None, dict(mask_cirrus=False, mask_shadows=False)),
+        (
+            'l8_9_images',
+            CompositeMethod.medoid,
+            True,
+            None,
+            None,
+            dict(mask_cirrus=False, mask_shadows=False),
+        ),
         ('l8_9_images', CompositeMethod.median, True, None, None, {}),
         ('l4_5_images', CompositeMethod.q_mosaic, False, 'region_100ha', None, {}),
         (
@@ -596,14 +659,25 @@ def test_composite_landsat_cloud_mask_params(l8_9_images, region_10000ha):
         ('gedi_image_list', CompositeMethod.medoid, True, None, None, {}),
     ],
 )
-def test_composite(image_list, method, mask, region, date, cloud_kwargs, request):
+def test_composite(
+    image_list: str,
+    method: CompositeMethod,
+    mask: bool,
+    region: str | None,
+    date: str | None,
+    cloud_kwargs: dict,
+    request: pytest.FixtureRequest,
+):
     """Test MaskedCollection.composite() runs successfully with a variety of `method` and other parameters."""
-    image_list: List = request.getfixturevalue(image_list)
-    region: Dict = request.getfixturevalue(region) if region else None
+    image_list: list = request.getfixturevalue(image_list)
+    region: dict = request.getfixturevalue(region) if region else None
     gd_collection = MaskedCollection.from_list(image_list)
-    comp_im = gd_collection.composite(method=method, mask=mask, region=region, date=date, **cloud_kwargs)
+    comp_im = gd_collection.composite(
+        method=method, mask=mask, region=region, date=date, **cloud_kwargs
+    )
     assert comp_im._ee_info is not None and len(comp_im._ee_info) > 0
-    assert 'INPUT_IMAGES' in comp_im.properties
+    assert gd_collection.name in comp_im.id
+    assert f'{method.value.upper()}-COMP' in comp_im.id
 
 
 def test_composite_errors(gedi_image_list, region_100ha):
@@ -615,13 +689,9 @@ def test_composite_errors(gedi_image_list, region_100ha):
     with pytest.raises(ValueError):
         # unknown method
         gedi_collection.composite(method='unknown')
-    with pytest.raises(ValueError):
+    with pytest.raises(ee.EEException):
         # date format error
         gedi_collection.composite(method=CompositeMethod.mosaic, date='not a date')
-    with pytest.raises(ValueError):
-        # composite of empty collection
-        empty_collection = gedi_collection.search('2000-01-01', '2000-01-02', region_100ha, 100)
-        empty_collection.composite(method=CompositeMethod.mosaic)
 
 
 @pytest.mark.parametrize('image_list', ['s2_sr_hm_images', 'l8_9_images'])
@@ -630,7 +700,11 @@ def test_composite_date(image_list: str, request: pytest.FixtureRequest):
     image_list: List = request.getfixturevalue(image_list)
     gd_collection = MaskedCollection.from_list(image_list)
     first_date = datetime.fromtimestamp(
-        gd_collection.ee_collection.sort('system:time_start').first().get('system:time_start').getInfo() / 1000,
+        gd_collection.ee_collection.sort('system:time_start')
+        .first()
+        .get('system:time_start')
+        .getInfo()
+        / 1000,
         tz=timezone.utc,
     )
     comp_im = gd_collection.composite()
@@ -638,34 +712,21 @@ def test_composite_date(image_list: str, request: pytest.FixtureRequest):
 
 
 def test_composite_mult_kwargs(region_100ha):
-    """
-    When a search filtered collection is composited, test that masks change with different cloud/shadow kwargs i.e.
-    test that image *_MASK bands are overwritten in the encapsulated collection.
+    """When a search filtered collection is composited, test that masks change with different
+    cloud/shadow kwargs i.e. test that image *_MASK bands are overwritten in the encapsulated
+    collection.
     """
     gd_collection = MaskedCollection.from_name('COPERNICUS/S2_SR_HARMONIZED')
     filt_collection = gd_collection.search('2022-01-01', '2022-01-10', region_100ha)
-
-    comp_ims = []
+    proj = get_projection(filt_collection.ee_collection.first())
+    mask_portions = []
     for score in [0.3, 0.5]:
         comp_im = filt_collection.composite(mask_method='cloud-score', score=score)
-        comp_im._set_region_stats(region_100ha, scale=filt_collection.stats_scale)
-        comp_ims.append(comp_im)
+        mask_portion = _get_masked_portion(comp_im.ee_image, proj=proj, region=region_100ha)
+        mask_portions.append(mask_portion)
 
-    assert comp_ims[0].properties['FILL_PORTION'] != pytest.approx(comp_ims[1].properties['FILL_PORTION'], abs=1e-1)
-
-
-@pytest.mark.parametrize('name', ['FAO/WAPOR/2/L1_RET_E', 'MODIS/006/MCD43A4'])
-def test_unbounded_search_no_region(name):
-    """
-    Test searching an unbounded collection without a region raises an exception.
-    """
-    start_date = '2022-01-01'
-    end_date = '2022-01-02'
-    gd_collection = MaskedCollection.from_name(name)
-    gd_collection = gd_collection.search(start_date, end_date, fill_portion=0)
-    with pytest.raises(ValueError) as ex:
-        _ = gd_collection.properties
-    assert 'unbounded' in str(ex) and 'region' in str(ex)
+    mask_portions = ee.List(mask_portions).getInfo()
+    assert mask_portions[0] != pytest.approx(mask_portions[1], abs=1e-1)
 
 
 def test_unknown_collection_error(region_25ha):
