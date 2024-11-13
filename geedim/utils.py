@@ -23,9 +23,10 @@ import os
 import pathlib
 import sys
 import time
+import warnings
 from contextlib import contextmanager
 from threading import Thread
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Generic, TypeVar, Callable
 
 import ee
 import numpy as np
@@ -38,6 +39,7 @@ from requests.adapters import HTTPAdapter, Retry
 from tqdm.auto import tqdm
 
 from geedim.enums import ResamplingMethod
+from geedim.errors import GeedimWarning, GeedimError
 
 if '__file__' in globals():
     root_path = pathlib.Path(__file__).absolute().parents[1]
@@ -45,6 +47,7 @@ else:
     root_path = pathlib.Path(os.getcwd())
 
 _GDAL_AT_LEAST_35 = GDALVersion.runtime().at_least("3.5")
+T = TypeVar('T')
 
 
 def Initialize(opt_url: Optional[str] = 'https://earthengine-highvolume.googleapis.com', **kwargs):
@@ -74,7 +77,9 @@ def Initialize(opt_url: Optional[str] = 'https://earthengine-highvolume.googleap
         if env_key in os.environ:
             # authenticate with service account
             key_dict = json.loads(os.environ[env_key])
-            credentials = ee.ServiceAccountCredentials(key_dict['client_email'], key_data=key_dict['private_key'])
+            credentials = ee.ServiceAccountCredentials(
+                key_dict['client_email'], key_data=key_dict['private_key']
+            )
             ee.Initialize(credentials, opt_url=opt_url, **kwargs)
         else:
             ee.Initialize(opt_url=opt_url, **kwargs)
@@ -92,7 +97,7 @@ def singleton(cls):
     return getinstance
 
 
-def split_id(image_id: str) -> Tuple[str, str]:
+def split_id(image_id: str) -> tuple[str | None, str | None]:
     """
     Split Earth Engine image ID into collection and index components.
 
@@ -150,7 +155,10 @@ def get_bounds(filename: pathlib.Path, expand: float = 5):
             expand_x = (bbox.right - bbox.left) * expand / 100.0
             expand_y = (bbox.top - bbox.bottom) * expand / 100.0
             bbox_expand = rio.coords.BoundingBox(
-                bbox.left - expand_x, bbox.bottom - expand_y, bbox.right + expand_x, bbox.top + expand_y
+                bbox.left - expand_x,
+                bbox.bottom - expand_y,
+                bbox.right + expand_x,
+                bbox.top + expand_y,
             )
         else:
             bbox_expand = bbox
@@ -164,7 +172,9 @@ def get_bounds(filename: pathlib.Path, expand: float = 5):
         ]
 
         bbox_expand_dict = dict(type="Polygon", coordinates=[coordinates])
-        src_bbox_wgs84 = warp.transform_geom(im.crs, "WGS84", bbox_expand_dict)  # convert to WGS84 geojson
+        src_bbox_wgs84 = warp.transform_geom(
+            im.crs, "WGS84", bbox_expand_dict
+        )  # convert to WGS84 geojson
     return src_bbox_wgs84
 
 
@@ -289,7 +299,9 @@ def resample(ee_image: ee.Image, method: ResamplingMethod) -> ee.Image:
 
     # resample the image, if it has a fixed projection
     proj = get_projection(ee_image, min_scale=True)
-    has_fixed_proj = proj.crs().compareTo('EPSG:4326').neq(0).Or(proj.nominalScale().toInt64().neq(111319))
+    has_fixed_proj = (
+        proj.crs().compareTo('EPSG:4326').neq(0).Or(proj.nominalScale().toInt64().neq(111319))
+    )
 
     def _resample(ee_image: ee.Image) -> ee.Image:
         """Resample the given image, allowing for additional 'average' method."""
@@ -313,7 +325,11 @@ def retry_session(
     """requests session configured for retries."""
     session = session or requests.Session()
     retry = Retry(
-        total=retries, read=retries, connect=retries, backoff_factor=backoff_factor, status_forcelist=status_forcelist
+        total=retries,
+        read=retries,
+        connect=retries,
+        backoff_factor=backoff_factor,
+        status_forcelist=status_forcelist,
     )
     adapter = HTTPAdapter(max_retries=retry)
     session.mount('http://', adapter)
@@ -383,3 +399,64 @@ def asset_id(image_id: str, folder: str = None):
     cloud_folder = pathlib.PurePosixPath(folder.parts[0])
     asset_path = pathlib.PurePosixPath('/'.join(folder.parts[1:])).joinpath(im_name)
     return f'projects/{str(cloud_folder)}/assets/{str(asset_path)}'
+
+
+def register_accessor(name: str, cls: type) -> Callable[[type[T]], type[T]]:
+    """
+    Decorator function to register a custom accessor on a given class.
+
+    Adapted from https://github.com/pydata/xarray/blob/main/xarray/core/extensions.py, Apache-2.0
+    License.
+
+    :param name:
+        Name under which the accessor should be registered.
+    :param cls:
+        Class on which to register the accessor.
+    """
+
+    class CachedAccessor(Generic[T]):
+        """Custom property-like object (descriptor) for caching accessors."""
+
+        def __init__(self, name: str, accessor: type[T]):
+            self._name = name
+            self._accessor = accessor
+
+        def __get__(self, obj, cls) -> type[T] | T:
+            if obj is None:
+                # return accessor type when the class attribute is accessed e.g. ee.Image.gd
+                return self._accessor
+
+            # retrieve the cache, creating if it does not yet exist
+            try:
+                cache = obj._accessor_cache
+            except AttributeError:
+                cache = obj._accessor_cache = {}
+
+            # return accessor if it has been cached
+            try:
+                return cache[self._name]
+            except KeyError:
+                pass
+
+            # otherwise create & cache the accessor
+            try:
+                accessor_obj = self._accessor(obj)
+            except AttributeError as ex:
+                # __getattr__ on data object will swallow any AttributeErrors raised when
+                # initializing the accessor, so we need to raise as something else
+                raise GeedimError(f"Error initializing {self._name!r} accessor.") from ex
+
+            cache[self._name] = accessor_obj
+            return accessor_obj
+
+    def decorator(accessor: type[T]) -> type[T]:
+        if hasattr(cls, name):
+            warnings.warn(
+                f"Registration of accessor {accessor!r} under name '{name}' for type {cls!r} is"
+                "overriding a preexisting attribute with the same name.",
+                GeedimWarning,
+            )
+        setattr(cls, name, CachedAccessor(name, accessor))
+        return accessor
+
+    return decorator
