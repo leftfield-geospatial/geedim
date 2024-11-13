@@ -32,7 +32,9 @@ from rasterio.errors import CRSError
 from geedim import Initialize, schema, version
 from geedim.collection import MaskedCollection
 from geedim.download import _nodata_vals, BaseImage
-from geedim.enums import CloudMaskMethod, CloudScoreBand, CompositeMethod, ExportType, ResamplingMethod
+from geedim.enums import (
+    CloudMaskMethod, CloudScoreBand, CompositeMethod, ExportType, ResamplingMethod,
+)
 from geedim.mask import MaskedImage
 from geedim.utils import asset_id, get_bounds, Spinner
 
@@ -173,7 +175,8 @@ def _prepare_image_list(obj: SimpleNamespace, mask=False) -> List[MaskedImage,]:
     """Validate and prepare the obj.image_list for export/download.  Returns a list of MaskedImage objects."""
     if len(obj.image_list) == 0:
         raise click.BadOptionUsage(
-            'image_id', 'Either pass --id, or chain this command with a successful `search` or `composite`'
+            'image_id',
+            'Either pass --id, or chain this command with a successful `search` or `composite`',
         )
     image_list = []
     for im_obj in obj.image_list:
@@ -462,7 +465,14 @@ def config(ctx, **kwargs):
     callback=_collection_cb,
     help=f'Earth Engine image collection to search. geedim or EE collection names can be used.',
 )
-@click.option('-s', '--start-date', type=click.DateTime(), required=False, default=None, help='Start date (UTC).')
+@click.option(
+    '-s',
+    '--start-date',
+    type=click.DateTime(),
+    required=False,
+    default=None,
+    help='Start date (UTC).',
+)
 @click.option(
     '-e',
     '--end-date',
@@ -595,8 +605,10 @@ def search(
     """
     # @formatter:on
     if not obj.region and not start_date:
+        # TODO: refactor error msgs to follow oty
         raise click.BadOptionUsage(
-            'start-date / region', 'Specify at least --start-time and/or a region with --region/--bbox'
+            'start-date / region',
+            'Specify at least --start-date and/or a region with --region/--bbox',
         )
 
     # create collection wrapper and search
@@ -620,7 +632,8 @@ def search(
     if num_images == 0:
         logger.info('No images found\n')
     else:
-        obj.image_list += list(gd_collection.properties.keys())  # store image ids for chained commands
+        # store image ids for chained commands
+        obj.image_list += list(gd_collection.properties.keys())
         logger.info(f'{len(gd_collection.properties)} images found\n')
         logger.info(f'Image property descriptions:\n\n{gd_collection.schema_table}\n')
         logger.info(f'Search Results:\n\n{gd_collection.properties_table}')
@@ -634,7 +647,14 @@ def search(
 
 # download command
 @cli.command(cls=ChainedCommand)
-@click.option('-i', '--id', 'image_id', type=click.STRING, multiple=True, help='Earth Engine image ID(s) to download.')
+@click.option(
+    '-i',
+    '--id',
+    'image_id',
+    type=click.STRING,
+    multiple=True,
+    help='Earth Engine image ID(s) to download.',
+)
 @crs_option
 @bbox_option
 @region_option
@@ -680,9 +700,27 @@ def search(
     show_default=True,
     help='Maximum download tile dimension (pixels).',
 )
-@click.option('-o', '--overwrite', is_flag=True, default=False, help='Overwrite the destination file if it exists.')
+@click.option(
+    '-o',
+    '--overwrite',
+    is_flag=True,
+    default=False,
+    help='Overwrite the destination file if it exists.',
+)
 @click.pass_obj
-def download(obj, image_id, bbox, region, like, download_dir, mask, max_tile_size, max_tile_dim, overwrite, **kwargs):
+def download(
+    obj,
+    image_id,
+    bbox,
+    region,
+    like,
+    download_dir,
+    mask,
+    max_tile_size,
+    max_tile_dim,
+    overwrite,
+    **kwargs,
+):
     # @formatter:off
     """
     Download image(s).
@@ -753,7 +791,14 @@ def download(obj, image_id, bbox, region, like, download_dir, mask, max_tile_siz
 
 # export command
 @cli.command(cls=ChainedCommand)
-@click.option('-i', '--id', 'image_id', type=click.STRING, multiple=True, help='Earth Engine image ID(s) to export.')
+@click.option(
+    '-i',
+    '--id',
+    'image_id',
+    type=click.STRING,
+    multiple=True,
+    help='Earth Engine image ID(s) to export.',
+)
 @click.option(
     '-t',
     '--type',
@@ -794,7 +839,11 @@ def download(obj, image_id, bbox, region, like, download_dir, mask, max_tile_siz
 @resampling_option
 @scale_offset_option
 @click.option(
-    '-w/-nw', '--wait/--no-wait', default=True, show_default=True, help='Whether to wait for the export to complete.'
+    '-w/-nw',
+    '--wait/--no-wait',
+    default=True,
+    show_default=True,
+    help='Whether to wait for the export to complete.',
 )
 @click.pass_obj
 def export(obj, image_id, type, folder, bbox, region, like, mask, wait, **kwargs):
@@ -851,7 +900,9 @@ def export(obj, image_id, type, folder, bbox, region, like, mask, wait, **kwargs
     # @formatter:on
     logger.info('\nExporting:\n')
     if (type == ExportType.asset) and not folder:
-        raise click.BadParameter('--folder must be specified when exporting to asset', param_hint='--folder')
+        raise click.BadParameter(
+            '--folder must be specified when exporting to asset', param_hint='--folder'
+        )
     image_list = _prepare_image_list(obj, mask=mask)
     export_tasks = []
     for im in image_list:
@@ -871,7 +922,12 @@ def export(obj, image_id, type, folder, bbox, region, like, mask, wait, **kwargs
 # composite command
 @cli.command(cls=ChainedCommand)
 @click.option(
-    '-i', '--id', 'image_id', type=click.STRING, multiple=True, help='Earth Engine image ID(s) to include in composite.'
+    '-i',
+    '--id',
+    'image_id',
+    type=click.STRING,
+    multiple=True,
+    help='Earth Engine image ID(s) to include in composite.',
 )
 @click.option(
     '-cm',
@@ -994,12 +1050,19 @@ def composite(obj, image_id, mask, method, resampling, bbox, region, date):
 
     # get image ids from command line or chained search command
     if len(obj.image_list) == 0:
-        raise click.BadOptionUsage('image_id', 'Either pass --id, or chain this command with a successful ``search``')
+        raise click.BadOptionUsage(
+            'image_id', 'Either pass --id, or chain this command with a successful ``search``'
+        )
 
     gd_collection = MaskedCollection.from_list(obj.image_list)
     obj.image_list = [
         gd_collection.composite(
-            method=method, mask=mask, resampling=resampling, region=obj.region, date=date, **obj.cloud_kwargs
+            method=method,
+            mask=mask,
+            resampling=resampling,
+            region=obj.region,
+            date=date,
+            **obj.cloud_kwargs,
         )
     ]
 

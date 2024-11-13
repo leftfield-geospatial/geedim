@@ -132,6 +132,9 @@ class BaseImage:
 
     @ee_image.setter
     def ee_image(self, value: ee.Image):
+        # TODO: id should be invalidated here.  in the new accessor code, it should not be
+        #  possible to assign to ee_image.  or the ee_image should not be exposed as property at
+        #  all, rather do that in the new BaseImage subclass for backwards compatibility
         self.__ee_info = None
         self.__min_projection = None
         self._min_dtype = None
@@ -149,7 +152,9 @@ class BaseImage:
     def date(self) -> datetime | None:
         """Image capture date & time.  None if the image ``system:time_start`` property is not set."""
         if 'system:time_start' in self.properties:
-            return datetime.fromtimestamp(self.properties['system:time_start'] / 1000, tz=timezone.utc)
+            return datetime.fromtimestamp(
+                self.properties['system:time_start'] / 1000, tz=timezone.utc
+            )
         else:
             return None
 
@@ -171,11 +176,17 @@ class BaseImage:
     @property
     def footprint(self) -> Optional[Dict]:
         """GeoJSON polygon of the image extent.  None if the image has no fixed projection."""
-        if ('properties' not in self._ee_info) or ('system:footprint' not in self._ee_info['properties']):
+        if ('properties' not in self._ee_info) or (
+            'system:footprint' not in self._ee_info['properties']
+        ):
             return None
         footprint = self._ee_info['properties']['system:footprint']
 
-        if ('type' in footprint) and ('coordinates' in footprint) and footprint['type'] == 'LinearRing':
+        if (
+            ('type' in footprint)
+            and ('coordinates' in footprint)
+            and footprint['type'] == 'LinearRing'
+        ):
             # convert LinearRing to simple Polygon
             # this is necessary to make footprint compatible as a region in other geedim methods e.g.
             # MaskedCollection.search or BaseImage.download.
@@ -236,7 +247,9 @@ class BaseImage:
         """List of spectral / reflectance bands, if any."""
         if not self._stac:
             return None
-        return [bname for bname, bdict in self._stac.band_props.items() if 'center_wavelength' in bdict]
+        return [
+            bname for bname, bdict in self._stac.band_props.items() if 'center_wavelength' in bdict
+        ]
 
     @property
     def profile(self) -> Dict:
@@ -254,7 +267,9 @@ class BaseImage:
     def bounded(self) -> bool:
         """True if the image is bounded, otherwise False."""
         unbounded_bounds = (-180, -90, 180, 90)
-        return (self.footprint is not None) and (features.bounds(self.footprint) != unbounded_bounds)
+        return (self.footprint is not None) and (
+            features.bounds(self.footprint) != unbounded_bounds
+        )
 
     @staticmethod
     def _get_ee_info(ee_image: ee.Image) -> dict:
@@ -310,7 +325,10 @@ class BaseImage:
                 minmax
                 for band_dict in band_info
                 if band_dict['data_type']['precision'] == 'int'
-                for minmax in (int(band_dict['data_type']['min']), int(band_dict['data_type']['max']))
+                for minmax in (
+                    int(band_dict['data_type']['min']),
+                    int(band_dict['data_type']['max']),
+                )
             ]
 
             if len(int_minmax) == 0:
@@ -333,13 +351,17 @@ class BaseImage:
             elif any(precisions == 'float'):
                 # if there are >= 32 integer bits, use float64 to accommodate them, otherwise float32
                 int_dtype = get_min_int_dtype(ee_info['bands'])
-                dtype = 'float32' if (not int_dtype or np.dtype(int_dtype).itemsize < 4) else 'float64'
+                dtype = (
+                    'float32' if (not int_dtype or np.dtype(int_dtype).itemsize < 4) else 'float64'
+                )
             else:
                 dtype = get_min_int_dtype(ee_info['bands'])
         return dtype
 
     @staticmethod
-    def _str_format_size(byte_size: float, units=['bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB']) -> str:
+    def _str_format_size(
+        byte_size: float, units=['bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB']
+    ) -> str:
         """Returns a human readable string representation of a given byte size.
         Adapted from https://stackoverflow.com/questions/1094841/get-human-readable-version-of-file-size.
         """
@@ -372,7 +394,10 @@ class BaseImage:
         band_ids = [bd['id'] for bd in self._ee_info['bands']]
         if self._stac:
             stac_bands_props = self._stac.band_props
-            band_props = [stac_bands_props[bid] if bid in stac_bands_props else dict(name=bid) for bid in band_ids]
+            band_props = [
+                stac_bands_props[bid] if bid in stac_bands_props else dict(name=bid)
+                for bid in band_ids
+            ]
         else:  # just use the image band IDs
             band_props = [dict(name=bid) for bid in band_ids]
         return band_props
@@ -404,9 +429,13 @@ class BaseImage:
 
         # make band scale and offset dicts
         scale_dict = {bp['name']: bp['scale'] if 'scale' in bp else 1.0 for bp in band_properties}
-        offset_dict = {bp['name']: bp['offset'] if 'offset' in bp else 0.0 for bp in band_properties}
+        offset_dict = {
+            bp['name']: bp['offset'] if 'offset' in bp else 0.0 for bp in band_properties
+        }
 
-        if all([s == 1 for s in scale_dict.values()]) and all([o == 0 for o in offset_dict.values()]):
+        if all([s == 1 for s in scale_dict.values()]) and all(
+            [o == 0 for o in offset_dict.values()]
+        ):
             # all scales==1 and all offsets==0
             return ee_image
 
@@ -484,7 +513,9 @@ class BaseImage:
 
         # Prevent exporting images with no fixed projection unless arguments defining the export pixel grid and
         # bounds are provided.  While EE allows this, the default argument values are not sensible for most use cases.
-        if (not crs or not region or not (scale or shape)) and (not crs or not crs_transform or not shape):
+        if (not crs or not region or not (scale or shape)) and (
+            not crs or not crs_transform or not shape
+        ):
             if not self.has_fixed_projection:
                 raise ValueError(
                     f'This image does not have a fixed projection, you need to specify a crs, region & scale / shape; '
@@ -494,14 +525,18 @@ class BaseImage:
         # Prevent exporting unbounded images without arguments defining the export bounds.  EE also prevents this (for
         # the full image) in ee.Image.getDownloadUrl().
         if (not region and (not crs_transform or not shape)) and (not self.bounded):
-            raise ValueError(f'This image is unbounded, you need to specify a region; or a crs_transform and shape.')
+            raise ValueError(
+                f'This image is unbounded, you need to specify a region; or a crs_transform and shape.'
+            )
 
         if scale and shape:
             raise ValueError('You can specify one of scale or shape, but not both.')
 
         if bands:
             # If one or more specified bands don't exist, raise an error
-            band_diff = set(bands).difference([band_prop['name'] for band_prop in self.band_properties])
+            band_diff = set(bands).difference(
+                [band_prop['name'] for band_prop in self.band_properties]
+            )
             if len(band_diff) > 0:
                 raise ValueError(f'The band(s) {list(band_diff)} don\'t exist.')
 
@@ -542,7 +577,9 @@ class BaseImage:
         # apply export spatial parameters
         crs_transform = crs_transform[:6] if crs_transform else None
         dimensions = shape[::-1] if shape else None
-        export_kwargs = dict(crs=crs, crs_transform=crs_transform, dimensions=dimensions, region=region, scale=scale)
+        export_kwargs = dict(
+            crs=crs, crs_transform=crs_transform, dimensions=dimensions, region=region, scale=scale
+        )
         export_kwargs = {k: v for k, v in export_kwargs.items() if v is not None}
         ee_image, _ = ee_image.prepare_for_export(export_kwargs)
 
@@ -591,13 +628,16 @@ class BaseImage:
                 f'`max_tile_size` must be less than or equal to the Earth Engine download size limit of '
                 f'{BaseImage._ee_max_tile_size} MB.'
             )
-        max_tile_size = int((max_tile_size * (1 << 20)) if max_tile_size else (BaseImage._ee_max_tile_size << 20))
+        max_tile_size = int(
+            (max_tile_size * (1 << 20)) if max_tile_size else (BaseImage._ee_max_tile_size << 20)
+        )
         if max_tile_dim and (max_tile_dim > BaseImage._ee_max_tile_dim):
             raise ValueError(
                 f'`max_tile_dim` must be less than or equal to the Earth Engine download limit of '
                 f'{BaseImage._ee_max_tile_size} pixels.'
             )
-        max_tile_dim = max_tile_dim or BaseImage._ee_max_tile_dim  # set max_tile_dim to EE default if None
+        # set max_tile_dim to EE default if None
+        max_tile_dim = max_tile_dim or BaseImage._ee_max_tile_dim
 
         # find the total number of tiles the image must be divided into to satisfy max_tile_size
         image_shape = np.array(self.shape, dtype='int64')
@@ -615,7 +655,8 @@ class BaseImage:
         tile_shape = image_shape
         while tile_size >= max_tile_size:
             div_axis = np.argmax(tile_shape)
-            num_tile_shape[div_axis] += 1  # increase the num tiles down the longest dimension of tile_shape
+            # increase the num tiles down the longest dimension of tile_shape
+            num_tile_shape[div_axis] += 1
             tile_shape = np.ceil(image_shape / num_tile_shape).astype('int64')
             tile_size = tile_shape[0] * tile_shape[1] * pixel_size
 
@@ -624,11 +665,15 @@ class BaseImage:
         tile_shape = tuple(tile_shape.tolist())
         return tile_shape, num_tiles
 
-    def _build_overviews(self, filename: Union[str, pathlib.Path], max_num_levels: int = 8, min_ovw_pixels: int = 256):
+    def _build_overviews(
+        self, filename: Union[str, pathlib.Path], max_num_levels: int = 8, min_ovw_pixels: int = 256
+    ):
         """Build internal overviews, downsampled by successive powers of 2, for a given filename."""
 
         # build overviews
-        env_dict = dict(GTIFF_FORCE_RGBA=False, COMPRESS_OVERVIEW='DEFLATE', GDAL_NUM_THREADS='ALL_CPUS')
+        env_dict = dict(
+            GTIFF_FORCE_RGBA=False, COMPRESS_OVERVIEW='DEFLATE', GDAL_NUM_THREADS='ALL_CPUS'
+        )
         if self.size >= 4e9:
             env_dict.update(BIGTIFF_OVERVIEW=True)
 
@@ -695,11 +740,16 @@ class BaseImage:
 
         # split the image up into tiles of at most `tile_shape` dimension
         image_shape = self.shape
-        start_range = product(range(0, image_shape[0], tile_shape[0]), range(0, image_shape[1], tile_shape[1]))
+        start_range = product(
+            range(0, image_shape[0], tile_shape[0]), range(0, image_shape[1], tile_shape[1])
+        )
         for tile_start in start_range:
             tile_stop = np.clip(np.add(tile_start, tile_shape), a_min=None, a_max=image_shape)
-            clip_tile_shape = (tile_stop - tile_start).tolist()  # tolist is just to convert to native int
-            tile_window = windows.Window(tile_start[1], tile_start[0], clip_tile_shape[1], clip_tile_shape[0])
+            # tolist is just to convert to native int
+            clip_tile_shape = (tile_stop - tile_start).tolist()
+            tile_window = windows.Window(
+                tile_start[1], tile_start[0], clip_tile_shape[1], clip_tile_shape[0]
+            )
             yield Tile(self, tile_window)
 
     @staticmethod
@@ -719,7 +769,9 @@ class BaseImage:
 
         if label is None:
             label = status["metadata"]["description"]
-        label = label if (len(label) < BaseImage._desc_width) else f'*{label[-BaseImage._desc_width:]}'
+        label = (
+            label if (len(label) < BaseImage._desc_width) else f'*{label[-BaseImage._desc_width:]}'
+        )
 
         # poll EE until the export preparation is complete
         with utils.Spinner(label=f'Preparing {label}: ', leave='done'):
@@ -733,7 +785,9 @@ class BaseImage:
 
         # wait for export to complete, displaying a progress bar
         bar_format = '{desc}: |{bar}| [{percentage:5.1f}%] in {elapsed:>5s} (eta: {remaining:>5s})'
-        with tqdm(desc=f'Exporting {label}', total=1, bar_format=bar_format, dynamic_ncols=True) as bar:
+        with tqdm(
+            desc=f'Exporting {label}', total=1, bar_format=bar_format, dynamic_ncols=True
+        ) as bar:
             while ('done' not in status) or (not status['done']):
                 time.sleep(10 * pause)
                 status = ee.data.getOperation(task.name)  # get task status
@@ -745,7 +799,12 @@ class BaseImage:
                 raise IOError(f"Export failed \n{status}")
 
     def export(
-        self, filename: str, type: ExportType = _default_export_type, folder: str = None, wait: bool = True, **kwargs
+        self,
+        filename: str,
+        type: ExportType = _default_export_type,
+        folder: str = None,
+        wait: bool = True,
+        **kwargs,
     ) -> ee.batch.Task:
         """
         Export the encapsulated image to Google Drive, Earth Engine asset or Google Cloud Storage.
@@ -921,7 +980,9 @@ class BaseImage:
         exp_image, profile = self._prepare_for_download(**kwargs)
 
         # get the dimensions of an image tile that will satisfy GEE download limits
-        tile_shape, num_tiles = exp_image._get_tile_shape(max_tile_size=max_tile_size, max_tile_dim=max_tile_dim)
+        tile_shape, num_tiles = exp_image._get_tile_shape(
+            max_tile_size=max_tile_size, max_tile_dim=max_tile_dim
+        )
 
         # find raw size of the download data (less than the actual download size as the image data is zipped in a
         # compressed geotiff)
@@ -943,12 +1004,19 @@ class BaseImage:
             )
 
         # configure the progress bar to monitor raw/uncompressed download size
-        desc = filename.name if (len(filename.name) < self._desc_width) else f'...{filename.name[-self._desc_width:]}'
-        bar_format = (
-            '{desc}: |{bar}| {n_fmt}/{total_fmt} (raw) [{percentage:5.1f}%] in {elapsed:>5s} (eta: {remaining:>5s})'
+        desc = (
+            filename.name
+            if (len(filename.name) < self._desc_width)
+            else f'...{filename.name[-self._desc_width:]}'
         )
+        bar_format = '{desc}: |{bar}| {n_fmt}/{total_fmt} (raw) [{percentage:5.1f}%] in {elapsed:>5s} (eta: {remaining:>5s})'
         bar = tqdm(
-            desc=desc, total=raw_download_size, bar_format=bar_format, dynamic_ncols=True, unit_scale=True, unit='B'
+            desc=desc,
+            total=raw_download_size,
+            bar_format=bar_format,
+            dynamic_ncols=True,
+            unit_scale=True,
+            unit='B',
         )
 
         session = utils.retry_session()

@@ -13,6 +13,7 @@
     See the License for the specific language governing permissions and
     limitations under the License.
 """
+
 import json
 import logging
 import threading
@@ -44,7 +45,7 @@ class StacItem:
         self._band_props = self._get_band_props(item_dict)
 
     def _get_descriptions(self, item_dict: Dict) -> Union[Dict[str, str], None]:
-        """ Return a dictionary with property names as keys, and descriptions as values. """
+        """Return a dictionary with property names as keys, and descriptions as values."""
         if 'summaries' not in item_dict:
             return None
         if 'gee:schema' in item_dict['summaries']:
@@ -72,11 +73,17 @@ class StacItem:
         band_props = {}
         # a list of the EE band properties we want to copy
         prop_keys = [
-            'name', 'description', 'center_wavelength', 'gee:wavelength', 'gee:units', 'gee:scale', 'gee:offset'
+            'name',
+            'description',
+            'center_wavelength',
+            'gee:wavelength',
+            'gee:units',
+            'gee:scale',
+            'gee:offset',
         ]
 
         def strip_gee(key: str):
-            """ Remove 'gee:' from the start of `key` if it is there. """
+            """Remove 'gee:' from the start of `key` if it is there."""
             return key[4:] if key.startswith('gee:') else key
 
         for ee_band_dict in ee_band_props:
@@ -93,22 +100,22 @@ class StacItem:
 
     @property
     def name(self) -> str:
-        """ ID/name of the contained image/collection STAC. """
+        """ID/name of the contained image/collection STAC."""
         return self._name
 
     @property
     def descriptions(self) -> Union[Dict[str, str], None]:
-        """ Dictionary of property descriptions with property names as keys, and descriptions as values. """
+        """Dictionary of property descriptions with property names as keys, and descriptions as values."""
         return self._descriptions
 
     @property
     def band_props(self) -> Union[Dict[str, Dict], None]:
-        """ Dictionary of band properties, with band names as keys, and properties as values. """
+        """Dictionary of band properties, with band names as keys, and properties as values."""
         return self._band_props
 
     @property
     def license(self) -> Union[str, None]:
-        """ Terms of use / license. """
+        """Terms of use / license."""
         url = None
         if 'links' in self._item_dict:
             for link in self._item_dict['links']:
@@ -122,7 +129,7 @@ class StacItem:
 class StacCatalog:
 
     def __init__(self):
-        """ Singleton class to interface to the EE STAC, and retrieve image/collection STAC data. """
+        """Singleton class to interface to the EE STAC, and retrieve image/collection STAC data."""
         self._filename = utils.root_path.joinpath('geedim/data/ee_stac_urls.json')
         self._session = utils.retry_session()
         self._url_dict = None
@@ -131,7 +138,7 @@ class StacCatalog:
 
     @property
     def url_dict(self) -> Dict[str, str]:
-        """ Dictionary with image/collection IDs/names as keys, and STAC URLs as values. """
+        """Dictionary with image/collection IDs/names as keys, and STAC URLs as values."""
         if not self._url_dict:
             # delay reading the json file until it is needed.
             with open(self._filename, 'r') as f:
@@ -149,14 +156,17 @@ class StacCatalog:
             return url_dict
         response_dict = response.json()
         if 'type' in response_dict:
-            if (response_dict['type'].lower() == 'collection'):
+            if response_dict['type'].lower() == 'collection':
                 # we have reached a leaf node
-                if (('gee:type' in response_dict) and
-                    (response_dict['gee:type'].lower() in ['image_collection', 'image'])):
+                if ('gee:type' in response_dict) and (
+                    response_dict['gee:type'].lower() in ['image_collection', 'image']
+                ):
                     # we have reached an image / image collection leaf node
                     with self._lock:
                         url_dict[response_dict['id']] = url
-                        logger.debug(f'ID: {response_dict["id"]}, Type: {response_dict["gee:type"]}, URL: {url}')
+                        logger.debug(
+                            f'ID: {response_dict["id"]}, Type: {response_dict["gee:type"]}, URL: {url}'
+                        )
                 return url_dict
 
             with ThreadPoolExecutor() as executor:
@@ -170,13 +180,13 @@ class StacCatalog:
         return url_dict
 
     def refresh_url_dict(self):
-        """ Update `url_dict` with the latest from EE STAC. """
+        """Update `url_dict` with the latest from EE STAC."""
         url_dict = {}
         url_dict = self._traverse_stac(root_stac_url, url_dict)
         self._url_dict = dict(sorted(url_dict.items()))
 
     def write_url_dict(self, filename=None):
-        """ Write the ``url_dict`` to file. """
+        """Write the ``url_dict`` to file."""
         if filename is None:
             filename = self._filename
         with open(filename, 'w') as f:
@@ -212,7 +222,7 @@ class StacCatalog:
 
     def get_item(self, name: str) -> StacItem:
         """
-        Get a STAC container instance for a given an image/collection name/ID.
+        Get a STAC container instance for a given image/collection name/ID.
 
         Parameters
         ----------
