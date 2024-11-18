@@ -311,10 +311,13 @@ class ImageCollectionAccessor:
                 f"supported for the {schema.cloud_coll_names} collections only."
             )
 
+        if date and region:
+            # TODO: test for this error
+            raise ValueError("One of 'date' or 'region' can be specified, but not both.")
+
         def prepare_image(ee_image: ee.Image) -> ee.Image:
             """Prepare an Earth Engine image for use in compositing."""
             if date and (method in sort_methods):
-                # TODO: timezone awareness & conversion to UTC
                 date_dist = (
                     ee.Number(ee_image.date().millis()).subtract(ee.Date(date).millis()).abs()
                 )
@@ -500,6 +503,9 @@ class ImageCollectionAccessor:
         """
         Create a composite from the images in the collection.
 
+        If both ``date`` and ``region`` are ``None``, images are sorted by their capture date
+        (the default).
+
         :param method:
             Compositing method. By default, :attr:`~geedim.enums.CompositeMethod.q_mosaic` is
             used for cloud/shadow mask supported collections,
@@ -511,7 +517,7 @@ class ImageCollectionAccessor:
             Resampling method to use on collection images prior to compositing.
         :param date:
             Sort collection images by their absolute difference in capture time from this date.
-            Prioritises pixels from images closest to this date.  Valid for the
+            This prioritises pixels from images closest to ``date``.  Valid for the
             :attr:`~geedim.enums.CompositeMethod.q_mosaic`,
             :attr:`~geedim.enums.CompositeMethod.mosaic` and
             :attr:`~geedim.enums.CompositeMethod.medoid` ``method`` only.  If a string, it should
@@ -526,8 +532,7 @@ class ImageCollectionAccessor:
             no cloud/shadow mask support, images are sorted by the portion of their valid pixels
             that are inside ``region``.  This prioritises pixels from images with the best
             ``region`` coverage. If ``region`` is ``None``, no cloudless/valid portion sorting is
-            done (the default).  If ``date`` and ``region`` are not specified, collection images
-            are sorted by their capture date.
+            done (the default).
         :param kwargs:
             Cloud/shadow masking arguments - see :meth:`geedim.mask.ImageAccessor.addMaskBands`
             for details.
