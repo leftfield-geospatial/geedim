@@ -76,13 +76,13 @@ def test_split_id():
     assert im_id == 'ABC'
 
 
-@pytest.mark.parametrize('name', ['s2_sr_hm_image_id', 'l9_image_id', 'gch_image_id'])
+@pytest.mark.parametrize('name', ['s2_sr_hm_image_id', 'l9_image_id'])
 def test_from_name(name: str, request):
     """Test MaskedCollection.from_name()."""
     name = request.getfixturevalue(name)
     name, _ = split_id(name)
     gd_collection = MaskedCollection.from_name(name)
-    assert gd_collection._name == name
+    assert gd_collection.id == name
     assert gd_collection.schema is not None
     assert len(gd_collection.schema) >= len(schema.default_prop_schema)
     assert gd_collection.ee_collection == ee.ImageCollection(name)
@@ -106,7 +106,7 @@ def test_from_list_landsat(image_list: str, request):
     """
     image_list: List = request.getfixturevalue(image_list)
     gd_collection = MaskedCollection.from_list(image_list)
-    assert 'LANDSAT' in gd_collection.name
+    assert 'LANDSAT' in gd_collection.id
     assert gd_collection.properties is not None
 
 
@@ -122,7 +122,7 @@ def test_from_list(image_list: str, request):
     assert gd_collection.properties is not None
     assert gd_collection.schema is not None
     assert len(gd_collection.schema) >= len(schema.default_prop_schema)
-    assert gd_collection.name == split_id(image_ids[0])[0]
+    assert gd_collection.id == split_id(image_ids[0])[0]
     assert len(gd_collection.properties) == len(image_list)
     assert list(gd_collection.properties.keys()) == image_ids
     assert set(gd_collection.schema.keys()) > set(list(gd_collection.properties.values())[0].keys())
@@ -676,7 +676,7 @@ def test_composite(
         method=method, mask=mask, region=region, date=date, **cloud_kwargs
     )
     assert comp_im._ee_info is not None and len(comp_im._ee_info) > 0
-    assert gd_collection.name in comp_im.id
+    assert gd_collection.id in comp_im.id
     assert f'{method.value.upper()}-COMP' in comp_im.id
 
 

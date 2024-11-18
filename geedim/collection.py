@@ -20,7 +20,7 @@ import logging
 import re
 from datetime import datetime, timezone
 from functools import cached_property
-from typing import List, Union
+from typing import Any
 
 import ee
 import tabulate
@@ -52,21 +52,21 @@ _tablefmt = TableFormat(
 )
 
 
-def _compatible_collections(names: List[str]) -> bool:
-    """Test if the given collection names are spectrally compatible (either identical or
-    compatible Landsat collections).
+def _compatible_collections(ids: list[str]) -> bool:
+    """Test if the given collection IDs are spectrally compatible (either identical or compatible
+    Landsat collections).
     """
-    names = list(set(names))  # reduce to unique values
+    ids = list(set(ids))  # reduce to unique values
     landsat_regex = re.compile(r'(LANDSAT/\w{2})(\d{2})(/.*)')
-    landsat_match = names[0] and landsat_regex.search(names[0])
-    for name in names[1:]:
+    landsat_match = ids[0] and landsat_regex.search(ids[0])
+    for name in ids[1:]:
         if name and landsat_match:
             landsat_regex = re.compile(
                 rf'{landsat_match.groups()[0]}\d\d{landsat_match.groups()[-1]}'
             )
             if not landsat_regex.search(name):
                 return False
-        elif not name == names[0]:
+        elif not name == ids[0]:
             return False
     return True
 
@@ -89,129 +89,138 @@ def abbreviate(name: str) -> str:
 
 @register_accessor('gd', ee.ImageCollection)
 class ImageCollectionAccessor:
-    # TODO: necessary?
-    _sort_methods = [CompositeMethod.mosaic, CompositeMethod.q_mosaic, CompositeMethod.medoid]
+    # TODO: strictly this is an _init_ docstring, not clas docstring.  does moving it (and all
+    #  other class docstrings) to _init_ work with sphinx?
+    """
+    Accessor for describing, searching and compositing an image collection, with support for
+    cloud/shadow masking.
+
+    :param ee_coll:
+        Image collection to access.
+    """
 
     def __init__(self, ee_coll: ee.ImageCollection):
         self._ee_coll = ee_coll
-        self._name = None
+        self._info = None
         self._schema = None
+        self._schema_prop_names = None
         self._properties = None
-        self._stac = None
-        self._stats_scale = None
-        self._table_properties = None
-        self._schema = None
 
     @staticmethod
-    def load(name: str, add_props: List[str] = None) -> ee.ImageCollection:
-        ee_coll = ee.ImageCollection(name)
-        ee_coll.gd._name = name
-        return ee_coll
+    def fromImages(images: Any) -> ee.ImageCollection:
+        """
+        Create a image collection with support for cloud/shadow masking, that contains the given
+        images.
 
-    @staticmethod
-    def fromList(images: list[str | ee.Image]) -> ee.ImageCollection:
+        Images from spectrally compatible Landsat collections can be combined i.e. Landsat-4 with
+        Landsat-5, and Landsat-8 with Landsat-9.  Otherwise, images should all belong to the same
+        collection.  Images may include composites as created with :meth:`composite`.  Composites
+        are treated as belonging to the collection of their component images.
+
+        Use this method (instead of :meth:`ee.ImageCollection` or
+        :meth:`ee.ImageCollection.fromImages`) to support cloud/shadow masking on a collection
+        built from a sequence of images.
+
+        :param images:
+            Sequence of images, or anything that can be used to construct an image.
+
+        :return:
+            Image collection.
+        """
         # TODO: previously there was error checking here to see if images were in compatible
         #  collections and all had IDs and dates.  Rather than check here, check/get search and
         #  composite to behave sensibly when this is not the case.
-        # TODO: if this is going to be included, make it fromList?
-        # Note: I have added this, partially as a testing convenience function, to allow creating a
-        # cloud/shadow supported collection from individual images / IDs.
         ee_coll = ee.ImageCollection(images)
-        names = [
+
+        # check the images are from compatible collections
+        ids = [
             split_id(im_props.get('id', None))[0]
-            for im_props in ee_coll.gd.properties.get('features', [])
+            for im_props in ee_coll.gd.info.get('features', [])
         ]
-        if not _compatible_collections(names):
+        if not _compatible_collections(ids):
+            # TODO: test raises an error if any/all names are None
             raise InputImageError(
                 'All images must belong to the same, or spectrally compatible, collections.'
             )
 
-        # TODO: should raise an error if any/all names are None.  And what happens if it is a
-        #  list of composites with new naming?  Use the term homogenous.  See errors from
-        #  reduceRegion.
-        # persist the source collection name to enable cloud/shadow masking
-        ee_coll = ee_coll.set('system:id', names[0])
-        ee_coll.gd._name = names[0]
+        # set the collection ID to enable cloud/shadow masking if supported
+        ee_coll = ee_coll.set('system:id', ids[0])
         return ee_coll
-
-    @property
-    def name(self) -> str | None:
-        # TODO: rather than getInfo for name and later getInfos for properties, do a getInfo for
-        #  ee.ImageCollection.limit, then we have properties and name?  The typical use case
-        #  would be to run addAuxBands and maskClouds on the collection first though,
-        #  both of which only need name, then get properties on final collection.  Having _name
-        #  separate also allows it to be set when returning collections from addAuxBands and
-        #  maskClouds as these methods won't affect the collection name.
-        if not self._name:
-            if self._properties:
-                self._name = self._properties.get('id', None)
-            else:
-                self._name = self._ee_coll.get('system:id').getInfo()
-        return self._name
 
     @cached_property
     def _mi(self) -> type[_MaskedImage]:
-        return class_from_id(self.name)
-
-    @property
-    def stac(self) -> StacItem | None:
-        # TODO: used cached_property decorator here and elsewhere if possible
-        if not self._stac and (self.name in StacCatalog().url_dict):
-            self._stac = StacCatalog().get_item(self.name)
-        return self._stac
-
-    @property
-    def stats_scale(self) -> float | None:
-        """Scale to use for re-projections when finding region statistics."""
-        if not self.stac:
-            return None
-        if not self._stats_scale:
-            gsds = [float(band_dict['gsd']) for band_dict in self.stac.band_props.values()]
-            max_gsd = max(gsds)
-            min_gsd = min(gsds)
-            self._stats_scale = min_gsd if (max_gsd > 10 * min_gsd) and (min_gsd > 0) else max_gsd
-        return self._stats_scale
-
-    @property
-    def properties(self) -> dict:
-        if not self._properties:
-            self._properties = self._ee_coll.limit(1000).select(None).getInfo()
-        return self._properties
+        """Methods for cloud/shadow masking images from this collection."""
+        return class_from_id(self.id)
 
     @cached_property
-    def table_properties(self) -> list[str]:
-        if self.name in schema.collection_schema:
-            default_schema = schema.collection_schema[self.name]['prop_schema']
-        else:
-            default_schema = schema.default_prop_schema
-        return list(default_schema)
+    def _portion_scale(self) -> float | None:
+        """Scale to use for finding mask portions.  ``None`` if there is no STAC entry for this
+        collection.
+        """
+        if not self.stac:
+            return None
+        gsds = [float(band_dict['gsd']) for band_dict in self.stac.band_props.values()]
+        max_gsd = max(gsds)
+        min_gsd = min(gsds)
+        return min_gsd if (max_gsd > 10 * min_gsd) and (min_gsd > 0) else max_gsd
 
-    # @property
-    # def table_properties(self) -> list[str]:
-    #     if not self._table_properties:
-    #         if self.name in schema.collection_schema:
-    #             default_schema = schema.collection_schema[self.name]['prop_schema']
-    #         else:
-    #             default_schema = schema.default_prop_schema
-    #         self._table_properties = list(default_schema)
-    #     return self._table_properties
-    #
-    # @table_properties.setter
-    # def table_properties(self, value: list[str]):
-    #     self._table_properties = value
+    @cached_property
+    def id(self) -> str | None:
+        """Earth Engine ID."""
+        # Get the ID from self.properties if it has been cached.  Otherwise get the ID
+        # directly rather than retrieving self.properties, which can be time-consuming.
+        if self._info:
+            return self._info.get('id', None)
+        else:
+            return self._ee_coll.get('system:id').getInfo()
+
+    @cached_property
+    def stac(self) -> StacItem | None:
+        """Collection STAC information.  ``None`` if there is no STAC entry for this collection."""
+        # TODO: look into refactoring StacItem and/or use raw STAC dictionaries where possible
+        return StacCatalog().get_item(self.id)
+
+    @property
+    def info(self) -> dict[str, Any]:
+        """Collection information as returned by :meth:`ee.ImageCollection.getInfo`, but limited to
+        the first 1000 images with band information excluded.
+        """
+        if not self._info:
+            self._info = self._ee_coll.limit(1000).select(None).getInfo()
+        return self._info
+
+    @property
+    def schemaPropertyNames(self) -> list[str]:
+        """:attr:`schema` property names."""
+        if not self._schema_prop_names:
+            if self.id in schema.collection_schema:
+                self._schema_prop_names = schema.collection_schema[self.id]['prop_schema'].keys()
+            else:
+                self._schema_prop_names = schema.default_prop_schema.keys()
+            self._schema_prop_names = list(self._schema_prop_names)
+        return self._schema_prop_names
+
+    @schemaPropertyNames.setter
+    def schemaPropertyNames(self, value: list[str]):
+        if value != self.schemaPropertyNames:
+            self._schema_prop_names = value
+            # reset the schema and properties
+            self._schema = None
+            self._properties = None
 
     @property
     def schema(self) -> dict[str, dict]:
-        """A dictionary of abbreviations and descriptions for :attr:`properties`. Keys are the EE
-        property names, and values are dictionaries of abbreviations and descriptions.
+        """Dictionary of property abbreviations and descriptions used to form
+        :attr:`properties` and :attr:`propertiesTable`.
         """
-        if not self._schema or list(self._schema.keys()) != self.table_properties:
-            if self.name in schema.collection_schema:
-                coll_schema = schema.collection_schema[self.name]['prop_schema']
+        if not self._schema:
+            if self.id in schema.collection_schema:
+                coll_schema = schema.collection_schema[self.id]['prop_schema']
             else:
                 coll_schema = schema.default_prop_schema
+
             self._schema = {}
-            for prop_name in self.table_properties:
+            for prop_name in self.schemaPropertyNames:
                 if prop_name in coll_schema:
                     prop_schema = coll_schema[prop_name]
                 elif prop_name in self.stac.descriptions:
@@ -224,30 +233,8 @@ class ImageCollectionAccessor:
         return self._schema
 
     @property
-    def images_table(self) -> str:
-        table_list = []
-        for im_info in self.properties.get('features', []):
-            im_props = im_info.get('properties', {})
-            row_dict = {}
-            for prop_name, prop_dict in self.schema.items():
-                prop_val = im_props.get(prop_name, None)
-                if prop_name in ['system:time_start', 'system:time_end'] and prop_val:
-                    # convert timestamp to date string
-                    dt = datetime.fromtimestamp(prop_val / 1000, tz=timezone.utc)
-                    row_dict[prop_dict['abbrev']] = datetime.strftime(dt, '%Y-%m-%d %H:%M')
-                else:
-                    row_dict[prop_dict['abbrev']] = prop_val
-            table_list.append(row_dict)
-
-        return tabulate.tabulate(
-            table_list, headers='keys', floatfmt='.2f', tablefmt=_tablefmt, missingval='-'
-        )
-
-    @property
-    def schema_table(self) -> str:
+    def schemaTable(self) -> str:
         """:attr:`schema` formatted as a printable table string."""
-        # TODO: could tables be a sub-properties of parent item like schema.as_table?  or perhaps
-        #  done in another class or function.
         table_list = [
             dict(ABBREV=prop_dict['abbrev'], NAME=prop_name, DESCRIPTION=prop_dict['description'])
             for prop_name, prop_dict in self.schema.items()
@@ -261,81 +248,72 @@ class ImageCollectionAccessor:
         )
 
     @property
-    def refl_bands(self) -> Union[List[str], None]:
-        """List of spectral / reflectance band names, if any."""
+    def properties(self) -> list[dict[str, Any]]:
+        """List of schema properties of the collection images."""
+        if not self._properties:
+            self._properties = []
+            for im_info in self.info.get('features', []):
+                im_props = im_info.get('properties', {})
+                im_schema_props = {}
+                for prop_name, prop_schema in self.schema.items():
+                    prop_val = im_props.get(prop_name, None)
+                    if prop_name in ['system:time_start', 'system:time_end'] and prop_val:
+                        # convert timestamp to date string
+                        dt = datetime.fromtimestamp(prop_val / 1000, tz=timezone.utc)
+                        im_schema_props[prop_schema['abbrev']] = datetime.strftime(
+                            dt, '%Y-%m-%d %H:%M'
+                        )
+                    else:
+                        im_schema_props[prop_schema['abbrev']] = prop_val
+                self._properties.append(im_schema_props)
+        return self._properties
+
+    @property
+    def propertiesTable(self) -> str:
+        """:attr:`properties` formatted as a printable table string."""
+        return tabulate.tabulate(
+            # force use of this class's 'properties' rather than a subclass's
+            ImageCollectionAccessor.properties.fget(self),
+            headers='keys',
+            floatfmt='.2f',
+            tablefmt=_tablefmt,
+            missingval='-',
+        )
+
+    @property
+    def reflBands(self) -> list[str] | None:
+        """List of the collection's spectral / reflectance band names.  ``None`` if there is no
+        :attr:`stac` entry, or no spectral / reflectance bands.
+        """
         if not self.stac:
             return None
         return [
             bname for bname, bdict in self.stac.band_props.items() if 'center_wavelength' in bdict
         ]
 
-    def _get_images_table(self, properties: dict, schema: dict = None) -> str:
-        """
-        Format the given properties into a table.  Orders properties (columns) according to :attr:`schema` and
-        replaces long form property names with abbreviations.
-        """
-        schema = schema or self.schema
-        table_props = []
-        for im_info in properties.get('features', []):
-            # TODO: give a default enumerated ID/index?
-            im_props = im_info.get('properties', {})
-            row_props = {}
-            for prop_name, prop_schema in schema.items():
-                prop_val = im_props.get(prop_name, None)
-                if prop_name in ['system:time_start', 'system:time_end'] and prop_val:
-                    # convert timestamp to date string
-                    dt = datetime.fromtimestamp(prop_val / 1000, tz=timezone.utc)
-                    row_props[prop_schema['abbrev']] = datetime.strftime(dt, '%Y-%m-%d %H:%M')
-                else:
-                    row_props[prop_schema['abbrev']] = prop_val
-            table_props.append(row_props)
-
-        return tabulate.tabulate(
-            table_props, headers='keys', floatfmt='.2f', tablefmt=_tablefmt, missingval='-'
-        )
-
-    def _set_portions(self, ee_image: ee.Image, region: dict | ee.Geometry) -> ee.Image:
-        # TODO: make common or protected member of ImageAccessor
-        mask_names = ee_image.bandNames().filter(
-            ee.Filter.inList('item', ['CLOUDLESS_MASK', 'FILL_MASK'])
-        )
-        portions = ee_image.select(mask_names).gd.maskCoverRegion(
-            region=region, scale=self.stats_scale, maxPixels=1e6
-        )
-        fill_portion = ee.Number(portions.get('FILL_MASK'))
-        cl_portion = ee.Number(portions.get('CLOUDLESS_MASK', fill_portion))
-        cl_portion = cl_portion.divide(fill_portion).multiply(100)
-        return ee_image.set('FILL_PORTION', fill_portion, 'CLOUDLESS_PORTION', cl_portion)
-
     def _prepare_for_composite(
         self,
-        method: str | CompositeMethod,
+        method: CompositeMethod | str,
         mask: bool = True,
-        resampling: str | ResamplingMethod = None,
+        resampling: ResamplingMethod | str = BaseImage._default_resampling,
         date: str | datetime | ee.Date = None,
         region: dict | ee.Geometry = None,
         **kwargs,
     ) -> ee.ImageCollection:
-        """Prepare the Earth Engine collection for compositing. See
-        :meth:`~MaskedCollection.composite` for parameter descriptions.
-        """
-
+        """Return a collection that has been prepared for compositing."""
         method = CompositeMethod(method)
-        resampling = ResamplingMethod(resampling) if resampling else BaseImage._default_resampling
-        if (method == CompositeMethod.q_mosaic) and (self.name not in schema.cloud_coll_names):
-            # TODO: errors/warnings if cloud/shadow masking not supported and mask is True
+        resampling = ResamplingMethod(resampling)
+        sort_methods = [CompositeMethod.mosaic, CompositeMethod.q_mosaic, CompositeMethod.medoid]
+
+        if (method is CompositeMethod.q_mosaic) and (self.id not in schema.cloud_coll_names):
             raise ValueError(
-                f"The 'q-mosaic' method is not supported for this collection: '{self.name}'.  It is"
+                f"The 'q-mosaic' method is not supported for this collection: '{self.id}'.  It is"
                 f"supported for the {schema.cloud_coll_names} collections only."
             )
 
         def prepare_image(ee_image: ee.Image) -> ee.Image:
             """Prepare an Earth Engine image for use in compositing."""
-            # TODO: we want aux bands overwritten if it is fixed proj, and not otherwise
-            # TODO: always add aux bands, or only when needed?
-            if date and (method in self._sort_methods):
-                # TODO: nevermind about _sort_methods, just do these things anyway?  i'm assuming
-                #  computation time is minimal
+            if date and (method in sort_methods):
                 # TODO: timezone awareness & conversion to UTC
                 date_dist = (
                     ee.Number(ee_image.date().millis()).subtract(ee.Date(date).millis()).abs()
@@ -343,19 +321,17 @@ class ImageCollectionAccessor:
                 ee_image = ee_image.set('DATE_DIST', date_dist)
 
             ee_image = self._mi.add_mask_bands(ee_image, **kwargs)
-            if region and (method in self._sort_methods):
+            if region and (method in sort_methods):
                 ee_image = self._mi.set_mask_portions(
-                    ee_image, region=region, scale=self.stats_scale
+                    ee_image, region=region, scale=self._portion_scale
                 )
-
             if mask:
-                # TODO: masking must be done after setting portions
                 ee_image = self._mi.mask_clouds(ee_image)
             return ee_image.gd.resample(resampling)
 
         ee_coll = self._ee_coll.map(prepare_image)
 
-        if method in self._sort_methods:
+        if method in sort_methods:
             if date:
                 ee_coll = ee_coll.sort('DATE_DIST', ascending=False)
             elif region:
@@ -369,38 +345,54 @@ class ImageCollectionAccessor:
                 ee_coll = ee_coll.sort('system:time_start')
         else:
             if date:
-                logger.warning(f"'date' is valid for {self._sort_methods} methods only.")
+                logger.warning(f"'date' is valid for {sort_methods} methods only.")
             elif region:
-                logger.warning(f"'region' is valid for {self._sort_methods} methods only.")
+                logger.warning(f"'region' is valid for {sort_methods} methods only.")
 
         return ee_coll
 
     def addMaskBands(self, **kwargs) -> ee.ImageCollection:
-        # TODO: this will keep adding extra aux bands by default.  Is this compatible with old
-        #  MaskedImage expected behaviour?  For a composite with existing aux bands, this will
-        #  add extra (unusable) aux bands with overwrite=False, but perhaps that doesn't matter
-        #  as the original aux bands will get used in maskClouds, and the added aux bands would
-        #  be excluded from a further composite.  If the added aux bands for a composite generate
-        #  errors, they should not be added of course, but I don't think this is the case.
-        ee_coll = self._ee_coll.map(lambda ee_image: self._mi.add_mask_bands(ee_image, **kwargs))
-        ee_coll.gd._name = self._name
-        return ee_coll
+        """
+        Add cloud/shadow masks and related bands to the collection's images.
 
-    def maskClouds(self, **kwargs) -> ee.ImageCollection:
-        # TODO: is it more efficient to only get mask, excluding cloud distance etc
-        # TODO: do we want to mask with FILL_MASK when there is no CLOUDLESS_MASK,
-        #  and incorporate it into the CLOUDLESS_MASK when there is?  FILL_MASK is used for
-        #  search filtering on fill portion property, but is to useful to mask with it over EE
-        #  mask? If FILL_MASK masking is abandoned, we should test the e.g. Landsat-7 mask
-        #  defines the invalid areas.
-        # TODO: neither this nor addAuxBands can be mapped over an ImageCollection as they
-        #  require getInfo
-        ee_coll = self._ee_coll.map(lambda ee_image: self._mi.mask_clouds(ee_image))
-        ee_coll.gd._name = self._name
-        return ee_coll
+        Mask bands are overwritten if they exist, except on composite images where existing mask
+        bands are kept.
 
-    def medoid(self, bands: list[str | ee.String] = None) -> ee.Image:
-        return medoid(self._ee_coll, bands=bands)
+        :param kwargs:
+            Cloud/shadow masking arguments - see :meth:`geedim.mask.ImageAccessor.addMaskBands`
+            for details.
+
+        :return:
+            Image collection with added mask bands.
+        """
+        return self._ee_coll.map(lambda ee_image: self._mi.add_mask_bands(ee_image, **kwargs))
+
+    def maskClouds(self) -> ee.ImageCollection:
+        """
+        Apply cloud/shadow masks to the collection images when supported, otherwise apply fill
+        (valid pixel) masks.
+
+        Mask bands should be added with :meth:`addMaskBands` before calling this method.
+
+        :return:
+            Masked image collection.
+        """
+        return self._ee_coll.map(lambda ee_image: self._mi.mask_clouds(ee_image))
+
+    def medoid(self, bands: list | ee.List = None) -> ee.Image:
+        """
+        Find the medoid composite of the collection images.
+
+        See https://www.mdpi.com/2072-4292/5/12/6481 for a description of the method.
+
+        :param bands:
+            List of bands to include in the medoid score.  Defaults to :attr:`reflBands` if
+            available, otherwise all bands.
+
+        :return:
+            Medoid composite image.
+        """
+        return medoid(self._ee_coll, bands=bands or self.reflBands)
 
     def search(
         self,
@@ -412,6 +404,39 @@ class ImageCollectionAccessor:
         custom_filter: str = None,
         **kwargs,
     ) -> ee.ImageCollection:
+        """
+        Search the collection for images that satisfy date, region, filled/cloudless portion,
+        and custom criteria.
+
+        Filled and cloudless portions are only calculated and included in collection
+        :attr:`properties` when one or both of ``fill_portion`` / ``cloudless_portion`` are
+        provided.
+
+        Search speed can be increased by specifying ``custom_filter``, and or by omitting
+        ``fill_portion`` / ``cloudless_portion``.
+
+        :param start_date:
+            Start date, in ISO format if a string.
+        :param end_date:
+            End date, in ISO format if a string.  Defaults to a day after ``start_date``, if
+            ``end_date`` is ``None``, and ``start_date`` is supplied.
+        :param region:
+            Region that images should intersect as a GeoJSON dictionary or ``ee.Geometry``.
+        :param fill_portion:
+            Lower limit on the portion of region that contains filled/valid image pixels (%).
+        :param cloudless_portion:
+            Lower limit on the portion of filled pixels that are cloud/shadow free (%).
+        :param custom_filter:
+            Custom image property filter expression e.g. ``property > value``.  See the `EE docs
+            <https://developers.google.com/earth-engine/apidocs/ee-filter-expression>`_ for details.
+        :param kwargs:
+            Cloud/shadow masking arguments - see :meth:`geedim.mask.ImageAccessor.addMaskBands`
+            for details.
+
+        :return:
+            Filtered image collection containing search result image(s).
+        """
+        # TODO: refactor error classes and what gets raised where.
         # TODO: test for these errors
         if not start_date and not region:
             raise ValueError("At least one of 'start_date' or 'region' should be specified")
@@ -442,17 +467,12 @@ class ImageCollectionAccessor:
 
         if (fill_portion is not None) or (cloudless_portion is not None) or custom_filter:
             # set regions stats before filtering on those properties
-            # TODO: we want aux bands overwritten if it is fixed proj image, and not otherwise
-            # TODO: add and set portions in one mapping fn.  perhaps don't add bands rather just
-            #  set portions from separate aux image.  but if a composite aux bands should come
-            #  from itself.
-            # TODO: is there a neater & automatic way to copy name here & id in image?
-            # copy name to avoid getInfo in addAuxBands
-            ee_coll.gd._name = self._name
 
             def set_portions(ee_image: ee.Image) -> ee.Image:
                 ee_image = self._mi.add_mask_bands(ee_image, **kwargs)
-                return self._mi.set_mask_portions(ee_image, region=region, scale=self.stats_scale)
+                return self._mi.set_mask_portions(
+                    ee_image, region=region, scale=self._portion_scale
+                )
 
             ee_coll = ee_coll.map(set_portions)
             if fill_portion:
@@ -466,37 +486,73 @@ class ImageCollectionAccessor:
                 ee_coll = ee_coll.filter(ee.Filter.expression(custom_filter))
 
         ee_coll = ee_coll.sort('system:time_start')
-
-        ee_coll.gd._name = self._name
         return ee_coll
 
     def composite(
         self,
         method: CompositeMethod | str = None,
         mask: bool = True,
-        resampling: ResamplingMethod | str = None,
+        resampling: ResamplingMethod | str = BaseImage._default_resampling,
         date: str | datetime | ee.Date = None,
         region: dict | ee.Geometry = None,
         **kwargs,
     ) -> ee.Image:
+        """
+        Create a composite from the images in the collection.
+
+        :param method:
+            Compositing method. By default, :attr:`~geedim.enums.CompositeMethod.q_mosaic` is
+            used for cloud/shadow mask supported collections,
+            and :attr:`~geedim.enums.CompositeMethod.mosaic` otherwise.
+        :param mask:
+            Whether to apply the cloud/shadow mask; or fill (valid pixel) mask, in the case of
+            images without support for cloud/shadow masking.
+        :param resampling:
+            Resampling method to use on collection images prior to compositing.
+        :param date:
+            Sort collection images by their absolute difference in capture time from this date.
+            Prioritises pixels from images closest to this date.  Valid for the
+            :attr:`~geedim.enums.CompositeMethod.q_mosaic`,
+            :attr:`~geedim.enums.CompositeMethod.mosaic` and
+            :attr:`~geedim.enums.CompositeMethod.medoid` ``method`` only.  If a string, it should
+            be in ISO format.  If ``None``, no time difference sorting is done (the default).
+        :param region:
+            Sort collection images by the portion of valid pixels inside this region that are
+            cloudless. Can be a GeoJSON dictionary or ``ee.Geometry``.  This prioritises pixels
+            from the least cloudy images. Valid for the
+            :attr:`~geedim.enums.CompositeMethod.q_mosaic`,
+            :attr:`~geedim.enums.CompositeMethod.mosaic` and
+            :attr:`~geedim.enums.CompositeMethod.medoid` ``method`` only.  If the collection has
+            no cloud/shadow mask support, images are sorted by the portion of their valid pixels
+            that are inside ``region``.  This prioritises pixels from images with the best
+            ``region`` coverage. If ``region`` is ``None``, no cloudless/valid portion sorting is
+            done (the default).  If ``date`` and ``region`` are not specified, collection images
+            are sorted by their capture date.
+        :param kwargs:
+            Cloud/shadow masking arguments - see :meth:`geedim.mask.ImageAccessor.addMaskBands`
+            for details.
+
+        :return:
+            Composite image.
+        """
         if method is None:
             method = (
                 CompositeMethod.q_mosaic
-                if self.name in schema.cloud_coll_names
+                if self.id in schema.cloud_coll_names
                 else CompositeMethod.mosaic
             )
 
         # mask, sort & resample the EE collection
-        method = CompositeMethod(method)
         ee_coll = self._prepare_for_composite(
             method=method, mask=mask, resampling=resampling, date=date, region=region, **kwargs
         )
 
+        method = CompositeMethod(method)
         if method == CompositeMethod.q_mosaic:
             comp_image = ee_coll.qualityMosaic('CLOUD_DIST')
         elif method == CompositeMethod.medoid:
             # limit medoid to surface reflectance bands
-            comp_image: ee.Image = ee_coll.gd.medoid(bands=self.refl_bands)
+            comp_image: ee.Image = ee_coll.gd.medoid(bands=self.reflBands)
         else:
             comp_image = getattr(ee_coll, method.name)()
 
@@ -509,7 +565,7 @@ class ImageCollectionAccessor:
         # set 'properties'->'system:index'
         comp_image = comp_image.set('system:index', comp_index)
         # set root 'id' property
-        comp_id = ee.String(self.name + '/') if self.name else ee.String('')
+        comp_id = ee.String(self.id + '/') if self.id else ee.String('')
         comp_id = comp_id.cat(comp_index)
         comp_image = comp_image.set('system:id', comp_id)
         # # set composite start-end times
@@ -523,43 +579,35 @@ class MaskedCollection(ImageCollectionAccessor):
 
     def __init__(self, ee_collection: ee.ImageCollection, add_props: list[str] = None):
         """
-        A class for describing, searching and compositing an Earth Engine image collection, with support for
-        cloud/shadow masking.
+        A class for describing, searching and compositing an Earth Engine image collection,
+        with support for cloud/shadow masking.
 
-        Parameters
-        ----------
-        ee_collection : ee.ImageCollection
+        :param ee_collection:
             Earth Engine image collection to encapsulate.
-        add_props: list of str, optional
+        :param add_props:
             Additional Earth Engine image properties to include in :attr:`properties`.
         """
         if not isinstance(ee_collection, ee.ImageCollection):
             raise TypeError(f'`ee_collection` must be an instance of ee.ImageCollection')
         super().__init__(ee_collection)
         if add_props:
-            self.table_properties += add_props
+            self.schemaPropertyNames += add_props
 
     @classmethod
     def from_name(cls, name: str, add_props: list[str] = None) -> MaskedCollection:
         """
-        Create a MaskedCollection instance from an Earth Engine image collection name.
 
-        Parameters
-        ----------
-        name: str
+        :param name:
             Name of the Earth Engine image collection to create.
-        add_props: list of str, optional
+        :param add_props:
             Additional Earth Engine image properties to include in :attr:`properties`.
 
-        Returns
-        -------
-        MaskedCollection
-            A MaskedCollection instance.
+        :return:
+            MaskedCollection instance.
         """
         # this is separate from __init__ for consistency with MaskedImage.from_id()
         ee_coll = ee.ImageCollection(name)
         gd_coll = cls(ee_coll, add_props=add_props)
-        gd_coll._name = name
         return gd_coll
 
     @classmethod
@@ -567,30 +615,28 @@ class MaskedCollection(ImageCollectionAccessor):
         cls, image_list: list[str | MaskedImage | ee.Image], add_props: list[str] = None
     ) -> MaskedCollection:
         """
-        Create a MaskedCollection instance from a list of Earth Engine image ID strings, ``ee.Image`` instances and/or
-        :class:`~geedim.mask.MaskedImage` instances.  The list may include composite images, as created with
-        :meth:`composite`.
+        Create a MaskedCollection instance from a list of Earth Engine image ID strings,
+        ``ee.Image`` instances and/or :class:`~geedim.mask.MaskedImage` instances.  The list may
+        include composite images, as created with :meth:`composite`.
 
-        Images from spectrally compatible Landsat collections can be combined i.e. Landsat-4 with Landsat-5,
-        and Landsat-8 with Landsat-9.  Otherwise, images should all belong to the same collection.
+        Images from spectrally compatible Landsat collections can be combined i.e. Landsat-4 with
+        Landsat-5, and Landsat-8 with Landsat-9.  Otherwise, images should all belong to the same
+        collection.
 
-        Any ``ee.Image`` instances in the list (including those encapsulated by :class:`~geedim.mask.MaskedImage`)
-        must have ``system:id`` and ``system:time_start`` properties.  This is always the case for images
-        obtained from the Earth Engine catalog, and images returned from :meth:`composite`.  Any other user-created
-        images passed to :meth:`from_list` should have these properties set.
+        Any ``ee.Image`` instances in the list (including those encapsulated by
+        :class:`~geedim.mask.MaskedImage`) must have ``system:id`` and ``system:time_start``
+        properties.  This is always the case for images obtained from the Earth Engine catalog,
+        and images returned from :meth:`composite`.  Any other user-created images passed to
+        :meth:`from_list` should have these properties set.
 
-        Parameters
-        ----------
-        image_list : list
-            List of images to include in the collection (must all be from the same, or compatible Earth Engine
-            collections). List items can be ID strings, instances of :class:`~geedim.mask.MaskedImage`, or instances of
-            ``ee.Image``.
-        add_props: list of str, optional
+        :param image_list:
+            List of images to include in the collection (must all be from the same, or compatible
+            Earth Engine collections). List items can be ID strings, instances of
+            :class:`~geedim.mask.MaskedImage`, or instances of ``ee.Image``.
+        :param add_props:
             Additional Earth Engine image properties to include in :attr:`properties`.
 
-        Returns
-        -------
-        MaskedCollection
+        :return:
             A MaskedCollection instance.
         """
         if len(image_list) == 0:
@@ -600,10 +646,7 @@ class MaskedCollection(ImageCollectionAccessor):
             image.ee_image if isinstance(image, BaseImage) else ee.Image(image)
             for image in image_list
         ]
-        # TODO: previously there were checks for IDs (should be implicit in
-        #  compatible_collections - to check) and capture times. Does seach / composite work OK w/o
-        #  these?
-        ee_coll = super().fromList(images)
+        ee_coll = cls.fromImages(images)
         return cls(ee_coll, add_props=add_props)
 
     @property
@@ -612,111 +655,56 @@ class MaskedCollection(ImageCollectionAccessor):
         return self._ee_coll
 
     @property
+    def name(self) -> str:
+        """Name of the encapsulated Earth Engine image collection."""
+        return self.id
+
+    @property
+    def image_type(self) -> type:
+        """:class:`~geedim.mask.MaskedImage` class for images in :attr:`ee_collection`."""
+        return MaskedImage
+
+    @property
+    def stats_scale(self) -> float | None:
+        """Scale to use for re-projections when finding region statistics."""
+        return self._portion_scale
+
+    @property
+    def schema_table(self) -> str:
+        """:attr:`schema` formatted as a printable table string."""
+        return self.schemaTable
+
+    @property
     def properties(self) -> dict:
         """A dictionary of properties for each image in the collection. Dictionary keys are the
-        image IDs, and values are a dictionaries of image properties.
+        image IDs, and values are dictionaries of image properties.
         """
-
-        # convert to legacy format
-        coll_props = {}
-        for i, im_info in enumerate(super().properties.get('features', [])):
+        props_dict = {}
+        for i, im_info in enumerate(self.info.get('features', [])):
             im_props = im_info.get('properties', {})
-            im_props_schema = {key: im_props[key] for key in self.schema.keys() if key in im_props}
-            im_id = im_info.get('id', i)
-            # TODO: the schema system:id needs a workaround now that getInfo is used for
-            #  properties in the parent class, and should be changed to avoid this
-            if 'system:id' in self.schema.keys():
-                im_props_schema['system:id'] = im_id
-            coll_props[im_id] = im_props_schema
-        return coll_props
+            im_schema_props = {key: im_props[key] for key in self.schema.keys() if key in im_props}
+            props_dict[im_info.get('id', i)] = im_schema_props
+        return props_dict
 
     @property
     def properties_table(self) -> str:
         """:attr:`properties` formatted as a printable table string."""
-        return self._get_images_table(super().properties, self.schema)
+        return self.propertiesTable
+
+    @property
+    def refl_bands(self) -> list[str] | None:
+        """List of the collection's spectral / reflectance band names.  ``None`` if there is no
+        :attr:`stac` entry, or no spectral / reflectance bands.
+        """
+        return self.reflBands
 
     def search(self, *args, **kwargs) -> MaskedCollection:
-        """
-        Search for images based on date, region, filled/cloudless portion, and custom criteria.
-
-        Filled and cloudless portions are only calculated and included in collection properties
-        when one or both of ``fill_portion`` / ``cloudless_portion`` are specified.
-
-        Search speed can be increased by specifying ``custom_filter``, and or by omitting
-        ``fill_portion`` / ``cloudless_portion``.
-
-        Parameters
-        ----------
-        start_date : datetime, str
-            Start date (UTC).  In '%Y-%m-%d' format if a string.
-
-        end_date : datetime, str, optional End date (UTC).
-            In '%Y-%m-%d' format if a string.  If None, ``end_date`` is set to a day after
-            ``start_date``.
-        region: dict, ee.Geometry
-            Region that images should intersect as a GeoJSON dictionary or ``ee.Geometry``.
-        fill_portion: float, optional
-            Lower limit on the portion of region that contains filled/valid image pixels (%).
-        cloudless_portion: float, optional
-            Lower limit on the portion of filled pixels that are cloud/shadow free (%).
-        custom_filter: str, optional
-            Custom image property filter expression e.g. "property > value".  See the `EE docs
-            <https://developers.google.com/earth-engine/apidocs/ee-filter-expression>`_.
-        **kwargs
-            Optional cloud/shadow masking parameters - see :meth:`geedim.mask.MaskedImage.__init__`
-            for details.
-
-        Returns
-        -------
-        MaskedCollection
-            Filtered MaskedCollection instance containing the search result image(s).
-        """
         ee_coll = self._ee_coll.gd.search(*args, **kwargs)
         gd_coll = MaskedCollection(ee_coll)
-        gd_coll._name = self._name
-        gd_coll.table_properties = self.table_properties
+        gd_coll.schemaPropertyNames = self.schemaPropertyNames
         return gd_coll
 
     def composite(self, *args, **kwargs) -> MaskedImage:
-        """
-        Create a composite image from the encapsulated image collection.
-
-        Parameters
-        ----------
-        method: CompositeMethod, str, optional
-            Method for finding each composite pixel from the stack of corresponding input image
-            pixels. See :class:`~geedim.enums.CompositeMethod` for available options.  By
-            default, `q-mosaic` is used for cloud/shadow mask supported collections, `mosaic`
-            otherwise.
-        mask: bool, optional
-            Whether to apply the cloud/shadow mask; or fill (valid pixel) mask, in the case of
-            images without support for cloud/shadow masking.
-        resampling: ResamplingMethod, str, optional
-            Resampling method to use on collection images prior to compositing.  If None,
-            `near` resampling is used (the default).  See :class:`~geedim.enums.ResamplingMethod`
-            for available options.
-        date: datetime, str, optional
-            Sort collection images by their absolute difference in capture time from this date.
-            Pioritises pixels from images closest to this date.  Valid for the `q-mosaic`,
-            `mosaic` and `medoid` ``method`` only.  If None, no time difference sorting is done (
-            the default).
-        region: dict, ee.Geometry, optional
-            Sort collection images by the portion of their pixels that are cloudless, and inside
-            this region.  Can be a GeoJSON dictionary or ee.Geometry.  Prioritises pixels from
-            the least cloudy image(s). Valid for the `q-mosaic`, `mosaic`, and `medoid`
-            ``method`` only.  If collection has no cloud/shadow mask support, images are sorted
-            by the portion of their pixels that are valid, and inside ``region``. If None,
-            no cloudless/valid portion sorting is done (the default).  If ``date`` and ``region``
-            are not specified, collection images are sorted by their capture date.
-        **kwargs
-            Optional cloud/shadow masking parameters - see :meth:`geedim.mask.MaskedImage.__init__`
-            for details.
-
-        Returns
-        -------
-        MaskedImage
-            Composite image.
-        """
         ee_image = self._ee_coll.gd.composite(*args, **kwargs)
         gd_image = MaskedImage(ee_image)
         return gd_image
