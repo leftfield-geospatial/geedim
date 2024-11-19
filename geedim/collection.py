@@ -257,14 +257,15 @@ class ImageCollectionAccessor:
                 im_schema_props = {}
                 for prop_name, prop_schema in self.schema.items():
                     prop_val = im_props.get(prop_name, None)
-                    if prop_name in ['system:time_start', 'system:time_end'] and prop_val:
-                        # convert timestamp to date string
-                        dt = datetime.fromtimestamp(prop_val / 1000, tz=timezone.utc)
-                        im_schema_props[prop_schema['abbrev']] = datetime.strftime(
-                            dt, '%Y-%m-%d %H:%M'
-                        )
-                    else:
-                        im_schema_props[prop_schema['abbrev']] = prop_val
+                    if prop_val is not None:
+                        if prop_name in ['system:time_start', 'system:time_end']:
+                            # convert timestamp to date string
+                            dt = datetime.fromtimestamp(prop_val / 1000, tz=timezone.utc)
+                            im_schema_props[prop_schema['abbrev']] = datetime.strftime(
+                                dt, '%Y-%m-%d %H:%M'
+                            )
+                        else:
+                            im_schema_props[prop_schema['abbrev']] = prop_val
                 self._properties.append(im_schema_props)
         return self._properties
 
@@ -273,7 +274,7 @@ class ImageCollectionAccessor:
         """:attr:`properties` formatted as a printable table string."""
         return tabulate.tabulate(
             # force use of this class's 'properties' rather than a subclass's
-            ImageCollectionAccessor.properties.fget(self),
+            ImageCollectionAccessor.properties.__get__(self),
             headers='keys',
             floatfmt='.2f',
             tablefmt=_tablefmt,
@@ -687,7 +688,11 @@ class MaskedCollection(ImageCollectionAccessor):
         props_dict = {}
         for i, im_info in enumerate(self.info.get('features', [])):
             im_props = im_info.get('properties', {})
-            im_schema_props = {key: im_props[key] for key in self.schema.keys() if key in im_props}
+            im_schema_props = {
+                key: im_props[key]
+                for key in self.schema.keys()
+                if im_props.get(key, None) is not None
+            }
             props_dict[im_info.get('id', i)] = im_schema_props
         return props_dict
 
