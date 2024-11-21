@@ -176,14 +176,14 @@ class ImageCollectionAccessor:
 
     @cached_property
     def stac(self) -> StacItem | None:
-        """Collection STAC information.  ``None`` if there is no STAC entry for this collection."""
+        """STAC information.  ``None`` if there is no STAC entry for this collection."""
         # TODO: look into refactoring StacItem and/or use raw STAC dictionaries where possible
         return StacCatalog().get_item(self.id)
 
     @property
     def info(self) -> dict[str, Any]:
-        """Collection information as returned by :meth:`ee.ImageCollection.getInfo`, but limited to
-        the first 1000 images with band information excluded.
+        """Earth Engine information as returned by :meth:`ee.ImageCollection.getInfo`,
+        but limited to the first 1000 images with band information excluded.
         """
         if not self._info:
             self._info = self._ee_coll.limit(1000).select(None).getInfo()
@@ -211,7 +211,7 @@ class ImageCollectionAccessor:
     @property
     def schema(self) -> dict[str, dict]:
         """Dictionary of property abbreviations and descriptions used to form
-        :attr:`properties` and :attr:`propertiesTable`.
+        :attr:`propertiesTable`.
         """
         if not self._schema:
             if self.id in schema.collection_schema:
@@ -248,33 +248,38 @@ class ImageCollectionAccessor:
         )
 
     @property
-    def properties(self) -> list[dict[str, Any]]:
-        """List of schema properties of the collection images."""
+    def properties(self) -> dict[str, dict[str, Any]]:
+        """Dictionary of image properties.  Keys are the image IDs and values the image property
+        dictionaries.
+        """
         if not self._properties:
-            self._properties = []
-            for im_info in self.info.get('features', []):
+            self._properties = {}
+            for i, im_info in enumerate(self.info.get('features', [])):
                 im_props = im_info.get('properties', {})
-                im_schema_props = {}
-                for prop_name, prop_schema in self.schema.items():
-                    prop_val = im_props.get(prop_name, None)
-                    if prop_val is not None:
-                        if prop_name in ['system:time_start', 'system:time_end']:
-                            # convert timestamp to date string
-                            dt = datetime.fromtimestamp(prop_val / 1000, tz=timezone.utc)
-                            im_schema_props[prop_schema['abbrev']] = datetime.strftime(
-                                dt, '%Y-%m-%d %H:%M'
-                            )
-                        else:
-                            im_schema_props[prop_schema['abbrev']] = prop_val
-                self._properties.append(im_schema_props)
+                im_id = im_info.get('id', i)
+                self._properties[im_id] = im_props
         return self._properties
 
     @property
     def propertiesTable(self) -> str:
-        """:attr:`properties` formatted as a printable table string."""
+        """:attr:`properties` formatted with :attr:`schema` as a printable table string."""
+        coll_schema_props = []
+        for im_id, im_props in self.properties.items():
+            im_schema_props = {}
+            for prop_name, prop_schema in self.schema.items():
+                prop_val = im_props.get(prop_name, None)
+                if prop_val is not None:
+                    if prop_name in ['system:time_start', 'system:time_end']:
+                        # convert timestamp to date string
+                        dt = datetime.fromtimestamp(prop_val / 1000, tz=timezone.utc)
+                        im_schema_props[prop_schema['abbrev']] = datetime.strftime(
+                            dt, '%Y-%m-%d %H:%M'
+                        )
+                    else:
+                        im_schema_props[prop_schema['abbrev']] = prop_val
+            coll_schema_props.append(im_schema_props)
         return tabulate.tabulate(
-            # force use of this class's 'properties' rather than a subclass's
-            ImageCollectionAccessor.properties.__get__(self),
+            coll_schema_props,
             headers='keys',
             floatfmt='.2f',
             tablefmt=_tablefmt,
@@ -681,20 +686,16 @@ class MaskedCollection(ImageCollectionAccessor):
         return self.schemaTable
 
     @property
-    def properties(self) -> dict:
-        """A dictionary of properties for each image in the collection. Dictionary keys are the
-        image IDs, and values are dictionaries of image properties.
-        """
-        props_dict = {}
-        for i, im_info in enumerate(self.info.get('features', [])):
-            im_props = im_info.get('properties', {})
+    def properties(self) -> dict[str, dict[str, Any]]:
+        coll_schema_props = {}
+        for im_id, im_props in super().properties.items():
             im_schema_props = {
                 key: im_props[key]
                 for key in self.schema.keys()
                 if im_props.get(key, None) is not None
             }
-            props_dict[im_info.get('id', i)] = im_schema_props
-        return props_dict
+            coll_schema_props[im_id] = im_schema_props
+        return coll_schema_props
 
     @property
     def properties_table(self) -> str:
