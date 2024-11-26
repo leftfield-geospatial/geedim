@@ -817,6 +817,7 @@ def download(
     help='Google Drive folder, Earth Engine asset project, or Google Cloud Storage bucket to export image(s) to.  '
     'Interpretation based on :option:`--type`.',
 )
+# TODO: test and document that --folder can include sub-folders.
 @crs_option
 @bbox_option
 @region_option
@@ -899,10 +900,8 @@ def export(obj, image_id, type, folder, bbox, region, like, mask, wait, **kwargs
     """
     # @formatter:on
     logger.info('\nExporting:\n')
-    if (type == ExportType.asset) and not folder:
-        raise click.BadParameter(
-            '--folder must be specified when exporting to asset', param_hint='--folder'
-        )
+    if (type in [ExportType.asset, ExportType.cloud]) and not folder:
+        raise click.MissingParameter(param_hint="'-f' / '--folder'", param_type='option')
     image_list = _prepare_image_list(obj, mask=mask)
     export_tasks = []
     for im in image_list:
