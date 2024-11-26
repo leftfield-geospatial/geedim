@@ -675,7 +675,7 @@ def test_composite(
     comp_im = gd_collection.composite(
         method=method, mask=mask, region=region, date=date, **cloud_kwargs
     )
-    assert comp_im._ee_info is not None and len(comp_im._ee_info) > 0
+    assert comp_im.info is not None and len(comp_im.info) > 0
     assert gd_collection.id in comp_im.id
     assert f'{method.value.upper()}-COMP' in comp_im.id
 
