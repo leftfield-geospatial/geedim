@@ -28,7 +28,7 @@ import rasterio as rio
 from rasterio import Affine, features, warp, windows
 
 from geedim import utils
-from geedim.download import _nodata_vals, BaseImage
+from geedim.download import _nodata_vals, BaseImage, BaseImageAccessor
 from geedim.enums import ExportType, ResamplingMethod
 from tests.conftest import region_25ha
 
@@ -37,7 +37,11 @@ class BaseImageLike:
     """Mock ``BaseImage`` for ``_get_tile_shape()`` and ``tiles()``."""
 
     def __init__(
-        self, shape: tuple[int, int], count: int = 10, dtype: str = 'uint16', transform: Affine = Affine.identity()
+        self,
+        shape: tuple[int, int],
+        count: int = 10,
+        dtype: str = 'uint16',
+        transform: Affine = Affine.identity(),
     ):
         self.shape = shape
         self.count = count
@@ -47,7 +51,7 @@ class BaseImageLike:
         self.size = shape[0] * shape[1] * count * dtype_size
 
     _tiles = BaseImage._tiles
-    _get_tile_shape = BaseImage._get_tile_shape
+    _get_tile_shape = BaseImageAccessor._get_tile_shape
 
 
 def _bounds(geom: dict, dst_crs: str | rio.CRS = 'EPSG:4326') -> tuple[float, ...]:
@@ -60,7 +64,9 @@ def _bounds(geom: dict, dst_crs: str | rio.CRS = 'EPSG:4326') -> tuple[float, ..
     return features.bounds(geom)
 
 
-def _intersect_bounds(bounds1: tuple[float, ...], bounds2: tuple[float, ...]) -> tuple[float, ...] | None:
+def _intersect_bounds(
+    bounds1: tuple[float, ...], bounds2: tuple[float, ...]
+) -> tuple[float, ...] | None:
     """Return the intersection of ``bounds1`` and ``bounds2``, or ``None`` when there is no intersection."""
     bounds = np.array([*np.fmax(bounds1[:2], bounds2[:2]), *np.fmin(bounds1[2:], bounds2[2:])])
     return tuple(bounds.tolist()) if np.all((bounds[2:] - bounds[:2]) > 0) else None
@@ -86,7 +92,9 @@ def user_fix_bnd_base_image(region_10000ha) -> BaseImage:
     is bounded, and has no ID.
     """
     return BaseImage(
-        ee.Image([1, 2, 3]).setDefaultProjection(crs='EPSG:4326', scale=30).clipToBoundsAndScale(region_10000ha)
+        ee.Image([1, 2, 3])
+        .setDefaultProjection(crs='EPSG:4326', scale=30)
+        .clipToBoundsAndScale(region_10000ha)
     )
 
 
@@ -172,15 +180,15 @@ def _test_export_image(exp_image: BaseImage, ref_image: BaseImage, **exp_kwargs)
         assert exp_image.scale == ref_scale
 
     # test export bounds contain reference bounds
-    region = exp_kwargs.get('region', ref_image.footprint)
+    region = exp_kwargs.get('region', ref_image.geometry)
     ref_bounds = _bounds(region, exp_image.crs)
-    exp_bounds = _bounds(exp_image.footprint, exp_image.crs)
+    exp_bounds = _bounds(exp_image.geometry, exp_image.crs)
     tol = 1e-9 if exp_image.crs == 'EPSG:4326' else 1e-6
     assert _intersect_bounds(exp_bounds, ref_bounds) == pytest.approx(ref_bounds, abs=tol)
 
     # test export transform is on the reference grid
     if {'crs', 'scale', 'shape'}.isdisjoint(exp_kwargs.keys()):
-        ji = ~exp_image.transform * (ref_image.transform[2], ref_image.transform[5])
+        ji = ~rio.Affine(*exp_image.transform) * (ref_image.transform[2], ref_image.transform[5])
         assert ji == pytest.approx(np.round(ji), abs=1e-6)
 
 
@@ -221,7 +229,7 @@ def test_fix_user_props(user_fix_base_image: BaseImage):
 
 def test_s2_props(s2_sr_hm_base_image: BaseImage):
     """Test fixed projection S2 image properties (other than ``id`` and ``has_fixed_projection``)."""
-    min_band_info = s2_sr_hm_base_image._ee_info['bands'][1]
+    min_band_info = s2_sr_hm_base_image.info['bands'][1]
     assert s2_sr_hm_base_image.crs == min_band_info['crs']
     assert s2_sr_hm_base_image.scale == min_band_info['crs_transform'][0]
     assert s2_sr_hm_base_image.transform == Affine(*min_band_info['crs_transform'])
@@ -230,26 +238,31 @@ def test_s2_props(s2_sr_hm_base_image: BaseImage):
         s2_sr_hm_base_image.properties['system:time_start'] / 1000, timezone.utc
     )
     assert s2_sr_hm_base_image.size is not None
-    assert s2_sr_hm_base_image.footprint is not None
-    assert s2_sr_hm_base_image.footprint['type'] == 'Polygon'
+    assert s2_sr_hm_base_image.geometry is not None
+    assert s2_sr_hm_base_image.geometry['type'] in ['Polygon', 'LinearRing']
     assert s2_sr_hm_base_image.dtype == 'uint32'
-    assert s2_sr_hm_base_image.count == len(s2_sr_hm_base_image._ee_info['bands'])
+    assert s2_sr_hm_base_image.count == len(s2_sr_hm_base_image.info['bands'])
 
 
 @pytest.mark.parametrize(
-    'base_image', ['landsat_ndvi_base_image', 's2_sr_hm_base_image', 'l9_base_image', 'modis_nbar_base_image']
+    'base_image',
+    ['landsat_ndvi_base_image', 's2_sr_hm_base_image', 'l9_base_image', 'modis_nbar_base_image'],
 )
 def test_band_props(base_image: str, request: pytest.FixtureRequest):
     """Test ``band_properties`` completeness for generic / user / reflectance images."""
     base_image: BaseImage = request.getfixturevalue(base_image)
     assert base_image.band_properties is not None
-    assert [bd['name'] for bd in base_image.band_properties] == [bd['id'] for bd in base_image._ee_info['bands']]
+    assert [bd['name'] for bd in base_image.band_properties] == [
+        bd['id'] for bd in base_image.info['bands']
+    ]
     for key in ['gsd', 'description']:
         has_key = [key in bd for bd in base_image.band_properties]
         assert all(has_key)
 
 
-def test_has_fixed_projection(user_base_image: BaseImage, user_fix_base_image: BaseImage, s2_sr_hm_base_image):
+def test_has_fixed_projection(
+    user_base_image: BaseImage, user_fix_base_image: BaseImage, s2_sr_hm_base_image
+):
     """Test the ``has_fixed_projection`` property."""
     assert not user_base_image.has_fixed_projection
     assert user_fix_base_image.has_fixed_projection
@@ -257,40 +270,64 @@ def test_has_fixed_projection(user_base_image: BaseImage, user_fix_base_image: B
 
 
 @pytest.mark.parametrize(
-    'ee_data_type_list, exp_dtype',
+    'data_types, exp_dtype',
     [
-        ([{'precision': 'int', 'min': 10, 'max': 11}, {'precision': 'int', 'min': 100, 'max': 101}], 'uint8'),
-        ([{'precision': 'int', 'min': -128, 'max': -100}, {'precision': 'int', 'min': 0, 'max': 127}], 'int8'),
+        (
+            [
+                {'precision': 'int', 'min': 10, 'max': 11},
+                {'precision': 'int', 'min': 100, 'max': 101},
+            ],
+            'uint8',
+        ),
+        (
+            [
+                {'precision': 'int', 'min': -128, 'max': -100},
+                {'precision': 'int', 'min': 0, 'max': 127},
+            ],
+            'int8',
+        ),
         ([{'precision': 'int', 'min': 256, 'max': 257}], 'uint16'),
         ([{'precision': 'int', 'min': -32768, 'max': 32767}], 'int16'),
         ([{'precision': 'int', 'min': 2**15, 'max': 2**32 - 1}], 'uint32'),
         ([{'precision': 'int', 'min': -(2**31), 'max': 2**31 - 1}], 'int32'),
-        ([{'precision': 'float', 'min': 0.0, 'max': 1.0e9}, {'precision': 'float', 'min': 0.0, 'max': 1.0}], 'float32'),
         (
-            [{'precision': 'int', 'min': 0.0, 'max': 2**31 - 1}, {'precision': 'float', 'min': 0.0, 'max': 1.0}],
+            [
+                {'precision': 'float', 'min': 0.0, 'max': 1.0e9},
+                {'precision': 'float', 'min': 0.0, 'max': 1.0},
+            ],
+            'float32',
+        ),
+        (
+            [
+                {'precision': 'int', 'min': 0.0, 'max': 2**31 - 1},
+                {'precision': 'float', 'min': 0.0, 'max': 1.0},
+            ],
             'float64',
         ),
-        ([{'precision': 'int', 'min': 0, 'max': 255}, {'precision': 'double', 'min': -1e100, 'max': 1e100}], 'float64'),
+        (
+            [
+                {'precision': 'int', 'min': 0, 'max': 255},
+                {'precision': 'double', 'min': -1e100, 'max': 1e100},
+            ],
+            'float64',
+        ),
     ],
 )
-def test_min_dtype(ee_data_type_list: List, exp_dtype: str):
-    """Test ``BasicImage.__get_min_dtype()`` with emulated EE info dicts."""
-    ee_info = dict(bands=[])
-    for ee_data_type in ee_data_type_list:
-        ee_info['bands'].append(dict(data_type=ee_data_type))
-    assert BaseImage._get_min_dtype(ee_info) == exp_dtype
+def test_min_dtype(data_types: List, exp_dtype: str):
+    """Test ``BaseImage.dtype`` with mocked EE info dicts."""
+    # mock a BaseImage with data_types in its EE info
+    info = dict(bands=[dict(data_type=data_type) for data_type in data_types])
+    im = BaseImage(None)
+    im.info = info
+
+    assert im.dtype == exp_dtype
 
 
-def test_convert_dtype_error():
+def _test_convert_dtype_error():
     """Test ``BaseImage.test_convert_dtype()`` raises an error with incorrect dtype."""
+    # TODO: replace with BaseImageAccessor test
     with pytest.raises(TypeError):
         BaseImage._convert_dtype(ee.Image(1), dtype='unknown')
-
-
-@pytest.mark.parametrize('size, exp_str', [(1024, '1.02 KB'), (234.56e6, '234.56 MB'), (1e9, '1.00 GB')])
-def test_str_format_size(size: int, exp_str: str):
-    """Test formatting of byte sizes as human readable strings."""
-    assert BaseImage._str_format_size(size) == exp_str
 
 
 @pytest.mark.parametrize(
@@ -306,7 +343,9 @@ def test_str_format_size(size: int, exp_str: str):
         dict(crs_transform=Affine.identity(), shape=(100, 100)),
     ],
 )
-def test_prepare_no_fixed_projection(user_base_image: BaseImage, params: Dict, request: pytest.FixtureRequest):
+def test_prepare_no_fixed_projection(
+    user_base_image: BaseImage, params: Dict, request: pytest.FixtureRequest
+):
     """Test ``BaseImage._prepare_for_export()`` raises an exception when the image has no fixed projection,
     and insufficient CRS & region defining arguments.
     """
@@ -337,7 +376,9 @@ def test_prepare_unbounded(base_image: BaseImage, params: Dict, request: pytest.
     assert 'This image is unbounded' in str(ex)
 
 
-def test_prepare_exceptions(user_base_image: BaseImage, user_fix_base_image: BaseImage, region_25ha: Dict):
+def test_prepare_exceptions(
+    user_base_image: BaseImage, user_fix_base_image: BaseImage, region_25ha: Dict
+):
     """Test remaining ``BaseImage._prepare_for_export()`` error cases."""
     with pytest.raises(ValueError):
         # no fixed projection and resample
@@ -373,7 +414,11 @@ def test_prepare_defaults(base_image: str, request: pytest.FixtureRequest):
     ],
 )
 def test_prepare_transform_shape(
-    base_image: str, crs: str, crs_transform: tuple[float, ...], shape: tuple[int, int], request: pytest.FixtureRequest
+    base_image: str,
+    crs: str,
+    crs_transform: tuple[float, ...],
+    shape: tuple[int, int],
+    request: pytest.FixtureRequest,
 ):
     """Test ``BaseImage._prepare_for_export()`` with ``crs_transform`` and ``shape`` parameters."""
     base_image: BaseImage = request.getfixturevalue(base_image)
@@ -399,7 +444,9 @@ def test_prepare_transform_shape(
         ('google_dyn_world_base_image', 'EPSG:4326', 'region_10000ha', 1.0e-5),
     ],
 )
-def test_prepare_region_scale(base_image: str, crs: str, region: str, scale: float, request: pytest.FixtureRequest):
+def test_prepare_region_scale(
+    base_image: str, crs: str, region: str, scale: float, request: pytest.FixtureRequest
+):
     """Test ``BaseImage._prepare_for_export()`` with ``region`` and ``scale`` parameters."""
     base_image: BaseImage = request.getfixturevalue(base_image)
     region: dict = request.getfixturevalue(region) if region else None
@@ -456,9 +503,12 @@ def test_prepare_src_grid(base_image: str, region: str, request: pytest.FixtureR
 
 
 @pytest.mark.parametrize(
-    'base_image, bands', [('s2_sr_hm_base_image', ['B1', 'B5']), ('l9_base_image', ['SR_B4', 'SR_B3', 'SR_B2'])]
+    'base_image, bands',
+    [('s2_sr_hm_base_image', ['B1', 'B5']), ('l9_base_image', ['SR_B4', 'SR_B3', 'SR_B2'])],
 )
-def test_prepare_bands(base_image: str, bands: List[str], region_25ha: dict, request: pytest.FixtureRequest):
+def test_prepare_bands(
+    base_image: str, bands: List[str], region_25ha: dict, request: pytest.FixtureRequest
+):
     """Test ``BaseImage._prepare_for_export()`` with ``bands`` parameter."""
     base_image: BaseImage = request.getfixturevalue(base_image)
     ref_image = BaseImage(base_image.ee_image.select(bands))
@@ -469,43 +519,42 @@ def test_prepare_bands(base_image: str, bands: List[str], region_25ha: dict, req
 
 def test_prepare_bands_error(s2_sr_hm_base_image):
     """Test ``BaseImage._prepare_for_export()`` raises an error with incorrect bands."""
-    with pytest.raises(ValueError) as ex:
+    with pytest.raises(ee.EEException) as ex:
         s2_sr_hm_base_image._prepare_for_export(bands=['unknown'])
     assert 'band' in str(ex.value)
 
 
-def test_prepare_for_download(s2_sr_hm_base_image: BaseImage):
-    """Test ``BaseImage._prepare_for_download()`` sets the rasterio profile as expected."""
-    exp_image, exp_profile = s2_sr_hm_base_image._prepare_for_download()
-
+def test_prepared_profile(s2_sr_hm_base_image: BaseImage):
+    """Test the profile on image returned by ``BaseImage._prepare_for_export()``."""
+    exp_image = s2_sr_hm_base_image._prepare_for_export()
     _test_export_image(exp_image, s2_sr_hm_base_image)
 
     # test dynamic values
     for key in ['dtype', 'count', 'crs', 'transform']:
-        assert exp_profile[key] == getattr(exp_image, key), key
+        assert exp_image.profile[key] == getattr(exp_image, key), key
 
-    assert exp_profile['width'] == exp_image.shape[1]
-    assert exp_profile['height'] == exp_image.shape[0]
-    assert exp_profile['nodata'] == _nodata_vals[exp_profile['dtype']]
-
-    # test fixed values
-    ref_profile = dict(driver='GTiff', compress='deflate', interleave='band', tiled=True, photometric='MINISBLACK')
-    for key in ref_profile.keys():
-        assert exp_profile[key] == ref_profile[key], key
+    assert exp_image.profile['width'] == exp_image.shape[1]
+    assert exp_image.profile['height'] == exp_image.shape[0]
+    assert exp_image.profile['nodata'] == _nodata_vals[exp_image.profile['dtype']]
 
 
 @pytest.mark.parametrize('dtype, exp_nodata', _nodata_vals.items())
 def test_prepare_nodata(user_fix_bnd_base_image: BaseImage, dtype: str, exp_nodata: float):
-    """Test ``BaseImage._prepare_for_download()`` sets the ``nodata`` value correctly for different dtypes."""
-    exp_image, exp_profile = user_fix_bnd_base_image._prepare_for_download(dtype=dtype)
+    """Test ``BaseImage._prepare_for_export()`` profile sets the ``nodata`` value correctly for
+    different dtypes.
+    """
+    exp_image = user_fix_bnd_base_image._prepare_for_export(dtype=dtype)
     assert exp_image.dtype == dtype
-    assert exp_profile['nodata'] == exp_nodata
+    assert exp_image.profile['nodata'] == exp_nodata
 
 
 @pytest.mark.parametrize(
-    'src_image, dtype', [('s2_sr_hm_base_image', 'float32'), ('l9_base_image', None), ('modis_nbar_base_image', None)]
+    'src_image, dtype',
+    [('s2_sr_hm_base_image', 'float32'), ('l9_base_image', None), ('modis_nbar_base_image', None)],
 )
-def test_scale_offset(src_image: str, dtype: str, region_100ha: Dict, request: pytest.FixtureRequest):
+def test_scale_offset(
+    src_image: str, dtype: str, region_100ha: Dict, request: pytest.FixtureRequest
+):
     """Test ``BaseImage._prepare_for_export(scale_offset=True)`` gives expected properties and reflectance ranges."""
     src_image: BaseImage = request.getfixturevalue(src_image)
     exp_image = src_image._prepare_for_export(scale_offset=True)
@@ -518,8 +567,12 @@ def test_scale_offset(src_image: str, dtype: str, region_100ha: Dict, request: p
     def get_min_max_refl(base_image: BaseImage) -> tuple[dict, dict]:
         """Return the min & max of each reflectance band of ``base_image``."""
         band_props = base_image.band_properties
-        refl_bands = [bp['name'] for bp in band_props if ('center_wavelength' in bp) and (bp['center_wavelength'] < 1)]
-        ee_image = base_image.ee_image.select(refl_bands)
+        refl_bands = [
+            bp['name']
+            for bp in band_props
+            if ('center_wavelength' in bp) and (bp['center_wavelength'] < 1)
+        ]
+        ee_image = base_image._ee_image.select(refl_bands)
         min_max_dict = ee_image.reduceRegion(
             reducer=ee.Reducer.minMax(), geometry=region_100ha, bestEffort=True
         ).getInfo()
@@ -536,15 +589,56 @@ def test_scale_offset(src_image: str, dtype: str, region_100ha: Dict, request: p
 def test_tile_shape():
     """Test ``BaseImage._get_tile_shape()`` satisfies the tile size limit for different image shapes."""
     max_tile_dim = 10000
-    for max_tile_size, height, width in product(range(8, 32, 8), range(1, 11000, 1000), range(1, 11000, 1000)):
+    for max_tile_size, height, width in product(
+        range(8, 32, 8), range(1, 11000, 1000), range(1, 11000, 1000)
+    ):
         exp_shape = (height, width)
         exp_image = BaseImageLike(shape=exp_shape)  # mock a BaseImage
-        tile_shape, num_tiles = exp_image._get_tile_shape(max_tile_size=max_tile_size, max_tile_dim=max_tile_dim)
+        tile_shape = exp_image._get_tile_shape(
+            max_tile_size=max_tile_size, max_tile_dim=max_tile_dim
+        )
         tile_size = np.prod(tile_shape) * exp_image.count * np.dtype(exp_image.dtype).itemsize
 
-        assert all(np.array(tile_shape) <= np.array(exp_shape))
-        assert all(np.array(tile_shape) <= max_tile_dim)
+        assert all(np.array(tile_shape) <= np.array(exp_shape)), (max_tile_size, exp_shape)
+        assert all(np.array(tile_shape) <= max_tile_dim), (max_tile_size, exp_shape)
+        assert tile_size <= (max_tile_size << 20), (max_tile_size, exp_shape)
+
+
+@pytest.mark.parametrize(
+    'image_shape, max_tile_size, image_transform',
+    [
+        ((2000, 500), 1, Affine.identity()),
+        ((2000, 1000), 1, Affine.scale(1.23)),
+        ((2000, 1002), 1, Affine.scale(1.23) * Affine.translation(12, 34)),
+    ],
+)
+def test_tiles(image_shape: tuple[int, int], max_tile_size: int, image_transform: Affine):
+    """Test continuity and coverage of tiles."""
+    exp_image = BaseImageLike(shape=image_shape, transform=image_transform)
+    tiles = [tile for tile in exp_image._tiles(max_tile_size=max_tile_size)]
+
+    # test tile continuity
+    prev_tile = tiles[0]
+    accum_window = prev_tile.window
+    for tile in tiles[1:]:
+        tile_size = np.prod(tile._shape) * np.dtype(exp_image.dtype).itemsize * exp_image.count
         assert tile_size <= (max_tile_size << 20)
+        accum_window = windows.union(accum_window, tile.window)
+
+        if tile.window.row_off == prev_tile.window.row_off:
+            assert tile.window.col_off == (prev_tile.window.col_off + prev_tile.window.width)
+            ref_transform = prev_tile._transform * Affine.translation(prev_tile.window.width, 0)
+        else:
+            assert tile.window.row_off == (prev_tile.window.row_off + prev_tile.window.height)
+            ref_transform = prev_tile._transform * Affine.translation(
+                -prev_tile.window.col_off, prev_tile.window.height
+            )
+
+        assert tile._transform == pytest.approx(ref_transform, abs=1e-9)
+        prev_tile = tile
+
+    # test exp_image is fully covered by tiles
+    assert (accum_window.height, accum_window.width) == exp_image.shape
 
 
 @pytest.mark.parametrize(
@@ -555,7 +649,7 @@ def test_tile_shape():
         ((1000, 102), (101, 101), Affine.scale(1.23) * Affine.translation(12, 34)),
     ],
 )
-def test_tiles(image_shape: tuple[int, int], tile_shape: tuple[int, int], image_transform: Affine):
+def _test_tiles(image_shape: tuple[int, int], tile_shape: tuple[int, int], image_transform: Affine):
     """Test continuity and coverage of tiles."""
     exp_image = BaseImageLike(shape=image_shape, transform=image_transform)
     tiles = [tile for tile in exp_image._tiles(tile_shape=tile_shape)]
@@ -587,13 +681,21 @@ def test_download_transform_shape(user_base_image: BaseImage, tmp_path: pathlib.
     """Test ``BaseImage.download()`` file properties and contents with ``crs_transform`` and ``shape`` arguments."""
     # reference profile to test against
     ref_profile = dict(
-        crs='EPSG:3857', transform=Affine(1, 0, 0, 0, -1, 0), width=10, height=10, dtype='uint16', count=3
+        crs='EPSG:3857',
+        transform=Affine(1, 0, 0, 0, -1, 0),
+        width=10,
+        height=10,
+        dtype='uint16',
+        count=3,
     )
 
     # form export kwargs from ref_profile
     shape = (ref_profile['height'], ref_profile['width'])
     exp_kwargs = dict(
-        crs=ref_profile['crs'], crs_transform=ref_profile['transform'], shape=shape, dtype=ref_profile['dtype']
+        crs=ref_profile['crs'],
+        crs_transform=ref_profile['transform'],
+        shape=shape,
+        dtype=ref_profile['dtype'],
     )
 
     # download
@@ -615,7 +717,12 @@ def test_download_region_scale(user_base_image: BaseImage, tmp_path: pathlib.Pat
     """Test ``BaseImage.download()`` file properties and contents with ``region`` and ``scale`` arguments."""
     # reference profile to test against
     ref_profile = dict(
-        crs='EPSG:3857', transform=Affine(1, 0, 0, 0, -1, 0), width=10, height=10, dtype='uint16', count=3
+        crs='EPSG:3857',
+        transform=Affine(1, 0, 0, 0, -1, 0),
+        width=10,
+        height=10,
+        dtype='uint16',
+        count=3,
     )
 
     # form export kwargs from ref_profile
@@ -623,7 +730,10 @@ def test_download_region_scale(user_base_image: BaseImage, tmp_path: pathlib.Pat
     bounds = windows.bounds(windows.Window(0, 0, *shape[::-1]), ref_profile['transform'])
     region = bounds_polygon(*bounds, crs=ref_profile['crs'])
     exp_kwargs = dict(
-        crs=ref_profile['crs'], region=region, scale=ref_profile['transform'][0], dtype=ref_profile['dtype']
+        crs=ref_profile['crs'],
+        region=region,
+        scale=ref_profile['transform'][0],
+        dtype=ref_profile['dtype'],
     )
 
     # download
@@ -654,7 +764,9 @@ def test_overviews(user_base_image: BaseImage, region_25ha: Dict, tmp_path: path
 def test_metadata(s2_sr_hm_base_image: BaseImage, region_25ha: Dict, tmp_path: pathlib.Path):
     """Test metadata is written by ``BaseImage.download()``."""
     filename = tmp_path.joinpath('test_s2_band_subset_download.tif')
-    s2_sr_hm_base_image.download(filename, region=region_25ha, crs='EPSG:3857', scale=60, bands=['B9'])
+    s2_sr_hm_base_image.download(
+        filename, region=region_25ha, crs='EPSG:3857', scale=60, bands=['B9']
+    )
     assert filename.exists()
     with rio.open(filename, 'r') as ds:
         assert 'LICENSE' in ds.tags()
@@ -700,14 +812,6 @@ def __test_export_asset(user_fix_base_image: BaseImage, region_25ha: Dict):
             ee.data.deleteAsset(asset_id)
         except ee.ee_exception.EEException:
             pass
-
-
-def test_download_bigtiff(s2_sr_hm_base_image: BaseImage, tmp_path: pathlib.Path):
-    """Test ``BaseImage._prepare_for_download()`` sets the ``bigtiff`` profile item for images larger than 4GB."""
-    exp_image, profile = s2_sr_hm_base_image._prepare_for_download()
-    assert exp_image.size >= 4e9
-    assert 'bigtiff' in profile
-    assert profile['bigtiff']
 
 
 def test_prepare_ee_geom(l9_base_image: BaseImage, tmp_path: pathlib.Path):

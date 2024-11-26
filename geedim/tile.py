@@ -15,7 +15,6 @@
 """
 
 import logging
-import threading
 import time
 from io import BytesIO
 
@@ -35,9 +34,6 @@ logger = logging.getLogger(__name__)
 
 
 class Tile:
-    # lock to prevent concurrent calls to ee.Image.getDownloadURL(), which can cause a seg fault in the standard
-    # python networking libraries.
-    _ee_lock = threading.Lock()
 
     def __init__(self, exp_image, window: Window):
         """
@@ -53,7 +49,9 @@ class Tile:
         self._exp_image = exp_image
         self._window = window
         # offset the image geo-transform origin so that it corresponds to the UL corner of the tile.
-        self._transform = exp_image.transform * Affine.translation(window.col_off, window.row_off)
+        self._transform = rio.Affine(*exp_image.transform) * Affine.translation(
+            window.col_off, window.row_off
+        )
         self._shape = (window.height, window.width)
 
     @property
@@ -84,7 +82,9 @@ class Tile:
 
             raise TileError(msg)
 
-    def _download_to_array(self, url: str, session: requests.Session = None, bar: tqdm = None) -> np.ndarray:
+    def _download_to_array(
+        self, url: str, session: requests.Session = None, bar: tqdm = None
+    ) -> np.ndarray:
         """Download the image tile into a numpy array."""
         # get image download response
         session = session or requests
@@ -157,7 +157,7 @@ class Tile:
         session = session or requests
 
         # get download URL
-        url = self._exp_image.ee_image.getDownloadURL(
+        url = self._exp_image._ee_image.getDownloadURL(
             dict(
                 crs=self._exp_image.crs,
                 crs_transform=tuple(self._transform)[:6],
@@ -173,6 +173,10 @@ class Tile:
             except (RequestException, RasterioIOError) as ex:
                 if retry < max_retries:
                     time.sleep(backoff_factor * (2**retry))
-                    logger.warning(f'Tile download failed, retry {retry + 1} of {max_retries}.  URL: {url}. {str(ex)}.')
+                    logger.warning(
+                        f'Tile download failed, retry {retry + 1} of {max_retries}.  URL: {url}. {str(ex)}.'
+                    )
                 else:
-                    raise TileError(f'Tile download failed, reached the maximum retries.  URL: {url}.') from ex
+                    raise TileError(
+                        f'Tile download failed, reached the maximum retries.  URL: {url}.'
+                    ) from ex

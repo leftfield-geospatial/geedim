@@ -17,7 +17,7 @@
 import io
 import json
 import logging
-from collections import namedtuple
+from dataclasses import dataclass
 
 import ee
 import numpy as np
@@ -32,7 +32,15 @@ from geedim.errors import TileError
 from geedim.tile import Tile
 from geedim.utils import retry_session
 
-BaseImageLike = namedtuple('BaseImageLike', ['ee_image', 'crs', 'transform', 'shape', 'count', 'dtype'])
+
+@dataclass
+class BaseImageLike:
+    _ee_image: ee.Image
+    crs: str
+    transform: rio.Affine
+    shape: tuple[int, int]
+    count: int
+    dtype: str
 
 
 @pytest.fixture(scope='module')
@@ -42,7 +50,9 @@ def mock_base_image(region_25ha: dict) -> BaseImageLike:
     ee_info = ee_image.getInfo()
     band_info = ee_info['bands'][0]
     transform = Affine(*band_info['crs_transform']) * Affine.translation(*band_info['origin'])
-    return BaseImageLike(ee_image, 'EPSG:3857', transform, tuple(band_info['dimensions'][::-1]), 3, 'uint8')
+    return BaseImageLike(
+        ee_image, 'EPSG:3857', transform, tuple(band_info['dimensions'][::-1]), 3, 'uint8'
+    )
 
 
 @pytest.fixture(scope='module')
@@ -65,7 +75,9 @@ def mock_ee_image(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture(scope='module')
 def gtiff_bytes(mock_base_image: BaseImageLike) -> bytes:
     """GeoTIFF bytes for ``mock_base_image``."""
-    array = np.ones((mock_base_image.count, *mock_base_image.shape)) * np.array([1, 2, 3]).reshape(-1, 1, 1)
+    array = np.ones((mock_base_image.count, *mock_base_image.shape)) * np.array([1, 2, 3]).reshape(
+        -1, 1, 1
+    )
 
     buf = io.BytesIO()
     with rio.open(
@@ -95,7 +107,9 @@ def test_create(mock_base_image: BaseImageLike):
 def test_download(synth_tile: Tile, session):
     """Test downloading the synthetic image tile."""
     dtype_size = np.dtype(synth_tile._exp_image.dtype).itemsize
-    raw_download_size = synth_tile._shape[0] * synth_tile._shape[1] * synth_tile._exp_image.count * dtype_size
+    raw_download_size = (
+        synth_tile._shape[0] * synth_tile._shape[1] * synth_tile._exp_image.count * dtype_size
+    )
     bar = tqdm(total=float(raw_download_size))
     array = synth_tile.download(session=session, bar=bar)
 
@@ -128,11 +142,15 @@ def test_mem_limit_error(synth_tile: Tile, mock_ee_image: None):
     assert msg in str(ex.value)
 
 
-def test_retry(synth_tile: Tile, mock_ee_image: None, gtiff_bytes: bytes, caplog: pytest.LogCaptureFixture):
+def test_retry(
+    synth_tile: Tile, mock_ee_image: None, gtiff_bytes: bytes, caplog: pytest.LogCaptureFixture
+):
     """Test downloading retries invalid tiles until it succeeds."""
     # create progress bar
     dtype_size = np.dtype(synth_tile._exp_image.dtype).itemsize
-    raw_download_size = synth_tile._shape[0] * synth_tile._shape[1] * synth_tile._exp_image.count * dtype_size
+    raw_download_size = (
+        synth_tile._shape[0] * synth_tile._shape[1] * synth_tile._exp_image.count * dtype_size
+    )
     bar = tqdm(total=float(raw_download_size))
 
     # create mock invalid responses for each retry
@@ -175,7 +193,9 @@ def test_retry_error(synth_tile: Tile, mock_ee_image: None, gtiff_bytes: bytes):
     """Test downloading raises an error when the maximum retries are reached."""
     # create progress bar
     dtype_size = np.dtype(synth_tile._exp_image.dtype).itemsize
-    raw_download_size = synth_tile._shape[0] * synth_tile._shape[1] * synth_tile._exp_image.count * dtype_size
+    raw_download_size = (
+        synth_tile._shape[0] * synth_tile._shape[1] * synth_tile._exp_image.count * dtype_size
+    )
     bar = tqdm(total=float(raw_download_size))
 
     # patch session.get() to return a mock response with invalid bytes
