@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 import warnings
-from abc import ABCMeta
+from abc import ABC, abstractmethod
 from functools import cached_property
 
 import ee
@@ -31,39 +31,48 @@ from geedim.utils import split_id, register_accessor
 logger = logging.getLogger(__name__)
 
 
-class _MaskedImage(ABCMeta):
+class _MaskedImage(ABC):
+    """Masking method container for images without cloud/shadow support."""
+
     @staticmethod
     def _get_mask_bands(ee_image: ee.Image) -> dict[str, ee.Image]:
-        # TODO: this (and wherever FILL_MASK is found) uses the projection of the first band.  which
-        #  could be non-fixed, or max/min/? scale.
+        """Return a dictionary of masks & related images for the given image."""
+        # note that fill_mask uses the projection of the first ee_image band
         fill_mask = ee_image.mask().reduce(ee.Reducer.allNonZero()).rename('FILL_MASK')
         return dict(fill=fill_mask)
 
     @classmethod
     def add_mask_bands(cls, ee_image: ee.Image, **kwargs) -> ee.Image:
-        # TODO: this (and wherever FILL_MASK is found) uses the projection of the first band.  which
-        #  could be non-fixed, or max/min/? scale.
-        # TODO: should this (and all other **kwargs fns) take *args and **kwargs in case kwargs are
-        #  passed as args?
+        """Return the given image with cloud/shadow masks and related bands added. Mask bands are
+        overwritten if they exist, except on images without fixed projections, in which case no
+        bands are added or overwritten.
+        """
         mask_bands = cls._get_mask_bands(ee_image, **kwargs)
-        no_mask_bands = ee.Number(ee_image.bandNames().indexOf(ee.String('FILL_MASK')).lt(0))
-        # overwrite unless it is a composite image with existing aux bands
-        # TODO: add without overwrite then select original + aux bands to remove any added
-        overwrite = no_mask_bands.Or(BaseImageAccessor(ee_image).fixed())
+        # add/overwrite mask bands unless the image has no fixed projection
+        add = BaseImageAccessor(ee_image).fixed()
         return ee.Image(
             ee.Algorithms.If(
-                overwrite, ee_image.addBands(list(mask_bands.values()), overwrite=True), ee_image
+                add, ee_image.addBands(list(mask_bands.values()), overwrite=True), ee_image
             )
         )
 
     @staticmethod
     def mask_clouds(ee_image: ee.Image) -> ee.Image:
+        """Return the given image with cloud/shadow masks applied when supported, otherwise with
+        fill (validity) masks applied.  Mask bands should be added with :meth:`add_mask_bands`
+        before calling this method.
+        """
         return ee_image.updateMask(ee_image.select('FILL_MASK'))
 
     @staticmethod
     def set_mask_portions(
         ee_image: ee.Image, region: dict | ee.Geometry = None, scale: float | ee.Number = None
     ) -> ee.Image:
+        """Return the given image with the ``FILL_PORTION`` property set to the filled percentage
+        of the given region, and the ``CLOUDLESS_PORTION`` property set to the and cloudless
+        percentage of ``FILL_PORTION``.  ``CLOUDLESS_PORTION`` is set to ``100`` if cloud/shadow
+        masking is not supported.
+        """
         portions = BaseImageAccessor(ee_image.select('FILL_MASK')).maskCoverage(
             region=region, scale=scale, maxPixels=1e6, bestEffort=True
         )
@@ -71,7 +80,13 @@ class _MaskedImage(ABCMeta):
 
 
 class _CloudlessImage(_MaskedImage):
-    # TODO: make this class / _get_mask_bands method abstract
+    """Abstract masking method container for images with cloud/shadow support."""
+
+    @staticmethod
+    @abstractmethod
+    def _get_mask_bands(ee_image: ee.Image) -> dict[str, ee.Image]:
+        pass
+
     @staticmethod
     def mask_clouds(ee_image: ee.Image) -> ee.Image:
         return ee_image.updateMask(ee_image.select('CLOUDLESS_MASK'))
@@ -91,6 +106,8 @@ class _CloudlessImage(_MaskedImage):
 
 
 class _LandsatImage(_CloudlessImage):
+    """Masking method container for Landsat level 2 collection 2 images."""
+
     @staticmethod
     def _get_mask_bands(
         ee_image: ee.Image,
@@ -98,7 +115,6 @@ class _LandsatImage(_CloudlessImage):
         mask_cirrus: bool = True,
         max_cloud_dist: float = 5000,
     ) -> dict[str, ee.Image]:
-        """Return an image of cloud, shadow and validity masks for the given Landsat C2 SR image."""
         # TODO: add support for landsat TOA images
         qa_pixel = ee_image.select('QA_PIXEL')
 
@@ -122,7 +138,6 @@ class _LandsatImage(_CloudlessImage):
         cloud_dist = ee_image.select('ST_CDIST').multiply(10).rename('CLOUD_DIST')
         cloud_dist = cloud_dist.clamp(0, max_cloud_dist).toUint16()
 
-        # return ee.Image([fill_mask, cloud_mask, shadow_mask, cloudless_mask, cloud_dist])
         return dict(
             fill=fill_mask,
             cloud=cloud_mask,
@@ -133,12 +148,13 @@ class _LandsatImage(_CloudlessImage):
 
 
 class _Sentinel2Image(_CloudlessImage):
+    """Abstract masking method container for Sentinel-2 TOA / SR images."""
+
     @staticmethod
     def _get_cloud_dist(cloudless_mask: ee.Image, max_cloud_dist: float = 5000) -> ee.Image:
-        """Return a cloud/shadow distance image (m) for the given cloudless mask."""
+        """Return a cloud/shadow distance (m) image for the given cloudless mask."""
         # TODO: previously this used a 60m scale for S2 - does S2 q-mosaic compositing with
-        #  cloud-prob mask method work ok?  the shadow mask should be at 60m, as that is
-        #  reprojected, i don't think the reproject here will interfere.
+        #  cloud-prob mask method work ok?
         # use the projection & scale of cloudless_mask for the distance image
         proj = cloudless_mask.projection()
 
@@ -170,6 +186,7 @@ class _Sentinel2Image(_CloudlessImage):
         return cloud_dist.toUint16().rename('CLOUD_DIST')
 
     @staticmethod
+    @abstractmethod
     def _get_mask_bands(
         ee_image: ee.Image,
         s2_toa: bool = False,
@@ -185,8 +202,7 @@ class _Sentinel2Image(_CloudlessImage):
         score: float = 0.6,
         cs_band: str | CloudScoreBand = CloudScoreBand.cs,
     ) -> dict[str, ee.Image]:
-        """Return an image of cloud, shadow and validity masks for the given Sentinel-2 image.
-
+        """Return an dictionary of mask bands and related images for the given Sentinel-2 image.
         Parts adapted from https://github.com/r-earthengine/ee_extra, under Apache 2.0 license.
         """
         mask_method = CloudMaskMethod(mask_method)
@@ -201,7 +217,7 @@ class _Sentinel2Image(_CloudlessImage):
         def match_image(
             ee_image: ee.Image, collection: str, band: str, match_prop: str = 'system:index'
         ) -> ee.Image:
-            """Return an image from ``collection`` matching ``ee_image`` with single ``band``
+            """Return an image from ``collection`` matching ``ee_image`` with a single ``band``
             selected, or a fully masked image if no match is found.
             """
             # TODO: would it be possible (and faster) to use ee.ImageCollection.linkCollection,
@@ -219,10 +235,9 @@ class _Sentinel2Image(_CloudlessImage):
             return match.select(band)
 
         def cloud_cast_shadow_mask(ee_image: ee.Image, cloud_mask: ee.Image) -> ee.Image:
-            """Create & return a shadow mask for ``ee_image`` by projecting shadows from ``cloud_mask``.
-
-            Adapted from https://developers.google.com/earth-engine/tutorials/community/sentinel-2
-            -s2cloudless.
+            """Return a shadow mask for ``ee_image`` based on the intersection of dark areas and
+            projected shadows from ``cloud_mask``. Adapted from
+            https://developers.google.com/earth-engine/tutorials/community/sentinel-2-s2cloudless.
             """
             # use the 60m B1 projection for shadow mask
             proj = ee_image.select('B1').projection()
@@ -256,7 +271,7 @@ class _Sentinel2Image(_CloudlessImage):
             return shadow_mask.rename('SHADOW_MASK')
 
         def qa_cloud_mask(ee_image: ee.Image) -> ee.Image:
-            """Create & return a cloud mask for ``ee_image`` using the QA60 band."""
+            """Return a cloud mask for ``ee_image`` derived from the QA60 band."""
             # mask QA60 if it is between Feb 2022 - Feb 2024 to invalidate the cloud mask (QA* bands
             # are not populated over this period and may be masked / transparent or zero).
             qa_valid = (
@@ -282,7 +297,9 @@ class _Sentinel2Image(_CloudlessImage):
             return cloud_mask.rename('CLOUD_MASK'), cloud_prob.rename('CLOUD_PROB')
 
         def cloud_score_cloud_shadow_mask(ee_image: ee.Image) -> tuple[ee.Image, ee.Image]:
-            """Return the cloud score thresholded cloud mask, and cloud score image for ``ee_image``."""
+            """Return the cloud score thresholded cloud mask, and cloud score image for
+            ``ee_image``.
+            """
             cloud_score = match_image(
                 ee_image, 'GOOGLE/CLOUD_SCORE_PLUS/V1/S2_HARMONIZED', cs_band.name
             )
@@ -290,9 +307,8 @@ class _Sentinel2Image(_CloudlessImage):
             return cloud_shadow_mask.rename('CLOUD_SHADOW_MASK'), cloud_score.rename('CLOUD_SCORE')
 
         def cdi_cloud_mask(ee_image: ee.Image) -> ee.Image:
-            """Return the CDI cloud mask for ``ee_image``.
-
-            See https://developers.google.com/earth-engine/apidocs/ee-algorithms-sentinel2-cdi for
+            """Return the CDI cloud mask for ``ee_image``. See
+            https://developers.google.com/earth-engine/apidocs/ee-algorithms-sentinel2-cdi for
             detail.
             """
             if s2_toa:
@@ -349,10 +365,9 @@ class _Sentinel2Image(_CloudlessImage):
             ee_image.select('B.*').mask().reduce(ee.Reducer.allNonZero()).rename('FILL_MASK')
         )
 
+        # TODO: check if clipping is necessary - should be avoided if possible
         # clip fill mask to the image footprint (without this step we get memory limit errors on
         # download)
-        # TODO: is clipping really necessary - should be avoided if possible (does not work on
-        #  composites and is not best practice)
         # aux_bands['fill'] = aux_bands['fill'].clip(ee_image.geometry()).rename('FILL_MASK')
 
         # combine masks into cloudless_mask
@@ -369,19 +384,23 @@ class _Sentinel2Image(_CloudlessImage):
 
 
 class _Sentinel2ToaImage(_CloudlessImage):
+    """Masking method container for Sentinel-2 TOA images."""
+
     @staticmethod
     def _get_mask_bands(ee_image: ee.Image, **kwargs):
         return _Sentinel2Image._get_mask_bands(ee_image, s2_toa=True, **kwargs)
 
 
 class _Sentinel2SrImage(_CloudlessImage):
+    """Masking method container for Sentinel-2 SR images."""
+
     @staticmethod
     def _get_mask_bands(ee_image: ee.Image, **kwargs):
         return _Sentinel2Image._get_mask_bands(ee_image, s2_toa=False, **kwargs)
 
 
 def class_from_id(image_id: str) -> type[_MaskedImage]:
-    """Return the *Image class that corresponds to the provided Earth Engine image/collection ID."""
+    """Return the masking class for the given Earth Engine image/collection ID."""
     ee_coll_name, _ = split_id(image_id)
     if image_id in schema.collection_schema:
         return schema.collection_schema[image_id]['image_type']
@@ -395,10 +414,16 @@ def class_from_id(image_id: str) -> type[_MaskedImage]:
 class ImageAccessor(BaseImageAccessor):
     @cached_property
     def _mi(self) -> type[_MaskedImage]:
+        """Masking method container."""
         return class_from_id(self.id)
 
     def addMaskBands(self, **kwargs) -> ee.Image:
         """
+        Return this image with cloud/shadow masks and related bands added.
+
+        Mask bands are overwritten if they exist, except if this image has no fixed projection,
+        in which case no bands are added or overwritten.
+
         :param bool mask_cirrus:
             Whether to mask cirrus clouds.  Valid for Landsat 8-9 images, and for Sentinel-2
             images with the :attr:`~geedim.enums.CloudMaskMethod.qa` ``mask_method``.  Defaults
@@ -447,25 +472,25 @@ class ImageAccessor(BaseImageAccessor):
         :return:
             Image with added mask bands.
         """
-        # TODO: this will keep adding extra aux bands by default.  Is this compatible with old
-        #  MaskedImage expected behaviour?  For a composite with existing aux bands, this will
-        #  add extra (unusable) aux bands with overwrite=False, but perhaps that doesn't matter
-        #  as the original aux bands will get used in maskClouds, and the added aux bands would
-        #  be excluded from a further composite.  If the added aux bands for a composite generate
-        #  errors, they should not be added of course, but I don't think this is the case.
         return self._mi.add_mask_bands(self._ee_image, **kwargs)
 
     def maskClouds(self) -> ee.Image:
-        # TODO: is it more efficient to only get mask, excluding cloud distance etc
-        # TODO: do we want to mask with FILL_MASK when there is no CLOUDLESS_MASK,
-        #  and incorporate it into the CLOUDLESS_MASK when there is?  FILL_MASK is used for
-        #  search filtering on fill portion property, but is it useful to mask with it over EE
-        #  mask? If FILL_MASK masking is abandoned, we should test the e.g. Landsat-7 mask
-        #  defines the invalid areas.
-        # TODO: in some cases (e.g S2) images have fully masked bands which means a default
-        #  FILL_MASK is also fully masked.
-        # TODO: neither this nor addAuxBands can be mapped over an ImageCollection as they
-        #  require getInfo
+        """
+        Return this image with cloud/shadow masks applied when supported, otherwise with fill
+        (validity) masks applied.
+
+        Mask bands should be added with :meth:`addMaskBands` before calling this method.
+
+        :return:
+            Masked image.
+        """
+        # TODO: should we still mask with FILL_MASK when there is no CLOUDLESS_MASK,
+        #  and incorporate it into the CLOUDLESS_MASK when there is?  If any band FILL_MASK is
+        #  derived from is transparent, FILL_MASK will also be transparent.  Also, FILL_MASK will
+        #  have the projection of the first band in the stack it is derived from, which could be
+        #  e.g.  at a very different scale to other bands. As EE already has per-band validity
+        #  masks applied, applying FILL_MASK over this seems questionable.  FILL_MASK is needed for
+        #  FILL_PORTION when searching though.
         return self._mi.mask_clouds(self._ee_image)
 
 
@@ -487,9 +512,9 @@ class MaskedImage(ImageAccessor, BaseImage):
         :param mask:
             Whether to mask the image.
         :param region:
-            Region in which to find statistics for the image, as a GeoJSON dictionary or
-            ``ee.Geometry``.  Statistics are stored in the image properties. If None, statistics
-            are not found (the default).
+            Region over which to find filled and cloudless percentages for the image,
+            as a GeoJSON dictionary or ``ee.Geometry``.  Percentages are stored in the image
+            properties. If None, statistics are not found (the default).
         :param kwargs:
             Cloud/shadow masking parameters - see :meth:`ImageAccessor.addMaskBands` for details.
         """
@@ -497,13 +522,6 @@ class MaskedImage(ImageAccessor, BaseImage):
         self._cloud_kwargs = kwargs
         self._ee_image = self.addMaskBands(**kwargs)
         if region:
-            # TODO: is reusing aux_bands above faster? e.g.:
-            #  aux_bands = self._get_aux_bands(**kwargs)
-            #  self._ee_image = self._ee_image.addBands(list(aux_bands.values()), overwrite=True)
-            #  if region:
-            #   self._ee_image = set_fill_and_cloudless_portions(
-            #     self._ee_image, aux_bands=aux_bands, region=region
-            #   )
             self._set_region_stats(region)
         if mask:
             self.mask_clouds()
@@ -511,51 +529,31 @@ class MaskedImage(ImageAccessor, BaseImage):
     @property
     def _ee_proj(self) -> ee.Projection:
         """Projection to use for mask calculations and statistics."""
-        # TODO: remove when tests updated + other internal APIs
+        # TODO: remove when tests updated + any other internal APIs
         return self._ee_image.select(0).projection()
 
     @staticmethod
     def from_id(image_id: str, **kwargs) -> MaskedImage:
         """
-        Create a MaskedImage, or sub-class, instance from an Earth Engine image ID.
+        Create a MaskedImage instance from an Earth Engine image ID.
 
-        Parameters
-        ----------
-        image_id: str
+        :param image_id:
             ID of the Earth Engine image to encapsulate.
-        **kwargs
+        :param kwargs:
             Optional keyword arguments to pass to :meth:`__init__`.
 
-        Returns
-        -------
-        MaskedImage
-            A MaskedImage, or sub-class instance.
+        :return:
+            A MaskedImage instance.
         """
         return MaskedImage(ee.Image(image_id), **kwargs)
 
     def _set_region_stats(self, region: dict | ee.Geometry = None, scale: float = None):
+        """Set FILL_PORTION and CLOUDLESS_PORTION on the encapsulated image for the specified
+        region.
         """
-        Set FILL_PORTION and CLOUDLESS_PORTION on the encapsulated image for the specified
-        region.  Derived classes should override this method and set CLOUDLESS_PORTION,
-        and/or other statistics they support.
-
-        Parameters
-        ----------
-        region: dict, ee.Geometry, optional
-            Region in which to find statistics for the image, as a GeoJSON dictionary or
-            ``ee.Geometry``.  If not specified, the image footprint is used.
-        scale: float, optional
-            Re-project to this scale when finding statistics.  Defaults to the scale of
-            :attr:`~MaskedImage._ee_proj`.  Should be provided if the encapsulated image is a
-            composite / without a fixed projection.
-        """
-        # TODO: remove
+        # TODO: remove when tests updated
         self.ee_image = self._mi.set_mask_portions(self._ee_image, region=region, scale=scale)
 
     def mask_clouds(self):
         """Apply the cloud/shadow mask if supported, otherwise apply the fill mask."""
-        # TODO: every time self._ee_image is assigned to, the ee_info & id is invalidated and will
-        #  have to be retrieved on the next mask_clouds.  is it worth keeping the id property
-        #  separate from ee_info and the assoc from_id method?  Or should we set it whenever we
-        #  make a change to ee_image that doesn't change the ID i.e. mask_clouds and add_aux_bands
         self.ee_image = self._mi.mask_clouds(self._ee_image)
