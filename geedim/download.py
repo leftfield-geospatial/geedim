@@ -553,7 +553,7 @@ class BaseImageAccessor:
 
     def resample(self, method: ResamplingMethod | str) -> ee.Image:
         """
-        Resample the image.
+        Return a resampled image.
 
         Extends ``ee.Image.resample()`` by providing an
         :attr:`~geedim.enums.ResamplingMethod.average` method for downsampling, and only
@@ -590,7 +590,7 @@ class BaseImageAccessor:
 
     def toDType(self, dtype: str) -> ee.Image:
         """
-        Convert the image data type.
+        Return an image with the data type converted.
 
         :param dtype:
             A recognised numpy / Rasterio data type to convert to.
@@ -617,10 +617,11 @@ class BaseImageAccessor:
 
     def scaleOffset(self) -> ee.Image:
         """
-        Apply STAC band scales and offsets (if any).
+        Return an image with STAC band scales and offsets applied.
 
         :return:
-            Scaled and offset image.
+            Scaled and offset image.  If no STAC scales and offsets are available, the image is
+            returned as is.
         """
         if self.band_properties is None:
             # TODO: raise error?
@@ -1004,10 +1005,6 @@ class BaseImage(BaseImageAccessor):
 
     @ee_image.setter
     def ee_image(self, value: ee.Image):
-        # TODO: id should be invalidated here.  in the new accessor code, it should not be
-        #  possible to assign to ee_image.  or the ee_image should not be exposed as property at
-        #  all, rather do that in the new BaseImage subclass for backwards compatibility
-        # TODO: test this works if these properties have not been called.
         for attr in ['info', '_min_projection', 'stac', 'dtype']:
             try:
                 delattr(self, attr)

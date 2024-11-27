@@ -362,10 +362,11 @@ class ImageCollectionAccessor:
 
     def addMaskBands(self, **kwargs) -> ee.ImageCollection:
         """
-        Add cloud/shadow masks and related bands to the collection's images.
+        Return a collection of this collection's images with cloud/shadow masks and related bands
+        added.
 
-        Mask bands are overwritten if they exist, except on composite images where existing mask
-        bands are kept.
+        Mask bands are overwritten if they exist, except on images without fixed projections,
+        in which case no bands are added or overwritten.
 
         :param kwargs:
             Cloud/shadow masking arguments - see :meth:`geedim.mask.ImageAccessor.addMaskBands`
@@ -378,8 +379,8 @@ class ImageCollectionAccessor:
 
     def maskClouds(self) -> ee.ImageCollection:
         """
-        Apply cloud/shadow masks to the collection images when supported, otherwise apply fill
-        (valid pixel) masks.
+        Return a collection of this collection's images with cloud/shadow masks applied when
+        supported, otherwise with fill (validity) masks applied.
 
         Mask bands should be added with :meth:`addMaskBands` before calling this method.
 
@@ -453,9 +454,10 @@ class ImageCollectionAccessor:
             raise ValueError(
                 "'region' is required when 'fill_portion' or 'cloudless_portion' are specified."
             )
-
         if not start_date or not region:
-            logger.warning("Specifying 'start_date' and 'region' will improve the search speed.")
+            logger.warning(
+                "Specifying 'start_date' together with 'region' will help limit the search."
+            )
 
         # filter the image collection, finding cloud/shadow masks and region stats
         ee_coll = self._ee_coll
