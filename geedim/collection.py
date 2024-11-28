@@ -149,7 +149,7 @@ class ImageCollectionAccessor:
 
     @cached_property
     def _mi(self) -> type[_MaskedImage]:
-        """Methods for cloud/shadow masking images from this collection."""
+        """Masking method container."""
         return class_from_id(self.id)
 
     @cached_property
@@ -362,11 +362,11 @@ class ImageCollectionAccessor:
 
     def addMaskBands(self, **kwargs) -> ee.ImageCollection:
         """
-        Return a collection of this collection's images with cloud/shadow masks and related bands
-        added.
+        Return this collection with cloud/shadow masks and related bands added when supported,
+        otherwise with fill (validity) masks added.
 
-        Mask bands are overwritten if they exist, except on images without fixed projections,
-        in which case no bands are added or overwritten.
+        Existing mask bands are overwritten, except on images without fixed projections,
+        where no mask bands are added or overwritten.
 
         :param kwargs:
             Cloud/shadow masking arguments - see :meth:`geedim.mask.ImageAccessor.addMaskBands`
@@ -379,8 +379,8 @@ class ImageCollectionAccessor:
 
     def maskClouds(self) -> ee.ImageCollection:
         """
-        Return a collection of this collection's images with cloud/shadow masks applied when
-        supported, otherwise with fill (validity) masks applied.
+        Return this collection with cloud/shadow masks applied when supported, otherwise with
+        fill (validity) masks applied.
 
         Mask bands should be added with :meth:`addMaskBands` before calling this method.
 
