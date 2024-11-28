@@ -43,9 +43,9 @@ class _MaskedImage(ABC):
 
     @classmethod
     def add_mask_bands(cls, ee_image: ee.Image, **kwargs) -> ee.Image:
-        """Return the given image with cloud/shadow masks and related bands added. Mask bands are
-        overwritten if they exist, except on images without fixed projections, in which case no
-        bands are added or overwritten.
+        """Return the given image with cloud/shadow masks and related bands added when supported,
+        otherwise with fill (validity) mask added. Mask bands are overwritten if they exist,
+        except on images without fixed projections, in which case no bands are added or overwritten.
         """
         mask_bands = cls._get_mask_bands(ee_image, **kwargs)
         # add/overwrite mask bands unless the image has no fixed projection
@@ -59,7 +59,7 @@ class _MaskedImage(ABC):
     @staticmethod
     def mask_clouds(ee_image: ee.Image) -> ee.Image:
         """Return the given image with cloud/shadow masks applied when supported, otherwise with
-        fill (validity) masks applied.  Mask bands should be added with :meth:`add_mask_bands`
+        fill (validity) mask applied.  Mask bands should be added with :meth:`add_mask_bands`
         before calling this method.
         """
         return ee_image.updateMask(ee_image.select('FILL_MASK'))
@@ -304,6 +304,7 @@ class _Sentinel2Image(_CloudlessImage):
                 ee_image, 'GOOGLE/CLOUD_SCORE_PLUS/V1/S2_HARMONIZED', cs_band.name
             )
             cloud_shadow_mask = cloud_score.lte(score)
+            cloud_score = cloud_score.toFloat()
             return cloud_shadow_mask.rename('CLOUD_SHADOW_MASK'), cloud_score.rename('CLOUD_SCORE')
 
         def cdi_cloud_mask(ee_image: ee.Image) -> ee.Image:
@@ -419,9 +420,10 @@ class ImageAccessor(BaseImageAccessor):
 
     def addMaskBands(self, **kwargs) -> ee.Image:
         """
-        Return this image with cloud/shadow masks and related bands added.
+        Return this image with cloud/shadow masks and related bands added when supported,
+        otherwise with fill (validity) mask added.
 
-        Mask bands are overwritten if they exist, except if this image has no fixed projection,
+        Existing mask bands are overwritten except if this image has no fixed projection,
         in which case no bands are added or overwritten.
 
         :param bool mask_cirrus:
@@ -477,7 +479,7 @@ class ImageAccessor(BaseImageAccessor):
     def maskClouds(self) -> ee.Image:
         """
         Return this image with cloud/shadow masks applied when supported, otherwise with fill
-        (validity) masks applied.
+        (validity) mask applied.
 
         Mask bands should be added with :meth:`addMaskBands` before calling this method.
 
@@ -520,7 +522,7 @@ class MaskedImage(ImageAccessor, BaseImage):
         """
         super().__init__(ee_image)
         self._cloud_kwargs = kwargs
-        self._ee_image = self.addMaskBands(**kwargs)
+        self.ee_image = self.addMaskBands(**kwargs)
         if region:
             self._set_region_stats(region)
         if mask:
@@ -556,4 +558,4 @@ class MaskedImage(ImageAccessor, BaseImage):
 
     def mask_clouds(self):
         """Apply the cloud/shadow mask if supported, otherwise apply the fill mask."""
-        self.ee_image = self._mi.mask_clouds(self._ee_image)
+        self.ee_image = self.maskClouds()
