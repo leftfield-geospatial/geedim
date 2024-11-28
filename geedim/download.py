@@ -40,6 +40,7 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 
 from geedim import utils
 from geedim.enums import ExportType, ResamplingMethod
+from geedim.errors import TileError
 from geedim.stac import StacCatalog, StacItem
 from geedim.tile import Tile
 
@@ -376,8 +377,9 @@ class BaseImageAccessor:
                 )
             ee_image = BaseImageAccessor(ee_image).resample(resampling)
 
-        if dtype:
-            ee_image = BaseImageAccessor(ee_image).toDType(dtype=dtype)
+        # convert dtype (required for EE to set nodata correctly on download even if dtype is
+        # unchanged)
+        ee_image = BaseImageAccessor(ee_image).toDType(dtype=dtype or self.dtype)
 
         # apply export spatial parameters
         crs_transform = crs_transform[:6] if crs_transform else None
@@ -971,9 +973,8 @@ class BaseImageAccessor:
                 for future in as_completed(futures):
                     future.result()
             except Exception as ex:
-                logger.info(f'Exception: {str(ex)}\nCancelling...')
-                executor.shutdown(wait=False, cancel_futures=True)
-                raise ex
+                executor.shutdown(wait=False)
+                raise TileError('Download failed.') from ex
 
             bar.update(bar.total - bar.n)  # ensure the bar reaches 100%
             # populate GeoTIFF metadata
