@@ -40,7 +40,6 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 
 from geedim import utils
 from geedim.enums import ExportType, ResamplingMethod
-from geedim.errors import TileError
 from geedim.stac import StacCatalog, StacItem
 from geedim.tile import Tile
 
@@ -379,7 +378,7 @@ class BaseImageAccessor:
 
         # convert dtype (required for EE to set nodata correctly on download even if dtype is
         # unchanged)
-        ee_image = BaseImageAccessor(ee_image).toDType(dtype=dtype or self.dtype)
+        ee_image = BaseImageAccessor(ee_image).toDType(dtype=dtype or exp_image.dtype)
 
         # apply export spatial parameters
         crs_transform = crs_transform[:6] if crs_transform else None
@@ -896,6 +895,7 @@ class BaseImageAccessor:
         """
         # TODO: allow bands to be band indexes too
         # TODO: make progress bar optional / configurable (in export too)
+        # TODO: change default num_threads to *4?
         num_threads = num_threads or min(32, (os.cpu_count() or 1) + 4)
         out_lock = threading.Lock()
         filename = Path(filename)
@@ -935,6 +935,8 @@ class BaseImageAccessor:
             desc = filename.name
             if len(desc) > BaseImageAccessor._desc_width:
                 desc = f'...{desc[-BaseImageAccessor._desc_width:]}'
+            # TODO: the remaining:>5s does not seem to limit the eta time to 5 digits, sometimes
+            #  it jumps up to hh:mm:ss then mm:ss
             bar_format = (
                 '{desc}: |{bar}| {n_fmt}/{total_fmt} (raw) [{percentage:5.1f}%] in {elapsed:>5s} '
                 '(eta: {remaining:>5s})'
@@ -954,7 +956,9 @@ class BaseImageAccessor:
             out_ds = exit_stack.enter_context(rio.open(filename, 'w', **profile))
 
             # download tiles in a thread pool
-            session = utils.retry_session()
+            session = exit_stack.enter_context(
+                utils.retry_session(retries=0, pool_maxsize=num_threads)
+            )
 
             def download_tile(tile: Tile) -> None:
                 """Download a tile and write into the destination GeoTIFF."""
@@ -970,11 +974,15 @@ class BaseImageAccessor:
             tiles = exp_image._tiles(max_tile_size=max_tile_size, max_tile_dim=max_tile_dim)
             futures = [executor.submit(download_tile, tile) for tile in tiles]
             try:
+                # use as_completed so the executor can be shutdown as soon as there is an error
                 for future in as_completed(futures):
                     future.result()
             except Exception as ex:
-                executor.shutdown(wait=False)
-                raise TileError('Download failed.') from ex
+                # shutdown the executor (running threads cannot be disowned, so wait for them
+                # here, before raising the exception)
+                logger.info(f'Cancelling download: {repr(ex)}\n')
+                executor.shutdown(wait=True, cancel_futures=True)
+                raise ex
 
             bar.update(bar.total - bar.n)  # ensure the bar reaches 100%
             # populate GeoTIFF metadata
