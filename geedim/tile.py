@@ -24,27 +24,26 @@ import requests
 from rasterio import Affine
 from rasterio.errors import RasterioIOError
 from rasterio.windows import Window
-from requests.exceptions import JSONDecodeError, RequestException
+from requests import exceptions, HTTPError
+from requests.exceptions import RetryError
 from tqdm.auto import tqdm
 
 from geedim import utils
-from geedim.errors import TileError
 
 logger = logging.getLogger(__name__)
 
 
 class Tile:
+    _retry_exceptions = (exceptions.RequestException, RasterioIOError)
 
     def __init__(self, exp_image, window: Window):
         """
-        Class for downloading an Earth Engine image tile (a rectangular region of interest in the image).
+        Image tile downloader.
 
-        Parameters
-        ----------
-        exp_image: BaseImage
-            BaseImage instance to derive the tile from.
-        window: Window
-            rasterio window into `exp_image`, specifying the region of interest for this tile.
+        :param exp_image:
+            BaseImageAccessor instance to derive the tile from.
+        :param window:
+            rasterio window into ``exp_image``, specifying the tile bounds.
         """
         self._exp_image = exp_image
         self._window = window
@@ -61,50 +60,51 @@ class Tile:
 
     @staticmethod
     def _raise_for_status(response: requests.Response):
-        """Raise a TileError if the tile cannot be downloaded."""
+        """Raise an HTTPError if the tile cannot be downloaded."""
         download_size = int(response.headers.get('content-length', 0))
         if download_size == 0 or not response.status_code == 200:
-            msg = f'Error downloading tile: {response.status_code} - {response.reason}. URL: {response.url}.'
             try:
-                resp_dict = response.json()
-                if 'error' in resp_dict and 'message' in resp_dict['error']:
-                    # raise an exception with the response error message
-                    msg = resp_dict['error']['message']
-                    msg = f'Error downloading tile: {msg} URL: {response.url}.'
-                    if 'user memory limit exceeded' in msg.lower():
-                        msg += (
-                            '\nThe `max_tile_size` or `max_tile_dim` parameters can be decreased to work around this '
-                            'error.  Alternatively you can export to Earth Engine asset, and then download the asset '
-                            'image.'
-                        )
-            except JSONDecodeError:
-                pass
-
-            raise TileError(msg)
+                msg = response.json()['error']['message']
+                msg = f'Error downloading tile: {response.status_code} - {msg} URL: {response.url}.'
+                if 'user memory limit exceeded' in msg.lower():
+                    # TODO: it would better design sense to move this to the BaseImageAccessor
+                    msg += (
+                        "\nThe 'max_tile_size' or 'max_tile_dim' parameters can be decreased "
+                        "to work around this error. Alternatively you can export to Earth "
+                        "Engine asset, then download the asset image."
+                    )
+            except (KeyError, exceptions.JSONDecodeError):
+                msg = (
+                    f'Error downloading tile: {response.status_code} - {response.reason}. URL: '
+                    f'{response.url}.'
+                )
+            raise HTTPError(msg, response=response)
 
     def _download_to_array(
         self, url: str, session: requests.Session = None, bar: tqdm = None
     ) -> np.ndarray:
         """Download the image tile into a numpy array."""
-        # get image download response
-        session = session or requests
-        response = session.get(url, stream=True, timeout=(30, 300))
-
-        # raise a TileError if the tile cannot be downloaded
-        self._raise_for_status(response)
-
-        # find raw download size
-        download_size = int(response.headers.get('content-length', 0))
+        downloaded_size = download_size = 0
         dtype_size = np.dtype(self._exp_image.dtype).itemsize
         raw_download_size = self._shape[0] * self._shape[1] * self._exp_image.count * dtype_size
-
-        # download & read the tile
-        downloaded_size = 0
-        buf = BytesIO()
+        session = session or requests
         try:
+            # get image download response
+            response = session.get(url, stream=True, timeout=(30, 300))
+
+            # raise a TileError if the tile cannot be downloaded
+            self._raise_for_status(response)
+
+            # find raw download size
+            download_size = int(response.headers.get('content-length', 0))
+
+            # download & read the tile
+            buf = BytesIO()
             # download gtiff into buffer
             for data in response.iter_content(chunk_size=10240):
                 if bar:
+                    # TODO: avoid needing to convert to byte size here or otherwise simplify
+                    #  updating of progress bar...
                     # update with raw download progress (0-1)
                     bar.update(raw_download_size * (len(data) / download_size))
                 buf.write(data)
@@ -115,14 +115,15 @@ class Tile:
             buf.seek(0)
             env = rio.Env(GDAL_NUM_THREADS='ALL_CPUs', GTIFF_FORCE_RGBA=False)
             with utils.suppress_rio_logs(), env, rio.open(buf, 'r') as ds:
+                # TODO: assert nodata is set correctly.  and add a test that checks that
+                #  downloaded nodata masks match EE masks
                 array = ds.read()
             return array
-
-        except (RequestException, RasterioIOError):
-            if bar:
+        # TODO: avoid duplicating except clauses with download below
+        except self._retry_exceptions:
+            if bar and downloaded_size > 0:
                 # reverse progress bar
                 bar.update(-raw_download_size * (downloaded_size / download_size))
-                pass
             raise
 
     def download(
@@ -133,30 +134,26 @@ class Tile:
         backoff_factor: float = 2.0,
     ) -> np.ndarray:
         """
-        Download the image tile into a numpy array.
+        Download the image tile into a numpy array, with optional retries.
 
-        Parameters
-        ----------
-        session: requests.Session, optional
-            requests session to use for downloading
-        bar: tqdm, optional
-            tqdm progress bar instance to update with incremental (0-1) download progress.
-        max_retries: int, optional
-            Number of times to retry downloading the tile.  This is independent of the ``session``, which may have its
-            own retry configuration.
-        backoff_factor: float, optional
-            Backoff factor to apply between tile download retries.  The delay between retries is: {backoff_factor} *
-            (2 ** ({number of previous retries})) seconds.  This is independent of the ``session``, which may have its
-            own retry configuration.
+        :param session:
+            requests session to use for downloading.
+        :param bar:
+            tqdm progress bar instance to update with raw download progress (bytes).
+        :param max_retries:
+            Number of times to retry downloading the tile.  If greater than zero (the default),
+            ``session`` should not be configured for retries.
+        :param backoff_factor:
+            Backoff factor to apply between tile download retries.  The delay between retries is:
+            {backoff_factor} * (2 ** ({number of previous retries})) seconds.
 
-        Returns
-        -------
-        array: numpy.ndarray
-            3D numpy array of the tile pixel data with bands down the first dimension.
+        :return:
+            numpy array of the tile data with bands along the first dimension.
         """
         session = session or requests
 
         # get download URL
+        # TODO: include getDownloadURL in custom retries as EE session is not configured for retries
         url = self._exp_image._ee_image.getDownloadURL(
             dict(
                 crs=self._exp_image.crs,
@@ -170,13 +167,20 @@ class Tile:
         for retry in range(max_retries + 1):
             try:
                 return self._download_to_array(url, session=session, bar=bar)
-            except (RequestException, RasterioIOError) as ex:
-                if retry < max_retries:
+            except self._retry_exceptions as ex:
+                if (
+                    isinstance(ex, HTTPError)
+                    and ex.response is not None
+                    and ex.response.status_code not in (429, 500, 502, 503, 504)
+                ):
+                    raise
+                elif retry < max_retries:
                     time.sleep(backoff_factor * (2**retry))
-                    logger.warning(
-                        f'Tile download failed, retry {retry + 1} of {max_retries}.  URL: {url}. {str(ex)}.'
+                    logger.debug(
+                        f'\nTile download failed, retry {retry + 1} of {max_retries}.  URL:'
+                        f' {url}. Error: {repr(ex)}.\n'
                     )
                 else:
-                    raise TileError(
+                    raise RetryError(
                         f'Tile download failed, reached the maximum retries.  URL: {url}.'
                     ) from ex
