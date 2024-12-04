@@ -321,6 +321,7 @@ def retry_session(
     backoff_factor: float = 2.0,
     status_forcelist: Tuple = (429, 500, 502, 503, 504),
     session: requests.Session = None,
+    **kwargs,
 ) -> requests.Session:
     """requests session configured for retries."""
     session = session or requests.Session()
@@ -331,7 +332,7 @@ def retry_session(
         backoff_factor=backoff_factor,
         status_forcelist=status_forcelist,
     )
-    adapter = HTTPAdapter(max_retries=retry)
+    adapter = HTTPAdapter(max_retries=retry, **kwargs)
     session.mount('http://', adapter)
     session.mount('https://', adapter)
     return session
