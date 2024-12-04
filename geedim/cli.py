@@ -112,7 +112,6 @@ class ChainedCommand(click.Command):
         ctx.obj.region = region or bbox or ctx.obj.region
 
         if 'image_id' in ctx.params:
-            # TODO: can be replaced with callback on image_id option? / add mask bands here?
             # append any images to the image_list
             ctx.obj.image_list += [ee.Image(ee_id) for ee_id in ctx.params['image_id']]
 
@@ -648,9 +647,9 @@ def search(
             **obj.cloud_kwargs,
         )
 
-    # retrieve search result properties from EE
-    coll.gd.schemaPropertyNames += add_props
-    num_images = len(coll.gd.properties)
+        # retrieve search result properties from EE
+        coll.gd.schemaPropertyNames += add_props
+        num_images = len(coll.gd.properties)
 
     if num_images == 0:
         logger.info('No images found\n')
