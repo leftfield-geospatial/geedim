@@ -26,9 +26,10 @@ import rasterio as rio
 import requests
 from rasterio import Affine
 from rasterio.windows import Window
+from requests import HTTPError
+from requests.exceptions import RetryError
 from tqdm.auto import tqdm
 
-from geedim.errors import TileError
 from geedim.tile import Tile
 from geedim.utils import retry_session
 
@@ -137,7 +138,7 @@ def test_mem_limit_error(synth_tile: Tile, mock_ee_image: None):
     session.get = get
 
     # test memory limit error is raised on download
-    with pytest.raises(TileError) as ex:
+    with pytest.raises(HTTPError) as ex:
         synth_tile.download(session=session)
     assert msg in str(ex.value)
 
@@ -211,7 +212,7 @@ def test_retry_error(synth_tile: Tile, mock_ee_image: None, gtiff_bytes: bytes):
     session.get = get
 
     # test max retries error is raised on download
-    with pytest.raises(TileError) as ex:
+    with pytest.raises(RetryError) as ex:
         synth_tile.download(session=session, bar=bar, backoff_factor=0)
     assert 'maximum retries' in str(ex.value)
 
