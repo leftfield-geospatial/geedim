@@ -11,7 +11,7 @@ dependencies = [
     'tqdm>=4.6',
     'earthengine-api>=0.1.379',
     'requests>=2.2',
-    'tabulate>=0.9'
+    'tabulate>=0.9',
     'aiohttp>=3.11',
 ]
 authors = [{name = 'Leftfield Geospatial'}]
