@@ -16,26 +16,30 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import operator
 import os
 import threading
 import time
-from concurrent.futures import as_completed, ThreadPoolExecutor
-from contextlib import ExitStack
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack, asynccontextmanager
 from datetime import datetime, timezone
 from functools import cached_property
+from io import BytesIO
 from itertools import product
 from pathlib import Path
 from typing import Any, Generator, Sequence
 
+import aiohttp
 import ee
 import numpy as np
 import rasterio as rio
 from rasterio import features, windows
 from rasterio.enums import Resampling as RioResampling
 from rasterio.io import DatasetWriter
-from tqdm.auto import tqdm
+from rasterio.windows import Window
+from tqdm.asyncio import tqdm, tqdm_asyncio
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 from geedim import utils
@@ -431,6 +435,7 @@ class BaseImageAccessor:
         self, max_tile_size: float = _ee_max_tile_size, max_tile_dim: int = _ee_max_tile_dim
     ) -> Generator[Tile]:
         """Image tile generator."""
+        # TODO: allow slicing along band dimension
         # get the dimensions of a tile that stays under the EE limits
         tile_shape = self._get_tile_shape(max_tile_size, max_tile_dim)
 
@@ -451,6 +456,80 @@ class BaseImageAccessor:
             clip_tile_shape = (tile_stop - tile_start).tolist()
             tile_window = windows.Window(*tile_start[::-1], *clip_tile_shape[::-1])
             yield Tile(self, tile_window)
+
+    @asynccontextmanager
+    async def _tile_tasks(
+        self,
+        max_tile_size: float = _ee_max_tile_size,
+        max_tile_dim: int = _ee_max_tile_dim,
+        max_requests: int = 32,
+    ) -> Generator[list[asyncio.Task]]:
+        """Context manager for asynchronous tile download tasks."""
+
+        async def _download_tile(
+            tile: Tile, session: aiohttp.ClientSession, loop: asyncio.AbstractEventLoop = None
+        ) -> tuple[Tile, np.ndarray]:
+            """Download a tile to a numpy array."""
+            # TODO: add retries
+            loop = loop or asyncio.get_running_loop()
+            # get the tile GeoTIFF URL
+            async with semaphore:
+                logger.debug(f'Getting tile URL {tile.window}')
+                url = await loop.run_in_executor(
+                    io_exec,
+                    self._ee_image.getDownloadURL,
+                    dict(
+                        crs=self.crs,
+                        crs_transform=tuple(tile._transform)[:6],
+                        dimensions=tile._shape[::-1],
+                        format='GEO_TIFF',
+                    ),
+                )
+                logger.debug(f'Got tile URL {tile.window}')
+
+            # download tile GeoTIFF into buffer
+            async with semaphore:
+                logger.debug(f'Downloading tile {tile.window}')
+                timeout = aiohttp.ClientTimeout(total=300)
+                buf = BytesIO()
+                async with session.get(
+                    url, timeout=timeout, chunked=True, raise_for_status=True
+                ) as response:
+                    async for data in response.content.iter_chunked(10240):
+                        buf.write(data)
+                    buf.flush()
+                logger.debug(f'Downloaded tile {tile.window}')
+
+            # read the GeoTIFF buffer into a numpy array
+            def read_gtiff_buf(buf: BytesIO) -> np.ndarray:
+                logger.debug(f'Reading tile {tile.window}')
+                buf.seek(0)
+                # TODO: is the rio.Env required?  if it inherits from parent, can it be placed in
+                #  the parent fn?
+                with rio.Env(GDAL_NUM_THREADS=1, GTIFF_FORCE_RGBA=False), rio.open(buf, 'r') as ds:
+                    # Note: due to an Earth Engine bug (
+                    # https://issuetracker.google.com/issues/350528377), the tile is float64 for
+                    # uint32 and int64 image dtypes.  The tile nodata value is as it should be
+                    # though, so conversion to the image / GeoTIFF dtype happens ok below.
+                    return ds.read()
+
+            array = await loop.run_in_executor(cpu_exec, read_gtiff_buf, buf)
+            logger.debug(f'Read tile {tile.window}')
+            return tile, array
+
+        with ExitStack() as exit_stack:
+            # create executors
+            io_exec = exit_stack.enter_context(ThreadPoolExecutor(max_workers=max_requests))
+            cpu_workers = max((os.cpu_count() or 1) - 1, 1)
+            cpu_exec = exit_stack.enter_context(ThreadPoolExecutor(max_workers=cpu_workers))
+
+            # yield async tasks for downloading tiles
+            tiles = [*self._tiles(max_tile_size=max_tile_size, max_tile_dim=max_tile_dim)]
+            semaphore = asyncio.Semaphore(max_requests)
+            loop = asyncio.get_running_loop()
+            async with aiohttp.ClientSession() as session:
+                tasks = [asyncio.create_task(_download_tile(tile, session, loop)) for tile in tiles]
+                yield tasks
 
     def _write_metadata(self, ds: DatasetWriter):
         """Write Earth Engine and STAC metadata to an open rasterio dataset."""
@@ -838,6 +917,7 @@ class BaseImageAccessor:
         dtype: str = None,
         scale_offset: bool = False,
         bands: Sequence[str] = None,
+        max_requests: int = 32,
     ) -> None:
         """
         Download the image to a GeoTIFF file.
@@ -859,8 +939,8 @@ class BaseImageAccessor:
         :param overwrite:
             Whether to overwrite the destination file if it exists.
         :param num_threads:
-            Number of tiles to download concurrently.  Defaults to a sensible value based on the
-            number of CPUs.
+            Maximum number of tiles to process concurrently.  Defaults to a value based on the
+            number of CPUs (recommended).
         :param max_tile_size:
             Maximum tile size (MB).  Defaults to the Earth Engine download limit (32 MB).
         :param max_tile_dim:
@@ -892,11 +972,15 @@ class BaseImageAccessor:
             Whether to apply any STAC band scales and offsets to the image.
         :param bands:
             Sequence of band names to download.  Defaults to all bands.
+        :param max_requests:
+            Maximum number of concurrent Earth Engine requests.  Should be less than the `quota
+            limit <https://developers.google.com/earth-engine/guides/usage
+            #adjustable_quota_limits>`__.
         """
         # TODO: allow bands to be band indexes too
         # TODO: make progress bar optional / configurable (in export too)
-        # TODO: change default num_threads to *4?
-        num_threads = num_threads or min(32, (os.cpu_count() or 1) + 4)
+        # TODO: deprecate num_threads (?) in favour of max_<workers?>
+        cpu_workers = num_threads or max((os.cpu_count() or 1) - 1, 1)
         out_lock = threading.Lock()
         filename = Path(filename)
         if not overwrite and filename.exists():
@@ -928,63 +1012,50 @@ class BaseImageAccessor:
             )
 
         with ExitStack() as exit_stack:
-            # configure a progress bar to monitor raw/uncompressed download size
+            # set up progress bar kwargs
             exit_stack.enter_context(
                 logging_redirect_tqdm([logging.getLogger(__package__)], tqdm_class=tqdm)
             )
             desc = filename.name
             if len(desc) > BaseImageAccessor._desc_width:
                 desc = f'...{desc[-BaseImageAccessor._desc_width:]}'
-            # TODO: the remaining:>5s does not seem to limit the eta time to 5 digits, sometimes
-            #  it jumps up to hh:mm:ss then mm:ss
+            # TODO: the remaining:>5s does not limit the eta time to 5 digits, sometimes it jumps
+            #  up to hh:mm:ss then mm:ss
             bar_format = (
-                '{desc}: |{bar}| {n_fmt}/{total_fmt} (raw) [{percentage:5.1f}%] in {elapsed:>5s} '
+                '{desc}: |{bar}| {n_fmt}/{total_fmt} (tiles) [{percentage:5.1f}%] in {elapsed:>5s} '
                 '(eta: {remaining:>5s})'
             )
-            bar = tqdm(
-                desc=desc,
-                total=exp_image.size,
-                bar_format=bar_format,
-                dynamic_ncols=True,
-                unit_scale=True,
-                unit='B',
-            )
-            bar = exit_stack.enter_context(bar)
+            tqdm_kwargs = dict(desc=desc, bar_format=bar_format, dynamic_ncols=True)
 
             # create/open the destination file
+            # TODO: we need the env for building overviews, but not for tile read/write.  is this
+            #  inherited by threads?
             exit_stack.enter_context(rio.Env(GDAL_NUM_THREADS='ALL_CPUs', GTIFF_FORCE_RGBA=False))
             out_ds = exit_stack.enter_context(rio.open(filename, 'w', **profile))
 
-            # download tiles in a thread pool
-            session = exit_stack.enter_context(
-                utils.retry_session(retries=0, pool_maxsize=num_threads)
-            )
+            # create executor for writing tiles
+            cpu_exec = exit_stack.enter_context(ThreadPoolExecutor(max_workers=cpu_workers))
 
-            def download_tile(tile: Tile) -> None:
-                """Download a tile and write into the destination GeoTIFF."""
-                # Note: due to an Earth Engine bug (
-                # https://issuetracker.google.com/issues/350528377), tile_array is float64 for
-                # uint32 and int64 exp_image types.  The tile_array nodata value is as it should
-                # be though, so conversion to the exp_image / GeoTIFF type happens ok below.
-                tile_array = tile.download(session=session, bar=bar)
-                with out_lock:
-                    out_ds.write(tile_array, window=tile.window)
+            # download and write tiles
+            def write_tile(array: np.ndarray, window: Window):
+                logger.debug(f'Writing tile {window}')
+                with rio.Env(GDAL_NUM_THREADS=1, GTIFF_FORCE_RGBA=False), out_lock:
+                    out_ds.write(array, window=window)
 
-            executor = exit_stack.enter_context(ThreadPoolExecutor(max_workers=num_threads))
-            tiles = exp_image._tiles(max_tile_size=max_tile_size, max_tile_dim=max_tile_dim)
-            futures = [executor.submit(download_tile, tile) for tile in tiles]
-            try:
-                # use as_completed so the executor can be shutdown as soon as there is an error
-                for future in as_completed(futures):
-                    future.result()
-            except Exception as ex:
-                # shutdown the executor (running threads cannot be disowned, so wait for them
-                # here, before raising the exception)
-                logger.info(f'Cancelling download: {repr(ex)}\n')
-                executor.shutdown(wait=True, cancel_futures=True)
-                raise ex
+            async def write_tiles():
+                loop = asyncio.get_running_loop()
+                async with exp_image._tile_tasks(
+                    max_tile_size=max_tile_size,
+                    max_tile_dim=max_tile_dim,
+                    max_requests=max_requests,
+                ) as tasks:
+                    for task in tqdm_asyncio.as_completed(tasks, **tqdm_kwargs):
+                        tile, array = await task
+                        await loop.run_in_executor(cpu_exec, write_tile, array, tile.window)
+                        logger.debug(f'Wrote tile {tile.window}')
 
-            bar.update(bar.total - bar.n)  # ensure the bar reaches 100%
+            asyncio.run(write_tiles())
+
             # populate GeoTIFF metadata
             exp_image._write_metadata(out_ds)
             # build overviews
