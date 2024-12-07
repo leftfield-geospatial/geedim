@@ -39,7 +39,7 @@ from rasterio import features, windows
 from rasterio.enums import Resampling as RioResampling
 from rasterio.io import DatasetWriter
 from rasterio.windows import Window
-from tqdm.asyncio import tqdm, tqdm_asyncio
+from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 from geedim import utils
@@ -463,18 +463,17 @@ class BaseImageAccessor:
         max_tile_size: float = _ee_max_tile_size,
         max_tile_dim: int = _ee_max_tile_dim,
         max_requests: int = 32,
+        max_cpus: int = None,
     ) -> Generator[list[asyncio.Task]]:
         """Context manager for asynchronous tile download tasks."""
 
-        async def _download_tile(
-            tile: Tile, session: aiohttp.ClientSession, loop: asyncio.AbstractEventLoop = None
-        ) -> tuple[Tile, np.ndarray]:
+        async def download_tile(tile: Tile) -> tuple[Tile, np.ndarray]:
             """Download a tile to a numpy array."""
             # TODO: add retries
-            loop = loop or asyncio.get_running_loop()
+            loop = asyncio.get_running_loop()
             # get the tile GeoTIFF URL
-            async with semaphore:
-                logger.debug(f'Getting tile URL {tile.window}')
+            async with limit_requests:
+                logger.debug(f'Getting tile URL for {tile.window}')
                 url = await loop.run_in_executor(
                     io_exec,
                     self._ee_image.getDownloadURL,
@@ -485,10 +484,9 @@ class BaseImageAccessor:
                         format='GEO_TIFF',
                     ),
                 )
-                logger.debug(f'Got tile URL {tile.window}')
 
-            # download tile GeoTIFF into buffer
-            async with semaphore:
+            # download tile GeoTIFF into a buffer
+            async with limit_requests:
                 logger.debug(f'Downloading tile {tile.window}')
                 timeout = aiohttp.ClientTimeout(total=300)
                 buf = BytesIO()
@@ -497,38 +495,40 @@ class BaseImageAccessor:
                 ) as response:
                     async for data in response.content.iter_chunked(10240):
                         buf.write(data)
-                    buf.flush()
-                logger.debug(f'Downloaded tile {tile.window}')
 
             # read the GeoTIFF buffer into a numpy array
             def read_gtiff_buf(buf: BytesIO) -> np.ndarray:
                 logger.debug(f'Reading tile {tile.window}')
                 buf.seek(0)
-                # TODO: is the rio.Env required?  if it inherits from parent, can it be placed in
-                #  the parent fn?
-                with rio.Env(GDAL_NUM_THREADS=1, GTIFF_FORCE_RGBA=False), rio.open(buf, 'r') as ds:
+                with rio.open(buf, 'r') as ds:
                     # Note: due to an Earth Engine bug (
                     # https://issuetracker.google.com/issues/350528377), the tile is float64 for
                     # uint32 and int64 image dtypes.  The tile nodata value is as it should be
-                    # though, so conversion to the image / GeoTIFF dtype happens ok below.
+                    # though, so conversion to the image / GeoTIFF dtype works ok.
                     return ds.read()
 
             array = await loop.run_in_executor(cpu_exec, read_gtiff_buf, buf)
-            logger.debug(f'Read tile {tile.window}')
             return tile, array
 
         with ExitStack() as exit_stack:
-            # create executors
+            # use one thread per tile for reading GeoTIFF buffers so that CPU loading can be
+            # controlled with cpu_exec's max_workers
+            exit_stack.enter_context(rio.Env(GDAL_NUM_THREADS=1))
+
+            # create thread pool for http requests
             io_exec = exit_stack.enter_context(ThreadPoolExecutor(max_workers=max_requests))
-            cpu_workers = max((os.cpu_count() or 1) - 1, 1)
-            cpu_exec = exit_stack.enter_context(ThreadPoolExecutor(max_workers=cpu_workers))
+
+            # create thread pool for reading GeoTIFF buffers (max_workers defaults to two less
+            # than the number of CPUs to leave capacity for writing tiles & running the async event
+            # loop)
+            max_cpus = max_cpus or max((os.cpu_count() or 0) - 2, 1)
+            cpu_exec = exit_stack.enter_context(ThreadPoolExecutor(max_workers=max_cpus))
 
             # yield async tasks for downloading tiles
             tiles = [*self._tiles(max_tile_size=max_tile_size, max_tile_dim=max_tile_dim)]
-            semaphore = asyncio.Semaphore(max_requests)
-            loop = asyncio.get_running_loop()
+            limit_requests = asyncio.Semaphore(max_requests)
             async with aiohttp.ClientSession() as session:
-                tasks = [asyncio.create_task(_download_tile(tile, session, loop)) for tile in tiles]
+                tasks = [asyncio.create_task(download_tile(tile)) for tile in tiles]
                 yield tasks
 
     def _write_metadata(self, ds: DatasetWriter):
@@ -918,6 +918,7 @@ class BaseImageAccessor:
         scale_offset: bool = False,
         bands: Sequence[str] = None,
         max_requests: int = 32,
+        max_cpus: int = None,
     ) -> None:
         """
         Download the image to a GeoTIFF file.
@@ -939,8 +940,8 @@ class BaseImageAccessor:
         :param overwrite:
             Whether to overwrite the destination file if it exists.
         :param num_threads:
-            Maximum number of tiles to process concurrently.  Defaults to a value based on the
-            number of CPUs (recommended).
+            Deprecated and has no effect. ``max_requests`` and ``max_cpus`` can be used to
+            limit concurrency.
         :param max_tile_size:
             Maximum tile size (MB).  Defaults to the Earth Engine download limit (32 MB).
         :param max_tile_dim:
@@ -976,12 +977,19 @@ class BaseImageAccessor:
             Maximum number of concurrent Earth Engine requests.  Should be less than the `quota
             limit <https://developers.google.com/earth-engine/guides/usage
             #adjustable_quota_limits>`__.
+        :param max_cpus:
+            Maximum number of tiles to process concurrently.  Defaults to two less than the
+            number of CPUs, or one, whichever is greater.  Values larger than the default can
+            stall the asynchronous event loop and are not recommended.
         """
         # TODO: allow bands to be band indexes too
         # TODO: make progress bar optional / configurable (in export too)
         # TODO: deprecate num_threads (?) in favour of max_<workers?>
-        cpu_workers = num_threads or max((os.cpu_count() or 1) - 1, 1)
-        out_lock = threading.Lock()
+        if num_threads:
+            raise DeprecationWarning(
+                "'num_threads' is deprecated, has no effect and will be removed in a future "
+                "release.  'max_requests' and 'max_cpus' can be used to limit concurrency."
+            )
         filename = Path(filename)
         if not overwrite and filename.exists():
             raise FileExistsError(f'{filename} exists')
@@ -1027,34 +1035,47 @@ class BaseImageAccessor:
             )
             tqdm_kwargs = dict(desc=desc, bar_format=bar_format, dynamic_ncols=True)
 
-            # create/open the destination file
-            # TODO: we need the env for building overviews, but not for tile read/write.  is this
-            #  inherited by threads?
-            exit_stack.enter_context(rio.Env(GDAL_NUM_THREADS='ALL_CPUs', GTIFF_FORCE_RGBA=False))
+            # Create & open the destination file. GDAL_NUM_THREADS='ALL_CPUS' is needed here for
+            # building overviews once the download is complete.  It is overridden in nested
+            # functions to control concurrency of the download itself.
+            out_lock = threading.Lock()
+            exit_stack.enter_context(rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False))
             out_ds = exit_stack.enter_context(rio.open(filename, 'w', **profile))
 
-            # create executor for writing tiles
-            cpu_exec = exit_stack.enter_context(ThreadPoolExecutor(max_workers=cpu_workers))
+            # create a thread pool for writing tile arrays to file, and possibly for running the
+            # async event loop (see below)
+            exec = exit_stack.enter_context(ThreadPoolExecutor(max_workers=2))
 
-            # download and write tiles
-            def write_tile(array: np.ndarray, window: Window):
-                logger.debug(f'Writing tile {window}')
-                with rio.Env(GDAL_NUM_THREADS=1, GTIFF_FORCE_RGBA=False), out_lock:
-                    out_ds.write(array, window=window)
-
+            # Download and write tiles (concurrent CPU bound tasks should be less than the number of
+            # CPUs)
             async def write_tiles():
+                def write_tile(array: np.ndarray, window: Window):
+                    with rio.Env(GDAL_NUM_THREADS=1), out_lock:
+                        logger.debug(f'Writing tile {window}')
+                        out_ds.write(array, window=window)
+
                 loop = asyncio.get_running_loop()
                 async with exp_image._tile_tasks(
                     max_tile_size=max_tile_size,
                     max_tile_dim=max_tile_dim,
                     max_requests=max_requests,
                 ) as tasks:
-                    for task in tqdm_asyncio.as_completed(tasks, **tqdm_kwargs):
+                    for task in tqdm(asyncio.as_completed(tasks), total=len(tasks), **tqdm_kwargs):
                         tile, array = await task
-                        await loop.run_in_executor(cpu_exec, write_tile, array, tile.window)
-                        logger.debug(f'Wrote tile {tile.window}')
+                        await loop.run_in_executor(exec, write_tile, array, tile.window)
 
-            asyncio.run(write_tiles())
+            try:
+                # asyncio.run() cannot be called from a thread with an existing event loop,
+                # so test if there is a loop running in this (the main) thread (see
+                # https://stackoverflow.com/a/75341431)
+                asyncio.get_running_loop()
+            except RuntimeError:
+                # run in this thread if there is no existing loop
+                asyncio.run(write_tiles())
+            else:
+                # otherwise run in a separate thread if there is an existing loop (e.g. we are in
+                # a jupyter notebook)
+                exec.submit(lambda: asyncio.run(write_tiles())).result()
 
             # populate GeoTIFF metadata
             exp_image._write_metadata(out_ds)
