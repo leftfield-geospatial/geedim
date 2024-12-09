@@ -68,7 +68,6 @@ _nodata_vals = dict(
 
 
 class BaseImageAccessor:
-    _desc_width = 50
     _default_resampling = ResamplingMethod.near
     _ee_max_tile_size = 32
     _ee_max_tile_dim = 10000
@@ -291,16 +290,26 @@ class BaseImageAccessor:
         ds.build_overviews(ovw_levels, resampling=RioResampling.average)
 
     @staticmethod
-    def _byte_size_str(size: int, precision: int = 2) -> str:
-        """Return a human readable string for the given byte size.  Adapted from
-        https://stackoverflow.com/questions/5194057/better-way-to-convert-file-sizes-in-python.
-        """
-        for units in ['bytes', 'KB', 'MB', 'GB', 'TB', 'PB']:
-            if size < 1000.0:
-                return f'{size:.{precision}f} {units}'
-            size /= 1000.0
+    def _get_tqdm_kwargs(desc: str = None, unit: str = None) -> dict:
+        """Return a dictionary of kwargs for a tqdm progress bar."""
+        tqdm_kwargs = dict(dynamic_ncols=True)
+        if desc:
+            desc_width = 50
+            desc = '...' + desc[-desc_width:] if len(desc) > desc_width else desc
+            tqdm_kwargs.update(desc=desc)
 
-        return str(size)
+        if unit:
+            bar_format = (
+                '{desc}: |{bar}| {n_fmt}/{total_fmt} ({unit}) [{percentage:3.0f}%] in {elapsed} '
+                '(eta: {remaining})'
+            )
+            tqdm_kwargs.update(bar_format=bar_format, unit=unit)
+        else:
+            bar_format = (
+                '{desc}: |{bar}| [{percentage:5.1f}%] in {elapsed:>5s} (eta: {remaining:>5s})'
+            )
+            tqdm_kwargs.update(bar_format=bar_format)
+        return tqdm_kwargs
 
     def _get_band_properties(self) -> list[dict]:
         """Merge Earth Engine and STAC band properties for this image."""
@@ -443,10 +452,10 @@ class BaseImageAccessor:
             num_tiles = int(np.prod(np.ceil(np.array(self.shape) / tile_shape)))
             dtype_size = np.dtype(self.dtype).itemsize
             raw_tile_size = tile_shape[0] * tile_shape[1] * self.count * dtype_size
-            logger.debug(f'Raw image size: {self._byte_size_str(self.size)}')
+            logger.debug(f"Raw image size: {tqdm.format_sizeof(self.size, suffix='B')}")
             logger.debug(f'Num. tiles: {num_tiles}')
             logger.debug(f'Tile shape: {tile_shape}')
-            logger.debug(f'Raw tile size: {self._byte_size_str(raw_tile_size)}')
+            logger.debug(f"Raw tile size: {tqdm.format_sizeof(self.size, suffix='B')}")
 
         # split the image into tiles, clipping tiles to image dimensions
         for tile_start in product(
@@ -487,6 +496,11 @@ class BaseImageAccessor:
 
             # download tile GeoTIFF into a buffer
             async with limit_requests:
+                # TODO: this is only entered once all the URLs have been retrieved.  i think
+                #  tasks are allowed to enter in the order the requested access.  the actual
+                #  download should be started asap though.  this will be esp problematic for
+                #  large images which will wait for ages to get all URLs before starting any
+                #  download.
                 logger.debug(f'Downloading tile {tile.window}')
                 timeout = aiohttp.ClientTimeout(total=300)
                 buf = BytesIO()
@@ -508,6 +522,8 @@ class BaseImageAccessor:
                     return ds.read()
 
             array = await loop.run_in_executor(cpu_exec, read_gtiff_buf, buf)
+            # TODO: refactor what is returned for tile, and/or Tile itself, to give something
+            #  standard and useful for writing files and arrays
             return tile, array
 
         with ExitStack() as exit_stack:
@@ -570,16 +586,14 @@ class BaseImageAccessor:
             Earth Engine task to monitor (as returned by :meth:`export`).
         :param label:
             Optional label for progress display.  Defaults to the task description.
-        :return:
         """
         pause = 0.1
         status = ee.data.getOperation(task.name)
         label = label or status["metadata"]["description"]
-        if len(label) > BaseImageAccessor._desc_width:
-            label = f'...{label[-BaseImageAccessor._desc_width:]}'
+        tqdm_kwargs = BaseImageAccessor._get_tqdm_kwargs(desc=label)
 
         # poll EE until the export preparation is complete
-        with utils.Spinner(label=f'Preparing {label}: ', leave='done'):
+        with utils.Spinner(label=f"Preparing {tqdm_kwargs['desc']}: ", leave='done'):
             while not status.get('done', False):
                 time.sleep(5 * pause)
                 status = ee.data.getOperation(task.name)
@@ -589,18 +603,15 @@ class BaseImageAccessor:
                     raise IOError(f'Export failed: {status}')
 
         # wait for export to complete, displaying a progress bar
-        bar_format = '{desc}: |{bar}| [{percentage:5.1f}%] in {elapsed:>5s} (eta: {remaining:>5s})'
-        with tqdm(
-            desc=f'Exporting {label}', total=1, bar_format=bar_format, dynamic_ncols=True
-        ) as bar:
+        tqdm_kwargs.update(desc='Exporting ' + tqdm_kwargs['desc'])
+        with tqdm(total=1, **tqdm_kwargs) as bar:
             while not status.get('done', False):
                 time.sleep(10 * pause)
-                status = ee.data.getOperation(task.name)  # get task status
+                status = ee.data.getOperation(task.name)
                 bar.update(status['metadata']['progress'] - bar.n)
 
             if status['metadata']['state'] == 'SUCCEEDED':
-                pass
-                # bar.update(1 - bar.n)
+                bar.update(bar.total - bar.n)
             else:
                 raise IOError(f'Export failed: {status}')
 
@@ -863,7 +874,7 @@ class BaseImageAccessor:
             bands=bands,
         )
         if logger.getEffectiveLevel() <= logging.DEBUG:
-            logger.debug(f'Uncompressed size: {self._byte_size_str(exp_image.size)}')
+            logger.debug(f"Uncompressed size: {tqdm.format_sizeof(exp_image.size, suffix='B')}")
 
         # create export task and start
         exp_kwargs = dict(
@@ -917,7 +928,7 @@ class BaseImageAccessor:
         dtype: str = None,
         scale_offset: bool = False,
         bands: Sequence[str] = None,
-        max_requests: int = 32,
+        max_requests: int = 20,
         max_cpus: int = None,
     ) -> None:
         """
@@ -1014,9 +1025,10 @@ class BaseImageAccessor:
         )
         # warn if the download is large
         if exp_image.size > 1e9:
+            size_str = tqdm.format_sizeof(exp_image.size, suffix='B')
             logger.warning(
                 f"Consider adjusting 'region', 'scale' and/or 'dtype' to reduce the "
-                f"'{filename.name}' download size (raw: {self._byte_size_str(exp_image.size)})."
+                f"'{filename.name}' download size (raw:{size_str})."
             )
 
         with ExitStack() as exit_stack:
@@ -1024,16 +1036,7 @@ class BaseImageAccessor:
             exit_stack.enter_context(
                 logging_redirect_tqdm([logging.getLogger(__package__)], tqdm_class=tqdm)
             )
-            desc = filename.name
-            if len(desc) > BaseImageAccessor._desc_width:
-                desc = f'...{desc[-BaseImageAccessor._desc_width:]}'
-            # TODO: the remaining:>5s does not limit the eta time to 5 digits, sometimes it jumps
-            #  up to hh:mm:ss then mm:ss
-            bar_format = (
-                '{desc}: |{bar}| {n_fmt}/{total_fmt} (tiles) [{percentage:5.1f}%] in {elapsed:>5s} '
-                '(eta: {remaining:>5s})'
-            )
-            tqdm_kwargs = dict(desc=desc, bar_format=bar_format, dynamic_ncols=True)
+            tqdm_kwargs = self._get_tqdm_kwargs(desc=filename.name, unit='tiles')
 
             # Create & open the destination file. GDAL_NUM_THREADS='ALL_CPUS' is needed here for
             # building overviews once the download is complete.  It is overridden in nested
@@ -1059,6 +1062,7 @@ class BaseImageAccessor:
                     max_tile_size=max_tile_size,
                     max_tile_dim=max_tile_dim,
                     max_requests=max_requests,
+                    max_cpus=max_cpus,
                 ) as tasks:
                     for task in tqdm(asyncio.as_completed(tasks), total=len(tasks), **tqdm_kwargs):
                         tile, array = await task
