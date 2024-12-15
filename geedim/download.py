@@ -35,7 +35,7 @@ import aiohttp
 import ee
 import numpy as np
 import rasterio as rio
-from rasterio import features, windows
+from rasterio import features
 from rasterio.enums import Resampling as RioResampling
 from rasterio.io import DatasetWriter
 from rasterio.shutil import RasterioIOError
@@ -64,10 +64,10 @@ _nodata_vals = dict(
 )
 """Nodata values for supported download / export dtypes. """
 # Note:
-# - while gdal >= 3.5 supports *int64 data type, there is a rasterio bug that casts the *int64 nodata value to float,
-# so geedim will not support these types for now.
-# - the ordering of the keys above is relevant to the auto dtype and should be: unsigned ints smallest - largest,
-# signed ints smallest to largest, float types smallest to largest.
+# - while gdal >= 3.5 supports *int64 data type, there is a rasterio bug that casts the *int64
+# nodata value to float, so geedim will not support these types for now.
+# - the ordering of the keys above is relevant to the auto dtype and should be: unsigned ints
+# smallest - largest, signed ints smallest to largest, float types smallest to largest.
 
 
 class BaseImageAccessor:
@@ -82,7 +82,7 @@ class BaseImageAccessor:
         RasterioIOError,
     )
     try:
-        # include requests exception from ee.Image.getDownloadURL()
+        # retry on requests errors from ee.Image.getDownloadURL()
         from requests import RequestException
 
         _retry_exceptions += (RequestException,)
@@ -135,7 +135,12 @@ class BaseImageAccessor:
     @cached_property
     def id(self) -> str | None:
         """Earth Engine ID."""
-        return self.info['id'] if 'id' in self.info else None
+        return self.info.get('id', None)
+
+    @cached_property
+    def index(self) -> str | None:
+        """Earth Engine index."""
+        return self.properties.get('system:index', None)
 
     @cached_property
     def stac(self) -> StacItem | None:
@@ -392,7 +397,12 @@ class BaseImageAccessor:
             crs = crs or exp_image.projection().crs()
 
         # apply export scale/offset, dtype and resampling
-        ee_image = exp_image.scaleOffset() if scale_offset else exp_image._ee_image
+        if scale_offset:
+            ee_image = exp_image.scaleOffset()
+            im_dtype = 'float64'
+        else:
+            ee_image = exp_image._ee_image
+            im_dtype = exp_image.dtype
 
         resampling = ResamplingMethod(resampling)
         if resampling != ResamplingMethod.near:
@@ -405,7 +415,7 @@ class BaseImageAccessor:
 
         # convert dtype (required for EE to set nodata correctly on download even if dtype is
         # unchanged)
-        ee_image = BaseImageAccessor(ee_image).toDType(dtype=dtype or exp_image.dtype)
+        ee_image = BaseImageAccessor(ee_image).toDType(dtype=dtype or im_dtype)
 
         # apply export spatial parameters
         crs_transform = crs_transform[:6] if crs_transform else None
@@ -477,8 +487,7 @@ class BaseImageAccessor:
         ):
             tile_stop = np.clip(np.add(tile_start, tile_shape), a_min=None, a_max=self.shape)
             clip_tile_shape = (tile_stop - tile_start).tolist()
-            tile_window = windows.Window(*tile_start[::-1], *clip_tile_shape[::-1])
-            yield Tile(self, tile_window)
+            yield Tile(*tile_start[::-1], *clip_tile_shape[::-1], transform=self.transform)
 
     @asynccontextmanager
     async def _tile_tasks(
@@ -495,8 +504,8 @@ class BaseImageAccessor:
             return self._ee_image.getDownloadURL(
                 dict(
                     crs=self.crs,
-                    crs_transform=tuple(tile._transform)[:6],
-                    dimensions=tile._shape[::-1],
+                    crs_transform=tile.transform,
+                    dimensions=tile.shape[::-1],
                     format='GEO_TIFF',
                 )
             )
@@ -542,26 +551,24 @@ class BaseImageAccessor:
                 try:
                     # limit concurrent EE requests to avoid exceeding quota
                     async with limit_requests:
-                        logger.debug(f'Getting URL for {tile.window}.')
+                        logger.debug(f'Getting URL for {tile!r}.')
                         url = await loop.run_in_executor(exec, get_tile_url, tile)
-                        logger.debug(f'Downloading {tile.window} from {url}.')
+                        logger.debug(f'Downloading {tile!r} from {url}.')
                         buf = await download_url(url, session)
 
                     # limit concurrent tile reads to leave CPU capacity for the event loop
                     async with limit_cpus:
-                        logger.debug(f'Reading GeoTIFF buffer for {tile.window}.')
+                        logger.debug(f'Reading GeoTIFF buffer for {tile!r}.')
                         array = await loop.run_in_executor(exec, read_gtiff_buf, buf)
                     return tile, array
 
                 except self._retry_exceptions as ex:
                     # raise an error on maximum retries or 'user memory limit exceeded'
                     if retry == max_retries or 'memory limit' in getattr(ex, 'message', ''):
-                        logger.debug(f'Tile download failed for {tile.window}.  Error: {ex!r}.')
+                        logger.debug(f'Tile download failed for {tile!r}.  Error: {ex!r}.')
                         raise
                     # otherwise retry
-                    logger.debug(
-                        f'Retry {retry + 1} of {max_retries} for {tile.window}. Error: {ex!r}.'
-                    )
+                    logger.debug(f'Retry {retry + 1} of {max_retries} for {tile!r}. Error: {ex!r}.')
                     await asyncio.sleep(backoff_factor * (2**retry))
 
         with ExitStack() as exit_stack:
@@ -597,6 +604,7 @@ class BaseImageAccessor:
                     logger.debug('Cleaning up tile download tasks...')
                     [task.cancel() for task in tasks]
                     await asyncio.gather(*tasks, return_exceptions=True)
+                    logger.debug('Clean up complete.')
 
             # https://docs.aiohttp.org/en/latest/client_advanced.html#graceful-shutdown
             await asyncio.sleep(0.25)
@@ -988,17 +996,16 @@ class BaseImageAccessor:
         """
         Download the image to a GeoTIFF file.
 
-        Images larger than the `Earth Engine size limit
-        <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`_ are split
-        and downloaded as separate tiles, then re-assembled into a single GeoTIFF.  Downloaded
-        image files are populated with Earth Engine / STAC metadata.
-
         Download bounds and resolution can be specified with ``region`` and ``scale`` / ``shape``,
         or ``crs_transform`` and ``shape``.  If no bounds are specified (with either ``region``,
         or ``crs_transform`` & ``shape``), the entire image is downloaded.
 
         When ``crs``, ``scale``, ``crs_transform`` & ``shape`` are not specified, the pixel grids
         of the downloaded and source images will match.
+
+        The image is retrieved as separate GeoTIFF tiles which are downloaded and read
+        concurrently.  Tile size can be controlled with ``max_tile_size`` and ``max_tile_dim``,
+        and download / read concurrency with ``max_requests`` and ``max_cpus``.
 
         :param filename:
             Destination file name.
@@ -1008,9 +1015,11 @@ class BaseImageAccessor:
             Deprecated and has no effect. ``max_requests`` and ``max_cpus`` can be used to
             limit concurrency.
         :param max_tile_size:
-            Maximum tile size (MB).  Defaults to the Earth Engine download limit (32 MB).
+            Maximum tile size (MB).  Should be less than the `Earth Engine size limit
+            <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (32 MB).
         :param max_tile_dim:
-            Maximum tile width/height (pixels).  Defaults to Earth Engine limit (10000).
+            Maximum tile width/height (pixels).  Should be less than the `Earth Engine limit
+            <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (10000).
         :param crs:
             WKT or EPSG specification of CRS to download to.  Where image bands have different
             CRSs, all are re-projected to this CRS. Defaults to the CRS of the minimum scale band
@@ -1039,17 +1048,16 @@ class BaseImageAccessor:
         :param bands:
             Sequence of band names to download.  Defaults to all bands.
         :param max_requests:
-            Maximum number of concurrent Earth Engine requests.  Should be less than the `quota
-            limit <https://developers.google.com/earth-engine/guides/usage
+            Maximum number of concurrent tile downloads.  Should be less than the `max concurrent
+            requests quota <https://developers.google.com/earth-engine/guides/usage
             #adjustable_quota_limits>`__.
         :param max_cpus:
-            Maximum number of tiles to process concurrently.  Defaults to two less than the
+            Maximum number of tile GeoTIFFs to read concurrently.  Defaults to two less than the
             number of CPUs, or one, whichever is greater.  Values larger than the default can
             stall the asynchronous event loop and are not recommended.
         """
+        # TODO: add a note about nodata to the docstring
         # TODO: allow bands to be band indexes too
-        # TODO: make progress bar optional / configurable (in export too)
-        # TODO: deprecate num_threads (?) in favour of max_<workers?>
         if num_threads:
             raise DeprecationWarning(
                 "'num_threads' is deprecated, has no effect and will be removed in a future "
@@ -1109,7 +1117,7 @@ class BaseImageAccessor:
                 def write_tile(array: np.ndarray, tile: Tile):
                     """Write a tile array to file."""
                     with rio.Env(GDAL_NUM_THREADS=1), out_lock:
-                        logger.debug(f'Writing {tile.window} to file.')
+                        logger.debug(f'Writing {tile!r} to file.')
                         out_ds.write(array, window=tile.window)
 
                 async with image._tile_tasks(
