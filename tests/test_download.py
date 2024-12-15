@@ -621,20 +621,21 @@ def test_tiles(image_shape: tuple[int, int], max_tile_size: int, image_transform
     prev_tile = tiles[0]
     accum_window = prev_tile.window
     for tile in tiles[1:]:
-        tile_size = np.prod(tile._shape) * np.dtype(exp_image.dtype).itemsize * exp_image.count
+        tile_size = np.prod(tile.shape) * np.dtype(exp_image.dtype).itemsize * exp_image.count
         assert tile_size <= (max_tile_size << 20)
         accum_window = windows.union(accum_window, tile.window)
 
+        prev_transform = rio.Affine(*prev_tile.tile_transform)
         if tile.window.row_off == prev_tile.window.row_off:
             assert tile.window.col_off == (prev_tile.window.col_off + prev_tile.window.width)
-            ref_transform = prev_tile._transform * Affine.translation(prev_tile.window.width, 0)
+            ref_transform = prev_transform * Affine.translation(prev_tile.window.width, 0)
         else:
             assert tile.window.row_off == (prev_tile.window.row_off + prev_tile.window.height)
-            ref_transform = prev_tile._transform * Affine.translation(
+            ref_transform = prev_transform * Affine.translation(
                 -prev_tile.window.col_off, prev_tile.window.height
             )
 
-        assert tile._transform == pytest.approx(ref_transform, abs=1e-9)
+        assert tile.tile_transform == pytest.approx(ref_transform[:6], abs=1e-9)
         prev_tile = tile
 
     # test exp_image is fully covered by tiles

@@ -487,7 +487,7 @@ class BaseImageAccessor:
         ):
             tile_stop = np.clip(np.add(tile_start, tile_shape), a_min=None, a_max=self.shape)
             clip_tile_shape = (tile_stop - tile_start).tolist()
-            yield Tile(*tile_start[::-1], *clip_tile_shape[::-1], transform=self.transform)
+            yield Tile(*tile_start[::-1], *clip_tile_shape[::-1], image_transform=self.transform)
 
     @asynccontextmanager
     async def _tile_tasks(
@@ -504,7 +504,7 @@ class BaseImageAccessor:
             return self._ee_image.getDownloadURL(
                 dict(
                     crs=self.crs,
-                    crs_transform=tile.transform,
+                    crs_transform=tile.tile_transform,
                     dimensions=tile.shape[::-1],
                     format='GEO_TIFF',
                 )
