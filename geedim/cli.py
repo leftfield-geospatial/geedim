@@ -32,11 +32,7 @@ from rasterio.errors import CRSError
 from geedim import Initialize, schema, version
 from geedim.download import _nodata_vals, BaseImageAccessor
 from geedim.enums import (
-    CloudMaskMethod,
-    CloudScoreBand,
-    CompositeMethod,
-    ExportType,
-    ResamplingMethod,
+    CloudMaskMethod, CloudScoreBand, CompositeMethod, ExportType, ResamplingMethod,
 )
 from geedim.utils import asset_id, get_bounds, Spinner
 
@@ -803,13 +799,9 @@ def download(
     image_list = _prepare_image_list(obj, mask=mask)
     for im in image_list:
         filename = pathlib.Path(download_dir, _im_name(im) + '.tif')
-        im.gd.download(
-            filename,
-            region=obj.region,
-            max_tile_size=max_tile_size,
-            max_tile_dim=max_tile_dim,
-            overwrite=overwrite,
-            **kwargs,
+        im = im.gd.prepareForExport(region=obj.region, **kwargs)
+        im.gd.toGeoTiff(
+            filename, overwrite=overwrite, max_tile_size=max_tile_size, max_tile_dim=max_tile_dim
         )
 
 

@@ -47,3 +47,6 @@ class Tile:
             self.col_off, self.row_off
         )
         self.tile_transform = transform[:6]
+        self.slices = slice(self.row_off, self.row_off + self.height), slice(
+            self.col_off, self.col_off + self.width
+        )
