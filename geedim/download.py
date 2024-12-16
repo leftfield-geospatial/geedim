@@ -29,7 +29,7 @@ from functools import cached_property
 from io import BytesIO
 from itertools import product
 from pathlib import Path
-from typing import Any, Generator, Sequence
+from typing import Any, Generator, Sequence, TypeVar, Coroutine
 
 import aiohttp
 import ee
@@ -68,6 +68,8 @@ _nodata_vals = dict(
 # nodata value to float, so geedim will not support these types for now.
 # - the ordering of the keys above is relevant to the auto dtype and should be: unsigned ints
 # smallest - largest, signed ints smallest to largest, float types smallest to largest.
+
+T = TypeVar('T')
 
 
 class BaseImageAccessor:
@@ -330,6 +332,27 @@ class BaseImageAccessor:
             tqdm_kwargs.update(bar_format=bar_format)
         return tqdm_kwargs
 
+    @staticmethod
+    def _asyncio_run(coro: Coroutine[Any, Any, T], executor: ThreadPoolExecutor, **kwargs) -> T:
+        """Run a coroutine and return the result, using a separate thread if an event loop is
+        already running.
+        """
+        # asyncio.run() cannot be called from a thread with an existing event loop, so test
+        # if there is a loop running in this (the main) thread (see
+        # https://stackoverflow.com/a/75341431)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if loop and loop.is_running():
+            # run in a separate thread if there is an existing loop (e.g. we are in a jupyter
+            # notebook)
+            res = executor.submit(lambda: asyncio.run(coro, **kwargs)).result()
+        else:
+            # run in this thread if there is no existing loop
+            res = asyncio.run(coro, **kwargs)
+        return res
+
     def _get_band_properties(self) -> list[dict]:
         """Merge Earth Engine and STAC band properties for this image."""
         band_ids = [bd['id'] for bd in self.info.get('bands', [])]
@@ -342,91 +365,6 @@ class BaseImageAccessor:
         else:  # just use the image band IDs
             band_props = [dict(name=bid) for bid in band_ids]
         return band_props
-
-    def _prepare_for_export(
-        self,
-        crs: str = None,
-        crs_transform: tuple[float, ...] = None,
-        shape: tuple[int, int] = None,
-        region: dict | ee.Geometry = None,
-        scale: float = None,
-        resampling: ResamplingMethod = _default_resampling,
-        dtype: str = None,
-        scale_offset: bool = False,
-        bands: list[str] = None,
-    ) -> BaseImageAccessor:
-        """Prepare an image with the given export parameters."""
-        # Create a new BaseImageAccessor if bands are specified.  This is done here so that crs,
-        # scale etc parameters used below will have values specific to bands.
-        exp_image = BaseImageAccessor(self._ee_image.select(bands)) if bands else self
-
-        # Prevent exporting images with no fixed projection unless arguments defining the export
-        # pixel grid and bounds are provided (EE allows this, but uses a 1 degree scale in
-        # EPSG:4326 with worldwide bounds, which is an unlikely use case prone to memory limit
-        # errors).
-        if (
-            (not crs or not region or not (scale or shape))
-            and (not crs or not crs_transform or not shape)
-            and not exp_image.scale
-        ):
-            raise ValueError(
-                "This image does not have a fixed projection, you need to specify a 'crs', "
-                "'region' & 'scale' / 'shape'; or a 'crs', 'crs_transform' & 'shape'."
-            )
-
-        # Prevent exporting unbounded images without arguments defining the bounds (EE also
-        # raises an error in ee.Image.prepare_for_export() but with a less informative message).
-        if (not region and (not crs_transform or not shape)) and not exp_image.bounded:
-            raise ValueError(
-                "This image is unbounded, you need to specify a 'region'; or a 'crs_transform' and "
-                "'shape'."
-            )
-
-        if scale and shape:
-            raise ValueError("You can specify one of 'scale' or 'shape', but not both.")
-
-        # configure the export spatial parameters
-        if not crs_transform and not shape:
-            # Only pass crs to ee.Image.prepare_for_export() when it is different from the
-            # source.  Passing same crs as source does not maintain the source pixel grid.
-            crs = crs if crs is not None and crs != exp_image.crs else None
-            # Default scale to the scale in meters of the minimum scale band.
-            scale = scale or exp_image.projection().nominalScale()
-        else:
-            # crs argument is required with crs_transform
-            crs = crs or exp_image.projection().crs()
-
-        # apply export scale/offset, dtype and resampling
-        if scale_offset:
-            ee_image = exp_image.scaleOffset()
-            im_dtype = 'float64'
-        else:
-            ee_image = exp_image._ee_image
-            im_dtype = exp_image.dtype
-
-        resampling = ResamplingMethod(resampling)
-        if resampling != ResamplingMethod.near:
-            if not exp_image.scale:
-                raise ValueError(
-                    'This image has no fixed projection and cannot be resampled.  If this image '
-                    'is a composite, you can resample the component images used to create it.'
-                )
-            ee_image = BaseImageAccessor(ee_image).resample(resampling)
-
-        # convert dtype (required for EE to set nodata correctly on download even if dtype is
-        # unchanged)
-        ee_image = BaseImageAccessor(ee_image).toDType(dtype=dtype or im_dtype)
-
-        # apply export spatial parameters
-        crs_transform = crs_transform[:6] if crs_transform else None
-        dimensions = shape[::-1] if shape else None
-        export_kwargs = dict(
-            crs=crs, crs_transform=crs_transform, dimensions=dimensions, region=region, scale=scale
-        )
-        export_kwargs = {k: v for k, v in export_kwargs.items() if v is not None}
-        ee_image, _ = ee_image.prepare_for_export(export_kwargs)
-
-        return BaseImageAccessor(ee_image)
 
     def _get_tile_shape(self, max_tile_size: float, max_tile_dim: int) -> tuple[int, int]:
         """Returns a tile shape that satisfies ``max_tile_size`` and ``max_tile_dim``."""
@@ -541,7 +479,7 @@ class BaseImageAccessor:
             limit_requests: asyncio.Semaphore,
             limit_cpus: asyncio.Semaphore,
             session: aiohttp.ClientSession,
-            exec: ThreadPoolExecutor = None,
+            executor: ThreadPoolExecutor = None,
             max_retries: int = 5,
             backoff_factor: float = 2.0,
         ) -> tuple[Tile, np.ndarray]:
@@ -552,14 +490,14 @@ class BaseImageAccessor:
                     # limit concurrent EE requests to avoid exceeding quota
                     async with limit_requests:
                         logger.debug(f'Getting URL for {tile!r}.')
-                        url = await loop.run_in_executor(exec, get_tile_url, tile)
+                        url = await loop.run_in_executor(executor, get_tile_url, tile)
                         logger.debug(f'Downloading {tile!r} from {url}.')
                         buf = await download_url(url, session)
 
                     # limit concurrent tile reads to leave CPU capacity for the event loop
                     async with limit_cpus:
                         logger.debug(f'Reading GeoTIFF buffer for {tile!r}.')
-                        array = await loop.run_in_executor(exec, read_gtiff_buf, buf)
+                        array = await loop.run_in_executor(executor, read_gtiff_buf, buf)
                     return tile, array
 
                 except self._retry_exceptions as ex:
@@ -580,7 +518,9 @@ class BaseImageAccessor:
             max_cpus = max_cpus or max((os.cpu_count() or 0) - 2, 1)
 
             # create thread pool for all synchronous tasks
-            exec = exit_stack.enter_context(ThreadPoolExecutor(max_workers=max_requests + max_cpus))
+            executor = exit_stack.enter_context(
+                ThreadPoolExecutor(max_workers=max_requests + max_cpus)
+            )
 
             # create semaphores for limiting concurrency
             limit_requests = asyncio.Semaphore(max_requests)
@@ -592,7 +532,7 @@ class BaseImageAccessor:
                 tiles = [*self._tiles(max_tile_size=max_tile_size, max_tile_dim=max_tile_dim)]
                 tasks = {
                     asyncio.create_task(
-                        download_tile(tile, limit_requests, limit_cpus, session, exec)
+                        download_tile(tile, limit_requests, limit_cpus, session, executor)
                     )
                     for tile in tiles
                 }
@@ -850,6 +790,313 @@ class BaseImageAccessor:
 
         return sums.map(get_percentage)
 
+    def prepareForExport(
+        self,
+        crs: str = None,
+        crs_transform: Sequence[float] = None,
+        shape: tuple[int, int] = None,
+        region: dict | ee.Geometry = None,
+        scale: float = None,
+        resampling: ResamplingMethod = _default_resampling,
+        dtype: str = None,
+        scale_offset: bool = False,
+        bands: list[str] = None,
+    ) -> ee.Image:
+        """
+        Prepare an image for export by applying the given parameters.
+
+        Bounds and resolution of the prepared image can be specified with ``region`` and
+        ``scale`` / ``shape``, or ``crs_transform`` and ``shape``.  Bounds default to those of
+        the source image when they are not specified (with either ``region``, or ``crs_transform``
+        & ``shape``).
+
+        When ``crs``, ``scale``, ``crs_transform`` & ``shape`` are not specified, the pixel grids
+        of the prepared and source images will match.
+
+        :param crs:
+            CRS of the prepared image as an EPSG or WKT string.  All bands are re-projected to
+            this CRS.  Defaults to the CRS of the minimum scale band if available.
+        :param crs_transform:
+            Geo-referencing transform of the prepared image, as a sequence of 6 numbers.  In
+            row-major order: [xScale, xShearing, xTranslation, yShearing, yScale, yTranslation].
+            All bands are re-projected to this transform.
+        :param shape:
+            (height, width) dimensions of the prepared image in pixels.
+        :param region:
+            Region defining the prepared image bounds as a GeoJSON dictionary or ``ee.Geometry``.
+            Defaults to the image geometry.
+        :param scale:
+            Pixel scale (m) of the prepared image.  All bands are re-projected to this scale.
+            Ignored if ``crs`` and ``crs_transform`` are specified.  Defaults to the minimum
+            scale of the image bands if available.
+        :param resampling:
+            Resampling method to use for reprojecting.
+        :param dtype:
+            Data type of the prepared image (``uint8``, ``int8``, ``uint16``, ``int16``, ``uint32``,
+            ``int32``, ``float32`` or ``float64``).  Defaults to the minimum size data type able
+            to represent all image bands.
+        :param scale_offset:
+            Whether to apply any STAC band scales and offsets to the image.
+        :param bands:
+            Sequence of band names to include in the prepared image.  Defaults to all bands.
+        """
+        # Create a new BaseImageAccessor if bands are specified.  This is done here so that crs,
+        # scale etc parameters used below will have values specific to bands.
+        exp_image = BaseImageAccessor(self._ee_image.select(bands)) if bands else self
+
+        # Prevent exporting images with no fixed projection unless arguments defining the export
+        # pixel grid and bounds are provided (EE allows this, but uses a 1 degree scale in
+        # EPSG:4326 with worldwide bounds, which is an unlikely use case prone to memory limit
+        # errors).
+        if (
+            (not crs or not region or not (scale or shape))
+            and (not crs or not crs_transform or not shape)
+            and not exp_image.scale
+        ):
+            raise ValueError(
+                "This image does not have a fixed projection, you need to specify a 'crs', "
+                "'region' & 'scale' / 'shape'; or a 'crs', 'crs_transform' & 'shape'."
+            )
+
+        # Prevent exporting unbounded images without arguments defining the bounds (EE also
+        # raises an error in ee.Image.prepare_for_export() but with a less informative message).
+        if (not region and (not crs_transform or not shape)) and not exp_image.bounded:
+            raise ValueError(
+                "This image is unbounded, you need to specify a 'region'; or a 'crs_transform' and "
+                "'shape'."
+            )
+
+        if scale and shape:
+            raise ValueError("You can specify one of 'scale' or 'shape', but not both.")
+
+        # configure the export spatial parameters
+        if not crs_transform and not shape:
+            # Only pass crs to ee.Image.prepare_for_export() when it is different from the
+            # source.  Passing same crs as source does not maintain the source pixel grid.
+            crs = crs if crs is not None and crs != exp_image.crs else None
+            # Default scale to the scale in meters of the minimum scale band.
+            scale = scale or exp_image.projection().nominalScale()
+        else:
+            # crs argument is required with crs_transform
+            crs = crs or exp_image.projection().crs()
+
+        # apply export scale/offset, dtype and resampling
+        if scale_offset:
+            ee_image = exp_image.scaleOffset()
+            im_dtype = 'float64'
+        else:
+            ee_image = exp_image._ee_image
+            im_dtype = exp_image.dtype
+
+        resampling = ResamplingMethod(resampling)
+        if resampling != ResamplingMethod.near:
+            if not exp_image.scale:
+                raise ValueError(
+                    'This image has no fixed projection and cannot be resampled.  If this image '
+                    'is a composite, you can resample the component images used to create it.'
+                )
+            ee_image = BaseImageAccessor(ee_image).resample(resampling)
+
+        # convert dtype (required for EE to set nodata correctly on download even if dtype is
+        # unchanged)
+        ee_image = BaseImageAccessor(ee_image).toDType(dtype=dtype or im_dtype)
+
+        # apply export spatial parameters
+        crs_transform = crs_transform[:6] if crs_transform else None
+        dimensions = shape[::-1] if shape else None
+        export_kwargs = dict(
+            crs=crs, crs_transform=crs_transform, dimensions=dimensions, region=region, scale=scale
+        )
+        export_kwargs = {k: v for k, v in export_kwargs.items() if v is not None}
+        ee_image, _ = ee_image.prepare_for_export(export_kwargs)
+
+        return ee_image
+
+    def toGeoTiff(
+        self,
+        filename: os.PathLike | str,
+        overwrite: bool = False,
+        max_tile_size: float = _ee_max_tile_size,
+        max_tile_dim: int = _ee_max_tile_dim,
+        max_requests: int = 32,
+        max_cpus: int = None,
+    ) -> None:
+        """
+        Download the image to a GeoTIFF file.
+
+        :meth:`prepareForExport` can be called before this method to apply export parameters.
+
+        The image is retrieved as separate GeoTIFF tiles which are downloaded and read
+        concurrently.  Tile size can be controlled with ``max_tile_size`` and ``max_tile_dim``,
+        and download / read concurrency with ``max_requests`` and ``max_cpus``.
+
+        :param filename:
+            Destination file name.
+        :param overwrite:
+            Whether to overwrite the destination file if it exists.
+        :param max_tile_size:
+            Maximum tile size (MB).  Should be less than the `Earth Engine size limit
+            <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (32 MB).
+        :param max_tile_dim:
+            Maximum tile width/height (pixels).  Should be less than the `Earth Engine limit
+            <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (10000).
+        :param max_requests:
+            Maximum number of concurrent tile downloads.  Should be less than the `max concurrent
+            requests quota <https://developers.google.com/earth-engine/guides/usage
+            #adjustable_quota_limits>`__.
+        :param max_cpus:
+            Maximum number of tile GeoTIFFs to read concurrently.  Defaults to two less than the
+            number of CPUs, or one, whichever is greater.  Values larger than the default can
+            stall the asynchronous event loop and are not recommended.
+        """
+        # TODO: add a note about nodata to the docstring
+        # TODO: allow bands to be band indexes too
+        filename = Path(filename)
+        if not overwrite and filename.exists():
+            raise FileExistsError(f'{filename} exists')
+
+        # create a rasterio profile for the destination file
+        profile = self.profile
+        profile.update(
+            driver='GTiff', compress='deflate', interleave='band', tiled=True, bigtiff='if_safer'
+        )
+
+        # warn if the download is large
+        # TODO: where possible, make this, and the below common for other exports to use
+        if self.size > 1e9:
+            size_str = tqdm.format_sizeof(self.size, suffix='B')
+            logger.warning(
+                f"Consider adjusting 'region', 'scale' and/or 'dtype' to reduce the "
+                f"'{filename.name}' download size (raw:{size_str})."
+            )
+
+        with ExitStack() as exit_stack:
+            # set up progress bar kwargs
+            exit_stack.enter_context(
+                logging_redirect_tqdm([logging.getLogger(__package__)], tqdm_class=tqdm)
+            )
+            tqdm_kwargs = self._get_tqdm_kwargs(desc=filename.name, unit='tiles')
+
+            # Open the destination file. GDAL_NUM_THREADS='ALL_CPUS' is needed here for
+            # building overviews once the download is complete.  It is overridden in nested
+            # functions to control concurrency of the download itself.
+            out_lock = threading.Lock()
+            exit_stack.enter_context(rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False))
+            out_ds = exit_stack.enter_context(rio.open(filename, 'w', **profile))
+
+            # create a thread pool for writing tile arrays to file, and possibly for running the
+            # async event loop (see below)
+            executor = exit_stack.enter_context(ThreadPoolExecutor(max_workers=2))
+
+            async def download_tiles():
+                """Download and write tiles to file."""
+
+                def write_tile(tile: Tile, tile_array: np.ndarray):
+                    """Write a tile array to file."""
+                    with rio.Env(GDAL_NUM_THREADS=1), out_lock:
+                        logger.debug(f'Writing {tile!r} to file.')
+                        out_ds.write(tile_array, window=tile.window)
+
+                async with self._tile_tasks(
+                    max_tile_size=max_tile_size,
+                    max_tile_dim=max_tile_dim,
+                    max_requests=max_requests,
+                    max_cpus=max_cpus,
+                ) as tasks:
+                    loop = asyncio.get_running_loop()
+                    for task in tqdm(asyncio.as_completed(tasks), total=len(tasks), **tqdm_kwargs):
+                        tile, tile_array = await task
+                        await loop.run_in_executor(executor, write_tile, tile, tile_array)
+
+            self._asyncio_run(download_tiles(), executor)
+
+            # populate GeoTIFF metadata
+            self._write_metadata(out_ds)
+            # build overviews
+            self._build_overviews(out_ds)
+
+    def toArray(
+        self,
+        max_tile_size: float = _ee_max_tile_size,
+        max_tile_dim: int = _ee_max_tile_dim,
+        max_requests: int = 32,
+        max_cpus: int = None,
+    ) -> np.ndarray:
+        """
+        Convert the image to a NumPy array.
+
+        :meth:`prepareForExport` can be called before this method to apply export parameters.
+
+        The image is retrieved as separate GeoTIFF tiles which are downloaded and read
+        concurrently.  Tile size can be controlled with ``max_tile_size`` and ``max_tile_dim``,
+        and download / read concurrency with ``max_requests`` and ``max_cpus``.
+
+        :param max_tile_size:
+            Maximum tile size (MB).  Defaults to the Earth Engine download limit (32 MB).
+        :param max_tile_dim:
+            Maximum tile width/height (pixels).  Defaults to Earth Engine limit (10000).
+        :param max_requests:
+            Maximum number of concurrent Earth Engine requests.  Should be less than the `quota
+            limit <https://developers.google.com/earth-engine/guides/usage
+            #adjustable_quota_limits>`__.
+        :param max_cpus:
+            Maximum number of tiles to process concurrently.  Defaults to two less than the
+            number of CPUs, or one, whichever is greater.  Values larger than the default can
+            stall the asynchronous event loop and are not recommended.
+
+        :returns:
+            Image NumPy array with bands along the first dimension.
+        """
+        # TODO: currently the array is populated with nodata as it comes from EE.  perhaps we
+        #  should make masking an option.  in which case _tile_tasks could return masked arrays,
+        #  but as i recall masked arrays do not release the GIL.  so perhaps it is better to do
+        #  it by hand here
+        # warn if the image is large
+        if self.size > 1e9:
+            size_str = tqdm.format_sizeof(self.size, suffix='B')
+            logger.warning(
+                f"Consider adjusting 'region', 'scale' and/or 'dtype' to reduce the array size "
+                f"({size_str})."
+            )
+
+        with ExitStack() as exit_stack:
+            # set up progress bar kwargs
+            exit_stack.enter_context(
+                logging_redirect_tqdm([logging.getLogger(__package__)], tqdm_class=tqdm)
+            )
+            tqdm_kwargs = self._get_tqdm_kwargs(desc=self.index, unit='tiles')
+
+            # create a thread pool for writing tiles into the array, and possibly for running the
+            # async event loop (see below)
+            executor = exit_stack.enter_context(ThreadPoolExecutor(max_workers=2))
+
+            async def download_tiles() -> np.ndarray:
+                """Download and write tiles to array."""
+
+                # TODO: which dimension should bands go down?
+                array = np.full((self.count, *self.shape), dtype=self.dtype, fill_value=0)
+
+                def write_tile(tile: Tile, tile_array: np.ndarray):
+                    """Write a tile array to file."""
+                    array[:, *tile.slices] = tile_array
+
+                async with self._tile_tasks(
+                    max_tile_size=max_tile_size,
+                    max_tile_dim=max_tile_dim,
+                    max_requests=max_requests,
+                    max_cpus=max_cpus,
+                ) as tasks:
+                    loop = asyncio.get_running_loop()
+                    for task in tqdm(asyncio.as_completed(tasks), total=len(tasks), **tqdm_kwargs):
+                        tile, tile_array = await task
+                        await loop.run_in_executor(executor, write_tile, tile, tile_array)
+
+                return array
+
+            array = self._asyncio_run(download_tiles(), executor)
+
+        return array
+
     def export(
         self,
         filename: str,
@@ -924,16 +1171,18 @@ class BaseImageAccessor:
         # TODO: allow additional kwargs to ee.batch.Export.image.* & avoid setting maxPixels?
         # TODO: establish & document if folder/filename can be a path with sub-folders,
         #  or what the interaction between folder & filename is for the different export types.
-        exp_image = self._prepare_for_export(
-            crs=crs,
-            crs_transform=crs_transform,
-            shape=shape,
-            region=region,
-            scale=scale,
-            resampling=resampling,
-            dtype=dtype,
-            scale_offset=scale_offset,
-            bands=bands,
+        exp_image = BaseImageAccessor(
+            self.prepareForExport(
+                crs=crs,
+                crs_transform=crs_transform,
+                shape=shape,
+                region=region,
+                scale=scale,
+                resampling=resampling,
+                dtype=dtype,
+                scale_offset=scale_offset,
+                bands=bands,
+            )
         )
         if logger.getEffectiveLevel() <= logging.DEBUG:
             logger.debug(f"Uncompressed size: {tqdm.format_sizeof(exp_image.size, suffix='B')}")
@@ -974,185 +1223,9 @@ class BaseImageAccessor:
             BaseImageAccessor.monitor_export(task)
         return task
 
-    def download(
-        self,
-        filename: os.PathLike | str,
-        overwrite: bool = False,
-        num_threads: int = None,
-        max_tile_size: float = _ee_max_tile_size,
-        max_tile_dim: int = _ee_max_tile_dim,
-        crs: str | ee.String = None,
-        crs_transform: Sequence[float] = None,
-        shape: tuple[int, int] = None,
-        region: dict | ee.Geometry = None,
-        scale: float | ee.Number = None,
-        resampling: ResamplingMethod = _default_resampling,
-        dtype: str = None,
-        scale_offset: bool = False,
-        bands: Sequence[str] = None,
-        max_requests: int = 32,
-        max_cpus: int = None,
-    ) -> None:
-        """
-        Download the image to a GeoTIFF file.
-
-        Download bounds and resolution can be specified with ``region`` and ``scale`` / ``shape``,
-        or ``crs_transform`` and ``shape``.  If no bounds are specified (with either ``region``,
-        or ``crs_transform`` & ``shape``), the entire image is downloaded.
-
-        When ``crs``, ``scale``, ``crs_transform`` & ``shape`` are not specified, the pixel grids
-        of the downloaded and source images will match.
-
-        The image is retrieved as separate GeoTIFF tiles which are downloaded and read
-        concurrently.  Tile size can be controlled with ``max_tile_size`` and ``max_tile_dim``,
-        and download / read concurrency with ``max_requests`` and ``max_cpus``.
-
-        :param filename:
-            Destination file name.
-        :param overwrite:
-            Whether to overwrite the destination file if it exists.
-        :param num_threads:
-            Deprecated and has no effect. ``max_requests`` and ``max_cpus`` can be used to
-            limit concurrency.
-        :param max_tile_size:
-            Maximum tile size (MB).  Should be less than the `Earth Engine size limit
-            <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (32 MB).
-        :param max_tile_dim:
-            Maximum tile width/height (pixels).  Should be less than the `Earth Engine limit
-            <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (10000).
-        :param crs:
-            WKT or EPSG specification of CRS to download to.  Where image bands have different
-            CRSs, all are re-projected to this CRS. Defaults to the CRS of the minimum scale band
-            if available.
-        :param crs_transform:
-            Sequence of 6 numbers specifying an affine transform in the specified CRS.  In
-            row-major order: [xScale, xShearing, xTranslation, yShearing, yScale, yTranslation].
-            All bands are re-projected to this transform.
-        :param shape:
-            (height, width) dimensions to download (pixels).
-        :param region:
-            Region to download as a GeoJSON dictionary or ``ee.Geometry``.  Defaults to the image
-            geometry, if available.
-        :param scale:
-            Pixel scale (m) to download to.  Where image bands have different scales, all are
-            re-projected to this scale. Ignored if ``crs`` and ``crs_transform`` are specified.
-            Defaults to the minimum scale of the image bands if available.
-        :param resampling:
-            Resampling method.
-        :param dtype:
-            Download to this data type (``uint8``, ``int8``, ``uint16``, ``int16``, ``uint32``,
-            ``int32``, ``float32`` or ``float64``). Defaults to the minimum size data type able
-            to represent all image bands.
-        :param scale_offset:
-            Whether to apply any STAC band scales and offsets to the image.
-        :param bands:
-            Sequence of band names to download.  Defaults to all bands.
-        :param max_requests:
-            Maximum number of concurrent tile downloads.  Should be less than the `max concurrent
-            requests quota <https://developers.google.com/earth-engine/guides/usage
-            #adjustable_quota_limits>`__.
-        :param max_cpus:
-            Maximum number of tile GeoTIFFs to read concurrently.  Defaults to two less than the
-            number of CPUs, or one, whichever is greater.  Values larger than the default can
-            stall the asynchronous event loop and are not recommended.
-        """
-        # TODO: add a note about nodata to the docstring
-        # TODO: allow bands to be band indexes too
-        if num_threads:
-            raise DeprecationWarning(
-                "'num_threads' is deprecated, has no effect and will be removed in a future "
-                "release.  'max_requests' and 'max_cpus' can be used to limit concurrency."
-            )
-        filename = Path(filename)
-        if not overwrite and filename.exists():
-            raise FileExistsError(f'{filename} exists')
-
-        # apply export parameters
-        exp_image = self._prepare_for_export(
-            crs=crs,
-            crs_transform=crs_transform,
-            shape=shape,
-            region=region,
-            scale=scale,
-            resampling=resampling,
-            dtype=dtype,
-            scale_offset=scale_offset,
-            bands=bands,
-        )
-
-        # create a rasterio profile for the download GeoTIFF
-        profile = exp_image.profile
-        profile.update(
-            driver='GTiff', compress='deflate', interleave='band', tiled=True, bigtiff='if_safer'
-        )
-        # warn if the download is large
-        if exp_image.size > 1e9:
-            size_str = tqdm.format_sizeof(exp_image.size, suffix='B')
-            logger.warning(
-                f"Consider adjusting 'region', 'scale' and/or 'dtype' to reduce the "
-                f"'{filename.name}' download size (raw:{size_str})."
-            )
-
-        with ExitStack() as exit_stack:
-            # set up progress bar kwargs
-            exit_stack.enter_context(
-                logging_redirect_tqdm([logging.getLogger(__package__)], tqdm_class=tqdm)
-            )
-            tqdm_kwargs = self._get_tqdm_kwargs(desc=filename.name, unit='tiles')
-
-            # Create & open the destination file. GDAL_NUM_THREADS='ALL_CPUS' is needed here for
-            # building overviews once the download is complete.  It is overridden in nested
-            # functions to control concurrency of the download itself.
-            out_lock = threading.Lock()
-            exit_stack.enter_context(rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False))
-            out_ds = exit_stack.enter_context(rio.open(filename, 'w', **profile))
-
-            # create a thread pool for writing tile arrays to file, and possibly for running the
-            # async event loop (see below)
-            exec = exit_stack.enter_context(ThreadPoolExecutor(max_workers=2))
-
-            async def download_tiles(image: BaseImageAccessor):
-                """Download and write tiles to file."""
-
-                def write_tile(array: np.ndarray, tile: Tile):
-                    """Write a tile array to file."""
-                    with rio.Env(GDAL_NUM_THREADS=1), out_lock:
-                        logger.debug(f'Writing {tile!r} to file.')
-                        out_ds.write(array, window=tile.window)
-
-                async with image._tile_tasks(
-                    max_tile_size=max_tile_size,
-                    max_tile_dim=max_tile_dim,
-                    max_requests=max_requests,
-                    max_cpus=max_cpus,
-                ) as tasks:
-                    loop = asyncio.get_running_loop()
-                    for task in tqdm(asyncio.as_completed(tasks), total=len(tasks), **tqdm_kwargs):
-                        tile, array = await task
-                        await loop.run_in_executor(exec, write_tile, array, tile)
-
-            # asyncio.run() cannot be called from a thread with an existing event loop, so test
-            # if there is a loop running in this (the main) thread (see
-            # https://stackoverflow.com/a/75341431)
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = None
-            if loop and loop.is_running():
-                # run in a separate thread if there is an existing loop (e.g. we are in a jupyter
-                # notebook)
-                exec.submit(lambda: asyncio.run(download_tiles(exp_image))).result()
-            else:
-                # run in this thread if there is no existing loop
-                asyncio.run(download_tiles(exp_image))
-
-            # populate GeoTIFF metadata
-            exp_image._write_metadata(out_ds)
-            # build overviews
-            exp_image._build_overviews(out_ds)
-
 
 class BaseImage(BaseImageAccessor):
+    # TODO: deprecate, along with MaskedImage etc
     @classmethod
     def from_id(cls, image_id: str) -> BaseImage:
         """
@@ -1206,3 +1279,70 @@ class BaseImage(BaseImageAccessor):
     def refl_bands(self) -> list[str] | None:
         """List of spectral / reflectance bands, if any."""
         return self.reflBands
+
+    def download(
+        self,
+        filename: os.PathLike | str,
+        overwrite: bool = False,
+        num_threads: int = None,
+        max_tile_size: float = BaseImageAccessor._ee_max_tile_size,
+        max_tile_dim: int = BaseImageAccessor._ee_max_tile_dim,
+        max_requests: int = 32,
+        max_cpus: int = None,
+        **export_kwargs,
+    ) -> None:
+        """
+        Download the image to a GeoTIFF file.
+
+        Download bounds and resolution can be specified with ``region`` and ``scale`` / ``shape``,
+        or ``crs_transform`` and ``shape``.  If no bounds are specified (with either ``region``,
+        or ``crs_transform`` & ``shape``), the entire image is downloaded.
+
+        When ``crs``, ``scale``, ``crs_transform`` & ``shape`` are not specified, the pixel grids
+        of the downloaded and source images will match.
+
+        The image is retrieved as separate GeoTIFF tiles which are downloaded and read
+        concurrently.  Tile size can be controlled with ``max_tile_size`` and ``max_tile_dim``,
+        and download / read concurrency with ``max_requests`` and ``max_cpus``.
+
+        :param filename:
+            Destination file name.
+        :param overwrite:
+            Whether to overwrite the destination file if it exists.
+        :param num_threads:
+            Deprecated and has no effect. ``max_requests`` and ``max_cpus`` can be used to
+            limit concurrency.
+        :param max_tile_size:
+            Maximum tile size (MB).  Should be less than the `Earth Engine size limit
+            <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (32 MB).
+        :param max_tile_dim:
+            Maximum tile width/height (pixels).  Should be less than the `Earth Engine limit
+            <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (10000).
+        :param max_requests:
+            Maximum number of concurrent tile downloads.  Should be less than the `max concurrent
+            requests quota <https://developers.google.com/earth-engine/guides/usage
+            #adjustable_quota_limits>`__.
+        :param max_cpus:
+            Maximum number of tile GeoTIFFs to read concurrently.  Defaults to two less than the
+            number of CPUs, or one, whichever is greater.  Values larger than the default can
+            stall the asynchronous event loop and are not recommended.
+        :param export_kwargs:
+            Arguments to :meth:`BaseImageAccessor.prepareForExport`.
+        """
+        # TODO: add a note about nodata to the docstring
+        # TODO: allow bands to be band indexes too
+        if num_threads:
+            raise DeprecationWarning(
+                "'num_threads' is deprecated and has no effect.  'max_requests' and 'max_cpus' "
+                "can be used to limit concurrency."
+            )
+        # apply export parameters
+        exp_image = BaseImageAccessor(self.prepareForExport(**export_kwargs))
+        exp_image.toGeoTiff(
+            filename,
+            overwrite,
+            max_tile_size=max_tile_size,
+            max_tile_dim=max_tile_dim,
+            max_requests=max_requests,
+            max_cpus=max_cpus,
+        )

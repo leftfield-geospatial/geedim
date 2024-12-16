@@ -159,9 +159,9 @@ def bounds_polygon(left: float, bottom: float, right: float, top: float, crs: st
     return poly
 
 
-def _test_export_image(exp_image: BaseImage, ref_image: BaseImage, **exp_kwargs):
-    """Test ``exp_image`` against ``ref_image``, and optional crs, region & scale ``exp_kwargs`` arguments to
-    ``BaseImage._prepare_for_export``.
+def _test_export_image(exp_image: BaseImageAccessor, ref_image: BaseImageAccessor, **exp_kwargs):
+    """Test ``exp_image`` against ``ref_image``, and optional crs, region & scale ``exp_kwargs``
+    arguments to ``BaseImage._prepare_for_export``.
     """
     # remove None value items from exp_kwargs
     exp_kwargs = {k: v for k, v in exp_kwargs.items() if v is not None}
@@ -352,7 +352,7 @@ def test_prepare_no_fixed_projection(
     if 'region' in params:
         params['region'] = request.getfixturevalue(params['region'])
     with pytest.raises(ValueError) as ex:
-        user_base_image._prepare_for_export(**params)
+        user_base_image.prepareForExport(**params)
     assert 'does not have a fixed projection' in str(ex)
 
 
@@ -372,7 +372,7 @@ def test_prepare_unbounded(base_image: BaseImage, params: Dict, request: pytest.
     """
     base_image: BaseImage = request.getfixturevalue(base_image)
     with pytest.raises(ValueError) as ex:
-        base_image._prepare_for_export(**params)
+        base_image.prepareForExport(**params)
     assert 'This image is unbounded' in str(ex)
 
 
@@ -382,7 +382,7 @@ def test_prepare_exceptions(
     """Test remaining ``BaseImage._prepare_for_export()`` error cases."""
     with pytest.raises(ValueError):
         # no fixed projection and resample
-        user_base_image._prepare_for_export(
+        user_base_image.prepareForExport(
             region=region_25ha, crs='EPSG:3857', scale=30, resampling=ResamplingMethod.bilinear
         )
 
@@ -400,7 +400,7 @@ def test_prepare_exceptions(
 def test_prepare_defaults(base_image: str, request: pytest.FixtureRequest):
     """Test ``BaseImage._prepare_for_export()`` with no (i.e. default) arguments."""
     base_image: BaseImage = request.getfixturevalue(base_image)
-    exp_image = base_image._prepare_for_export()
+    exp_image = BaseImageAccessor(base_image.prepareForExport())
 
     _test_export_image(exp_image, base_image)
 
@@ -422,7 +422,9 @@ def test_prepare_transform_shape(
 ):
     """Test ``BaseImage._prepare_for_export()`` with ``crs_transform`` and ``shape`` parameters."""
     base_image: BaseImage = request.getfixturevalue(base_image)
-    exp_image = base_image._prepare_for_export(crs=crs, crs_transform=crs_transform, shape=shape)
+    exp_image = BaseImageAccessor(
+        base_image.prepareForExport(crs=crs, crs_transform=crs_transform, shape=shape)
+    )
 
     assert exp_image.dtype == base_image.dtype
     assert exp_image.band_properties == base_image.band_properties
@@ -452,7 +454,7 @@ def test_prepare_region_scale(
     region: dict = request.getfixturevalue(region) if region else None
 
     exp_kwargs = dict(crs=crs, region=region, scale=scale)
-    exp_image = base_image._prepare_for_export(**exp_kwargs)
+    exp_image = BaseImageAccessor(base_image.prepareForExport(**exp_kwargs))
 
     _test_export_image(exp_image, base_image, **exp_kwargs)
 
@@ -473,7 +475,7 @@ def test_prepare_region_shape(
     region: dict = request.getfixturevalue(region) if region else None
 
     exp_kwargs = dict(crs=crs, region=region, shape=shape)
-    exp_image = base_image._prepare_for_export(**exp_kwargs)
+    exp_image = BaseImageAccessor(base_image.prepareForExport(**exp_kwargs))
 
     _test_export_image(exp_image, base_image, **exp_kwargs)
 
@@ -497,7 +499,7 @@ def test_prepare_src_grid(base_image: str, region: str, request: pytest.FixtureR
     region: dict = request.getfixturevalue(region)
 
     exp_kwargs = dict(region=region)
-    exp_image = base_image._prepare_for_export(**exp_kwargs)
+    exp_image = BaseImageAccessor(base_image.prepareForExport(**exp_kwargs))
 
     _test_export_image(exp_image, base_image, **exp_kwargs)
 
@@ -511,8 +513,8 @@ def test_prepare_bands(
 ):
     """Test ``BaseImage._prepare_for_export()`` with ``bands`` parameter."""
     base_image: BaseImage = request.getfixturevalue(base_image)
-    ref_image = BaseImage(base_image.ee_image.select(bands))
-    exp_image = base_image._prepare_for_export(bands=bands)
+    ref_image = BaseImageAccessor(base_image.ee_image.select(bands))
+    exp_image = BaseImageAccessor(base_image.prepareForExport(bands=bands))
 
     _test_export_image(exp_image, ref_image)
 
@@ -520,13 +522,13 @@ def test_prepare_bands(
 def test_prepare_bands_error(s2_sr_hm_base_image):
     """Test ``BaseImage._prepare_for_export()`` raises an error with incorrect bands."""
     with pytest.raises(ee.EEException) as ex:
-        s2_sr_hm_base_image._prepare_for_export(bands=['unknown'])
+        s2_sr_hm_base_image.prepareForExport(bands=['unknown'])
     assert 'band' in str(ex.value)
 
 
 def test_prepared_profile(s2_sr_hm_base_image: BaseImage):
     """Test the profile on image returned by ``BaseImage._prepare_for_export()``."""
-    exp_image = s2_sr_hm_base_image._prepare_for_export()
+    exp_image = BaseImageAccessor(s2_sr_hm_base_image.prepareForExport())
     _test_export_image(exp_image, s2_sr_hm_base_image)
 
     # test dynamic values
@@ -543,7 +545,7 @@ def test_prepare_nodata(user_fix_bnd_base_image: BaseImage, dtype: str, exp_noda
     """Test ``BaseImage._prepare_for_export()`` profile sets the ``nodata`` value correctly for
     different dtypes.
     """
-    exp_image = user_fix_bnd_base_image._prepare_for_export(dtype=dtype)
+    exp_image = BaseImageAccessor(user_fix_bnd_base_image.prepareForExport(dtype=dtype))
     assert exp_image.dtype == dtype
     assert exp_image.profile['nodata'] == exp_nodata
 
@@ -557,7 +559,7 @@ def test_scale_offset(
 ):
     """Test ``BaseImage._prepare_for_export(scale_offset=True)`` gives expected properties and reflectance ranges."""
     src_image: BaseImage = request.getfixturevalue(src_image)
-    exp_image = src_image._prepare_for_export(scale_offset=True)
+    exp_image = BaseImageAccessor(src_image.prepareForExport(scale_offset=True))
 
     assert exp_image.crs == src_image.crs
     assert exp_image.scale == src_image.scale
@@ -820,7 +822,7 @@ def test_prepare_ee_geom(l9_base_image: BaseImage, tmp_path: pathlib.Path):
     #6).
     """
     region = l9_base_image.ee_image.geometry()
-    exp_image = l9_base_image._prepare_for_export(region=region)
+    exp_image = BaseImageAccessor(l9_base_image.prepareForExport(region=region))
     assert exp_image.scale == l9_base_image.scale
 
 
