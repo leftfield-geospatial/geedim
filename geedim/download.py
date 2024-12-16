@@ -615,7 +615,7 @@ class BaseImageAccessor:
             if status['metadata']['state'] == 'SUCCEEDED':
                 bar.update(bar.total - bar.n)
             else:
-                raise IOError(f'Export failed: {status}')
+                raise IOError(f'Export failed: {status}.')
 
     def projection(self, min_scale: bool = True) -> ee.Projection:
         """
@@ -912,6 +912,96 @@ class BaseImageAccessor:
 
         return ee_image
 
+    def export(
+        self,
+        filename: str,
+        type: ExportType = _default_export_type,
+        folder: str = None,
+        wait: bool = True,
+        **kwargs,
+    ) -> ee.batch.Task:
+        """
+        Export the image to Google Drive, Earth Engine asset or Google Cloud Storage.
+
+        :meth:`prepareForExport` can be called before this method to apply export parameters.
+
+        :param filename:
+            Destination file or asset name.  Also used to form the task name.
+        :param type:
+            Export type.
+        :param folder:
+            Google Drive folder (when ``type`` is :attr:`~geedim.enums.ExportType.drive`),
+            Earth Engine asset project (when ``type`` is :attr:`~geedim.enums.ExportType.asset`),
+            or Google Cloud Storage bucket (when ``type`` is
+            :attr:`~geedim.enums.ExportType.cloud`). If ``type`` is
+            :attr:`~geedim.enums.ExportType.asset` and ``folder`` is not specified, ``filename``
+            should be a valid Earth Engine asset ID. If ``type`` is
+            :attr:`~geedim.enums.ExportType.cloud` then ``folder`` is required.
+        :param wait:
+            Whether to wait for the export to complete before returning.
+        :param kwargs:
+            Additional arguments to the ``type`` dependent Earth Engine function:
+            ``Export.image.toDrive``, ``Export.image.toAsset`` or ``Export.image.toCloudStorage``.
+
+        :return:
+            Export task, started if ``wait`` is False, or completed if ``wait`` is True.
+        """
+        # TODO: establish & document if folder/filename can be a path with sub-folders,
+        #  or what the interaction between folder & filename is for the different export types.
+        if logger.getEffectiveLevel() <= logging.DEBUG:
+            logger.debug(f"Uncompressed size: {tqdm.format_sizeof(self.size, suffix='B')}")
+
+        # update defaults with any provided **kwargs
+        export_kwargs = dict(
+            description=filename.replace('/', '-')[:100],
+            maxPixels=1e9,
+            formatOptions=dict(cloudOptimized=True),
+        )
+        export_kwargs.update(**kwargs)
+
+        # create export task and start
+        type = ExportType(type)
+        if type == ExportType.drive:
+            # move folders in 'filename' to sub-folders in 'folder' ('filename' should be the
+            # filename only)
+            filepath = Path(folder, filename)
+            folder, filename = '/'.join(filepath.parts[:-1]), filepath.parts[-1]
+            task = ee.batch.Export.image.toDrive(
+                image=self._ee_image,
+                folder=folder,
+                fileNamePrefix=filename,
+                **export_kwargs,
+            )
+
+        elif type == ExportType.asset:
+            # if folder is specified create an EE asset ID from it and filename, else treat
+            # filename as a valid EE asset ID
+            asset_id = utils.asset_id(filename, folder) if folder else filename
+            export_kwargs.pop('formatOptions')  # not used for asset export
+            task = ee.batch.Export.image.toAsset(
+                image=self._ee_image, assetId=asset_id, **export_kwargs
+            )
+
+        else:
+            if not folder:
+                raise ValueError("'folder' is required for the 'cloud' export type.")
+            # move sub-folders in 'folder' to parent folders in 'filename' ('bucket' arg should be
+            # the bucket name only)
+            filepath = Path(folder, filename)
+            folder, filename = filepath.parts[0], '/'.join(filepath.parts[1:])
+            task = ee.batch.Export.image.toCloudStorage(
+                image=self._ee_image,
+                bucket=folder,
+                fileNamePrefix=filename,
+                **export_kwargs,
+            )
+        task.start()
+
+        if wait:
+            # wait for completion
+            BaseImageAccessor.monitor_export(task)
+        return task
+
     def toGeoTiff(
         self,
         filename: os.PathLike | str,
@@ -1097,132 +1187,6 @@ class BaseImageAccessor:
 
         return array
 
-    def export(
-        self,
-        filename: str,
-        type: ExportType = _default_export_type,
-        folder: str = None,
-        wait: bool = True,
-        crs: str | ee.String = None,
-        crs_transform: Sequence[float] = None,
-        shape: tuple[int, int] = None,
-        region: dict | ee.Geometry = None,
-        scale: float | ee.Number = None,
-        resampling: ResamplingMethod = _default_resampling,
-        dtype: str = None,
-        scale_offset: bool = False,
-        bands: Sequence[str] = None,
-    ) -> ee.batch.Task:
-        """
-        Export the image to Google Drive, Earth Engine asset or Google Cloud Storage.
-
-        Export bounds and resolution can be specified with ``region`` and ``scale`` / ``shape``,
-        or ``crs_transform`` and ``shape``.  If no bounds are specified (with either ``region``,
-        or ``crs_transform`` & ``shape``), the entire image is exported.
-
-        When ``crs``, ``scale``, ``crs_transform`` & ``shape`` are not specified, the pixel grids
-        of the exported and source images will match.
-
-        :param filename:
-            Destination file or asset name.  Also used to form the task name.
-        :param type:
-            Export type.
-        :param folder:
-            Google Drive folder (when ``type`` is :attr:`~geedim.enums.ExportType.drive`),
-            Earth Engine asset project (when ``type`` is :attr:`~geedim.enums.ExportType.asset`),
-            or Google Cloud Storage bucket (when ``type`` is
-            :attr:`~geedim.enums.ExportType.cloud`). If ``type`` is
-            :attr:`~geedim.enums.ExportType.asset` and ``folder`` is not specified, ``filename``
-            should be a valid Earth Engine asset ID. If ``type`` is
-            :attr:`~geedim.enums.ExportType.cloud` then ``folder`` is required.
-        :param wait:
-            Whether to wait for the export to complete before returning.
-        :param crs:
-            WKT or EPSG specification of CRS to export to.  Where image bands have different
-            CRSs, all are re-projected to this CRS. Defaults to the CRS of the minimum scale band
-            if available.
-        :param crs_transform:
-            Sequence of 6 numbers specifying an affine transform in the specified CRS.  In
-            row-major order: [xScale, xShearing, xTranslation, yShearing, yScale, yTranslation].
-            All bands are re-projected to this transform.
-        :param shape:
-            (height, width) dimensions to export (pixels).
-        :param region:
-            Region to export as a GeoJSON dictionary or ``ee.Geometry``.  Defaults to the image
-            geometry, if available.
-        :param scale:
-            Pixel scale (m) to export to.  Where image bands have different scales, all are
-            re-projected to this scale. Ignored if ``crs`` and ``crs_transform`` are specified.
-            Defaults to the minimum scale of the image bands if available.
-        :param resampling:
-            Resampling method.
-        :param dtype:
-            Export to this data type (``uint8``, ``int8``, ``uint16``, ``int16``, ``uint32``,
-            ``int32``, ``float32`` or ``float64``). Defaults to the minimum size data type able
-            to represent all image bands.
-        :param scale_offset:
-            Whether to apply any STAC band scales and offsets to the image.
-        :param bands:
-            Sequence of band names to export.  Defaults to all bands.
-
-        :return:
-            Export task, started if ``wait`` is False, or completed if ``wait`` is True.
-        """
-        # TODO: allow additional kwargs to ee.batch.Export.image.* & avoid setting maxPixels?
-        # TODO: establish & document if folder/filename can be a path with sub-folders,
-        #  or what the interaction between folder & filename is for the different export types.
-        exp_image = BaseImageAccessor(
-            self.prepareForExport(
-                crs=crs,
-                crs_transform=crs_transform,
-                shape=shape,
-                region=region,
-                scale=scale,
-                resampling=resampling,
-                dtype=dtype,
-                scale_offset=scale_offset,
-                bands=bands,
-            )
-        )
-        if logger.getEffectiveLevel() <= logging.DEBUG:
-            logger.debug(f"Uncompressed size: {tqdm.format_sizeof(exp_image.size, suffix='B')}")
-
-        # create export task and start
-        exp_kwargs = dict(
-            image=exp_image._ee_image, description=filename.replace('/', '-')[:100], maxPixels=1e9
-        )
-        type = ExportType(type)
-        if type == ExportType.drive:
-            task = ee.batch.Export.image.toDrive(
-                folder=folder,
-                fileNamePrefix=filename,
-                formatOptions=dict(cloudOptimized=True),
-                **exp_kwargs,
-            )
-        elif type == ExportType.asset:
-            # if folder is specified create an EE asset ID from it and filename, else treat
-            # filename as a valid EE asset ID
-            asset_id = utils.asset_id(filename, folder) if folder else filename
-            task = ee.batch.Export.image.toAsset(assetId=asset_id, **exp_kwargs)
-        else:
-            if not folder:
-                raise ValueError("'folder' is required for the 'cloud' export type.")
-            # move sub-folders in 'folder' to parent folders in 'filename' ('bucket' arg should be
-            # the bucket name only)
-            filepath = Path(folder, filename)
-            folder, filename = filepath.parts[0], '/'.join(filepath.parts[1:])
-            task = ee.batch.Export.image.toCloudStorage(
-                bucket=folder,
-                fileNamePrefix=filename,
-                formatOptions=dict(cloudOptimized=True),
-                **exp_kwargs,
-            )
-
-        task.start()
-        if wait:  # wait for completion
-            BaseImageAccessor.monitor_export(task)
-        return task
-
 
 class BaseImage(BaseImageAccessor):
     # TODO: deprecate, along with MaskedImage etc
@@ -1280,6 +1244,42 @@ class BaseImage(BaseImageAccessor):
         """List of spectral / reflectance bands, if any."""
         return self.reflBands
 
+    def export(
+        self,
+        filename: str,
+        type: ExportType = BaseImageAccessor._default_export_type,
+        folder: str = None,
+        wait: bool = True,
+        **export_kwargs,
+    ) -> ee.batch.Task:
+        """
+        Export the image to Google Drive, Earth Engine asset or Google Cloud Storage.
+
+        :param filename:
+            Destination file or asset name.  Also used to form the task name.
+        :param type:
+            Export type.
+        :param folder:
+            Google Drive folder (when ``type`` is :attr:`~geedim.enums.ExportType.drive`),
+            Earth Engine asset project (when ``type`` is :attr:`~geedim.enums.ExportType.asset`),
+            or Google Cloud Storage bucket (when ``type`` is
+            :attr:`~geedim.enums.ExportType.cloud`). If ``type`` is
+            :attr:`~geedim.enums.ExportType.asset` and ``folder`` is not specified, ``filename``
+            should be a valid Earth Engine asset ID. If ``type`` is
+            :attr:`~geedim.enums.ExportType.cloud` then ``folder`` is required.
+        :param wait:
+            Whether to wait for the export to complete before returning.
+        :param bands:
+            Sequence of band names to export.  Defaults to all bands.
+        :param export_kwargs:
+            Arguments to :meth:`BaseImageAccessor.prepareForExport`.
+
+        :return:
+            Export task, started if ``wait`` is False, or completed if ``wait`` is True.
+        """
+        export_image = BaseImageAccessor(self.prepareForExport(**export_kwargs))
+        return export_image.export(filename, type=type, folder=folder, wait=wait)
+
     def download(
         self,
         filename: os.PathLike | str,
@@ -1293,13 +1293,6 @@ class BaseImage(BaseImageAccessor):
     ) -> None:
         """
         Download the image to a GeoTIFF file.
-
-        Download bounds and resolution can be specified with ``region`` and ``scale`` / ``shape``,
-        or ``crs_transform`` and ``shape``.  If no bounds are specified (with either ``region``,
-        or ``crs_transform`` & ``shape``), the entire image is downloaded.
-
-        When ``crs``, ``scale``, ``crs_transform`` & ``shape`` are not specified, the pixel grids
-        of the downloaded and source images will match.
 
         The image is retrieved as separate GeoTIFF tiles which are downloaded and read
         concurrently.  Tile size can be controlled with ``max_tile_size`` and ``max_tile_dim``,
@@ -1336,9 +1329,8 @@ class BaseImage(BaseImageAccessor):
                 "'num_threads' is deprecated and has no effect.  'max_requests' and 'max_cpus' "
                 "can be used to limit concurrency."
             )
-        # apply export parameters
-        exp_image = BaseImageAccessor(self.prepareForExport(**export_kwargs))
-        exp_image.toGeoTiff(
+        export_image = BaseImageAccessor(self.prepareForExport(**export_kwargs))
+        export_image.toGeoTiff(
             filename,
             overwrite,
             max_tile_size=max_tile_size,

@@ -924,7 +924,8 @@ def export(obj, image_id, type, folder, bbox, region, like, mask, wait, **kwargs
     export_tasks = []
     for im in image_list:
         name = _im_name(im)
-        task = im.gd.export(name, type=type, folder=folder, wait=False, region=obj.region, **kwargs)
+        im = im.gd.prepareForExport(region=obj.region, **kwargs)
+        task = im.gd.export(name, type=type, folder=folder, wait=False)
         export_tasks.append(task)
         logger.info(f'Started {name}') if not wait else None
 
