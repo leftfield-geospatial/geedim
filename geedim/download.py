@@ -64,9 +64,14 @@ _nodata_vals = dict(
 )
 """Nodata values for supported download / export dtypes. """
 # Note:
-# - while gdal >= 3.5 supports *int64 data type, there is a rasterio bug that casts the *int64
-# nodata value to float, so geedim will not support these types for now.
-# - the ordering of the keys above is relevant to the auto dtype and should be: unsigned ints
+
+# - There are a some problems with *int64: While gdal >= 3.5 supports it, rasterio casts the
+# nodata value to float64 which cannot represent the int64 range.  Also, EE provides int64
+# ee.Image's (via ee.Image.getDownloadUrl() or ee.data.computePixels()) as float64 with nodata
+# advertised as -inf but actually zero.  So no geedim *int64 support for now...
+# - See also https://issuetracker.google.com/issues/350528377, although EE provides uint32 images
+# correctly now.
+# - The ordering of the keys above is relevant to the auto dtype and should be: unsigned ints
 # smallest - largest, signed ints smallest to largest, float types smallest to largest.
 
 T = TypeVar('T')
@@ -232,8 +237,6 @@ class BaseImageAccessor:
                     return dtype
             return 'float64'
 
-        # TODO: from gdal = 3.5, there is support *int64 in geotiffs, rasterio 1.3.0 had some
-        #  nodata issues with this, int64 support should be added when these issues are resolved
         dtype = None
         data_types = [band_info['data_type'] for band_info in self.info.get('bands', [])]
         precisions = [data_type['precision'] for data_type in data_types]
@@ -406,7 +409,7 @@ class BaseImageAccessor:
         self, max_tile_size: float = _ee_max_tile_size, max_tile_dim: int = _ee_max_tile_dim
     ) -> Generator[Tile]:
         """Image tile generator."""
-        # TODO: allow slicing along band dimension
+        # TODO: allow tiling along band dimension
         # get the dimensions of a tile that stays under the EE limits
         tile_shape = self._get_tile_shape(max_tile_size, max_tile_dim)
 
@@ -430,6 +433,7 @@ class BaseImageAccessor:
     @asynccontextmanager
     async def _tile_tasks(
         self,
+        masked: bool = False,
         max_tile_size: float = _ee_max_tile_size,
         max_tile_dim: int = _ee_max_tile_dim,
         max_requests: int = 32,
@@ -468,11 +472,7 @@ class BaseImageAccessor:
             """Read the given GeoTIFF buffer into a numpy array."""
             buf.seek(0)
             with rio.open(buf, 'r') as ds:
-                # Note: due to an Earth Engine bug (
-                # https://issuetracker.google.com/issues/350528377), the tile is float64 for
-                # uint32 and int64 image dtypes.  The tile nodata value is as it should be
-                # though, so conversion to the image / GeoTIFF dtype works ok.
-                return ds.read()
+                return ds.read(masked=masked)
 
         async def download_tile(
             tile: Tile,
@@ -1020,6 +1020,10 @@ class BaseImageAccessor:
         concurrently.  Tile size can be controlled with ``max_tile_size`` and ``max_tile_dim``,
         and download / read concurrency with ``max_requests`` and ``max_cpus``.
 
+        The downloaded file is masked with a :attr:`dtype` dependent ``nodata`` value provided by
+        Earth Engine.  For integer types, this is the minimum value of the :attr:`dtype`,
+        and for floating point types, it is ``float('-inf')``.
+
         :param filename:
             Destination file name.
         :param overwrite:
@@ -1039,7 +1043,6 @@ class BaseImageAccessor:
             number of CPUs, or one, whichever is greater.  Values larger than the default can
             stall the asynchronous event loop and are not recommended.
         """
-        # TODO: add a note about nodata to the docstring
         # TODO: allow bands to be band indexes too
         filename = Path(filename)
         if not overwrite and filename.exists():
@@ -1105,8 +1108,9 @@ class BaseImageAccessor:
             # build overviews
             self._build_overviews(out_ds)
 
-    def toArray(
+    def toNumPy(
         self,
+        masked: bool = False,
         max_tile_size: float = _ee_max_tile_size,
         max_tile_dim: int = _ee_max_tile_dim,
         max_requests: int = 32,
@@ -1121,6 +1125,11 @@ class BaseImageAccessor:
         concurrently.  Tile size can be controlled with ``max_tile_size`` and ``max_tile_dim``,
         and download / read concurrency with ``max_requests`` and ``max_cpus``.
 
+        :param masked:
+            Return a :class:`~numpy.ma.masked_array` (``True``) or :class:`~numpy.ndarray`
+            (``False``).  If  ``False``, masked pixels are set to the :attr:`dtype` dependent
+            ``nodata`` value provided by Earth Engine.  For integer types, this is the minimum
+            :attr:`dtype` value, and for floating point types, it is ``float('-inf')``.
         :param max_tile_size:
             Maximum tile size (MB).  Defaults to the Earth Engine download limit (32 MB).
         :param max_tile_dim:
@@ -1137,10 +1146,7 @@ class BaseImageAccessor:
         :returns:
             Image NumPy array with bands along the first dimension.
         """
-        # TODO: currently the array is populated with nodata as it comes from EE.  perhaps we
-        #  should make masking an option.  in which case _tile_tasks could return masked arrays,
-        #  but as i recall masked arrays do not release the GIL.  so perhaps it is better to do
-        #  it by hand here
+        # TODO: test the threading behaviour of masked=True
         # warn if the image is large
         if self.size > 1e9:
             size_str = tqdm.format_sizeof(self.size, suffix='B')
@@ -1164,13 +1170,17 @@ class BaseImageAccessor:
                 """Download and write tiles to array."""
 
                 # TODO: which dimension should bands go down?
-                array = np.full((self.count, *self.shape), dtype=self.dtype, fill_value=0)
+                if masked:
+                    array = np.ma.zeros((self.count, *self.shape), dtype=self.dtype)
+                else:
+                    array = np.zeros((self.count, *self.shape), dtype=self.dtype)
 
                 def write_tile(tile: Tile, tile_array: np.ndarray):
                     """Write a tile array to file."""
                     array[:, *tile.slices] = tile_array
 
                 async with self._tile_tasks(
+                    masked=masked,
                     max_tile_size=max_tile_size,
                     max_tile_dim=max_tile_dim,
                     max_requests=max_requests,
@@ -1298,6 +1308,10 @@ class BaseImage(BaseImageAccessor):
         concurrently.  Tile size can be controlled with ``max_tile_size`` and ``max_tile_dim``,
         and download / read concurrency with ``max_requests`` and ``max_cpus``.
 
+        The downloaded file is masked with a :attr:`dtype` dependent ``nodata`` value,
+        as provided by Earth Engine.  For integer types, ``nodata`` is the minimum value of the
+        :attr:`dtype`, and for floating point types, it is ``float('-inf')``.
+
         :param filename:
             Destination file name.
         :param overwrite:
@@ -1322,8 +1336,6 @@ class BaseImage(BaseImageAccessor):
         :param export_kwargs:
             Arguments to :meth:`BaseImageAccessor.prepareForExport`.
         """
-        # TODO: add a note about nodata to the docstring
-        # TODO: allow bands to be band indexes too
         if num_threads:
             raise DeprecationWarning(
                 "'num_threads' is deprecated and has no effect.  'max_requests' and 'max_cpus' "
