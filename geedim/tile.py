@@ -45,6 +45,7 @@ class Tile:
     slices: tuple[slice, slice, slice] = field(init=False, repr=False)
 
     def __post_init__(self):
+        # TODO: eval these lazily, as they won't all be used
         self.shape = (self.height, self.width)
         self.indexes = range(self.band_off + 1, self.band_off + self.count + 1)
         self.window = Window(self.col_off, self.row_off, self.width, self.height)
