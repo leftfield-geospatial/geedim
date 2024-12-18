@@ -369,7 +369,7 @@ class BaseImageAccessor:
             band_props = [dict(name=bid) for bid in band_ids]
         return band_props
 
-    def _get_tile_shape(self, max_tile_size: float, max_tile_dim: int) -> tuple[int, int]:
+    def _get_tile_shape(self, max_tile_size: float, max_tile_dim: int) -> tuple[int, int, int]:
         """Returns a tile shape that satisfies ``max_tile_size`` and ``max_tile_dim``."""
         if max_tile_size > BaseImageAccessor._ee_max_tile_size:
             raise ValueError(
@@ -384,24 +384,25 @@ class BaseImageAccessor:
             )
 
         # initialise loop vars
-        pixel_size = np.dtype(self.dtype).itemsize * self.count
+        dtype_size = np.dtype(self.dtype).itemsize
         if self.dtype.endswith('int8'):
             # workaround for apparent GEE overestimate of *int8 dtype download sizes
-            pixel_size *= 2
-        tile_size = np.prod(self.shape) * pixel_size
-        num_tiles = np.array([1, 1], dtype=int)
-        tile_shape = np.array(self.shape)
+            dtype_size *= 2
+        tile_shape = np.array((self.count, *self.shape))
+        tile_size = np.prod(tile_shape) * dtype_size
+        num_tiles = np.array([1, 1, 1], dtype=int)
 
         # increment the number of tiles the image is split into along the longest dimension of
-        # the tile, until the tile size satisfies max_tile_size (aims for square-ish tiles & to
+        # the tile, until the tile size satisfies max_tile_size (aims for cube-ish tiles & to
         # minimise the number of tiles)
         while tile_size >= max_tile_size:
             num_tiles[np.argmax(tile_shape)] += 1
-            tile_shape = np.ceil(np.array(self.shape) / num_tiles).astype(int)
-            tile_size = tile_shape[0] * tile_shape[1] * pixel_size
+            tile_shape = np.ceil(np.array((self.count, *self.shape)) / num_tiles).astype(int)
+            tile_size = np.prod(tile_shape) * dtype_size
 
         # clip to max_tile_dim
-        tile_shape[tile_shape > max_tile_dim] = max_tile_dim
+        # TODO: is there a max number of bands?
+        tile_shape[1:] = tile_shape[1:].clip(None, max_tile_dim)
         tile_shape = tuple(tile_shape.tolist())
         return tile_shape
 
@@ -409,26 +410,28 @@ class BaseImageAccessor:
         self, max_tile_size: float = _ee_max_tile_size, max_tile_dim: int = _ee_max_tile_dim
     ) -> Generator[Tile]:
         """Image tile generator."""
-        # TODO: allow tiling along band dimension
         # get the dimensions of a tile that stays under the EE limits
         tile_shape = self._get_tile_shape(max_tile_size, max_tile_dim)
 
         if logger.getEffectiveLevel() <= logging.DEBUG:
-            num_tiles = int(np.prod(np.ceil(np.array(self.shape) / tile_shape)))
+            num_tiles = int(np.prod(np.ceil(np.array((self.count, *self.shape)) / tile_shape)))
             dtype_size = np.dtype(self.dtype).itemsize
-            raw_tile_size = tile_shape[0] * tile_shape[1] * self.count * dtype_size
+            raw_tile_size = np.prod(tile_shape) * dtype_size
             logger.debug(f"Raw image size: {tqdm.format_sizeof(self.size, suffix='B')}")
             logger.debug(f'Num. tiles: {num_tiles}')
             logger.debug(f'Tile shape: {tile_shape}')
             logger.debug(f"Raw tile size: {tqdm.format_sizeof(raw_tile_size, suffix='B')}")
 
         # split the image into tiles, clipping tiles to image dimensions
+        im_shape_3d = (self.count, *self.shape)
         for tile_start in product(
-            range(0, self.shape[0], tile_shape[0]), range(0, self.shape[1], tile_shape[1])
+            range(0, self.count, tile_shape[0]),
+            range(0, self.shape[0], tile_shape[1]),
+            range(0, self.shape[1], tile_shape[2]),
         ):
-            tile_stop = np.clip(np.add(tile_start, tile_shape), a_min=None, a_max=self.shape)
+            tile_stop = np.clip(np.add(tile_start, tile_shape), a_min=None, a_max=im_shape_3d)
             clip_tile_shape = (tile_stop - tile_start).tolist()
-            yield Tile(*tile_start[::-1], *clip_tile_shape[::-1], image_transform=self.transform)
+            yield Tile(*tile_start, *clip_tile_shape, image_transform=self.transform)
 
     @asynccontextmanager
     async def _tile_tasks(
@@ -443,7 +446,7 @@ class BaseImageAccessor:
 
         def get_tile_url(tile: Tile) -> str:
             """Return an URL for the given tile."""
-            return self._ee_image.getDownloadURL(
+            return self._ee_image.slice(tile.band_off, tile.band_off + tile.count).getDownloadURL(
                 dict(
                     crs=self.crs,
                     crs_transform=tile.tile_transform,
@@ -1049,6 +1052,7 @@ class BaseImageAccessor:
             raise FileExistsError(f'{filename} exists')
 
         # create a rasterio profile for the destination file
+        # TODO: what is the best interleaving for ++bands
         profile = self.profile
         profile.update(
             driver='GTiff', compress='deflate', interleave='band', tiled=True, bigtiff='if_safer'
@@ -1088,7 +1092,7 @@ class BaseImageAccessor:
                     """Write a tile array to file."""
                     with rio.Env(GDAL_NUM_THREADS=1), out_lock:
                         logger.debug(f'Writing {tile!r} to file.')
-                        out_ds.write(tile_array, window=tile.window)
+                        out_ds.write(tile_array, indexes=tile.indexes, window=tile.window)
 
                 async with self._tile_tasks(
                     max_tile_size=max_tile_size,
@@ -1177,7 +1181,7 @@ class BaseImageAccessor:
 
                 def write_tile(tile: Tile, tile_array: np.ndarray):
                     """Write a tile array to file."""
-                    array[:, *tile.slices] = tile_array
+                    array[*tile.slices] = tile_array
 
                 async with self._tile_tasks(
                     masked=masked,

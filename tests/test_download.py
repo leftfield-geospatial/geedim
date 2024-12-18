@@ -591,93 +591,66 @@ def test_scale_offset(
 def test_tile_shape():
     """Test ``BaseImage._get_tile_shape()`` satisfies the tile size limit for different image shapes."""
     max_tile_dim = 10000
-    for max_tile_size, height, width in product(
-        range(8, 32, 8), range(1, 11000, 1000), range(1, 11000, 1000)
+    for max_tile_size, count, height, width in product(
+        range(16, 32, 16), range(1, 11000, 2000), range(1, 11000, 2000), range(1, 11000, 2000)
     ):
-        exp_shape = (height, width)
-        exp_image = BaseImageLike(shape=exp_shape)  # mock a BaseImage
+        im_shape = (count, height, width)
+        exp_image = BaseImageLike(shape=(height, width), count=count)  # mock a BaseImage
         tile_shape = exp_image._get_tile_shape(
             max_tile_size=max_tile_size, max_tile_dim=max_tile_dim
         )
-        tile_size = np.prod(tile_shape) * exp_image.count * np.dtype(exp_image.dtype).itemsize
+        tile_size = np.prod(tile_shape) * np.dtype(exp_image.dtype).itemsize
 
-        assert all(np.array(tile_shape) <= np.array(exp_shape)), (max_tile_size, exp_shape)
-        assert all(np.array(tile_shape) <= max_tile_dim), (max_tile_size, exp_shape)
-        assert tile_size <= (max_tile_size << 20), (max_tile_size, exp_shape)
+        assert all(np.array(tile_shape) <= np.array(im_shape)), (max_tile_size, im_shape)
+        assert all(np.array(tile_shape) <= max_tile_dim), (max_tile_size, im_shape)
+        assert tile_size <= (max_tile_size << 20), (max_tile_size, im_shape)
+    pass
 
 
 @pytest.mark.parametrize(
-    'image_shape, max_tile_size, image_transform',
+    'image_shape, image_count, max_tile_size, image_transform',
     [
-        ((2000, 500), 1, Affine.identity()),
-        ((2000, 1000), 1, Affine.scale(1.23)),
-        ((2000, 1002), 1, Affine.scale(1.23) * Affine.translation(12, 34)),
+        ((2000, 500), 10, 1, Affine.identity()),
+        ((10, 1000), 2000, 1, Affine.scale(1.23)),
+        ((150, 1002), 150, 1, Affine.scale(1.23) * Affine.translation(12, 34)),
     ],
 )
-def test_tiles(image_shape: tuple[int, int], max_tile_size: int, image_transform: Affine):
+def test_tiles(
+    image_shape: tuple[int, int], image_count: int, max_tile_size: int, image_transform: Affine
+):
     """Test continuity and coverage of tiles."""
-    exp_image = BaseImageLike(shape=image_shape, transform=image_transform)
+    exp_image = BaseImageLike(shape=image_shape, count=image_count, transform=image_transform)
     tiles = [tile for tile in exp_image._tiles(max_tile_size=max_tile_size)]
 
     # test tile continuity
     prev_tile = tiles[0]
     accum_window = prev_tile.window
+    accum_indexes = {*prev_tile.indexes}
     for tile in tiles[1:]:
-        tile_size = np.prod(tile.shape) * np.dtype(exp_image.dtype).itemsize * exp_image.count
+        tile_size = np.prod((tile.count, *tile.shape)) * np.dtype(exp_image.dtype).itemsize
         assert tile_size <= (max_tile_size << 20)
         accum_window = windows.union(accum_window, tile.window)
+        accum_indexes |= {*tile.indexes}
 
         prev_transform = rio.Affine(*prev_tile.tile_transform)
-        if tile.window.row_off == prev_tile.window.row_off:
-            assert tile.window.col_off == (prev_tile.window.col_off + prev_tile.window.width)
-            ref_transform = prev_transform * Affine.translation(prev_tile.window.width, 0)
-        else:
-            assert tile.window.row_off == (prev_tile.window.row_off + prev_tile.window.height)
+        if tile.row_off == prev_tile.row_off and tile.band_off == prev_tile.band_off:
+            assert tile.col_off == (prev_tile.col_off + prev_tile.width)
+            ref_transform = prev_transform * Affine.translation(prev_tile.width, 0)
+        elif tile.band_off == prev_tile.band_off:
+            assert tile.row_off == (prev_tile.row_off + prev_tile.height)
             ref_transform = prev_transform * Affine.translation(
-                -prev_tile.window.col_off, prev_tile.window.height
+                -prev_tile.col_off, prev_tile.height
             )
+        else:
+            assert tile.band_off == (prev_tile.band_off + prev_tile.count)
+            ref_transform = image_transform
 
         assert tile.tile_transform == pytest.approx(ref_transform[:6], abs=1e-9)
         prev_tile = tile
 
     # test exp_image is fully covered by tiles
     assert (accum_window.height, accum_window.width) == exp_image.shape
-
-
-@pytest.mark.parametrize(
-    'image_shape, tile_shape, image_transform',
-    [
-        ((1000, 500), (101, 101), Affine.identity()),
-        ((1000, 100), (101, 101), Affine.scale(1.23)),
-        ((1000, 102), (101, 101), Affine.scale(1.23) * Affine.translation(12, 34)),
-    ],
-)
-def _test_tiles(image_shape: tuple[int, int], tile_shape: tuple[int, int], image_transform: Affine):
-    """Test continuity and coverage of tiles."""
-    exp_image = BaseImageLike(shape=image_shape, transform=image_transform)
-    tiles = [tile for tile in exp_image._tiles(tile_shape=tile_shape)]
-
-    # test tile continuity
-    prev_tile = tiles[0]
-    accum_window = prev_tile.window
-    for tile in tiles[1:]:
-        accum_window = windows.union(accum_window, tile.window)
-        assert all(np.array(tile._shape) <= np.array(tile_shape))
-
-        if tile.window.row_off == prev_tile.window.row_off:
-            assert tile.window.col_off == (prev_tile.window.col_off + prev_tile.window.width)
-            ref_transform = prev_tile._transform * Affine.translation(prev_tile.window.width, 0)
-        else:
-            assert tile.window.row_off == (prev_tile.window.row_off + prev_tile.window.height)
-            ref_transform = prev_tile._transform * Affine.translation(
-                -prev_tile.window.col_off, prev_tile.window.height
-            )
-
-        assert tile._transform == pytest.approx(ref_transform, abs=1e-9)
-        prev_tile = tile
-
-    # test exp_image is fully covered by tiles
-    assert (accum_window.height, accum_window.width) == exp_image.shape
+    assert accum_indexes == {*range(1, exp_image.count + 1)}
 
 
 def test_download_transform_shape(user_base_image: BaseImage, tmp_path: pathlib.Path):
