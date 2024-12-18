@@ -30,23 +30,30 @@ logger = logging.getLogger(__name__)
 class Tile:
     """Tile representation."""
 
-    col_off: int
+    band_off: int
     row_off: int
-    width: int
+    col_off: int
+    count: int
     height: int
+    width: int
     image_transform: Sequence[float] = field(repr=False)
 
     shape: tuple[int, int] = field(init=False, repr=False)
+    indexes: range = field(init=False, repr=False)
     window: Window = field(init=False, repr=False)
     tile_transform: Sequence[float] = field(init=False, repr=False)
+    slices: tuple[slice, slice, slice] = field(init=False, repr=False)
 
     def __post_init__(self):
         self.shape = (self.height, self.width)
+        self.indexes = range(self.band_off + 1, self.band_off + self.count + 1)
         self.window = Window(self.col_off, self.row_off, self.width, self.height)
         transform = rio.Affine(*self.image_transform) * rio.Affine.translation(
             self.col_off, self.row_off
         )
         self.tile_transform = transform[:6]
-        self.slices = slice(self.row_off, self.row_off + self.height), slice(
-            self.col_off, self.col_off + self.width
+        self.slices = (
+            slice(self.band_off, self.band_off + self.count),
+            slice(self.row_off, self.row_off + self.height),
+            slice(self.col_off, self.col_off + self.width),
         )
