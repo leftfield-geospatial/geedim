@@ -79,8 +79,12 @@ T = TypeVar('T')
 
 class BaseImageAccessor:
     _default_resampling = ResamplingMethod.near
+    # TODO: if there's little speed cost, default max_tile_size to << 32 to avoid memory limit (
+    #  could actually speed up downloads with few tiles by increasing concurrency)
     _ee_max_tile_size = 32
     _ee_max_tile_dim = 10000
+    _ee_max_tile_bands = 1024
+    _max_requests = 32
     _default_export_type = ExportType.drive
     _retry_exceptions = (
         asyncio.TimeoutError,
@@ -369,8 +373,15 @@ class BaseImageAccessor:
             band_props = [dict(name=bid) for bid in band_ids]
         return band_props
 
-    def _get_tile_shape(self, max_tile_size: float, max_tile_dim: int) -> tuple[int, int, int]:
-        """Returns a tile shape that satisfies ``max_tile_size`` and ``max_tile_dim``."""
+    def _get_tile_shape(
+        self,
+        max_tile_size: float = _ee_max_tile_size,
+        max_tile_dim: int = _ee_max_tile_dim,
+        max_tile_bands: int = _ee_max_tile_bands,
+    ) -> tuple[int, int, int]:
+        """Returns a 3D tile shape (count, height, width) that satisfies ``max_tile_size``,
+        ``max_tile_dim`` and ``max_tile_bands``.
+        """
         if max_tile_size > BaseImageAccessor._ee_max_tile_size:
             raise ValueError(
                 f"'max_tile_size' must be less than or equal to the Earth Engine limit of "
@@ -380,7 +391,12 @@ class BaseImageAccessor:
         if max_tile_dim > BaseImageAccessor._ee_max_tile_dim:
             raise ValueError(
                 f"'max_tile_dim' must be less than or equal to the Earth Engine limit of "
-                f"{BaseImageAccessor._ee_max_tile_dim} pixels."
+                f"{BaseImageAccessor._ee_max_tile_dim}."
+            )
+        if max_tile_bands > BaseImageAccessor._ee_max_tile_bands:
+            raise ValueError(
+                f"'max_tile_bands' must be less than or equal to the Earth Engine limit of "
+                f"{BaseImageAccessor._ee_max_tile_bands}."
             )
 
         # initialise loop vars
@@ -393,25 +409,21 @@ class BaseImageAccessor:
         num_tiles = np.array([1, 1, 1], dtype=int)
 
         # increment the number of tiles the image is split into along the longest dimension of
-        # the tile, until the tile size satisfies max_tile_size (aims for cube-ish tiles & to
-        # minimise the number of tiles)
+        # the tile, until the tile size satisfies max_tile_size (aims for least possible
+        # number of cube-ish shaped tiles that satisfy max_tile_size)
         while tile_size >= max_tile_size:
             num_tiles[np.argmax(tile_shape)] += 1
             tile_shape = np.ceil(np.array((self.count, *self.shape)) / num_tiles).astype(int)
             tile_size = np.prod(tile_shape) * dtype_size
 
-        # clip to max_tile_dim
-        # TODO: is there a max number of bands?
-        tile_shape[1:] = tile_shape[1:].clip(None, max_tile_dim)
+        # clip to max_tile_bands / max_tile_dim
+        tile_shape = tile_shape.clip(None, [max_tile_bands, max_tile_dim, max_tile_dim])
         tile_shape = tuple(tile_shape.tolist())
         return tile_shape
 
-    def _tiles(
-        self, max_tile_size: float = _ee_max_tile_size, max_tile_dim: int = _ee_max_tile_dim
-    ) -> Generator[Tile]:
+    def _tiles(self, tile_shape: tuple[int, int, int]) -> Generator[Tile]:
         """Image tile generator."""
         # get the dimensions of a tile that stays under the EE limits
-        tile_shape = self._get_tile_shape(max_tile_size, max_tile_dim)
 
         if logger.getEffectiveLevel() <= logging.DEBUG:
             num_tiles = int(np.prod(np.ceil(np.array((self.count, *self.shape)) / tile_shape)))
@@ -436,10 +448,9 @@ class BaseImageAccessor:
     @asynccontextmanager
     async def _tile_tasks(
         self,
+        tile_shape: tuple[int, int, int],
         masked: bool = False,
-        max_tile_size: float = _ee_max_tile_size,
-        max_tile_dim: int = _ee_max_tile_dim,
-        max_requests: int = 32,
+        max_requests: int = _max_requests,
         max_cpus: int = None,
     ) -> Generator[set[asyncio.Task]]:
         """Context manager for asynchronous tile download tasks."""
@@ -532,7 +543,7 @@ class BaseImageAccessor:
             # yield async tasks for downloading tiles
             timeout = aiohttp.ClientTimeout(total=300, sock_connect=30, ceil_threshold=5)
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                tiles = [*self._tiles(max_tile_size=max_tile_size, max_tile_dim=max_tile_dim)]
+                tiles = [*self._tiles(tile_shape)]
                 tasks = {
                     asyncio.create_task(
                         download_tile(tile, limit_requests, limit_cpus, session, executor)
@@ -583,7 +594,7 @@ class BaseImageAccessor:
             ds.update_tags(band_i + 1, **clean_band_dict)
 
     @staticmethod
-    def monitor_export(task: ee.batch.Task, label: str = None) -> None:
+    def monitorExport(task: ee.batch.Task, label: str = None) -> None:
         """
         Monitor and display the progress of an export task.
 
@@ -1002,7 +1013,7 @@ class BaseImageAccessor:
 
         if wait:
             # wait for completion
-            BaseImageAccessor.monitor_export(task)
+            BaseImageAccessor.monitorExport(task)
         return task
 
     def toGeoTiff(
@@ -1011,7 +1022,8 @@ class BaseImageAccessor:
         overwrite: bool = False,
         max_tile_size: float = _ee_max_tile_size,
         max_tile_dim: int = _ee_max_tile_dim,
-        max_requests: int = 32,
+        max_tile_bands: int = _ee_max_tile_bands,
+        max_requests: int = _max_requests,
         max_cpus: int = None,
     ) -> None:
         """
@@ -1020,8 +1032,8 @@ class BaseImageAccessor:
         :meth:`prepareForExport` can be called before this method to apply export parameters.
 
         The image is retrieved as separate GeoTIFF tiles which are downloaded and read
-        concurrently.  Tile size can be controlled with ``max_tile_size`` and ``max_tile_dim``,
-        and download / read concurrency with ``max_requests`` and ``max_cpus``.
+        concurrently.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
+        ``max_tile_bands``, and download / read concurrency with ``max_requests`` and ``max_cpus``.
 
         The downloaded file is masked with a :attr:`dtype` dependent ``nodata`` value provided by
         Earth Engine.  For integer types, this is the minimum value of the :attr:`dtype`,
@@ -1035,8 +1047,10 @@ class BaseImageAccessor:
             Maximum tile size (MB).  Should be less than the `Earth Engine size limit
             <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (32 MB).
         :param max_tile_dim:
-            Maximum tile width/height (pixels).  Should be less than the `Earth Engine limit
+            Maximum tile width / height (pixels).  Should be less than the `Earth Engine limit
             <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (10000).
+        :param max_tile_bands:
+            Maximum number of tile bands.  Should be less than the Earth Engine limit (1024).
         :param max_requests:
             Maximum number of concurrent tile downloads.  Should be less than the `max concurrent
             requests quota <https://developers.google.com/earth-engine/guides/usage
@@ -1050,6 +1064,10 @@ class BaseImageAccessor:
         filename = Path(filename)
         if not overwrite and filename.exists():
             raise FileExistsError(f'{filename} exists')
+
+        tile_shape = self._get_tile_shape(
+            max_tile_size=max_tile_size, max_tile_dim=max_tile_dim, max_tile_bands=max_tile_bands
+        )
 
         # create a rasterio profile for the destination file
         # TODO: what is the best interleaving for ++bands
@@ -1095,10 +1113,7 @@ class BaseImageAccessor:
                         out_ds.write(tile_array, indexes=tile.indexes, window=tile.window)
 
                 async with self._tile_tasks(
-                    max_tile_size=max_tile_size,
-                    max_tile_dim=max_tile_dim,
-                    max_requests=max_requests,
-                    max_cpus=max_cpus,
+                    tile_shape, max_requests=max_requests, max_cpus=max_cpus
                 ) as tasks:
                     loop = asyncio.get_running_loop()
                     for task in tqdm(asyncio.as_completed(tasks), total=len(tasks), **tqdm_kwargs):
@@ -1117,7 +1132,8 @@ class BaseImageAccessor:
         masked: bool = False,
         max_tile_size: float = _ee_max_tile_size,
         max_tile_dim: int = _ee_max_tile_dim,
-        max_requests: int = 32,
+        max_tile_bands: int = _ee_max_tile_bands,
+        max_requests: int = _max_requests,
         max_cpus: int = None,
     ) -> np.ndarray:
         """
@@ -1126,8 +1142,8 @@ class BaseImageAccessor:
         :meth:`prepareForExport` can be called before this method to apply export parameters.
 
         The image is retrieved as separate GeoTIFF tiles which are downloaded and read
-        concurrently.  Tile size can be controlled with ``max_tile_size`` and ``max_tile_dim``,
-        and download / read concurrency with ``max_requests`` and ``max_cpus``.
+        concurrently.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
+        ``max_tile_bands``, and download / read concurrency with ``max_requests`` and ``max_cpus``.
 
         :param masked:
             Return a :class:`~numpy.ma.masked_array` (``True``) or :class:`~numpy.ndarray`
@@ -1135,9 +1151,13 @@ class BaseImageAccessor:
             ``nodata`` value provided by Earth Engine.  For integer types, this is the minimum
             :attr:`dtype` value, and for floating point types, it is ``float('-inf')``.
         :param max_tile_size:
-            Maximum tile size (MB).  Defaults to the Earth Engine download limit (32 MB).
+            Maximum tile size (MB).  Should be less than the `Earth Engine size limit
+            <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (32 MB).
         :param max_tile_dim:
-            Maximum tile width/height (pixels).  Defaults to Earth Engine limit (10000).
+            Maximum tile width / height (pixels).  Should be less than the `Earth Engine limit
+            <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (10000).
+        :param max_tile_bands:
+            Maximum number of tile bands.  Should be less than the Earth Engine limit (1024).
         :param max_requests:
             Maximum number of concurrent Earth Engine requests.  Should be less than the `quota
             limit <https://developers.google.com/earth-engine/guides/usage
@@ -1150,7 +1170,10 @@ class BaseImageAccessor:
         :returns:
             Image NumPy array with bands along the first dimension.
         """
-        # TODO: test the threading behaviour of masked=True
+        tile_shape = self._get_tile_shape(
+            max_tile_size=max_tile_size, max_tile_dim=max_tile_dim, max_tile_bands=max_tile_bands
+        )
+
         # warn if the image is large
         if self.size > 1e9:
             size_str = tqdm.format_sizeof(self.size, suffix='B')
@@ -1173,7 +1196,6 @@ class BaseImageAccessor:
             async def download_tiles() -> np.ndarray:
                 """Download and write tiles to array."""
 
-                # TODO: which dimension should bands go down?
                 if masked:
                     array = np.ma.zeros((self.count, *self.shape), dtype=self.dtype)
                 else:
@@ -1184,11 +1206,7 @@ class BaseImageAccessor:
                     array[*tile.slices] = tile_array
 
                 async with self._tile_tasks(
-                    masked=masked,
-                    max_tile_size=max_tile_size,
-                    max_tile_dim=max_tile_dim,
-                    max_requests=max_requests,
-                    max_cpus=max_cpus,
+                    tile_shape, masked=masked, max_requests=max_requests, max_cpus=max_cpus
                 ) as tasks:
                     loop = asyncio.get_running_loop()
                     for task in tqdm(asyncio.as_completed(tasks), total=len(tasks), **tqdm_kwargs):
@@ -1258,6 +1276,18 @@ class BaseImage(BaseImageAccessor):
         """List of spectral / reflectance bands, if any."""
         return self.reflBands
 
+    @staticmethod
+    def monitor_export(task: ee.batch.Task, label: str = None) -> None:
+        """
+        Monitor and display the progress of an export task.
+
+        :param task:
+            Earth Engine task to monitor (as returned by :meth:`export`).
+        :param label:
+            Optional label for progress display.  Defaults to the task description.
+        """
+        BaseImageAccessor.monitorExport(task, label)
+
     def export(
         self,
         filename: str,
@@ -1301,7 +1331,8 @@ class BaseImage(BaseImageAccessor):
         num_threads: int = None,
         max_tile_size: float = BaseImageAccessor._ee_max_tile_size,
         max_tile_dim: int = BaseImageAccessor._ee_max_tile_dim,
-        max_requests: int = 32,
+        max_tile_bands: int = BaseImageAccessor._ee_max_tile_bands,
+        max_requests: int = BaseImageAccessor._max_requests,
         max_cpus: int = None,
         **export_kwargs,
     ) -> None:
@@ -1309,8 +1340,8 @@ class BaseImage(BaseImageAccessor):
         Download the image to a GeoTIFF file.
 
         The image is retrieved as separate GeoTIFF tiles which are downloaded and read
-        concurrently.  Tile size can be controlled with ``max_tile_size`` and ``max_tile_dim``,
-        and download / read concurrency with ``max_requests`` and ``max_cpus``.
+        concurrently.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
+        ``max_tile_bands``, and download / read concurrency with ``max_requests`` and ``max_cpus``.
 
         The downloaded file is masked with a :attr:`dtype` dependent ``nodata`` value,
         as provided by Earth Engine.  For integer types, ``nodata`` is the minimum value of the
@@ -1327,8 +1358,10 @@ class BaseImage(BaseImageAccessor):
             Maximum tile size (MB).  Should be less than the `Earth Engine size limit
             <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (32 MB).
         :param max_tile_dim:
-            Maximum tile width/height (pixels).  Should be less than the `Earth Engine limit
+            Maximum tile width / height (pixels).  Should be less than the `Earth Engine limit
             <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (10000).
+        :param max_tile_bands:
+            Maximum number of tile bands.  Should be less than the Earth Engine limit (1024).
         :param max_requests:
             Maximum number of concurrent tile downloads.  Should be less than the `max concurrent
             requests quota <https://developers.google.com/earth-engine/guides/usage
@@ -1351,6 +1384,7 @@ class BaseImage(BaseImageAccessor):
             overwrite,
             max_tile_size=max_tile_size,
             max_tile_dim=max_tile_dim,
+            max_tile_bands=max_tile_bands,
             max_requests=max_requests,
             max_cpus=max_cpus,
         )

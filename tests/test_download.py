@@ -620,7 +620,8 @@ def test_tiles(
 ):
     """Test continuity and coverage of tiles."""
     exp_image = BaseImageLike(shape=image_shape, count=image_count, transform=image_transform)
-    tiles = [tile for tile in exp_image._tiles(max_tile_size=max_tile_size)]
+    tile_shape = exp_image._get_tile_shape(max_tile_size=max_tile_size)
+    tiles = [tile for tile in exp_image._tiles(tile_shape)]
 
     # test tile continuity
     prev_tile = tiles[0]
