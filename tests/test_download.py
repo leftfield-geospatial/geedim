@@ -80,10 +80,14 @@ def user_base_image() -> BaseImage:
 
 @pytest.fixture(scope='session')
 def user_fix_base_image() -> BaseImage:
-    """A BaseImage instance where the encapsulated image has a fixed projection (EPSG:4326), a scale in degrees,
-    is unbounded and has no ID.
+    """A BaseImage instance where the encapsulated image has a fixed projection (EPSG:4326),
+    a scale in degrees, is unbounded and has no ID.
     """
-    return BaseImage(ee.Image([1, 2, 3]).setDefaultProjection(crs='EPSG:4326', scale=30))
+    return BaseImage(
+        ee.Image([1, 2, 3])
+        .setDefaultProjection(crs='EPSG:4326', scale=30)
+        .clip(ee.Geometry.Rectangle(-180, -90, 180, 90))
+    )
 
 
 @pytest.fixture(scope='session')
@@ -203,9 +207,9 @@ def test_id_name(user_base_image: BaseImage, s2_sr_hm_base_image: BaseImage):
 
 def test_user_props(user_base_image: BaseImage):
     """Test non fixed projection image properties (other than ``id`` and ``has_fixed_projection``)."""
-    assert user_base_image.crs is None
-    assert user_base_image.scale is None
-    assert user_base_image.transform is None
+    assert user_base_image.crs is not None
+    assert user_base_image.scale is not None
+    assert user_base_image.transform is not None
     assert user_base_image.shape is None
     assert user_base_image.date is None
     assert user_base_image.size is None
@@ -219,10 +223,10 @@ def test_fix_user_props(user_fix_base_image: BaseImage):
     assert user_fix_base_image.crs == 'EPSG:4326'
     assert user_fix_base_image.scale == pytest.approx(30, abs=1e-6)
     assert user_fix_base_image.transform is not None
-    assert user_fix_base_image.shape is None
+    assert user_fix_base_image.shape is not None
     assert user_fix_base_image.date is None
-    assert user_fix_base_image.size is None
-    assert user_fix_base_image.footprint is None
+    assert user_fix_base_image.size is not None
+    assert user_fix_base_image.footprint is not None
     assert user_fix_base_image.dtype == 'uint8'
     assert user_fix_base_image.count == 3
 

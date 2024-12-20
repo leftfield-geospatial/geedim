@@ -119,18 +119,10 @@ class BaseImageAccessor:
         #  'COPERNICUS/S2_SR_HARMONIZED/20170328T083601_20170328T084228_T35RNK'.  that will be an
         #  issue for BaseImageAccessor.projection() and its users too.
         proj_info = dict(crs=None, transform=None, shape=None, scale=None)
-
-        # create a list of bands with fixed projections
-        fixed_bands = [
-            band_info
-            for band_info in self.info.get('bands', [])
-            if abs(band_info['crs_transform'][0]) != 1 or band_info['crs'] != 'EPSG:4326'
-        ]
-
-        # extract projection info from min scale fixed projection band
-        if len(fixed_bands) > 0:
-            fixed_bands.sort(key=operator.itemgetter('scale'))
-            band_info = fixed_bands[0]
+        bands = self.info.get('bands', []).copy()
+        if len(bands) > 0:
+            bands.sort(key=operator.itemgetter('scale'))
+            band_info = bands[0]
 
             proj_info['crs'] = band_info['crs']
             proj_info['transform'] = rio.Affine(*band_info['crs_transform'])
@@ -189,12 +181,12 @@ class BaseImageAccessor:
 
     @property
     def crs(self) -> str | None:
-        """CRS of the minimum scale band. ``None`` if the image has no fixed projection."""
+        """CRS of the minimum scale band."""
         return self._min_projection['crs']
 
     @property
     def scale(self) -> float | None:
-        """Minimum scale of the image bands (meters). ``None`` if the image has no fixed projection."""
+        """Minimum scale of the image bands (meters)."""
         return self._min_projection['scale']
 
     @property
@@ -219,7 +211,7 @@ class BaseImageAccessor:
 
     @property
     def transform(self) -> list[float] | None:
-        """Geotransform of the minimum scale band. ``None`` if the image has no fixed projection."""
+        """Geotransform of the minimum scale band."""
         return self._min_projection['transform']
 
     @cached_property
@@ -287,9 +279,11 @@ class BaseImageAccessor:
         ]
 
     @property
-    def profile(self) -> dict[str, Any]:
-        """Rasterio image profile."""
+    def profile(self) -> dict[str, Any] | None:
+        """Rasterio image profile.  ``None`` if the image has no fixed projection."""
         # TODO: allow setting a custom nodata value with ee.Image.unmask() - see #21
+        if not self.shape:
+            return None
         return dict(
             crs=utils.rio_crs(self.crs),
             transform=self.transform,
@@ -652,55 +646,57 @@ class BaseImageAccessor:
 
     def fixed(self) -> ee.Number:
         """Whether the image has a fixed projection."""
-        proj = self.projection()
-        # cannot use ee.String.compareTo or ee.String.equals with proj.crs() when it is null
-        not_wgs84 = ee.List([proj.crs()]).indexOf(ee.String('EPSG:4326')).eq(-1)
-        not_degree_scale = proj.nominalScale().toInt64().neq(111319)
-        return not_wgs84.Or(not_degree_scale)
+        return ee.Number(self._ee_image.propertyNames().contains('system:footprint'))
 
     def resample(self, method: ResamplingMethod | str) -> ee.Image:
         """
-        Return a resampled image.
+        Resample the image.
 
         Extends ``ee.Image.resample()`` by providing an
         :attr:`~geedim.enums.ResamplingMethod.average` method for downsampling, and only
         resampling when the image has a fixed projection.
 
+        Composites without fixed projections cannot be resampled.  Instead the component images
+        used to form the composite can be resampled.
+
         See https://developers.google.com/earth-engine/guides/resample for background information.
 
         :param method:
             Resampling method to use.  For the :attr:`~geedim.enums.ResamplingMethod.average`
-            method, the image is reprojected to the minimum scale projection before resampling.
+            method, the image projection is set to the minimum scale projection before resampling.
 
         :return:
-            Resampled image.
+            Resampled image if the source has a fixed projection, otherwise the source image.
         """
         method = ResamplingMethod(method)
-        if method == ResamplingMethod.near:
+        if method is ResamplingMethod.near:
             return self._ee_image
 
         # resample the image, if it has a fixed projection
         def _resample(ee_image: ee.Image) -> ee.Image:
             """Resample the given image, allowing for additional 'average' method."""
-            if method == ResamplingMethod.average:
+            if method is ResamplingMethod.average:
                 # set the default projection to the minimum scale projection (required for e.g.
                 # S2 images that have non-fixed projection bands)
-                # TODO: test this works for different res S2 bands
                 ee_image = ee_image.setDefaultProjection(self.projection())
                 return ee_image.reduceResolution(reducer=ee.Reducer.mean(), maxPixels=1024)
             else:
                 return ee_image.resample(str(method.value))
 
-        # TODO: refactor without If.  Perhaps  always resample and leave EE to raise an error if
-        #  the image doesn't have a fixed projection.
+        # TODO: consider deprecating support for composites of composites and asset images i.e.
+        #  composite images don't get the ID of their component image collection. Then
+        #  composites can be made of composite components, or asset image components,
+        #  but not both together.  then we can do away with the If here and in addMaskBands(),
+        #  and generally simplify the design (e.g. maskClouds() can be done without addMaskBands()
+        #  ).
         return ee.Image(ee.Algorithms.If(self.fixed(), _resample(self._ee_image), self._ee_image))
 
     def toDType(self, dtype: str) -> ee.Image:
         """
-        Return an image with the data type converted.
+        Convert the image data dtype.
 
         :param dtype:
-            A recognised numpy / Rasterio data type to convert to.
+            A recognised NumPy / Rasterio data type to convert to.
 
         :return:
             Converted image.
@@ -724,7 +720,8 @@ class BaseImageAccessor:
 
     def scaleOffset(self) -> ee.Image:
         """
-        Return an image with STAC band scales and offsets applied.
+        Apply any STAC band scales and offsets to the image (for converting digital numbers to
+        physical units).
 
         :return:
             Scaled and offset image.  If no STAC scales and offsets are available, the image is
@@ -811,10 +808,10 @@ class BaseImageAccessor:
         shape: tuple[int, int] = None,
         region: dict | ee.Geometry = None,
         scale: float = None,
-        resampling: ResamplingMethod = _default_resampling,
+        resampling: str | ResamplingMethod = _default_resampling,
         dtype: str = None,
         scale_offset: bool = False,
-        bands: list[str] = None,
+        bands: list[str | int] | str = None,
     ) -> ee.Image:
         """
         Prepare an image for export by applying the given parameters.
@@ -850,10 +847,21 @@ class BaseImageAccessor:
             ``int32``, ``float32`` or ``float64``).  Defaults to the minimum size data type able
             to represent all image bands.
         :param scale_offset:
-            Whether to apply any STAC band scales and offsets to the image.
+            Whether to apply any STAC band scales and offsets to the image (converts from digital
+            numbers to physical units).
         :param bands:
-            Sequence of band names to include in the prepared image.  Defaults to all bands.
+            Bands to include in the prepared image as a list of names / indexes, or a regex
+            string.  Defaults to all bands.
+
+        :return:
+            Prepared image.
         """
+        # TODO: considering that tiled export always uses crs, crs_transform & shape args,
+        #  can we do away with some / all of these checks?  if we allow exporting images w/o/
+        #  calling this, it would make things more consistent.  it would simplify the code,
+        #  reduce the need for getInfo().  and make it easier to map this over a collection's
+        #  images. (remember to check with constant images / bands though - those have no shape
+        #  or geometry.  the same as composites?)
         # Create a new BaseImageAccessor if bands are specified.  This is done here so that crs,
         # scale etc parameters used below will have values specific to bands.
         exp_image = BaseImageAccessor(self._ee_image.select(bands)) if bands else self
@@ -865,7 +873,7 @@ class BaseImageAccessor:
         if (
             (not crs or not region or not (scale or shape))
             and (not crs or not crs_transform or not shape)
-            and not exp_image.scale
+            and not exp_image.shape
         ):
             raise ValueError(
                 "This image does not have a fixed projection, you need to specify a 'crs', "
@@ -874,6 +882,9 @@ class BaseImageAccessor:
 
         # Prevent exporting unbounded images without arguments defining the bounds (EE also
         # raises an error in ee.Image.prepare_for_export() but with a less informative message).
+        # TODO: I don't think ee.Image.prepare_for_export() raises an error. Maybe
+        #  ee.Image.getDownloadURL().  or is it when region=unbounded is specified to
+        #  prepare_for_export()?
         if (not region and (not crs_transform or not shape)) and not exp_image.bounded:
             raise ValueError(
                 "This image is unbounded, you need to specify a 'region'; or a 'crs_transform' and "
@@ -897,14 +908,14 @@ class BaseImageAccessor:
         # apply export scale/offset, dtype and resampling
         if scale_offset:
             ee_image = exp_image.scaleOffset()
-            im_dtype = 'float64'
+            exp_dtype = dtype or 'float64'  # avoid another getInfo() for default dtype
         else:
             ee_image = exp_image._ee_image
-            im_dtype = exp_image.dtype
+            exp_dtype = dtype or exp_image.dtype
 
         resampling = ResamplingMethod(resampling)
         if resampling != ResamplingMethod.near:
-            if not exp_image.scale:
+            if not exp_image.shape:
                 raise ValueError(
                     'This image has no fixed projection and cannot be resampled.  If this image '
                     'is a composite, you can resample the component images used to create it.'
@@ -913,7 +924,7 @@ class BaseImageAccessor:
 
         # convert dtype (required for EE to set nodata correctly on download even if dtype is
         # unchanged)
-        ee_image = BaseImageAccessor(ee_image).toDType(dtype=dtype or im_dtype)
+        ee_image = BaseImageAccessor(ee_image).toDType(dtype=exp_dtype)
 
         # apply export spatial parameters
         crs_transform = crs_transform[:6] if crs_transform else None
@@ -1060,7 +1071,8 @@ class BaseImageAccessor:
             number of CPUs, or one, whichever is greater.  Values larger than the default can
             stall the asynchronous event loop and are not recommended.
         """
-        # TODO: allow bands to be band indexes too
+        # TODO: what happens if this, or toNumPy is called on an image with inconsistent
+        #  projections, or a composite, w/o a call to prepareForExport()?
         filename = Path(filename)
         if not overwrite and filename.exists():
             raise FileExistsError(f'{filename} exists')
@@ -1070,7 +1082,6 @@ class BaseImageAccessor:
         )
 
         # create a rasterio profile for the destination file
-        # TODO: what is the best interleaving for ++bands
         profile = self.profile
         profile.update(
             driver='GTiff', compress='deflate', interleave='band', tiled=True, bigtiff='if_safer'
@@ -1269,7 +1280,7 @@ class BaseImage(BaseImageAccessor):
     @property
     def has_fixed_projection(self) -> bool:
         """Whether the image has a fixed projection."""
-        return self.scale is not None
+        return self.shape is not None
 
     @property
     def refl_bands(self) -> list[str] | None:
