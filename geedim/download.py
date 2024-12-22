@@ -653,17 +653,16 @@ class BaseImageAccessor:
         Resample the image.
 
         Extends ``ee.Image.resample()`` by providing an
-        :attr:`~geedim.enums.ResamplingMethod.average` method for downsampling, and only
-        resampling when the image has a fixed projection.
+        :attr:`~geedim.enums.ResamplingMethod.average` method for downsampling, and returning
+        images without fixed projections (e.g. composites) unaltered.
 
-        Composites without fixed projections cannot be resampled.  Instead the component images
-        used to form the composite can be resampled.
+        Composites can be resampled by resampling their component images.
 
         See https://developers.google.com/earth-engine/guides/resample for background information.
 
         :param method:
-            Resampling method to use.  For the :attr:`~geedim.enums.ResamplingMethod.average`
-            method, the image projection is set to the minimum scale projection before resampling.
+            Resampling method to use.  With the :attr:`~geedim.enums.ResamplingMethod.average`
+            method, the image is reprojected to the minimum scale projection before resampling.
 
         :return:
             Resampled image if the source has a fixed projection, otherwise the source image.
@@ -720,12 +719,12 @@ class BaseImageAccessor:
 
     def scaleOffset(self) -> ee.Image:
         """
-        Apply any STAC band scales and offsets to the image (for converting digital numbers to
+        Apply any STAC scales and offsets to the image (e.g. for converting digital numbers to
         physical units).
 
         :return:
-            Scaled and offset image.  If no STAC scales and offsets are available, the image is
-            returned as is.
+            Scaled and offset image if STAC scales and offsets are available, otherwise the
+            source image.
         """
         if self.band_properties is None:
             # TODO: raise error?
@@ -814,19 +813,25 @@ class BaseImageAccessor:
         bands: list[str | int] | str = None,
     ) -> ee.Image:
         """
-        Prepare an image for export by applying the given parameters.
+        Prepare an image for export.
 
         Bounds and resolution of the prepared image can be specified with ``region`` and
         ``scale`` / ``shape``, or ``crs_transform`` and ``shape``.  Bounds default to those of
         the source image when they are not specified (with either ``region``, or ``crs_transform``
         & ``shape``).
 
-        When ``crs``, ``scale``, ``crs_transform`` & ``shape`` are not specified, the pixel grids
+        When ``crs``, ``scale``, ``crs_transform`` & ``shape`` are not provided, the pixel grids
         of the prepared and source images will match.
+
+        ..warning::
+            Depending on the provided arguments, the prepared image may be a reprojected and
+            clipped version of the source.  This type of image is `not recommended
+            <https://developers.google.com/earth-engine/guides/best_practices>`__ for use in map
+            display or further computation.
 
         :param crs:
             CRS of the prepared image as an EPSG or WKT string.  All bands are re-projected to
-            this CRS.  Defaults to the CRS of the minimum scale band if available.
+            this CRS.  Defaults to the CRS of the minimum scale band.
         :param crs_transform:
             Geo-referencing transform of the prepared image, as a sequence of 6 numbers.  In
             row-major order: [xScale, xShearing, xTranslation, yShearing, yScale, yTranslation].
@@ -838,17 +843,19 @@ class BaseImageAccessor:
             Defaults to the image geometry.
         :param scale:
             Pixel scale (m) of the prepared image.  All bands are re-projected to this scale.
-            Ignored if ``crs`` and ``crs_transform`` are specified.  Defaults to the minimum
-            scale of the image bands if available.
+            Ignored if ``crs`` and ``crs_transform`` are provided.  Defaults to the minimum
+            scale of the image bands.
         :param resampling:
-            Resampling method to use for reprojecting.
+            Resampling method to use for reprojecting.  Ignored for images without fixed
+            projections e.g. composites.  Composites can be resampled by resampling their
+            component images.
         :param dtype:
             Data type of the prepared image (``uint8``, ``int8``, ``uint16``, ``int16``, ``uint32``,
             ``int32``, ``float32`` or ``float64``).  Defaults to the minimum size data type able
             to represent all image bands.
         :param scale_offset:
-            Whether to apply any STAC band scales and offsets to the image (converts from digital
-            numbers to physical units).
+            Whether to apply any STAC band scales and offsets to the image (e.g. for converting
+            digital numbers to physical units).
         :param bands:
             Bands to include in the prepared image as a list of names / indexes, or a regex
             string.  Defaults to all bands.
@@ -862,44 +869,33 @@ class BaseImageAccessor:
         #  reduce the need for getInfo().  and make it easier to map this over a collection's
         #  images. (remember to check with constant images / bands though - those have no shape
         #  or geometry.  the same as composites?)
-        # Create a new BaseImageAccessor if bands are specified.  This is done here so that crs,
+        # Create a new BaseImageAccessor if bands are provided.  This is done here so that crs,
         # scale etc parameters used below will have values specific to bands.
         exp_image = BaseImageAccessor(self._ee_image.select(bands)) if bands else self
 
         # Prevent exporting images with no fixed projection unless arguments defining the export
-        # pixel grid and bounds are provided (EE allows this, but uses a 1 degree scale in
-        # EPSG:4326 with worldwide bounds, which is an unlikely use case prone to memory limit
-        # errors).
+        # pixel grid and bounds are provided (EE allows this in some cases, but uses a 1 degree
+        # scale in EPSG:4326 with global bounds, which is an unlikely use case prone to memory
+        # limit errors).
         if (
             (not crs or not region or not (scale or shape))
             and (not crs or not crs_transform or not shape)
             and not exp_image.shape
         ):
             raise ValueError(
-                "This image does not have a fixed projection, you need to specify a 'crs', "
-                "'region' & 'scale' / 'shape'; or a 'crs', 'crs_transform' & 'shape'."
-            )
-
-        # Prevent exporting unbounded images without arguments defining the bounds (EE also
-        # raises an error in ee.Image.prepare_for_export() but with a less informative message).
-        # TODO: I don't think ee.Image.prepare_for_export() raises an error. Maybe
-        #  ee.Image.getDownloadURL().  or is it when region=unbounded is specified to
-        #  prepare_for_export()?
-        if (not region and (not crs_transform or not shape)) and not exp_image.bounded:
-            raise ValueError(
-                "This image is unbounded, you need to specify a 'region'; or a 'crs_transform' and "
-                "'shape'."
+                "This image does not have a fixed projection, you need to provide 'crs', "
+                "'region' & 'scale' / 'shape'; or 'crs', 'crs_transform' & 'shape'."
             )
 
         if scale and shape:
-            raise ValueError("You can specify one of 'scale' or 'shape', but not both.")
+            raise ValueError("You can provide one of 'scale' or 'shape', but not both.")
 
         # configure the export spatial parameters
         if not crs_transform and not shape:
             # Only pass crs to ee.Image.prepare_for_export() when it is different from the
             # source.  Passing same crs as source does not maintain the source pixel grid.
             crs = crs if crs is not None and crs != exp_image.crs else None
-            # Default scale to the scale in meters of the minimum scale band.
+            # Default scale to the minimum scale in meters
             scale = scale or exp_image.projection().nominalScale()
         else:
             # crs argument is required with crs_transform
@@ -913,14 +909,7 @@ class BaseImageAccessor:
             ee_image = exp_image._ee_image
             exp_dtype = dtype or exp_image.dtype
 
-        resampling = ResamplingMethod(resampling)
-        if resampling != ResamplingMethod.near:
-            if not exp_image.shape:
-                raise ValueError(
-                    'This image has no fixed projection and cannot be resampled.  If this image '
-                    'is a composite, you can resample the component images used to create it.'
-                )
-            ee_image = BaseImageAccessor(ee_image).resample(resampling)
+        ee_image = BaseImageAccessor(ee_image).resample(resampling)
 
         # convert dtype (required for EE to set nodata correctly on download even if dtype is
         # unchanged)
@@ -959,7 +948,7 @@ class BaseImageAccessor:
             Earth Engine asset project (when ``type`` is :attr:`~geedim.enums.ExportType.asset`),
             or Google Cloud Storage bucket (when ``type`` is
             :attr:`~geedim.enums.ExportType.cloud`). If ``type`` is
-            :attr:`~geedim.enums.ExportType.asset` and ``folder`` is not specified, ``filename``
+            :attr:`~geedim.enums.ExportType.asset` and ``folder`` is not provided, ``filename``
             should be a valid Earth Engine asset ID. If ``type`` is
             :attr:`~geedim.enums.ExportType.cloud` then ``folder`` is required.
         :param wait:
@@ -999,7 +988,7 @@ class BaseImageAccessor:
             )
 
         elif type == ExportType.asset:
-            # if folder is specified create an EE asset ID from it and filename, else treat
+            # if folder is provided create an EE asset ID from it and filename, else treat
             # filename as a valid EE asset ID
             asset_id = utils.asset_id(filename, folder) if folder else filename
             export_kwargs.pop('formatOptions')  # not used for asset export
@@ -1071,11 +1060,24 @@ class BaseImageAccessor:
             number of CPUs, or one, whichever is greater.  Values larger than the default can
             stall the asynchronous event loop and are not recommended.
         """
-        # TODO: what happens if this, or toNumPy is called on an image with inconsistent
+        # TODO: what happens if this, or to* is called on an image with inconsistent
         #  projections, or a composite, w/o a call to prepareForExport()?
         filename = Path(filename)
         if not overwrite and filename.exists():
             raise FileExistsError(f'{filename} exists')
+
+        # TODO: move these checks into a common export fn
+        if not self.shape:
+            raise ValueError(
+                "This image cannot be exported as it does not have a fixed projection.  "
+                "'prepareForExport()' can be called to define one."
+            )
+        if self.size > 1e9:
+            size_str = tqdm.format_sizeof(self.size, suffix='B')
+            logger.warning(
+                f"Consider adjusting the image bounds, resolution and/or data type with "
+                f"'prepareForExport()' to reduce the export size: {size_str}."
+            )
 
         tile_shape = self._get_tile_shape(
             max_tile_size=max_tile_size, max_tile_dim=max_tile_dim, max_tile_bands=max_tile_bands
@@ -1086,15 +1088,6 @@ class BaseImageAccessor:
         profile.update(
             driver='GTiff', compress='deflate', interleave='band', tiled=True, bigtiff='if_safer'
         )
-
-        # warn if the download is large
-        # TODO: where possible, make this, and the below common for other exports to use
-        if self.size > 1e9:
-            size_str = tqdm.format_sizeof(self.size, suffix='B')
-            logger.warning(
-                f"Consider adjusting 'region', 'scale' and/or 'dtype' to reduce the "
-                f"'{filename.name}' download size (raw:{size_str})."
-            )
 
         with ExitStack() as exit_stack:
             # set up progress bar kwargs
@@ -1181,17 +1174,21 @@ class BaseImageAccessor:
         :returns:
             Image NumPy array with bands along the first dimension.
         """
-        tile_shape = self._get_tile_shape(
-            max_tile_size=max_tile_size, max_tile_dim=max_tile_dim, max_tile_bands=max_tile_bands
-        )
-
-        # warn if the image is large
+        if not self.shape:
+            raise ValueError(
+                "This image cannot be exported as it does not have a fixed projection.  "
+                "'prepareForExport()' can be called to define one."
+            )
         if self.size > 1e9:
             size_str = tqdm.format_sizeof(self.size, suffix='B')
             logger.warning(
-                f"Consider adjusting 'region', 'scale' and/or 'dtype' to reduce the array size "
-                f"({size_str})."
+                f"Consider adjusting the image bounds, resolution and/or data type with "
+                f"'prepareForExport()' to reduce the export size: {size_str}."
             )
+
+        tile_shape = self._get_tile_shape(
+            max_tile_size=max_tile_size, max_tile_dim=max_tile_dim, max_tile_bands=max_tile_bands
+        )
 
         with ExitStack() as exit_stack:
             # set up progress bar kwargs
@@ -1319,7 +1316,7 @@ class BaseImage(BaseImageAccessor):
             Earth Engine asset project (when ``type`` is :attr:`~geedim.enums.ExportType.asset`),
             or Google Cloud Storage bucket (when ``type`` is
             :attr:`~geedim.enums.ExportType.cloud`). If ``type`` is
-            :attr:`~geedim.enums.ExportType.asset` and ``folder`` is not specified, ``filename``
+            :attr:`~geedim.enums.ExportType.asset` and ``folder`` is not provided, ``filename``
             should be a valid Earth Engine asset ID. If ``type`` is
             :attr:`~geedim.enums.ExportType.cloud` then ``folder`` is required.
         :param wait:
