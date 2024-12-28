@@ -75,8 +75,8 @@ class CloudMaskMethod(str, Enum):
 
 
 class CloudScoreBand(str, Enum):
-    """Enumeration for the Sentinel-2 Cloud Score+ band used with the :attr:`~CloudMaskMethod.cloud_score` cloud
-    masking method.
+    """Enumeration for the Sentinel-2 Cloud Score+ band to use with the
+    :attr:`~CloudMaskMethod.cloud_score` cloud masking method.
     """
 
     cs = 'cs'
@@ -147,6 +147,22 @@ class SpectralDistanceMetric(str, Enum):
 
     emd = 'emd'
     """ Earth movers distance. """
+
+    def __repr__(self):
+        return self._name_
+
+    def __str__(self):
+        return self._name_
+
+
+class SplitType(str, Enum):
+    """Enumeration for how an image collection is split when exporting."""
+
+    bands = 'bands'
+    """Split collection by band."""
+
+    images = 'images'
+    """Split collection by image."""
 
     def __repr__(self):
         return self._name_
