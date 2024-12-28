@@ -213,19 +213,17 @@ class Spinner(Thread):
         """
         Thread sub-class to run a non-blocking spinner.
 
-        Parameters
-        ----------
-        label: str, optional
+        :param label:
             Prepend spinner with this label.
-        interval: float, optional
+        :param interval:
             Spinner update interval (s).
-        leave: optional, bool, str
+        :param leave:
             What to do with the spinner display on stop():
-                False: clear the label + spinner.
-                True:  leave the label + spinner as is.
+                ``False``: clear the label + spinner.
+                ``True``:  leave the label + spinner as is.
                 <string message>: print this message in place of the spinner
-        kwargs: optional
-            Additional kwargs to pass to Thread.__init__()
+        :param kwargs:
+            Additional kwargs to pass to ``Thread.__init__()``.
         """
         Thread.__init__(self, **kwargs)
         self._label = label
@@ -252,9 +250,9 @@ class Spinner(Thread):
             self._file.flush()
             time.sleep(self._interval)
 
-        if self._leave == True:
+        if self._leave is True:
             tqdm.write('', file=self._file, end='\n')
-        elif self._leave == False:
+        elif self._leave is False:
             tqdm.write('\r', file=self._file, end='')
         elif isinstance(self._leave, str):
             tqdm.write('\r' + self._label + self._leave + ' ', file=self._file, end='\n')
@@ -461,3 +459,23 @@ def register_accessor(name: str, cls: type) -> Callable[[type[T]], type[T]]:
         return accessor
 
     return decorator
+
+
+def get_tqdm_kwargs(desc: str = None, unit: str = None, **kwargs) -> dict:
+    """Return a dictionary of kwargs for a tqdm progress bar."""
+    tqdm_kwargs = dict(dynamic_ncols=True, leave=None, miniters=1, **kwargs)
+    if desc:
+        desc_width = 50
+        desc = '...' + desc[-desc_width + 3 :] if len(desc) > desc_width else desc
+        tqdm_kwargs.update(desc=desc)
+
+    if unit:
+        bar_format = (
+            '{desc:>50}: |{bar}| {n_fmt}/{total_fmt} ({unit}) [{percentage:3.0f}%] in {elapsed} '
+            '(eta: {remaining})'
+        )
+        tqdm_kwargs.update(bar_format=bar_format, unit=unit)
+    else:
+        bar_format = '{desc:>50}: |{bar}| [{percentage:3.0f}%] in {elapsed} (eta: {remaining})'
+        tqdm_kwargs.update(bar_format=bar_format)
+    return tqdm_kwargs
