@@ -17,18 +17,22 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 from datetime import datetime, timezone
 from functools import cached_property
-from typing import Any
+from pathlib import Path
+from typing import Any, Sequence
 
 import ee
+import numpy as np
 import tabulate
 from tabulate import DataRow, Line, TableFormat
+from tqdm.auto import tqdm
 
-from geedim import schema
-from geedim.download import BaseImage
-from geedim.enums import CompositeMethod, ResamplingMethod
+from geedim import schema, utils
+from geedim.download import BaseImage, BaseImageAccessor
+from geedim.enums import CompositeMethod, ResamplingMethod, SplitType
 from geedim.errors import InputImageError
 from geedim.mask import class_from_id, _MaskedImage, MaskedImage
 from geedim.medoid import medoid
@@ -89,6 +93,8 @@ def abbreviate(name: str) -> str:
 
 @register_accessor('gd', ee.ImageCollection)
 class ImageCollectionAccessor:
+    _max_export_images = 1000
+
     # TODO: strictly this is an _init_ docstring, not clas docstring.  does moving it (and all
     #  other class docstrings) to _init_ work with sphinx?
     """
@@ -186,7 +192,7 @@ class ImageCollectionAccessor:
         but limited to the first 1000 images with band information excluded.
         """
         if not self._info:
-            self._info = self._ee_coll.limit(1000).select(None).getInfo()
+            self._info = self._ee_coll.limit(self._max_export_images).getInfo()
         return self._info
 
     @property
@@ -252,6 +258,9 @@ class ImageCollectionAccessor:
         """Dictionary of image properties.  Keys are the image IDs and values the image property
         dictionaries.
         """
+        # TODO: decide if we're using indexes or ids and standardise everywhere. note that
+        #  index of an ee.Image is not necessarily the same as the index of the same image in a
+        #  collection e.g. if it is constructed as ee.ImageCollection([ee.Image(...), ...])
         if not self._properties:
             self._properties = {}
             for i, im_info in enumerate(self.info.get('features', [])):
@@ -301,7 +310,7 @@ class ImageCollectionAccessor:
         self,
         method: CompositeMethod | str,
         mask: bool = True,
-        resampling: ResamplingMethod | str = BaseImage._default_resampling,
+        resampling: ResamplingMethod | str = BaseImageAccessor._default_resampling,
         date: str | datetime | ee.Date = None,
         region: dict | ee.Geometry = None,
         **kwargs,
@@ -359,6 +368,54 @@ class ImageCollectionAccessor:
                 logger.warning(f"'region' is valid for {sort_methods} methods only.")
 
         return ee_coll
+
+    def _raise_image_consistency(self) -> None:
+        """Raise an error if the collection image bands are not consistent."""
+        first_band_names = first_band = None
+        band_compare_keys = ['crs', 'crs_transform', 'dimensions']
+
+        # TODO: this test is stricter than it needs to be.  for image splitting, only the min
+        #  scale band of each image should have a fixed projection and match all other min scale
+        #  band's projection & bounds.  for band splitting, only the first the image should have
+        #  all bands with fixed projections, and matching projections and bounds.
+        for im_id, im_props in self.properties.items():
+            im_bands = {bp['id']: bp for bp in im_props.get('bands', [])}
+            if not first_band_names:
+                first_band_names = im_bands.keys()
+            elif not im_bands.keys() == first_band_names:
+                raise ValueError("Inconsistent number of bands or band names.")
+
+            for band_id, band in im_bands.items():
+                cmp_band = {k: band.get(k, None) for k in band_compare_keys}
+                if not cmp_band['dimensions']:
+                    raise ValueError("One or more image bands do not have a fixed projection.")
+                if not first_band:
+                    first_band = cmp_band
+                elif cmp_band != first_band:
+                    raise ValueError("Inconsistent band projections or bounds.")
+
+    def _split_images(self, split: SplitType) -> dict[str, BaseImageAccessor]:
+        """Split the collection into a list of images."""
+        split = SplitType(split)
+
+        first_info = next(iter(self.info.get('features', [])))
+        first_band_names = [bi['id'] for bi in first_info.get('bands', [])]
+        indexes = [str(k).split('/')[-1] for k in self.properties.keys()]
+
+        if split is SplitType.bands:
+
+            def to_bands(band_name: ee.String) -> ee.Image:
+                ee_image = self._ee_coll.select(ee.String(band_name)).toBands()
+                ee_image = ee_image.set('system:index', band_name)
+                return ee_image.rename(indexes)
+
+            im_list = ee.List(first_band_names).map(to_bands)
+            im_names = first_band_names
+        else:
+            im_list = self._ee_coll.toList(self._max_export_images)
+            im_names = indexes
+
+        return {k: BaseImageAccessor(ee.Image(im_list.get(i))) for i, k in enumerate(im_names)}
 
     def addMaskBands(self, **kwargs) -> ee.ImageCollection:
         """
@@ -448,6 +505,9 @@ class ImageCollectionAccessor:
         """
         # TODO: refactor error classes and what gets raised where.
         # TODO: test for these errors
+        # TODO: refactor as e.g. filterCoverage / filterClouds?  rename as filter?
+        # TODO: if the collection has been filtered elsewhere, we should not enforce start_date
+        #  or region
         if not start_date and not region:
             raise ValueError("At least one of 'start_date' or 'region' should be specified")
         if (fill_portion is not None or cloudless_portion is not None) and not region:
@@ -503,7 +563,7 @@ class ImageCollectionAccessor:
         self,
         method: CompositeMethod | str = None,
         mask: bool = True,
-        resampling: ResamplingMethod | str = BaseImage._default_resampling,
+        resampling: ResamplingMethod | str = BaseImageAccessor._default_resampling,
         date: str | datetime | ee.Date = None,
         region: dict | ee.Geometry = None,
         **kwargs,
@@ -570,10 +630,6 @@ class ImageCollectionAccessor:
             comp_image = getattr(ee_coll, method.name)()
 
         # populate composite image metadata
-        # TODO: can this be done server side to save time?
-        # TODO: don't do this in accessor but in MaskedCollection subclass for backwards
-        #  compatibility.  or can properties be set server side in some way (like a dict) that
-        #  GDAL / rasterio understands and is friendly to display
         comp_index = ee.String(f'{method.value.upper()}-COMP')
         # set 'properties'->'system:index'
         comp_image = comp_image.set('system:index', comp_index)
@@ -586,6 +642,185 @@ class ImageCollectionAccessor:
         comp_image = comp_image.set('system:time_start', ee.Number(date_range.get('min')))
         comp_image = comp_image.set('system:time_end', ee.Number(date_range.get('max')))
         return comp_image
+
+    def prepareForExport(
+        self,
+        crs: str = None,
+        crs_transform: Sequence[float] = None,
+        shape: tuple[int, int] = None,
+        region: dict | ee.Geometry = None,
+        scale: float = None,
+        resampling: str | ResamplingMethod = BaseImageAccessor._default_resampling,
+        dtype: str = None,
+        scale_offset: bool = False,
+        bands: list[str | int] | str = None,
+    ) -> ee.ImageCollection:
+        """Prepare the collection for export."""
+        # prepare the first image with the given args
+        first = BaseImageAccessor(self._ee_coll.first()).prepareForExport(
+            crs=crs,
+            crs_transform=crs_transform,
+            shape=shape,
+            region=region,
+            scale=scale,
+            resampling=resampling,
+            dtype=dtype,
+            scale_offset=scale_offset,
+            bands=bands,
+        )
+        band_names = first.bandNames()
+        first = BaseImageAccessor(first)
+
+        # prepare the collection images to have the same grid and bounds as first
+        def prepare_image(ee_image: ee.Image) -> ee.Image:
+            return BaseImageAccessor(ee_image).prepareForExport(
+                crs=first.crs,
+                crs_transform=first.transform,
+                shape=first.shape,
+                resampling=resampling,
+                dtype=first.dtype,
+                scale_offset=scale_offset,
+                bands=band_names,
+            )
+
+        return self._ee_coll.map(prepare_image)
+
+    def toGeoTiff(
+        self,
+        dirname: os.PathLike | str,
+        overwrite: bool = False,
+        split: str | SplitType = SplitType.bands,
+        max_tile_size: float = BaseImageAccessor._ee_max_tile_size,
+        max_tile_dim: int = BaseImageAccessor._ee_max_tile_dim,
+        max_tile_bands: int = BaseImageAccessor._ee_max_tile_bands,
+        max_requests: int = BaseImageAccessor._max_requests,
+        max_cpus: int = None,
+    ) -> None:
+        """Export the collection to GeoTIFF files."""
+        split = SplitType(split)
+        self._raise_image_consistency()
+        images = self._split_images(split)
+
+        dirname = Path(dirname)
+        dirname.mkdir(exist_ok=True)
+        tqdm_kwargs = utils.get_tqdm_kwargs(desc=self.id, unit=split)
+
+        for name, image in tqdm(images.items(), **tqdm_kwargs):
+            filename = dirname.joinpath(str(name) + '.tif')
+            image.toGeoTiff(
+                filename,
+                overwrite=overwrite,
+                max_tile_size=max_tile_size,
+                max_tile_dim=max_tile_dim,
+                max_tile_bands=max_tile_bands,
+                max_requests=max_requests,
+                max_cpus=max_cpus,
+            )
+
+    def toNumPy(
+        self,
+        masked: bool = False,
+        structured: bool = False,
+        split: str | SplitType = SplitType.bands,
+        max_tile_size: float = BaseImageAccessor._ee_max_tile_size,
+        max_tile_dim: int = BaseImageAccessor._ee_max_tile_dim,
+        max_tile_bands: int = BaseImageAccessor._ee_max_tile_bands,
+        max_requests: int = BaseImageAccessor._max_requests,
+        max_cpus: int = None,
+    ) -> np.ndarray:
+        """Export the collection to a NumPy array."""
+        split = SplitType(split)
+        self._raise_image_consistency()
+        images = self._split_images(split)
+
+        first = next(iter(images.values()))
+        shape = (*first.shape, len(images), first.count)
+        dtype = first.dtype
+        if masked:
+            array = np.ma.zeros(shape, dtype=dtype)
+        else:
+            array = np.zeros(shape, dtype=dtype)
+
+        tqdm_kwargs = utils.get_tqdm_kwargs(desc=self.id, unit=split.value)
+        for i, image in enumerate(tqdm(images.values(), **tqdm_kwargs)):
+            array[:, :, i, :] = image.toNumPy(
+                masked=masked,
+                max_tile_size=max_tile_size,
+                max_tile_dim=max_tile_dim,
+                max_tile_bands=max_tile_bands,
+                max_requests=max_requests,
+                max_cpus=max_cpus,
+            )
+
+        if structured:
+            band_names = [bd['name'] for bd in first.band_properties]
+            image_names = [*images.keys()]
+
+            timestamps = [p.get('system:time_start', None) for p in self.properties.values()]
+            if all(timestamps):
+                date_strings = [
+                    datetime.fromtimestamp(ts / 1000).isoformat(timespec='seconds')
+                    for ts in timestamps
+                ]
+                if split is SplitType.bands:
+                    band_names = [*zip(date_strings, band_names)]
+                else:
+                    image_names = [*zip(date_strings, image_names)]
+
+            band_dtype = np.dtype([*zip(band_names, [array.dtype] * len(band_names))])
+            exp_dtype = np.dtype([*zip(image_names, [band_dtype] * len(images))])
+            array = array.reshape(*array.shape[:2], -1).view(dtype=exp_dtype).squeeze()
+
+        return array
+
+    def toXArray(
+        self,
+        masked: bool = False,
+        split: str | SplitType = SplitType.bands,
+        max_tile_size: float = BaseImageAccessor._ee_max_tile_size,
+        max_tile_dim: int = BaseImageAccessor._ee_max_tile_dim,
+        max_tile_bands: int = BaseImageAccessor._ee_max_tile_bands,
+        max_requests: int = BaseImageAccessor._max_requests,
+        max_cpus: int = None,
+    ) -> 'xarray.Dataset':
+        """Export the collection to an XArray DataSet."""
+        try:
+            import xarray
+        except ImportError:
+            raise ImportError("'toXArray()' requires the 'xarray' package to be installed.")
+
+        split = SplitType(split)
+        self._raise_image_consistency()
+        images = self._split_images(split)
+
+        arrays = {}
+        tqdm_kwargs = utils.get_tqdm_kwargs(desc=self.id, unit=split.value)
+        for name, image in tqdm(images.items(), **tqdm_kwargs):
+            arrays[name] = image.toXArray(
+                masked=masked,
+                max_tile_size=max_tile_size,
+                max_tile_dim=max_tile_dim,
+                max_tile_bands=max_tile_bands,
+                max_requests=max_requests,
+                max_cpus=max_cpus,
+            )
+
+        if split is SplitType.bands:
+            # TODO: add a system:index coordinate on the time dimension
+            timestamps = [p.get('system:time_start', None) for p in self.properties.values()]
+            if all(timestamps):
+                datetimes = [datetime.fromtimestamp(ts / 1000) for ts in timestamps]
+            else:
+                datetimes = range(len(timestamps))
+            for name, array in arrays.items():
+                array = array.rename(band='time')
+                array.coords['time'] = datetimes
+                arrays[name] = array
+
+        # TODO: add attrs like EE props from .info & STAC
+        attrs = next(iter(arrays.values())).attrs
+        attrs = {k: v for k, v in attrs.items() if k in ['crs', 'transform', 'nodata']}
+        return xarray.Dataset(arrays, attrs=attrs)
 
 
 class MaskedCollection(ImageCollectionAccessor):
