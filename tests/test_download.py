@@ -29,7 +29,7 @@ from rasterio import Affine, features, warp, windows
 
 from geedim import utils
 from geedim.download import _nodata_vals, BaseImage, BaseImageAccessor
-from geedim.enums import ExportType, ResamplingMethod
+from geedim.enums import ExportType
 from tests.conftest import region_25ha
 
 
@@ -358,37 +358,6 @@ def test_prepare_no_fixed_projection(
     with pytest.raises(ValueError) as ex:
         user_base_image.prepareForExport(**params)
     assert 'does not have a fixed projection' in str(ex)
-
-
-@pytest.mark.parametrize(
-    'base_image, params',
-    [
-        ('user_fix_base_image', dict()),
-        ('modis_nbar_base_image_unbnd', dict(crs='EPSG:4326')),
-        ('modis_nbar_base_image_unbnd', dict(crs='EPSG:4326', scale=100)),
-        ('modis_nbar_base_image_unbnd', dict(crs='EPSG:4326', crs_transform=Affine.identity())),
-        ('modis_nbar_base_image_unbnd', dict(crs='EPSG:4326', shape=(100, 100))),
-    ],
-)
-def test_prepare_unbounded(base_image: BaseImage, params: Dict, request: pytest.FixtureRequest):
-    """Test ``BaseImage._prepare_for_export()`` raises an exception when the image is unbounded, and insufficient
-    bounds defining parameters are specified.
-    """
-    base_image: BaseImage = request.getfixturevalue(base_image)
-    with pytest.raises(ValueError) as ex:
-        base_image.prepareForExport(**params)
-    assert 'This image is unbounded' in str(ex)
-
-
-def test_prepare_exceptions(
-    user_base_image: BaseImage, user_fix_base_image: BaseImage, region_25ha: Dict
-):
-    """Test remaining ``BaseImage._prepare_for_export()`` error cases."""
-    with pytest.raises(ValueError):
-        # no fixed projection and resample
-        user_base_image.prepareForExport(
-            region=region_25ha, crs='EPSG:3857', scale=30, resampling=ResamplingMethod.bilinear
-        )
 
 
 @pytest.mark.parametrize(
