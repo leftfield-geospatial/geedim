@@ -41,7 +41,6 @@ from rasterio.io import DatasetWriter
 from rasterio.shutil import RasterioIOError
 from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
-
 from geedim import utils
 from geedim.enums import ExportType, ResamplingMethod
 from geedim.stac import StacCatalog, StacItem
@@ -115,15 +114,16 @@ class BaseImageAccessor:
     @cached_property
     def _min_projection(self) -> dict[str, Any]:
         """Projection information of the minimum scale band."""
-        # TODO: some S2 images have 1x1 bands with scale of 1... e.g.
+        # TODO: some S2 images have 1x1 bands with meter scale of 1... e.g.
         #  'COPERNICUS/S2_SR_HARMONIZED/20170328T083601_20170328T084228_T35RNK'.  that will be an
         #  issue for BaseImageAccessor.projection() and its users too.
-        proj_info = dict(crs=None, transform=None, shape=None, scale=None)
+        proj_info = dict(crs=None, transform=None, shape=None, scale=None, id=None)
         bands = self.info.get('bands', []).copy()
         if len(bands) > 0:
             bands.sort(key=operator.itemgetter('scale'))
             band_info = bands[0]
 
+            proj_info['id'] = band_info['id']
             proj_info['crs'] = band_info['crs']
             proj_info['transform'] = rio.Affine(*band_info['crs_transform'])
             if ('origin' in band_info) and not any(np.isnan(band_info['origin'])):
@@ -172,12 +172,12 @@ class BaseImageAccessor:
     @property
     def date(self) -> datetime | None:
         """Acquisition date & time.  ``None`` if the ``system:time_start`` property is not present."""
-        if 'system:time_start' in self.properties:
-            return datetime.fromtimestamp(
-                self.properties['system:time_start'] / 1000, tz=timezone.utc
-            )
-        else:
-            return None
+        time_start = self.properties.get('system:time_start', None)
+        return (
+            datetime.fromtimestamp(time_start / 1000, tz=timezone.utc)
+            if time_start is not None
+            else None
+        )
 
     @property
     def crs(self) -> str | None:
@@ -600,7 +600,7 @@ class BaseImageAccessor:
         pause = 0.1
         status = ee.data.getOperation(task.name)
         label = label or status["metadata"]["description"]
-        tqdm_kwargs = BaseImageAccessor._get_tqdm_kwargs(desc=label)
+        tqdm_kwargs = utils.get_tqdm_kwargs(desc=label)
 
         # poll EE until the export preparation is complete
         with utils.Spinner(label=f"Preparing {tqdm_kwargs['desc']}: ", leave='done'):
@@ -810,10 +810,10 @@ class BaseImageAccessor:
         resampling: str | ResamplingMethod = _default_resampling,
         dtype: str = None,
         scale_offset: bool = False,
-        bands: list[str | int] | str = None,
+        bands: list[str | int] | str | ee.List = None,
     ) -> ee.Image:
         """
-        Prepare an image for export.
+        Prepare the image for export.
 
         Bounds and resolution of the prepared image can be specified with ``region`` and
         ``scale`` / ``shape``, or ``crs_transform`` and ``shape``.  Bounds default to those of
@@ -1031,13 +1031,18 @@ class BaseImageAccessor:
 
         :meth:`prepareForExport` can be called before this method to apply export parameters.
 
-        The image is retrieved as separate GeoTIFF tiles which are downloaded and read
+        The image is retrieved as separate tiles which are downloaded and decompressed
         concurrently.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
-        ``max_tile_bands``, and download / read concurrency with ``max_requests`` and ``max_cpus``.
+        ``max_tile_bands``, and download / decompress concurrency with ``max_requests`` and
+        ``max_cpus``.
 
-        The downloaded file is masked with a :attr:`dtype` dependent ``nodata`` value provided by
+        The downloaded file is masked with the :attr:`dtype` dependent ``nodata`` value provided by
         Earth Engine.  For integer types, this is the minimum value of the :attr:`dtype`,
         and for floating point types, it is ``float('-inf')``.
+        # TODO: make a nodata property and refer to that?
+
+        # TODO: document that the downloaded image has the projection, bounds & dtype
+        #  defined by the crs, transform, shape etc attributes.  also in other export fns.
 
         :param filename:
             Destination file name.
@@ -1056,7 +1061,7 @@ class BaseImageAccessor:
             requests quota <https://developers.google.com/earth-engine/guides/usage
             #adjustable_quota_limits>`__.
         :param max_cpus:
-            Maximum number of tile GeoTIFFs to read concurrently.  Defaults to two less than the
+            Maximum number of tiles to decompress concurrently.  Defaults to two less than the
             number of CPUs, or one, whichever is greater.  Values larger than the default can
             stall the asynchronous event loop and are not recommended.
         """
@@ -1094,7 +1099,7 @@ class BaseImageAccessor:
             exit_stack.enter_context(
                 logging_redirect_tqdm([logging.getLogger(__package__)], tqdm_class=tqdm)
             )
-            tqdm_kwargs = self._get_tqdm_kwargs(desc=filename.name, unit='tiles')
+            tqdm_kwargs = utils.get_tqdm_kwargs(desc=filename.name, unit='tiles')
 
             # Open the destination file. GDAL_NUM_THREADS='ALL_CPUS' is needed here for
             # building overviews once the download is complete.  It is overridden in nested
@@ -1134,6 +1139,7 @@ class BaseImageAccessor:
     def toNumPy(
         self,
         masked: bool = False,
+        structured: bool = False,
         max_tile_size: float = _ee_max_tile_size,
         max_tile_dim: int = _ee_max_tile_dim,
         max_tile_bands: int = _ee_max_tile_bands,
@@ -1145,15 +1151,19 @@ class BaseImageAccessor:
 
         :meth:`prepareForExport` can be called before this method to apply export parameters.
 
-        The image is retrieved as separate GeoTIFF tiles which are downloaded and read
+        The image is retrieved as separate tiles which are downloaded and decompressed
         concurrently.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
-        ``max_tile_bands``, and download / read concurrency with ``max_requests`` and ``max_cpus``.
+        ``max_tile_bands``, and download / decompress concurrency with ``max_requests`` and
+        ``max_cpus``.
 
         :param masked:
-            Return a :class:`~numpy.ma.masked_array` (``True``) or :class:`~numpy.ndarray`
+            Return a :class:`~numpy.ma.MaskedArray` (``True``) or :class:`~numpy.ndarray`
             (``False``).  If  ``False``, masked pixels are set to the :attr:`dtype` dependent
             ``nodata`` value provided by Earth Engine.  For integer types, this is the minimum
             :attr:`dtype` value, and for floating point types, it is ``float('-inf')``.
+        :param structured:
+            Return a structured array (in the same format as ``ee.data.computePixels()``)
+            (``True``), or an unstructured array (``False``).
         :param max_tile_size:
             Maximum tile size (MB).  Should be less than the `Earth Engine size limit
             <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (32 MB).
@@ -1163,16 +1173,16 @@ class BaseImageAccessor:
         :param max_tile_bands:
             Maximum number of tile bands.  Should be less than the Earth Engine limit (1024).
         :param max_requests:
-            Maximum number of concurrent Earth Engine requests.  Should be less than the `quota
-            limit <https://developers.google.com/earth-engine/guides/usage
+            Maximum number of concurrent tile downloads.  Should be less than the `max concurrent
+            requests quota <https://developers.google.com/earth-engine/guides/usage
             #adjustable_quota_limits>`__.
         :param max_cpus:
-            Maximum number of tiles to process concurrently.  Defaults to two less than the
+            Maximum number of tiles to decompress concurrently.  Defaults to two less than the
             number of CPUs, or one, whichever is greater.  Values larger than the default can
             stall the asynchronous event loop and are not recommended.
 
         :returns:
-            Image NumPy array with bands along the first dimension.
+            3D NumPy array with (y, x, bands) dimensions.
         """
         if not self.shape:
             raise ValueError(
@@ -1195,7 +1205,7 @@ class BaseImageAccessor:
             exit_stack.enter_context(
                 logging_redirect_tqdm([logging.getLogger(__package__)], tqdm_class=tqdm)
             )
-            tqdm_kwargs = self._get_tqdm_kwargs(desc=self.index, unit='tiles')
+            tqdm_kwargs = utils.get_tqdm_kwargs(desc=self.index, unit='tiles')
 
             # create a thread pool for writing tiles into the array, and possibly for running the
             # async event loop (see below)
@@ -1204,14 +1214,16 @@ class BaseImageAccessor:
             async def download_tiles() -> np.ndarray:
                 """Download and write tiles to array."""
 
+                # TODO: convert float nodata to nan?
                 if masked:
-                    array = np.ma.zeros((self.count, *self.shape), dtype=self.dtype)
+                    array = np.ma.zeros((*self.shape, self.count), dtype=self.dtype)
                 else:
-                    array = np.zeros((self.count, *self.shape), dtype=self.dtype)
+                    array = np.zeros((*self.shape, self.count), dtype=self.dtype)
 
                 def write_tile(tile: Tile, tile_array: np.ndarray):
                     """Write a tile array to file."""
-                    array[*tile.slices] = tile_array
+                    # TODO: change Tile class so this is neater
+                    array[*tile.slices[1:], tile.slices[0]] = np.moveaxis(tile_array, 0, -1)
 
                 async with self._tile_tasks(
                     tile_shape, masked=masked, max_requests=max_requests, max_cpus=max_cpus
@@ -1225,7 +1237,102 @@ class BaseImageAccessor:
 
             array = self._asyncio_run(download_tiles(), executor)
 
+        if structured:
+            # TODO: return crs & transform or otherwise include them with the array?
+            bands = [bd['name'] for bd in self.band_properties]
+            dtype = np.dtype(dict(names=bands, formats=[self.dtype] * len(bands)))
+            array = array.view(dtype=dtype).squeeze()
+
         return array
+
+    def toXArray(
+        self,
+        masked: bool = False,
+        max_tile_size: float = _ee_max_tile_size,
+        max_tile_dim: int = _ee_max_tile_dim,
+        max_tile_bands: int = _ee_max_tile_bands,
+        max_requests: int = _max_requests,
+        max_cpus: int = None,
+    ) -> xarray.DataArray:
+        """
+        Convert the image to an XArray DataAray.
+
+        :meth:`prepareForExport` can be called before this method to apply export parameters.
+
+        The image is retrieved as separate tiles which are downloaded and decompressed
+        concurrently.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
+        ``max_tile_bands``, and download / decompress concurrency with ``max_requests`` and
+        ``max_cpus``.
+
+        Masked pixels are set to a :attr:`dtype` dependent ``nodata`` value.  For integer types,
+        this is the minimum value of the :attr:`dtype`, and for floating point types,
+        it is ``float('-inf')``.
+
+        :param masked:
+            Return a floating point array with masked pixels set to NaN (``True``), or return a
+            :attr:`dtype` array with masked pixels set to the ``nodata`` value provided by Earth
+            Engine (``False``).  For integer types, ``nodata`` is the minimum :attr:`dtype`
+            value, and for floating point types, it is ``float('-inf')``.
+        :param max_tile_size:
+            Maximum tile size (MB).  Should be less than the `Earth Engine size limit
+            <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (32 MB).
+        :param max_tile_dim:
+            Maximum tile width / height (pixels).  Should be less than the `Earth Engine limit
+            <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (10000).
+        :param max_tile_bands:
+            Maximum number of tile bands.  Should be less than the Earth Engine limit (1024).
+        :param max_requests:
+            Maximum number of concurrent tile downloads.  Should be less than the `max concurrent
+            requests quota <https://developers.google.com/earth-engine/guides/usage
+            #adjustable_quota_limits>`__.
+        :param max_cpus:
+            Maximum number of tiles to decompress concurrently.  Defaults to two less than the
+            number of CPUs, or one, whichever is greater.  Values larger than the default can
+            stall the asynchronous event loop and are not recommended.
+
+        :returns:
+            Image DataArray.
+        """
+        try:
+            import xarray
+        except ImportError:
+            raise ImportError("'toXArray()' requires the 'xarray' package to be installed.")
+
+
+        if not self.transform[1] == self.transform[3] == 0:
+            raise ValueError(
+                "'The image cannot be exported to XArray as its 'transform' is not aligned with "
+                "its CRS axes.  It should be reprojected first."
+            )
+
+        array = self.toNumPy(
+            masked=masked,
+            max_tile_size=max_tile_size,
+            max_tile_dim=max_tile_dim,
+            max_tile_bands=max_tile_bands,
+            max_requests=max_requests,
+            max_cpus=max_cpus,
+        )
+
+        y = np.arange(0.5, array.shape[0] + 0.5) * self.transform[4] + self.transform[5]
+        x = np.arange(0.5, array.shape[1] + 0.5) * self.transform[0] + self.transform[2]
+        band = [bd['name'] for bd in self.band_properties]
+        coords = dict(y=y, x=x, band=band)
+
+        # TODO: with masked=True *int types get converted to float* in xarray.DataArray (only if
+        #  >0 pixels are masked).  it would be more memory efficient if it was downloaded as float*
+        #  with nan nodata in the first place.
+        attrs = dict(
+            crs=self.crs,
+            transform=self.transform,
+            nodata=_nodata_vals[self.dtype] if not masked else float('nan'),
+        )
+        # TODO: add STAC / EE attrs e.g. band wavelens etc in case we integrate xarray with
+        #  homonim. include date, index etc - could be useful when this is used via
+        #  CollectionAccessor.toXArray
+        # TODO: this dimension ordering is different to xee and rioxarray.  is it straightforward
+        #  to convert between formats?  are there any limitations to doing it like this?
+        return xarray.DataArray(data=array, coords=coords, dims=['y', 'x', 'band'], attrs=attrs)
 
 
 class BaseImage(BaseImageAccessor):
