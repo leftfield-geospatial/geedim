@@ -255,25 +255,23 @@ class ImageCollectionAccessor:
 
     @property
     def properties(self) -> dict[str, dict[str, Any]]:
-        """Dictionary of image properties.  Keys are the image IDs and values the image property
-        dictionaries.
+        """Dictionary of image properties.  Keys are the image indexes and values the image
+        property dictionaries.
         """
-        # TODO: decide if we're using indexes or ids and standardise everywhere. note that
-        #  index of an ee.Image is not necessarily the same as the index of the same image in a
-        #  collection e.g. if it is constructed as ee.ImageCollection([ee.Image(...), ...])
         if not self._properties:
             self._properties = {}
             for i, im_info in enumerate(self.info.get('features', [])):
                 im_props = im_info.get('properties', {})
-                im_id = im_info.get('id', i)
-                self._properties[im_id] = im_props
+                # collection images should always have unique indexes
+                im_index = im_props.get('system:index', str(i))
+                self._properties[im_index] = im_props
         return self._properties
 
     @property
     def propertiesTable(self) -> str:
         """:attr:`properties` formatted with :attr:`schema` as a printable table string."""
         coll_schema_props = []
-        for im_id, im_props in self.properties.items():
+        for im_props in self.properties.values():
             im_schema_props = {}
             for prop_name, prop_schema in self.schema.items():
                 prop_val = im_props.get(prop_name, None)
@@ -370,7 +368,9 @@ class ImageCollectionAccessor:
         return ee_coll
 
     def _raise_image_consistency(self) -> None:
-        """Raise an error if the collection image bands are not consistent."""
+        """Raise an error if the collection image bands are not consistent (i.e. don't have same
+        band names, projections or bounds; or don't have fixed projections).
+        """
         first_band_names = first_band = None
         band_compare_keys = ['crs', 'crs_transform', 'dimensions']
 
@@ -378,43 +378,56 @@ class ImageCollectionAccessor:
         #  scale band of each image should have a fixed projection and match all other min scale
         #  band's projection & bounds.  for band splitting, only the first the image should have
         #  all bands with fixed projections, and matching projections and bounds.
-        for im_id, im_props in self.properties.items():
-            im_bands = {bp['id']: bp for bp in im_props.get('bands', [])}
-            if not first_band_names:
-                first_band_names = im_bands.keys()
-            elif not im_bands.keys() == first_band_names:
-                raise ValueError("Inconsistent number of bands or band names.")
+        try:
+            for im_info in self.info.get('features', []):
+                cmp_bands = {bp['id']: bp for bp in im_info.get('bands', [])}
 
-            for band_id, band in im_bands.items():
-                cmp_band = {k: band.get(k, None) for k in band_compare_keys}
-                if not cmp_band['dimensions']:
-                    raise ValueError("One or more image bands do not have a fixed projection.")
-                if not first_band:
-                    first_band = cmp_band
-                elif cmp_band != first_band:
-                    raise ValueError("Inconsistent band projections or bounds.")
+                # test number of bands & names against the first image's bands
+                if not first_band_names:
+                    first_band_names = cmp_bands.keys()
+                elif not cmp_bands.keys() == first_band_names:
+                    raise ValueError("Inconsistent number of bands or band names.")
+
+                for band_id, band in cmp_bands.items():
+                    cmp_band = {k: band.get(k, None) for k in band_compare_keys}
+                    # test band has a fixed projections
+                    if not cmp_band['dimensions']:
+                        raise ValueError("One or more image bands do not have a fixed projection.")
+                    # test band projection & bounds against the first image's first band
+                    if not first_band:
+                        first_band = cmp_band
+                    elif cmp_band != first_band:
+                        raise ValueError("Inconsistent band projections or bounds.")
+        except ValueError as ex:
+            raise ValueError(
+                f"Cannot export collection: '{str(ex)}'.  You can call 'prepareForExport()' to "
+                f"create an export-ready collection."
+            )
 
     def _split_images(self, split: SplitType) -> dict[str, BaseImageAccessor]:
-        """Split the collection into a list of images."""
-        split = SplitType(split)
-
-        first_info = next(iter(self.info.get('features', [])))
-        first_band_names = [bi['id'] for bi in first_info.get('bands', [])]
-        indexes = [str(k).split('/')[-1] for k in self.properties.keys()]
+        """Split the collection into images according to ``split``."""
+        indexes = [*self.properties.keys()]
 
         if split is SplitType.bands:
+            # split collection into an image per band (i.e. the same band from every collection
+            # image form the bands of a new 'band' image)
+            first_info = next(iter(self.info.get('features', [])))
+            first_band_names = [bi['id'] for bi in first_info.get('bands', [])]
 
             def to_bands(band_name: ee.String) -> ee.Image:
                 ee_image = self._ee_coll.select(ee.String(band_name)).toBands()
+                # rename system:index to band name & band names to system indexes
                 ee_image = ee_image.set('system:index', band_name)
                 return ee_image.rename(indexes)
 
             im_list = ee.List(first_band_names).map(to_bands)
             im_names = first_band_names
         else:
+            # split collection into its images
             im_list = self._ee_coll.toList(self._max_export_images)
             im_names = indexes
 
+        # return a dictionary of image name keys, and BaseImageAccessor values
         return {k: BaseImageAccessor(ee.Image(im_list.get(i))) for i, k in enumerate(im_names)}
 
     def addMaskBands(self, **kwargs) -> ee.ImageCollection:
@@ -925,7 +938,9 @@ class MaskedCollection(ImageCollectionAccessor):
     @property
     def properties(self) -> dict[str, dict[str, Any]]:
         coll_schema_props = {}
-        for im_id, im_props in super().properties.items():
+        for i, im_info in enumerate(self.info.get('features', [])):
+            im_id = im_info.get('id', str(i))
+            im_props = im_info.get('properties', {})
             im_schema_props = {
                 key: im_props[key]
                 for key in self.schema.keys()

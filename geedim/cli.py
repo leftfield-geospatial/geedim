@@ -651,7 +651,9 @@ def search(
         logger.info('No images found\n')
     else:
         # store images for chained commands
-        obj.image_list += [ee.Image(ee_id) for ee_id in coll.gd.properties.keys()]
+        # TODO: can the chain store keep this as a collection?
+        im_list = coll.toList(coll.gd._max_export_images)
+        obj.image_list += [ee.Image(im_list.get(i)) for i in range(len(coll.gd.properties))]
         logger.info(f'{num_images} images found\n')
         logger.info(f'Image property descriptions:\n\n{coll.gd.schemaTable}\n')
         logger.info(f'Search Results:\n\n{coll.gd.propertiesTable}')
@@ -932,7 +934,7 @@ def export(obj, image_id, type, folder, bbox, region, like, mask, wait, **kwargs
     if wait:
         obj.image_list = [] if type == ExportType.asset else obj.image_list
         for task, im in zip(export_tasks, image_list):
-            BaseImageAccessor.monitor_export(task)
+            BaseImageAccessor.monitorExport(task)
             if type == ExportType.asset:
                 # add asset images, so they can be downloaded or composited with chained commands
                 obj.image_list += [ee.Image(asset_id(_im_name(im), folder))]
