@@ -200,8 +200,7 @@ def test_id_name(user_base_image: BaseImage, s2_sr_hm_base_image: BaseImage):
     """Test ``id`` and ``name`` properties for different scenarios."""
     assert user_base_image.id is None
     assert user_base_image.name is None
-    # check that BaseImage.from_id() sets id without a getInfo
-    assert s2_sr_hm_base_image._id is not None
+    assert s2_sr_hm_base_image.id is not None
     assert s2_sr_hm_base_image.name == s2_sr_hm_base_image.id.replace('/', '-')
 
 

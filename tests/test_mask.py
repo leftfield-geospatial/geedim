@@ -36,13 +36,6 @@ def test_class_from_id(landsat_image_ids, s2_sr_image_id, s2_toa_hm_image_id, ge
     assert class_from_id(s2_toa_hm_image_id) == _Sentinel2ToaImage
 
 
-def test_from_id():
-    """Test MaskedImage.from_id() sets _id."""
-    ee_id = 'MODIS/006/MCD43A4/2022_01_01'
-    gd_image = MaskedImage.from_id(ee_id)
-    assert gd_image._id == ee_id
-
-
 @pytest.mark.parametrize(
     'masked_image',
     [
@@ -534,6 +527,8 @@ def test_mask_clouds(
         mask = mask.filled(0).astype('bool')
         ds_masks = ds.read_masks().astype('bool')
         assert np.all(mask == ds_masks)
+
+        # TODO: test CLOUDLESS_MASK < FILL_MASK < whole image
 
 
 @pytest.mark.parametrize(
