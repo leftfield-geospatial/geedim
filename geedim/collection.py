@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import json
 from datetime import datetime, timezone
 from functools import cached_property
 from pathlib import Path
@@ -398,6 +399,7 @@ class ImageCollectionAccessor:
                         first_band = cmp_band
                     elif cmp_band != first_band:
                         raise ValueError("Inconsistent band projections or bounds.")
+
         except ValueError as ex:
             raise ValueError(
                 f"Cannot export collection: '{str(ex)}'.  You can call 'prepareForExport()' to "
@@ -669,7 +671,8 @@ class ImageCollectionAccessor:
         bands: list[str | int] | str = None,
     ) -> ee.ImageCollection:
         """Prepare the collection for export."""
-        # prepare the first image with the given args
+        # TODO: can these args be passed and documented as kwargs?
+        # apply the export args to the first image
         first = BaseImageAccessor(self._ee_coll.first()).prepareForExport(
             crs=crs,
             crs_transform=crs_transform,
@@ -684,7 +687,7 @@ class ImageCollectionAccessor:
         band_names = first.bandNames()
         first = BaseImageAccessor(first)
 
-        # prepare the collection images to have the same grid and bounds as first
+        # prepare collection images to have the same grid and bounds as the first image
         def prepare_image(ee_image: ee.Image) -> ee.Image:
             return BaseImageAccessor(ee_image).prepareForExport(
                 crs=first.crs,
@@ -698,7 +701,7 @@ class ImageCollectionAccessor:
 
         return self._ee_coll.map(prepare_image)
 
-    def toGeoTiff(
+    def toGeoTIFF(
         self,
         dirname: os.PathLike | str,
         overwrite: bool = False,
@@ -710,17 +713,19 @@ class ImageCollectionAccessor:
         max_cpus: int = None,
     ) -> None:
         """Export the collection to GeoTIFF files."""
+        # TODO: can the max_* args be passed and documented as kwargs?
         split = SplitType(split)
         self._raise_image_consistency()
         images = self._split_images(split)
 
         dirname = Path(dirname)
         dirname.mkdir(exist_ok=True)
-        tqdm_kwargs = utils.get_tqdm_kwargs(desc=self.id, unit=split)
+        tqdm_kwargs = utils.get_tqdm_kwargs(desc=self.id or 'Collection', unit=split)
 
+        # download the split images sequentially, each into its own file
         for name, image in tqdm(images.items(), **tqdm_kwargs):
             filename = dirname.joinpath(str(name) + '.tif')
-            image.toGeoTiff(
+            image.toGeoTIFF(
                 filename,
                 overwrite=overwrite,
                 max_tile_size=max_tile_size,
@@ -746,6 +751,7 @@ class ImageCollectionAccessor:
         self._raise_image_consistency()
         images = self._split_images(split)
 
+        # initialise the destination array
         first = next(iter(images.values()))
         shape = (*first.shape, len(images), first.count)
         dtype = first.dtype
@@ -754,6 +760,7 @@ class ImageCollectionAccessor:
         else:
             array = np.zeros(shape, dtype=dtype)
 
+        # download the split image arrays sequentially, copying into the destination array
         tqdm_kwargs = utils.get_tqdm_kwargs(desc=self.id, unit=split.value)
         for i, image in enumerate(tqdm(images.values(), **tqdm_kwargs)):
             array[:, :, i, :] = image.toNumPy(
@@ -766,11 +773,14 @@ class ImageCollectionAccessor:
             )
 
         if structured:
+            # create a structured data dtype to describe the last 2 array dimensions
             band_names = [bd['name'] for bd in first.band_properties]
             image_names = [*images.keys()]
 
             timestamps = [p.get('system:time_start', None) for p in self.properties.values()]
             if all(timestamps):
+                # zip date string 'title's with the corresponding system:index 'name's (allows
+                # the time dimension to be indexed by date string or system:index)
                 date_strings = [
                     datetime.fromtimestamp(ts / 1000).isoformat(timespec='seconds')
                     for ts in timestamps
@@ -780,8 +790,12 @@ class ImageCollectionAccessor:
                 else:
                     image_names = [*zip(date_strings, image_names)]
 
+            # nest the structured data type for a split image's bands (last array dimension) in the
+            # structured data type for the split images (second last array dimension)
             band_dtype = np.dtype([*zip(band_names, [array.dtype] * len(band_names))])
             exp_dtype = np.dtype([*zip(image_names, [band_dtype] * len(images))])
+
+            # create a view of the array with the last 2 dimensions as the structured dtype
             array = array.reshape(*array.shape[:2], -1).view(dtype=exp_dtype).squeeze()
 
         return array
@@ -806,6 +820,7 @@ class ImageCollectionAccessor:
         self._raise_image_consistency()
         images = self._split_images(split)
 
+        # download the split image DataArrays sequentially, storing in a dict
         arrays = {}
         tqdm_kwargs = utils.get_tqdm_kwargs(desc=self.id, unit=split.value)
         for name, image in tqdm(images.items(), **tqdm_kwargs):
@@ -819,20 +834,35 @@ class ImageCollectionAccessor:
             )
 
         if split is SplitType.bands:
+            # change the 'band' coordinate and dimension in each DataArray to 'time'
             # TODO: add a system:index coordinate on the time dimension
+            # TODO: xee has the 'primary dimension' property as an arg (we could do this too,
+            #  or add obvious choices like system:index and system:time_end coordinates on the
+            #  time dimension)
             timestamps = [p.get('system:time_start', None) for p in self.properties.values()]
             if all(timestamps):
-                datetimes = [datetime.fromtimestamp(ts / 1000) for ts in timestamps]
+                datetimes = [np.datetime64(ts, 'ms') for ts in timestamps]
             else:
                 datetimes = range(len(timestamps))
+
             for name, array in arrays.items():
                 array = array.rename(band='time')
                 array.coords['time'] = datetimes
                 arrays[name] = array
 
-        # TODO: add attrs like EE props from .info & STAC
-        attrs = next(iter(arrays.values())).attrs
-        attrs = {k: v for k, v in attrs.items() if k in ['crs', 'transform', 'nodata']}
+        # create attributes dict
+        attrs = dict(id=self.id or None)
+        # copy rioxarray required attributes from the first DataArray
+        for array in arrays.values():
+            attrs.update(**{k: array.attrs[k] for k in ['crs', 'transform', 'nodata']})
+            break
+        # add EE / STAC attributes (use json strings here, then drop all Nones for serialisation
+        # compatibility e.g. netcdf)
+        attrs['ee'] = json.dumps(self.info['properties']) if 'properties' in self.info else None
+        attrs['stac'] = json.dumps(self.stac._item_dict) if self.stac else None
+        attrs = {k: v for k, v in attrs.items() if v is not None}
+
+        # return a DataSet of split image DataArrays
         return xarray.Dataset(arrays, attrs=attrs)
 
 

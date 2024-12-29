@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import operator
 import os
@@ -41,6 +42,7 @@ from rasterio.io import DatasetWriter
 from rasterio.shutil import RasterioIOError
 from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
+
 from geedim import utils
 from geedim.enums import ExportType, ResamplingMethod
 from geedim.stac import StacCatalog, StacItem
@@ -1016,7 +1018,7 @@ class BaseImageAccessor:
             BaseImageAccessor.monitorExport(task)
         return task
 
-    def toGeoTiff(
+    def toGeoTIFF(
         self,
         filename: os.PathLike | str,
         overwrite: bool = False,
@@ -1205,7 +1207,8 @@ class BaseImageAccessor:
             exit_stack.enter_context(
                 logging_redirect_tqdm([logging.getLogger(__package__)], tqdm_class=tqdm)
             )
-            tqdm_kwargs = utils.get_tqdm_kwargs(desc=self.index, unit='tiles')
+            desc = self.index or self.id or 'Image'
+            tqdm_kwargs = utils.get_tqdm_kwargs(desc=desc, unit='tiles')
 
             # create a thread pool for writing tiles into the array, and possibly for running the
             # async event loop (see below)
@@ -1253,7 +1256,7 @@ class BaseImageAccessor:
         max_tile_bands: int = _ee_max_tile_bands,
         max_requests: int = _max_requests,
         max_cpus: int = None,
-    ) -> xarray.DataArray:
+    ) -> 'xarray.DataArray':
         """
         Convert the image to an XArray DataAray.
 
@@ -1298,7 +1301,7 @@ class BaseImageAccessor:
         except ImportError:
             raise ImportError("'toXArray()' requires the 'xarray' package to be installed.")
 
-
+        # TODO: add other checks
         if not self.transform[1] == self.transform[3] == 0:
             raise ValueError(
                 "'The image cannot be exported to XArray as its 'transform' is not aligned with "
@@ -1322,14 +1325,23 @@ class BaseImageAccessor:
         # TODO: with masked=True *int types get converted to float* in xarray.DataArray (only if
         #  >0 pixels are masked).  it would be more memory efficient if it was downloaded as float*
         #  with nan nodata in the first place.
+        # create attributes dict
         attrs = dict(
+            id=self.id, date=self.date.isoformat(timespec='milliseconds') if self.date else None
+        )
+        # add rioxarray required attributes
+        attrs.update(
             crs=self.crs,
             transform=self.transform,
             nodata=_nodata_vals[self.dtype] if not masked else float('nan'),
         )
-        # TODO: add STAC / EE attrs e.g. band wavelens etc in case we integrate xarray with
-        #  homonim. include date, index etc - could be useful when this is used via
-        #  CollectionAccessor.toXArray
+        # add EE / STAC attributes (use json strings here, then drop all Nones for serialisation
+        # compatibility e.g. netcdf)
+        attrs['ee'] = json.dumps(self.properties) if self.properties else None
+        attrs['stac'] = json.dumps(self.stac._item_dict) if self.stac else None
+        attrs = {k: v for k, v in attrs.items() if v is not None}
+        # TODO: see xee's scale and units attributes
+
         # TODO: this dimension ordering is different to xee and rioxarray.  is it straightforward
         #  to convert between formats?  are there any limitations to doing it like this?
         return xarray.DataArray(data=array, coords=coords, dims=['y', 'x', 'band'], attrs=attrs)
@@ -1494,7 +1506,7 @@ class BaseImage(BaseImageAccessor):
                 "can be used to limit concurrency."
             )
         export_image = BaseImageAccessor(self.prepareForExport(**export_kwargs))
-        export_image.toGeoTiff(
+        export_image.toGeoTIFF(
             filename,
             overwrite,
             max_tile_size=max_tile_size,
