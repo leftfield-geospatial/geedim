@@ -265,8 +265,15 @@ class BaseImageAccessor:
         return self.info.get('properties', {})
 
     @property
+    def bandNames(self) -> list[str]:
+        """List of the image band names."""
+        bands = self.info.get('bands', [])
+        return [bd['id'] for bd in bands]
+
+    @property
     def band_properties(self) -> list[dict]:
         """Merged STAC and Earth Engine band properties."""
+        # TODO: possibly remove after we've decided how to deal with STAC
         return self._get_band_properties()
 
     @property
@@ -358,15 +365,14 @@ class BaseImageAccessor:
 
     def _get_band_properties(self) -> list[dict]:
         """Merge Earth Engine and STAC band properties for this image."""
-        band_ids = [bd['id'] for bd in self.info.get('bands', [])]
         if self.stac:
             stac_bands_props = self.stac.band_props
             band_props = [
                 stac_bands_props[bid] if bid in stac_bands_props else dict(name=bid)
-                for bid in band_ids
+                for bid in self.bandNames
             ]
         else:  # just use the image band IDs
-            band_props = [dict(name=bid) for bid in band_ids]
+            band_props = [dict(name=bid) for bid in self.bandNames]
         return band_props
 
     def _get_tile_shape(

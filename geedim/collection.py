@@ -670,8 +670,61 @@ class ImageCollectionAccessor:
         scale_offset: bool = False,
         bands: list[str | int] | str = None,
     ) -> ee.ImageCollection:
-        """Prepare the collection for export."""
-        # TODO: can these args be passed and documented as kwargs?
+        """
+        Prepare the collection for export.
+
+        Bounds and resolution of the collection images can be specified with ``region`` and
+        ``scale`` / ``shape``, or ``crs_transform`` and ``shape``.  Bounds default to those of
+        the first image when they are not specified (with either ``region``, or ``crs_transform``
+        & ``shape``).
+
+        All images in the prepared collection share a common pixel grid and bounds.
+
+        When ``crs``, ``scale``, ``crs_transform`` & ``shape`` are not provided, the pixel grids
+        of the prepared images and first source image will match (i.e. if all source images share
+        a pixel grid, the pixel grid of all prepared and source images will match).
+
+        ..warning::
+            The prepared collection images are reprojected and clipped versions of their
+            source images. This type of image is `not recommended
+            <https://developers.google.com/earth-engine/guides/best_practices>`__ for use in map
+            display or further computation.
+
+        :param crs:
+            CRS of the prepared images as an EPSG or WKT string.  All image bands are
+            re-projected to this CRS.  Defaults to the CRS of the minimum scale band of the first
+            image.
+        :param crs_transform:
+            Geo-referencing transform of the prepared images, as a sequence of 6 numbers.  In
+            row-major order: [xScale, xShearing, xTranslation, yShearing, yScale, yTranslation].
+            All image bands are re-projected to this transform.
+        :param shape:
+            (height, width) dimensions of the prepared images in pixels.
+        :param region:
+            Region defining the prepared image bounds as a GeoJSON dictionary or ``ee.Geometry``.
+            Defaults to the geometry of the first image.
+        :param scale:
+            Pixel scale (m) of the prepared images.  All image bands are re-projected to this
+            scale. Ignored if ``crs`` and ``crs_transform`` are provided.  Defaults to the
+            minimum scale of the first image's bands.
+        :param resampling:
+            Resampling method to use for reprojecting.  Ignored for images without fixed
+            projections e.g. composites.  Composites can be resampled by resampling their
+            component images.
+        :param dtype:
+            Data type of the prepared images (``uint8``, ``int8``, ``uint16``, ``int16``,
+            ``uint32``, ``int32``, ``float32`` or ``float64``).  Defaults to the minimum size
+            data type able to represent all of the first image's bands.
+        :param scale_offset:
+            Whether to apply any STAC band scales and offsets to the images (e.g. for converting
+            digital numbers to physical units).
+        :param bands:
+            Bands to include in the prepared images as a list of names / indexes, or a regex
+            string.  Defaults to all bands of the first image.
+
+        :return:
+            Prepared collection.
+        """
         # apply the export args to the first image
         first = BaseImageAccessor(self._ee_coll.first()).prepareForExport(
             crs=crs,
@@ -684,7 +737,6 @@ class ImageCollectionAccessor:
             scale_offset=scale_offset,
             bands=bands,
         )
-        band_names = first.bandNames()
         first = BaseImageAccessor(first)
 
         # prepare collection images to have the same grid and bounds as the first image
@@ -696,7 +748,7 @@ class ImageCollectionAccessor:
                 resampling=resampling,
                 dtype=first.dtype,
                 scale_offset=scale_offset,
-                bands=band_names,
+                bands=first.bandNames,
             )
 
         return self._ee_coll.map(prepare_image)
@@ -713,6 +765,7 @@ class ImageCollectionAccessor:
         max_cpus: int = None,
     ) -> None:
         """Export the collection to GeoTIFF files."""
+        # TODO: document limitation on number of images.
         # TODO: can the max_* args be passed and documented as kwargs?
         split = SplitType(split)
         self._raise_image_consistency()
@@ -774,7 +827,7 @@ class ImageCollectionAccessor:
 
         if structured:
             # create a structured data dtype to describe the last 2 array dimensions
-            band_names = [bd['name'] for bd in first.band_properties]
+            band_names = first.bandNames
             image_names = [*images.keys()]
 
             timestamps = [p.get('system:time_start', None) for p in self.properties.values()]
@@ -835,7 +888,6 @@ class ImageCollectionAccessor:
 
         if split is SplitType.bands:
             # change the 'band' coordinate and dimension in each DataArray to 'time'
-            # TODO: add a system:index coordinate on the time dimension
             # TODO: xee has the 'primary dimension' property as an arg (we could do this too,
             #  or add obvious choices like system:index and system:time_end coordinates on the
             #  time dimension)
