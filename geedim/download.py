@@ -1,17 +1,17 @@
 """
-   Copyright 2021 Dugal Harris - dugalh@gmail.com
+Copyright 2021 Dugal Harris - dugalh@gmail.com
 
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-       http://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from functools import cached_property
 from io import BytesIO
 from itertools import product
 from pathlib import Path
-from typing import Any, Generator, Sequence, TypeVar, Coroutine
+from typing import Any, Coroutine, Generator, Sequence, TypeVar
 
 import aiohttp
 import ee
@@ -48,10 +48,12 @@ from geedim.enums import ExportType, ResamplingMethod
 from geedim.stac import StacCatalog, StacItem
 from geedim.tile import Tile
 
+try:
+    import xarray
+except ImportError:
+    xarray = None
+
 logger = logging.getLogger(__name__)
-# import urllib3
-#
-# urllib3.add_stderr_logger()
 
 _nodata_vals = dict(
     uint8=0,
@@ -138,21 +140,6 @@ class BaseImageAccessor:
         return proj_info
 
     @cached_property
-    def id(self) -> str | None:
-        """Earth Engine ID."""
-        return self.info.get('id', None)
-
-    @cached_property
-    def index(self) -> str | None:
-        """Earth Engine index."""
-        return self.properties.get('system:index', None)
-
-    @cached_property
-    def stac(self) -> StacItem | None:
-        """STAC information.  ``None`` if there is no STAC entry for this image."""
-        return StacCatalog().get_item(self.id)
-
-    @cached_property
     def info(self) -> dict[str, Any]:
         """Earth Engine information as returned by :meth:`ee.Image.getInfo`, with scales in
         meters added to band dictionaries.
@@ -171,6 +158,21 @@ class BaseImageAccessor:
             bdict['scale'] = scale
         return ee_info
 
+    @cached_property
+    def stac(self) -> StacItem | None:
+        """STAC information.  ``None`` if there is no STAC entry for this image."""
+        return StacCatalog().get_item(self.id)
+
+    @cached_property
+    def id(self) -> str | None:
+        """Earth Engine ID."""
+        return self.info.get('id', None)
+
+    @cached_property
+    def index(self) -> str | None:
+        """Earth Engine index."""
+        return self.properties.get('system:index', None)
+
     @property
     def date(self) -> datetime | None:
         """Acquisition date & time.  ``None`` if the ``system:time_start`` property is not present."""
@@ -182,22 +184,19 @@ class BaseImageAccessor:
         )
 
     @property
+    def properties(self) -> dict[str, Any]:
+        """Earth Engine image properties."""
+        return self.info.get('properties', {})
+
+    @property
     def crs(self) -> str | None:
         """CRS of the minimum scale band."""
         return self._min_projection['crs']
 
     @property
-    def scale(self) -> float | None:
-        """Minimum scale of the image bands (meters)."""
-        return self._min_projection['scale']
-
-    @property
-    def geometry(self) -> dict | None:
-        """GeoJSON geometry of the image extent.  ``None`` if the image has no fixed projection."""
-        if 'properties' not in self.info or 'system:footprint' not in self.info['properties']:
-            return None
-        footprint = self.info['properties']['system:footprint']
-        return ee.Geometry(footprint).toGeoJSON()
+    def transform(self) -> list[float] | None:
+        """Geo-referencing transform of the minimum scale band."""
+        return self._min_projection['transform']
 
     @property
     def shape(self) -> tuple[int, int] | None:
@@ -210,11 +209,6 @@ class BaseImageAccessor:
     def count(self) -> int:
         """Number of image bands."""
         return len(self.info.get('bands', []))
-
-    @property
-    def transform(self) -> list[float] | None:
-        """Geotransform of the minimum scale band."""
-        return self._min_projection['transform']
 
     @cached_property
     def dtype(self) -> str:
@@ -252,17 +246,56 @@ class BaseImageAccessor:
         return dtype
 
     @property
+    def nodata(self) -> float | int | None:
+        """Masked pixel value used by Earth Engine when exporting.
+
+        For integer :attr:`dtype`, this is the minimum possible value, and for floating point
+        :attr:`dtype`, it is ``float('-inf')``.
+        """
+        return _nodata_vals[self.dtype]
+
+    @property
     def size(self) -> int | None:
-        """Image size (bytes).  ``None`` if the image has no fixed projection."""
+        """Image export size (bytes).  ``None`` if the image has no fixed projection."""
         if not self.shape:
             return None
         dtype_size = np.dtype(self.dtype).itemsize
         return self.shape[0] * self.shape[1] * self.count * dtype_size
 
     @property
-    def properties(self) -> dict[str, Any]:
-        """Earth Engine image properties."""
-        return self.info.get('properties', {})
+    def profile(self) -> dict[str, Any] | None:
+        """Export image profile for Rasterio.  ``None`` if the image has no fixed projection."""
+        # TODO: allow setting a custom nodata value with ee.Image.unmask() - see #21
+        if not self.shape:
+            return None
+        return dict(
+            crs=utils.rio_crs(self.crs),
+            transform=self.transform,
+            width=self.shape[1],
+            height=self.shape[0],
+            count=self.count,
+            dtype=self.dtype,
+        )
+
+    @property
+    def scale(self) -> float | None:
+        """Minimum scale of the image bands (meters)."""
+        return self._min_projection['scale']
+
+    @property
+    def geometry(self) -> dict | None:
+        """GeoJSON geometry of the image extent.  ``None`` if the image has no fixed projection."""
+        if 'properties' not in self.info or 'system:footprint' not in self.info['properties']:
+            return None
+        footprint = self.info['properties']['system:footprint']
+        return ee.Geometry(footprint).toGeoJSON()
+
+    @property
+    def bounded(self) -> bool:
+        """Whether the image is bounded."""
+        return self.geometry is not None and (
+            features.bounds(self.geometry) != (-180, -90, 180, 90)
+        )
 
     @property
     def bandNames(self) -> list[str]:
@@ -286,29 +319,6 @@ class BaseImageAccessor:
         return [
             bname for bname, bdict in self.stac.band_props.items() if 'center_wavelength' in bdict
         ]
-
-    @property
-    def profile(self) -> dict[str, Any] | None:
-        """Rasterio image profile.  ``None`` if the image has no fixed projection."""
-        # TODO: allow setting a custom nodata value with ee.Image.unmask() - see #21
-        if not self.shape:
-            return None
-        return dict(
-            crs=utils.rio_crs(self.crs),
-            transform=self.transform,
-            width=self.shape[1],
-            height=self.shape[0],
-            count=self.count,
-            dtype=self.dtype,
-            nodata=_nodata_vals[self.dtype],
-        )
-
-    @property
-    def bounded(self) -> bool:
-        """Whether the image is bounded."""
-        return self.geometry is not None and (
-            features.bounds(self.geometry) != (-180, -90, 180, 90)
-        )
 
     @staticmethod
     def _build_overviews(ds: DatasetWriter, max_num_levels: int = 8, min_level_pixels: int = 256):
@@ -607,7 +617,7 @@ class BaseImageAccessor:
         """
         pause = 0.1
         status = ee.data.getOperation(task.name)
-        label = label or status["metadata"]["description"]
+        label = label or status['metadata']['description']
         tqdm_kwargs = utils.get_tqdm_kwargs(desc=label)
 
         # poll EE until the export preparation is complete
@@ -1028,6 +1038,7 @@ class BaseImageAccessor:
         self,
         filename: os.PathLike | str,
         overwrite: bool = False,
+        nodata: bool | int | float = True,
         max_tile_size: float = _ee_max_tile_size,
         max_tile_dim: int = _ee_max_tile_dim,
         max_tile_bands: int = _ee_max_tile_bands,
@@ -1035,9 +1046,11 @@ class BaseImageAccessor:
         max_cpus: int = None,
     ) -> None:
         """
-        Download the image to a GeoTIFF file.
+        Export the image to a GeoTIFF file.
 
-        :meth:`prepareForExport` can be called before this method to apply export parameters.
+        Export projection and bounds are defined by :attr:`crs`, :attr:`transform` and
+        :attr:`shape`, and data type by :attr:`dtype`. :meth:`prepareForExport` can be called
+        before this method to apply other export parameters.
 
         The image is retrieved as separate tiles which are downloaded and decompressed
         concurrently.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
@@ -1047,15 +1060,16 @@ class BaseImageAccessor:
         The downloaded file is masked with the :attr:`dtype` dependent ``nodata`` value provided by
         Earth Engine.  For integer types, this is the minimum value of the :attr:`dtype`,
         and for floating point types, it is ``float('-inf')``.
-        # TODO: make a nodata property and refer to that?
-
-        # TODO: document that the downloaded image has the projection, bounds & dtype
-        #  defined by the crs, transform, shape etc attributes.  also in other export fns.
 
         :param filename:
             Destination file name.
         :param overwrite:
             Whether to overwrite the destination file if it exists.
+        :param nodata:
+            Set the GeoTIFF nodata tag to :attr:`nodata` (``True``), or leave the nodata tag
+            unset (``False``).  Otherwise, if a custom integer or floating point value is
+            provided, the nodata tag is set to this value.  Usually, a custom value would be
+            provided when the image has been unmasked with ``ee.Image.unmask(nodata)``.
         :param max_tile_size:
             Maximum tile size (MB).  Should be less than the `Earth Engine size limit
             <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (32 MB).
@@ -1098,8 +1112,17 @@ class BaseImageAccessor:
 
         # create a rasterio profile for the destination file
         profile = self.profile
+        if nodata is True:
+            nodata = _nodata_vals[self.dtype]
+        elif nodata is False:
+            nodata = None
         profile.update(
-            driver='GTiff', compress='deflate', interleave='band', tiled=True, bigtiff='if_safer'
+            driver='GTiff',
+            compress='deflate',
+            interleave='band',
+            tiled=True,
+            bigtiff='if_safer',
+            nodata=nodata,
         )
 
         with ExitStack() as exit_stack:
@@ -1155,9 +1178,11 @@ class BaseImageAccessor:
         max_cpus: int = None,
     ) -> np.ndarray:
         """
-        Convert the image to a NumPy array.
+        Export the image to a NumPy array.
 
-        :meth:`prepareForExport` can be called before this method to apply export parameters.
+        Export projection and bounds are defined by :attr:`crs`, :attr:`transform` and
+        :attr:`shape`, and data type by :attr:`dtype`. :meth:`prepareForExport` can be called
+        before this method to apply other export parameters.
 
         The image is retrieved as separate tiles which are downloaded and decompressed
         concurrently.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
@@ -1166,9 +1191,7 @@ class BaseImageAccessor:
 
         :param masked:
             Return a :class:`~numpy.ma.MaskedArray` (``True``) or :class:`~numpy.ndarray`
-            (``False``).  If  ``False``, masked pixels are set to the :attr:`dtype` dependent
-            ``nodata`` value provided by Earth Engine.  For integer types, this is the minimum
-            :attr:`dtype` value, and for floating point types, it is ``float('-inf')``.
+            (``False``).  If  ``False``, masked pixels are set to the :attr:`nodata` value.
         :param structured:
             Return a structured array (in the same format as ``ee.data.computePixels()``)
             (``True``), or an unstructured array (``False``).
@@ -1262,26 +1285,24 @@ class BaseImageAccessor:
         max_tile_bands: int = _ee_max_tile_bands,
         max_requests: int = _max_requests,
         max_cpus: int = None,
-    ) -> 'xarray.DataArray':
+    ) -> xarray.DataArray:
         """
-        Convert the image to an XArray DataAray.
+        Export the image to an XArray DataAray.
 
-        :meth:`prepareForExport` can be called before this method to apply export parameters.
+        Export projection and bounds are defined by the image :attr:`crs`, :attr:`transform` and
+        :attr:`shape`, and data type by :attr:`dtype`. :meth:`prepareForExport` can be called
+        before this method to apply other export parameters.
 
         The image is retrieved as separate tiles which are downloaded and decompressed
         concurrently.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
         ``max_tile_bands``, and download / decompress concurrency with ``max_requests`` and
         ``max_cpus``.
 
-        Masked pixels are set to a :attr:`dtype` dependent ``nodata`` value.  For integer types,
-        this is the minimum value of the :attr:`dtype`, and for floating point types,
-        it is ``float('-inf')``.
-
         :param masked:
-            Return a floating point array with masked pixels set to NaN (``True``), or return a
-            :attr:`dtype` array with masked pixels set to the ``nodata`` value provided by Earth
-            Engine (``False``).  For integer types, ``nodata`` is the minimum :attr:`dtype`
-            value, and for floating point types, it is ``float('-inf')``.
+            Set masked pixels in the returned array to NaN (``True``), or to the :attr:`nodata`
+            value (``False``).  If ``True``, the image :attr:`dtype` is integer, and one or more
+            pixels are masked, the returned array is converted to a minimal floating point type
+            able to represent :attr:`dtype`.
         :param max_tile_size:
             Maximum tile size (MB).  Should be less than the `Earth Engine size limit
             <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (32 MB).
@@ -1302,9 +1323,7 @@ class BaseImageAccessor:
         :returns:
             Image DataArray.
         """
-        try:
-            import xarray
-        except ImportError:
+        if not xarray:
             raise ImportError("'toXArray()' requires the 'xarray' package to be installed.")
 
         # TODO: add other checks
@@ -1328,9 +1347,6 @@ class BaseImageAccessor:
         band = [bd['name'] for bd in self.band_properties]
         coords = dict(y=y, x=x, band=band)
 
-        # TODO: with masked=True *int types get converted to float* in xarray.DataArray (only if
-        #  >0 pixels are masked).  it would be more memory efficient if it was downloaded as float*
-        #  with nan nodata in the first place.
         # create attributes dict
         attrs = dict(
             id=self.id, date=self.date.isoformat(timespec='milliseconds') if self.date else None
