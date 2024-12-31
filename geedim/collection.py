@@ -1,25 +1,25 @@
 """
-    Copyright 2021 Dugal Harris - dugalh@gmail.com
+Copyright 2021 Dugal Harris - dugalh@gmail.com
 
-    Licensed under the Apache License, Version 2.0 (the "License");
-    you may not use this file except in compliance with the License.
-    You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-       http://www.apache.org/licenses/LICENSE-2.0
+   http://www.apache.org/licenses/LICENSE-2.0
 
-    Unless required by applicable law or agreed to in writing, software
-    distributed under the License is distributed on an "AS IS" BASIS,
-    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-    See the License for the specific language governing permissions and
-    limitations under the License.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
-import json
 from datetime import datetime, timezone
 from functools import cached_property
 from pathlib import Path
@@ -35,10 +35,16 @@ from geedim import schema, utils
 from geedim.download import BaseImage, BaseImageAccessor
 from geedim.enums import CompositeMethod, ResamplingMethod, SplitType
 from geedim.errors import InputImageError
-from geedim.mask import class_from_id, _MaskedImage, MaskedImage
+from geedim.mask import MaskedImage, _MaskedImage, class_from_id
 from geedim.medoid import medoid
 from geedim.stac import StacCatalog, StacItem
-from geedim.utils import split_id, register_accessor
+from geedim.utils import register_accessor, split_id
+
+try:
+    import xarray
+    from pandas import to_datetime
+except ImportError:
+    xarray = None
 
 logger = logging.getLogger(__name__)
 tabulate.MIN_PADDING = 0
@@ -387,18 +393,18 @@ class ImageCollectionAccessor:
                 if not first_band_names:
                     first_band_names = cmp_bands.keys()
                 elif not cmp_bands.keys() == first_band_names:
-                    raise ValueError("Inconsistent number of bands or band names.")
+                    raise ValueError('Inconsistent number of bands or band names.')
 
                 for band_id, band in cmp_bands.items():
                     cmp_band = {k: band.get(k, None) for k in band_compare_keys}
                     # test band has a fixed projections
                     if not cmp_band['dimensions']:
-                        raise ValueError("One or more image bands do not have a fixed projection.")
+                        raise ValueError('One or more image bands do not have a fixed projection.')
                     # test band projection & bounds against the first image's first band
                     if not first_band:
                         first_band = cmp_band
                     elif cmp_band != first_band:
-                        raise ValueError("Inconsistent band projections or bounds.")
+                        raise ValueError('Inconsistent band projections or bounds.')
 
         except ValueError as ex:
             raise ValueError(
@@ -862,13 +868,10 @@ class ImageCollectionAccessor:
         max_tile_bands: int = BaseImageAccessor._ee_max_tile_bands,
         max_requests: int = BaseImageAccessor._max_requests,
         max_cpus: int = None,
-    ) -> 'xarray.Dataset':
+    ) -> xarray.Dataset:
         """Export the collection to an XArray DataSet."""
-        try:
-            import xarray
-        except ImportError:
+        if not xarray:
             raise ImportError("'toXArray()' requires the 'xarray' package to be installed.")
-
         split = SplitType(split)
         self._raise_image_consistency()
         images = self._split_images(split)
@@ -888,14 +891,8 @@ class ImageCollectionAccessor:
 
         if split is SplitType.bands:
             # change the 'band' coordinate and dimension in each DataArray to 'time'
-            # TODO: xee has the 'primary dimension' property as an arg (we could do this too,
-            #  or add obvious choices like system:index and system:time_end coordinates on the
-            #  time dimension)
             timestamps = [p.get('system:time_start', None) for p in self.properties.values()]
-            if all(timestamps):
-                datetimes = [np.datetime64(ts, 'ms') for ts in timestamps]
-            else:
-                datetimes = range(len(timestamps))
+            datetimes = to_datetime(timestamps, unit='ms')
 
             for name, array in arrays.items():
                 array = array.rename(band='time')
@@ -919,7 +916,6 @@ class ImageCollectionAccessor:
 
 
 class MaskedCollection(ImageCollectionAccessor):
-
     def __init__(self, ee_collection: ee.ImageCollection, add_props: list[str] = None):
         """
         A class for describing, searching and compositing an Earth Engine image collection,
@@ -931,7 +927,7 @@ class MaskedCollection(ImageCollectionAccessor):
             Additional Earth Engine image properties to include in :attr:`properties`.
         """
         if not isinstance(ee_collection, ee.ImageCollection):
-            raise TypeError(f'`ee_collection` must be an instance of ee.ImageCollection')
+            raise TypeError('`ee_collection` must be an instance of ee.ImageCollection')
         super().__init__(ee_collection)
         if add_props:
             self.schemaPropertyNames += add_props
