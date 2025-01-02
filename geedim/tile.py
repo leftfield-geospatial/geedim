@@ -1,23 +1,24 @@
 """
-   Copyright 2021 Dugal Harris - dugalh@gmail.com
+Copyright 2021 Dugal Harris - dugalh@gmail.com
 
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-       http://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from functools import cached_property
 from typing import Sequence
 
 import rasterio as rio
@@ -26,35 +27,68 @@ from rasterio.windows import Window
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass(frozen=True)
 class Tile:
-    """Tile representation."""
+    """Description of a 3D image tile.
 
-    band_off: int
-    row_off: int
-    col_off: int
-    count: int
-    height: int
-    width: int
+    Defines the tile band, row & column extents, and provides properties to assist accessing it
+    in an Earth Engine image, Rasterio dataset or array.
+    """
+
+    # band, row & col extents of the tile in the source image (included in repr)
+    band_start: int
+    row_start: int
+    col_start: int
+    band_stop: int
+    row_stop: int
+    col_stop: int
+    # source image geo-referencing transform (excluded from repr)
     image_transform: Sequence[float] = field(repr=False)
 
-    shape: tuple[int, int] = field(init=False, repr=False)
-    indexes: range = field(init=False, repr=False)
-    window: Window = field(init=False, repr=False)
-    tile_transform: Sequence[float] = field(init=False, repr=False)
-    slices: tuple[slice, slice, slice] = field(init=False, repr=False)
+    @dataclass(frozen=True)
+    class Slices:
+        """3D slices that make dimensions explicit."""
 
-    def __post_init__(self):
-        # TODO: eval these lazily, as they won't all be used
-        self.shape = (self.height, self.width)
-        self.indexes = range(self.band_off + 1, self.band_off + self.count + 1)
-        self.window = Window(self.col_off, self.row_off, self.width, self.height)
-        transform = rio.Affine(*self.image_transform) * rio.Affine.translation(
-            self.col_off, self.row_off
+        band: slice
+        row: slice
+        col: slice
+
+    @cached_property
+    def dimensions(self) -> tuple[int, int]:
+        """Tile (width, height) dimensions in pixels."""
+        return (
+            self.col_stop - self.col_start,
+            self.row_stop - self.row_start,
         )
-        self.tile_transform = transform[:6]
-        self.slices = (
-            slice(self.band_off, self.band_off + self.count),
-            slice(self.row_off, self.row_off + self.height),
-            slice(self.col_off, self.col_off + self.width),
+
+    @cached_property
+    def count(self) -> int:
+        """Number of tile bands."""
+        return self.band_stop - self.band_start
+
+    @cached_property
+    def indexes(self) -> range:
+        """Tile bands as a range of source image band indexes in one-based / Rasterio convention."""
+        return range(self.band_start + 1, self.band_stop + 1)
+
+    @cached_property
+    def window(self) -> Window:
+        """Tile row & column region in the source image as a Rasterio window."""
+        return Window(self.col_start, self.row_start, *self.dimensions)
+
+    @cached_property
+    def tile_transform(self) -> list[float]:
+        """Tile geo-referencing transform."""
+        transform = rio.Affine(*self.image_transform) * rio.Affine.translation(
+            self.col_start, self.row_start
+        )
+        return transform[:6]
+
+    @cached_property
+    def slices(self) -> Slices:
+        """Slices defining the 3D tile extent in a source image array."""
+        return self.Slices(
+            slice(self.band_start, self.band_stop),
+            slice(self.row_start, self.row_stop),
+            slice(self.col_start, self.col_stop),
         )
