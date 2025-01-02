@@ -383,7 +383,7 @@ class ImageCollectionAccessor:
 
         # TODO: this test is stricter than it needs to be.  for image splitting, only the min
         #  scale band of each image should have a fixed projection and match all other min scale
-        #  band's projection & bounds.  for band splitting, only the first the image should have
+        #  band's projection & bounds.  for band splitting, only the first image should have
         #  all bands with fixed projections, and matching projections and bounds.
         try:
             for im_info in self.info.get('features', []):
@@ -668,7 +668,7 @@ class ImageCollectionAccessor:
         self,
         crs: str = None,
         crs_transform: Sequence[float] = None,
-        shape: tuple[int, int] = None,
+        dimensions: tuple[int, int] = None,
         region: dict | ee.Geometry = None,
         scale: float = None,
         resampling: str | ResamplingMethod = BaseImageAccessor._default_resampling,
@@ -680,15 +680,15 @@ class ImageCollectionAccessor:
         Prepare the collection for export.
 
         Bounds and resolution of the collection images can be specified with ``region`` and
-        ``scale`` / ``shape``, or ``crs_transform`` and ``shape``.  Bounds default to those of
-        the first image when they are not specified (with either ``region``, or ``crs_transform``
-        & ``shape``).
+        ``scale`` / ``dimensions``, or ``crs_transform`` and ``dimensions``.  Bounds default to
+        those of the first image when they are not specified (with either ``region``,
+        or ``crs_transform`` & ``dimensions``).
 
         All images in the prepared collection share a common pixel grid and bounds.
 
-        When ``crs``, ``scale``, ``crs_transform`` & ``shape`` are not provided, the pixel grids
-        of the prepared images and first source image will match (i.e. if all source images share
-        a pixel grid, the pixel grid of all prepared and source images will match).
+        When ``crs``, ``scale``, ``crs_transform`` & ``dimensions`` are not provided, the pixel
+        grids of the prepared images and first source image will match (i.e. if all source images
+        share a pixel grid, the pixel grid of all prepared and source images will match).
 
         ..warning::
             The prepared collection images are reprojected and clipped versions of their
@@ -704,8 +704,8 @@ class ImageCollectionAccessor:
             Geo-referencing transform of the prepared images, as a sequence of 6 numbers.  In
             row-major order: [xScale, xShearing, xTranslation, yShearing, yScale, yTranslation].
             All image bands are re-projected to this transform.
-        :param shape:
-            (height, width) dimensions of the prepared images in pixels.
+        :param dimensions:
+            (width, height) dimensions of the prepared images in pixels.
         :param region:
             Region defining the prepared image bounds as a GeoJSON dictionary or ``ee.Geometry``.
             Defaults to the geometry of the first image.
@@ -735,7 +735,7 @@ class ImageCollectionAccessor:
         first = BaseImageAccessor(self._ee_coll.first()).prepareForExport(
             crs=crs,
             crs_transform=crs_transform,
-            shape=shape,
+            dimensions=dimensions,
             region=region,
             scale=scale,
             resampling=resampling,
@@ -750,7 +750,7 @@ class ImageCollectionAccessor:
             return BaseImageAccessor(ee_image).prepareForExport(
                 crs=first.crs,
                 crs_transform=first.transform,
-                shape=first.shape,
+                dimensions=first.dimensions,
                 resampling=resampling,
                 dtype=first.dtype,
                 scale_offset=scale_offset,
@@ -812,7 +812,7 @@ class ImageCollectionAccessor:
 
         # initialise the destination array
         first = next(iter(images.values()))
-        shape = (*first.shape, len(images), first.count)
+        shape = (*first.dimensions[::-1], len(images), first.count)
         dtype = first.dtype
         if masked:
             array = np.ma.zeros(shape, dtype=dtype)
