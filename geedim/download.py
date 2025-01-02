@@ -121,7 +121,7 @@ class BaseImageAccessor:
         # TODO: some S2 images have 1x1 bands with meter scale of 1... e.g.
         #  'COPERNICUS/S2_SR_HARMONIZED/20170328T083601_20170328T084228_T35RNK'.  that will be an
         #  issue for BaseImageAccessor.projection() and its users too.
-        proj_info = dict(crs=None, transform=None, shape=None, scale=None, id=None)
+        proj_info = dict(crs=None, transform=None, dimensions=None, scale=None, id=None)
         bands = self.info.get('bands', []).copy()
         if len(bands) > 0:
             bands.sort(key=operator.itemgetter('scale'))
@@ -134,7 +134,7 @@ class BaseImageAccessor:
                 proj_info['transform'] *= rio.Affine.translation(*band_info['origin'])
             proj_info['transform'] = proj_info['transform'][:6]
             if 'dimensions' in band_info:
-                proj_info['shape'] = tuple(band_info['dimensions'][::-1])
+                proj_info['dimensions'] = tuple(band_info['dimensions'])
             proj_info['scale'] = band_info['scale']
 
         return proj_info
@@ -176,12 +176,11 @@ class BaseImageAccessor:
     @property
     def date(self) -> datetime | None:
         """Acquisition date & time.  ``None`` if the ``system:time_start`` property is not present."""
-        time_start = self.properties.get('system:time_start', None)
-        return (
-            datetime.fromtimestamp(time_start / 1000, tz=timezone.utc)
-            if time_start is not None
-            else None
-        )
+        if 'system:time_start' in self.properties:
+            timestamp = self.properties['system:time_start']
+            return datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc)
+        else:
+            return None
 
     @property
     def properties(self) -> dict[str, Any]:
@@ -199,11 +198,11 @@ class BaseImageAccessor:
         return self._min_projection['transform']
 
     @property
-    def shape(self) -> tuple[int, int] | None:
-        """Pixel dimensions of the minimum scale band (row, column). ``None`` if the image has no
-        fixed projection.
+    def dimensions(self) -> tuple[int, int] | None:
+        """(width, height) dimensions of the minimum scale band in pixels. ``None`` if the image
+        has no fixed projection.
         """
-        return self._min_projection['shape']
+        return self._min_projection['dimensions']
 
     @property
     def count(self) -> int:
@@ -257,22 +256,22 @@ class BaseImageAccessor:
     @property
     def size(self) -> int | None:
         """Image export size (bytes).  ``None`` if the image has no fixed projection."""
-        if not self.shape:
+        if not self.dimensions:
             return None
         dtype_size = np.dtype(self.dtype).itemsize
-        return self.shape[0] * self.shape[1] * self.count * dtype_size
+        return self.dimensions[0] * self.dimensions[1] * self.count * dtype_size
 
     @property
     def profile(self) -> dict[str, Any] | None:
         """Export image profile for Rasterio.  ``None`` if the image has no fixed projection."""
         # TODO: allow setting a custom nodata value with ee.Image.unmask() - see #21
-        if not self.shape:
+        if not self.dimensions:
             return None
         return dict(
             crs=utils.rio_crs(self.crs),
             transform=self.transform,
-            width=self.shape[1],
-            height=self.shape[0],
+            width=self.dimensions[0],
+            height=self.dimensions[1],
             count=self.count,
             dtype=self.dtype,
         )
@@ -416,16 +415,17 @@ class BaseImageAccessor:
         if self.dtype.endswith('int8'):
             # workaround for apparent GEE overestimate of *int8 dtype download sizes
             dtype_size *= 2
-        tile_shape = np.array((self.count, *self.shape))
+        im_shape = np.array((self.count, *self.dimensions[::-1]))
+        tile_shape = im_shape
         tile_size = np.prod(tile_shape) * dtype_size
-        num_tiles = np.array([1, 1, 1], dtype=int)
+        num_tiles = np.array([1, 1, 1], dtype=int)  # num tiles along each dimension
 
         # increment the number of tiles the image is split into along the longest dimension of
-        # the tile, until the tile size satisfies max_tile_size (aims for least possible
-        # number of cube-ish shaped tiles that satisfy max_tile_size)
+        # the tile, until the tile size satisfies max_tile_size (aims for the fewest possible
+        # cube-ish shaped tiles that satisfy max_tile_size)
         while tile_size >= max_tile_size:
             num_tiles[np.argmax(tile_shape)] += 1
-            tile_shape = np.ceil(np.array((self.count, *self.shape)) / num_tiles).astype(int)
+            tile_shape = np.ceil(im_shape / num_tiles).astype(int)
             tile_size = np.prod(tile_shape) * dtype_size
 
         # clip to max_tile_bands / max_tile_dim
@@ -438,7 +438,7 @@ class BaseImageAccessor:
         # get the dimensions of a tile that stays under the EE limits
 
         if logger.getEffectiveLevel() <= logging.DEBUG:
-            num_tiles = int(np.prod(np.ceil(np.array((self.count, *self.shape)) / tile_shape)))
+            num_tiles = int(np.prod(np.ceil(np.array((self.count, *self.dimensions)) / tile_shape)))
             dtype_size = np.dtype(self.dtype).itemsize
             raw_tile_size = np.prod(tile_shape) * dtype_size
             logger.debug(f"Raw image size: {tqdm.format_sizeof(self.size, suffix='B')}")
@@ -447,15 +447,15 @@ class BaseImageAccessor:
             logger.debug(f"Raw tile size: {tqdm.format_sizeof(raw_tile_size, suffix='B')}")
 
         # split the image into tiles, clipping tiles to image dimensions
-        im_shape_3d = (self.count, *self.shape)
+        im_shape = (self.count, *self.dimensions[::-1])
         for tile_start in product(
             range(0, self.count, tile_shape[0]),
-            range(0, self.shape[0], tile_shape[1]),
-            range(0, self.shape[1], tile_shape[2]),
+            range(0, self.dimensions[1], tile_shape[1]),
+            range(0, self.dimensions[0], tile_shape[2]),
         ):
-            tile_stop = np.clip(np.add(tile_start, tile_shape), a_min=None, a_max=im_shape_3d)
-            clip_tile_shape = (tile_stop - tile_start).tolist()
-            yield Tile(*tile_start, *clip_tile_shape, image_transform=self.transform)
+            tile_stop = np.clip(np.add(tile_start, tile_shape), a_min=None, a_max=im_shape)
+            tile_stop = tile_stop.tolist()
+            yield Tile(*tile_start, *tile_stop, image_transform=self.transform)
 
     @asynccontextmanager
     async def _tile_tasks(
@@ -468,12 +468,12 @@ class BaseImageAccessor:
         """Context manager for asynchronous tile download tasks."""
 
         def get_tile_url(tile: Tile) -> str:
-            """Return an URL for the given tile."""
-            return self._ee_image.slice(tile.band_off, tile.band_off + tile.count).getDownloadURL(
+            """Return a download URL for the given tile."""
+            return self._ee_image.slice(tile.band_start, tile.band_stop).getDownloadURL(
                 dict(
                     crs=self.crs,
                     crs_transform=tile.tile_transform,
-                    dimensions=tile.shape[::-1],
+                    dimensions=tile.dimensions,
                     format='GEO_TIFF',
                 )
             )
@@ -822,7 +822,7 @@ class BaseImageAccessor:
         self,
         crs: str = None,
         crs_transform: Sequence[float] = None,
-        shape: tuple[int, int] = None,
+        dimensions: tuple[int, int] = None,
         region: dict | ee.Geometry = None,
         scale: float = None,
         resampling: str | ResamplingMethod = _default_resampling,
@@ -834,12 +834,12 @@ class BaseImageAccessor:
         Prepare the image for export.
 
         Bounds and resolution of the prepared image can be specified with ``region`` and
-        ``scale`` / ``shape``, or ``crs_transform`` and ``shape``.  Bounds default to those of
-        the source image when they are not specified (with either ``region``, or ``crs_transform``
-        & ``shape``).
+        ``scale`` / ``dimensions``, or ``crs_transform`` and ``dimensions``.  Bounds default to
+        those of the source image when they are not specified (with either ``region``,
+        or ``crs_transform`` & ``dimensions``).
 
-        When ``crs``, ``scale``, ``crs_transform`` & ``shape`` are not provided, the pixel grids
-        of the prepared and source images will match.
+        When ``crs``, ``scale``, ``crs_transform`` & ``dimensions`` are not provided, the pixel
+        grids of the prepared and source images will match.
 
         ..warning::
             Depending on the provided arguments, the prepared image may be a reprojected and
@@ -854,8 +854,8 @@ class BaseImageAccessor:
             Geo-referencing transform of the prepared image, as a sequence of 6 numbers.  In
             row-major order: [xScale, xShearing, xTranslation, yShearing, yScale, yTranslation].
             All bands are re-projected to this transform.
-        :param shape:
-            (height, width) dimensions of the prepared image in pixels.
+        :param dimensions:
+            (width, height) dimensions of the prepared image in pixels.
         :param region:
             Region defining the prepared image bounds as a GeoJSON dictionary or ``ee.Geometry``.
             Defaults to the image geometry.
@@ -887,6 +887,7 @@ class BaseImageAccessor:
         #  reduce the need for getInfo().  and make it easier to map this over a collection's
         #  images. (remember to check with constant images / bands though - those have no shape
         #  or geometry.  the same as composites?)
+        # TODO: crs_transform -> crsTransform?
         # Create a new BaseImageAccessor if bands are provided.  This is done here so that crs,
         # scale etc parameters used below will have values specific to bands.
         exp_image = BaseImageAccessor(self._ee_image.select(bands)) if bands else self
@@ -896,20 +897,20 @@ class BaseImageAccessor:
         # scale in EPSG:4326 with global bounds, which is an unlikely use case prone to memory
         # limit errors).
         if (
-            (not crs or not region or not (scale or shape))
-            and (not crs or not crs_transform or not shape)
-            and not exp_image.shape
+            (not crs or not region or not (scale or dimensions))
+            and (not crs or not crs_transform or not dimensions)
+            and not exp_image.dimensions
         ):
             raise ValueError(
                 "This image does not have a fixed projection, you need to provide 'crs', "
-                "'region' & 'scale' / 'shape'; or 'crs', 'crs_transform' & 'shape'."
+                "'region' & 'scale' / 'dimensions'; or 'crs', 'crs_transform' & 'dimensions'."
             )
 
-        if scale and shape:
-            raise ValueError("You can provide one of 'scale' or 'shape', but not both.")
+        if scale and dimensions:
+            raise ValueError("You can provide one of 'scale' or 'dimensions', but not both.")
 
         # configure the export spatial parameters
-        if not crs_transform and not shape:
+        if not crs_transform and not dimensions:
             # Only pass crs to ee.Image.prepare_for_export() when it is different from the
             # source.  Passing same crs as source does not maintain the source pixel grid.
             crs = crs if crs is not None and crs != exp_image.crs else None
@@ -935,7 +936,6 @@ class BaseImageAccessor:
 
         # apply export spatial parameters
         crs_transform = crs_transform[:6] if crs_transform else None
-        dimensions = shape[::-1] if shape else None
         export_kwargs = dict(
             crs=crs, crs_transform=crs_transform, dimensions=dimensions, region=region, scale=scale
         )
@@ -1049,7 +1049,7 @@ class BaseImageAccessor:
         Export the image to a GeoTIFF file.
 
         Export projection and bounds are defined by :attr:`crs`, :attr:`transform` and
-        :attr:`shape`, and data type by :attr:`dtype`. :meth:`prepareForExport` can be called
+        :attr:`dimensions`, and data type by :attr:`dtype`. :meth:`prepareForExport` can be called
         before this method to apply other export parameters.
 
         The image is retrieved as separate tiles which are downloaded and decompressed
@@ -1094,7 +1094,7 @@ class BaseImageAccessor:
             raise FileExistsError(f'{filename} exists')
 
         # TODO: move these checks into a common export fn
-        if not self.shape:
+        if not self.dimensions:
             raise ValueError(
                 "This image cannot be exported as it does not have a fixed projection.  "
                 "'prepareForExport()' can be called to define one."
@@ -1181,7 +1181,7 @@ class BaseImageAccessor:
         Export the image to a NumPy array.
 
         Export projection and bounds are defined by :attr:`crs`, :attr:`transform` and
-        :attr:`shape`, and data type by :attr:`dtype`. :meth:`prepareForExport` can be called
+        :attr:`dimensions`, and data type by :attr:`dtype`. :meth:`prepareForExport` can be called
         before this method to apply other export parameters.
 
         The image is retrieved as separate tiles which are downloaded and decompressed
@@ -1215,7 +1215,7 @@ class BaseImageAccessor:
         :returns:
             3D NumPy array with (y, x, bands) dimensions.
         """
-        if not self.shape:
+        if not self.dimensions:
             raise ValueError(
                 "This image cannot be exported as it does not have a fixed projection.  "
                 "'prepareForExport()' can be called to define one."
@@ -1248,14 +1248,15 @@ class BaseImageAccessor:
 
                 # TODO: convert float nodata to nan?
                 if masked:
-                    array = np.ma.zeros((*self.shape, self.count), dtype=self.dtype)
+                    array = np.ma.zeros((*self.dimensions[::-1], self.count), dtype=self.dtype)
                 else:
-                    array = np.zeros((*self.shape, self.count), dtype=self.dtype)
+                    array = np.zeros((*self.dimensions[::-1], self.count), dtype=self.dtype)
 
                 def write_tile(tile: Tile, tile_array: np.ndarray):
                     """Write a tile array to file."""
-                    # TODO: change Tile class so this is neater
-                    array[*tile.slices[1:], tile.slices[0]] = np.moveaxis(tile_array, 0, -1)
+                    # move band dimension from first to last
+                    tile_array = np.moveaxis(tile_array, 0, -1)
+                    array[tile.slices.row, tile.slices.col, tile.slices.band] = tile_array
 
                 async with self._tile_tasks(
                     tile_shape, masked=masked, max_requests=max_requests, max_cpus=max_cpus
@@ -1290,7 +1291,7 @@ class BaseImageAccessor:
         Export the image to an XArray DataAray.
 
         Export projection and bounds are defined by the image :attr:`crs`, :attr:`transform` and
-        :attr:`shape`, and data type by :attr:`dtype`. :meth:`prepareForExport` can be called
+        :attr:`dimensions`, and data type by :attr:`dtype`. :meth:`prepareForExport` can be called
         before this method to apply other export parameters.
 
         The image is retrieved as separate tiles which are downloaded and decompressed
@@ -1342,6 +1343,7 @@ class BaseImageAccessor:
             max_cpus=max_cpus,
         )
 
+        # create coordinates
         y = np.arange(0.5, array.shape[0] + 0.5) * self.transform[4] + self.transform[5]
         x = np.arange(0.5, array.shape[1] + 0.5) * self.transform[0] + self.transform[2]
         band = [bd['name'] for bd in self.band_properties]
@@ -1362,7 +1364,6 @@ class BaseImageAccessor:
         attrs['ee'] = json.dumps(self.properties) if self.properties else None
         attrs['stac'] = json.dumps(self.stac._item_dict) if self.stac else None
         attrs = {k: v for k, v in attrs.items() if v is not None}
-        # TODO: see xee's scale and units attributes
 
         # TODO: this dimension ordering is different to xee and rioxarray.  is it straightforward
         #  to convert between formats?  are there any limitations to doing it like this?
@@ -1406,6 +1407,13 @@ class BaseImage(BaseImageAccessor):
         return self.id.replace('/', '-') if self.id else None
 
     @property
+    def shape(self) -> rio.Affine | None:
+        """Pixel dimensions of the minimum scale band (row, column). ``None`` if the image has no
+        fixed projection.
+        """
+        return self.dimensions[::-1]
+
+    @property
     def transform(self) -> rio.Affine | None:
         transform = super().transform
         return rio.Affine(*transform) if transform else None
@@ -1418,7 +1426,7 @@ class BaseImage(BaseImageAccessor):
     @property
     def has_fixed_projection(self) -> bool:
         """Whether the image has a fixed projection."""
-        return self.shape is not None
+        return self.dimensions is not None
 
     @property
     def refl_bands(self) -> list[str] | None:
@@ -1462,14 +1470,14 @@ class BaseImage(BaseImageAccessor):
             :attr:`~geedim.enums.ExportType.cloud` then ``folder`` is required.
         :param wait:
             Whether to wait for the export to complete before returning.
-        :param bands:
-            Sequence of band names to export.  Defaults to all bands.
         :param export_kwargs:
             Arguments to :meth:`BaseImageAccessor.prepareForExport`.
 
         :return:
             Export task, started if ``wait`` is False, or completed if ``wait`` is True.
         """
+        if 'shape' in export_kwargs:
+            export_kwargs['dimensions'] = export_kwargs.pop('shape')[::-1]
         export_image = BaseImageAccessor(self.prepareForExport(**export_kwargs))
         return export_image.export(filename, type=type, folder=folder, wait=wait)
 
@@ -1527,6 +1535,9 @@ class BaseImage(BaseImageAccessor):
                 "'num_threads' is deprecated and has no effect.  'max_requests' and 'max_cpus' "
                 "can be used to limit concurrency."
             )
+        if 'shape' in export_kwargs:
+            export_kwargs['dimensions'] = export_kwargs.pop('shape')[::-1]
+
         export_image = BaseImageAccessor(self.prepareForExport(**export_kwargs))
         export_image.toGeoTIFF(
             filename,
