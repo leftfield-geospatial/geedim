@@ -668,7 +668,7 @@ class ImageCollectionAccessor:
         self,
         crs: str = None,
         crs_transform: Sequence[float] = None,
-        dimensions: tuple[int, int] = None,
+        shape: tuple[int, int] = None,
         region: dict | ee.Geometry = None,
         scale: float = None,
         resampling: str | ResamplingMethod = BaseImageAccessor._default_resampling,
@@ -680,15 +680,15 @@ class ImageCollectionAccessor:
         Prepare the collection for export.
 
         Bounds and resolution of the collection images can be specified with ``region`` and
-        ``scale`` / ``dimensions``, or ``crs_transform`` and ``dimensions``.  Bounds default to
-        those of the first image when they are not specified (with either ``region``,
-        or ``crs_transform`` & ``dimensions``).
+        ``scale`` / ``shape``, or ``crs_transform`` and ``shape``.  Bounds default to those of
+        the first image when they are not specified (with either ``region``, or ``crs_transform``
+        & ``shape``).
 
         All images in the prepared collection share a common pixel grid and bounds.
 
-        When ``crs``, ``scale``, ``crs_transform`` & ``dimensions`` are not provided, the pixel
-        grids of the prepared images and first source image will match (i.e. if all source images
-        share a pixel grid, the pixel grid of all prepared and source images will match).
+        When ``crs``, ``scale``, ``crs_transform`` & ``shape`` are not provided, the pixel grids
+        of the prepared images and first source image will match (i.e. if all source images share
+        a pixel grid, the pixel grid of all prepared and source images will match).
 
         ..warning::
             The prepared collection images are reprojected and clipped versions of their
@@ -704,8 +704,8 @@ class ImageCollectionAccessor:
             Geo-referencing transform of the prepared images, as a sequence of 6 numbers.  In
             row-major order: [xScale, xShearing, xTranslation, yShearing, yScale, yTranslation].
             All image bands are re-projected to this transform.
-        :param dimensions:
-            (width, height) dimensions of the prepared images in pixels.
+        :param shape:
+            (height, width) shape of the prepared images in pixels.
         :param region:
             Region defining the prepared image bounds as a GeoJSON dictionary or ``ee.Geometry``.
             Defaults to the geometry of the first image.
@@ -735,7 +735,7 @@ class ImageCollectionAccessor:
         first = BaseImageAccessor(self._ee_coll.first()).prepareForExport(
             crs=crs,
             crs_transform=crs_transform,
-            dimensions=dimensions,
+            shape=shape,
             region=region,
             scale=scale,
             resampling=resampling,
@@ -750,7 +750,7 @@ class ImageCollectionAccessor:
             return BaseImageAccessor(ee_image).prepareForExport(
                 crs=first.crs,
                 crs_transform=first.transform,
-                dimensions=first.dimensions,
+                shape=first.shape,
                 resampling=resampling,
                 dtype=first.dtype,
                 scale_offset=scale_offset,
@@ -812,7 +812,7 @@ class ImageCollectionAccessor:
 
         # initialise the destination array
         first = next(iter(images.values()))
-        shape = (*first.dimensions[::-1], len(images), first.count)
+        shape = (*first.shape, len(images), first.count)
         dtype = first.dtype
         if masked:
             array = np.ma.zeros(shape, dtype=dtype)

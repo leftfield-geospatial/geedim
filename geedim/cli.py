@@ -1,17 +1,17 @@
 """
-    Copyright 2021 Dugal Harris - dugalh@gmail.com
+Copyright 2021 Dugal Harris - dugalh@gmail.com
 
-    Licensed under the Apache License, Version 2.0 (the "License");
-    you may not use this file except in compliance with the License.
-    You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-       http://www.apache.org/licenses/LICENSE-2.0
+   http://www.apache.org/licenses/LICENSE-2.0
 
-    Unless required by applicable law or agreed to in writing, software
-    distributed under the License is distributed on an "AS IS" BASIS,
-    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-    See the License for the specific language governing permissions and
-    limitations under the License.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
 import json
@@ -30,11 +30,15 @@ from click.core import ParameterSource
 from rasterio.errors import CRSError
 
 from geedim import Initialize, schema, version
-from geedim.download import _nodata_vals, BaseImageAccessor
+from geedim.download import BaseImageAccessor, _nodata_vals
 from geedim.enums import (
-    CloudMaskMethod, CloudScoreBand, CompositeMethod, ExportType, ResamplingMethod,
+    CloudMaskMethod,
+    CloudScoreBand,
+    CompositeMethod,
+    ExportType,
+    ResamplingMethod,
 )
-from geedim.utils import asset_id, get_bounds, Spinner
+from geedim.utils import Spinner, asset_id, get_bounds
 
 logger = logging.getLogger(__name__)
 
@@ -479,7 +483,7 @@ def config(ctx, **kwargs):
     type=click.STRING,
     required=True,
     callback=_collection_cb,
-    help=f'Earth Engine image collection to search. geedim or EE collection names can be used.',
+    help='Earth Engine image collection to search. geedim or EE collection names can be used.',
 )
 @click.option(
     '-s',
@@ -802,7 +806,7 @@ def download(
     for im in image_list:
         filename = pathlib.Path(download_dir, _im_name(im) + '.tif')
         im = im.gd.prepareForExport(region=obj.region, **kwargs)
-        im.gd.toGeoTiff(
+        im.gd.toGeoTIFF(
             filename, overwrite=overwrite, max_tile_size=max_tile_size, max_tile_dim=max_tile_dim
         )
 
