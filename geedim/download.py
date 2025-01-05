@@ -24,29 +24,24 @@ import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import ExitStack, asynccontextmanager
+from contextlib import ExitStack
 from datetime import datetime, timezone
 from functools import cached_property
-from io import BytesIO
-from itertools import product
 from pathlib import Path
-from typing import Any, Coroutine, Generator, Sequence, TypeVar
+from typing import Any, Coroutine, Sequence, TypeVar
 
-import aiohttp
 import ee
 import numpy as np
 import rasterio as rio
 from rasterio import features
 from rasterio.enums import Resampling as RioResampling
 from rasterio.io import DatasetWriter
-from rasterio.shutil import RasterioIOError
 from tqdm.auto import tqdm
-from tqdm.contrib.logging import logging_redirect_tqdm
 
 from geedim import utils
 from geedim.enums import ExportType, ResamplingMethod
 from geedim.stac import StacCatalog, StacItem
-from geedim.tile import Tile
+from geedim.tile import Tile, Tiler
 
 try:
     import xarray
@@ -67,7 +62,6 @@ _nodata_vals = dict(
 )
 """Nodata values for supported download / export dtypes. """
 # Note:
-
 # - There are a some problems with *int64: While gdal >= 3.5 supports it, rasterio casts the
 # nodata value to float64 which cannot represent the int64 range.  Also, EE provides int64
 # ee.Image's (via ee.Image.getDownloadUrl() or ee.data.computePixels()) as float64 with nodata
@@ -82,33 +76,14 @@ T = TypeVar('T')
 
 class BaseImageAccessor:
     _default_resampling = ResamplingMethod.near
-    # TODO: if there's little speed cost, default max_tile_size to << 32 to avoid memory limit (
-    #  could actually speed up downloads with few tiles by increasing concurrency)
-    _ee_max_tile_size = 32
-    _ee_max_tile_dim = 10000
-    _ee_max_tile_bands = 1024
-    _max_requests = 32
     _default_export_type = ExportType.drive
-    _retry_exceptions = (
-        asyncio.TimeoutError,
-        aiohttp.ClientError,
-        ConnectionError,
-        RasterioIOError,
-    )
-    try:
-        # retry on requests errors from ee.Image.getDownloadURL()
-        from requests import RequestException
-
-        _retry_exceptions += (RequestException,)
-    except:
-        pass
 
     def __init__(self, ee_image: ee.Image):
         """
-        Accessor for describing and downloading an image.
+        Accessor for describing and exporting an image.
 
-        Provides download and export without size limits, download related methods,
-        and client-side access to image properties.
+        Provides methods for tiled export to various formats, and client-side access to image
+        properties.
 
         :param ee_image:
             Image to access.
@@ -121,7 +96,7 @@ class BaseImageAccessor:
         # TODO: some S2 images have 1x1 bands with meter scale of 1... e.g.
         #  'COPERNICUS/S2_SR_HARMONIZED/20170328T083601_20170328T084228_T35RNK'.  that will be an
         #  issue for BaseImageAccessor.projection() and its users too.
-        proj_info = dict(crs=None, transform=None, dimensions=None, scale=None, id=None)
+        proj_info = dict(crs=None, transform=None, shape=None, scale=None, id=None)
         bands = self.info.get('bands', []).copy()
         if len(bands) > 0:
             bands.sort(key=operator.itemgetter('scale'))
@@ -134,7 +109,7 @@ class BaseImageAccessor:
                 proj_info['transform'] *= rio.Affine.translation(*band_info['origin'])
             proj_info['transform'] = proj_info['transform'][:6]
             if 'dimensions' in band_info:
-                proj_info['dimensions'] = tuple(band_info['dimensions'])
+                proj_info['shape'] = tuple(band_info['dimensions'][::-1])
             proj_info['scale'] = band_info['scale']
 
         return proj_info
@@ -198,11 +173,11 @@ class BaseImageAccessor:
         return self._min_projection['transform']
 
     @property
-    def dimensions(self) -> tuple[int, int] | None:
-        """(width, height) dimensions of the minimum scale band in pixels. ``None`` if the image
+    def shape(self) -> tuple[int, int] | None:
+        """(height, width) dimensions of the minimum scale band in pixels. ``None`` if the image
         has no fixed projection.
         """
-        return self._min_projection['dimensions']
+        return self._min_projection['shape']
 
     @property
     def count(self) -> int:
@@ -256,22 +231,21 @@ class BaseImageAccessor:
     @property
     def size(self) -> int | None:
         """Image export size (bytes).  ``None`` if the image has no fixed projection."""
-        if not self.dimensions:
+        if not self.shape:
             return None
         dtype_size = np.dtype(self.dtype).itemsize
-        return self.dimensions[0] * self.dimensions[1] * self.count * dtype_size
+        return self.shape[0] * self.shape[1] * self.count * dtype_size
 
     @property
     def profile(self) -> dict[str, Any] | None:
         """Export image profile for Rasterio.  ``None`` if the image has no fixed projection."""
-        # TODO: allow setting a custom nodata value with ee.Image.unmask() - see #21
-        if not self.dimensions:
+        if not self.shape:
             return None
         return dict(
             crs=utils.rio_crs(self.crs),
             transform=self.transform,
-            width=self.dimensions[0],
-            height=self.dimensions[1],
+            width=self.shape[1],
+            height=self.shape[0],
             count=self.count,
             dtype=self.dtype,
         )
@@ -383,197 +357,6 @@ class BaseImageAccessor:
         else:  # just use the image band IDs
             band_props = [dict(name=bid) for bid in self.bandNames]
         return band_props
-
-    def _get_tile_shape(
-        self,
-        max_tile_size: float = _ee_max_tile_size,
-        max_tile_dim: int = _ee_max_tile_dim,
-        max_tile_bands: int = _ee_max_tile_bands,
-    ) -> tuple[int, int, int]:
-        """Returns a 3D tile shape (count, height, width) that satisfies ``max_tile_size``,
-        ``max_tile_dim`` and ``max_tile_bands``.
-        """
-        if max_tile_size > BaseImageAccessor._ee_max_tile_size:
-            raise ValueError(
-                f"'max_tile_size' must be less than or equal to the Earth Engine limit of "
-                f"{BaseImageAccessor._ee_max_tile_size} MB."
-            )
-        max_tile_size = int(max_tile_size) << 20  # convert MB to bytes
-        if max_tile_dim > BaseImageAccessor._ee_max_tile_dim:
-            raise ValueError(
-                f"'max_tile_dim' must be less than or equal to the Earth Engine limit of "
-                f"{BaseImageAccessor._ee_max_tile_dim}."
-            )
-        if max_tile_bands > BaseImageAccessor._ee_max_tile_bands:
-            raise ValueError(
-                f"'max_tile_bands' must be less than or equal to the Earth Engine limit of "
-                f"{BaseImageAccessor._ee_max_tile_bands}."
-            )
-
-        # initialise loop vars
-        dtype_size = np.dtype(self.dtype).itemsize
-        if self.dtype.endswith('int8'):
-            # workaround for apparent GEE overestimate of *int8 dtype download sizes
-            dtype_size *= 2
-        im_shape = np.array((self.count, *self.dimensions[::-1]))
-        tile_shape = im_shape
-        tile_size = np.prod(tile_shape) * dtype_size
-        num_tiles = np.array([1, 1, 1], dtype=int)  # num tiles along each dimension
-
-        # increment the number of tiles the image is split into along the longest dimension of
-        # the tile, until the tile size satisfies max_tile_size (aims for the fewest possible
-        # cube-ish shaped tiles that satisfy max_tile_size)
-        while tile_size >= max_tile_size:
-            num_tiles[np.argmax(tile_shape)] += 1
-            tile_shape = np.ceil(im_shape / num_tiles).astype(int)
-            tile_size = np.prod(tile_shape) * dtype_size
-
-        # clip to max_tile_bands / max_tile_dim
-        tile_shape = tile_shape.clip(None, [max_tile_bands, max_tile_dim, max_tile_dim])
-        tile_shape = tuple(tile_shape.tolist())
-        return tile_shape
-
-    def _tiles(self, tile_shape: tuple[int, int, int]) -> Generator[Tile]:
-        """Image tile generator."""
-        # get the dimensions of a tile that stays under the EE limits
-
-        if logger.getEffectiveLevel() <= logging.DEBUG:
-            num_tiles = int(np.prod(np.ceil(np.array((self.count, *self.dimensions)) / tile_shape)))
-            dtype_size = np.dtype(self.dtype).itemsize
-            raw_tile_size = np.prod(tile_shape) * dtype_size
-            logger.debug(f"Raw image size: {tqdm.format_sizeof(self.size, suffix='B')}")
-            logger.debug(f'Num. tiles: {num_tiles}')
-            logger.debug(f'Tile shape: {tile_shape}')
-            logger.debug(f"Raw tile size: {tqdm.format_sizeof(raw_tile_size, suffix='B')}")
-
-        # split the image into tiles, clipping tiles to image dimensions
-        im_shape = (self.count, *self.dimensions[::-1])
-        for tile_start in product(
-            range(0, self.count, tile_shape[0]),
-            range(0, self.dimensions[1], tile_shape[1]),
-            range(0, self.dimensions[0], tile_shape[2]),
-        ):
-            tile_stop = np.clip(np.add(tile_start, tile_shape), a_min=None, a_max=im_shape)
-            tile_stop = tile_stop.tolist()
-            yield Tile(*tile_start, *tile_stop, image_transform=self.transform)
-
-    @asynccontextmanager
-    async def _tile_tasks(
-        self,
-        tile_shape: tuple[int, int, int],
-        masked: bool = False,
-        max_requests: int = _max_requests,
-        max_cpus: int = None,
-    ) -> Generator[set[asyncio.Task]]:
-        """Context manager for asynchronous tile download tasks."""
-
-        def get_tile_url(tile: Tile) -> str:
-            """Return a download URL for the given tile."""
-            return self._ee_image.slice(tile.band_start, tile.band_stop).getDownloadURL(
-                dict(
-                    crs=self.crs,
-                    crs_transform=tile.tile_transform,
-                    dimensions=tile.dimensions,
-                    format='GEO_TIFF',
-                )
-            )
-
-        async def download_url(url: str, session: aiohttp.ClientSession) -> BytesIO:
-            """Download the GeoTIFF at the given URL into a buffer."""
-            buf = BytesIO()
-            async with session.get(url, chunked=True, raise_for_status=False) as response:
-                if not response.ok:
-                    # get a more detailed error message if possible
-                    try:
-                        response.reason = (await response.json())['error']['message']
-                    except:
-                        pass
-                    response.raise_for_status()
-
-                async for data in response.content.iter_chunked(102400):
-                    buf.write(data)
-            return buf
-
-        def read_gtiff_buf(buf: BytesIO) -> np.ndarray:
-            """Read the given GeoTIFF buffer into a numpy array."""
-            buf.seek(0)
-            with rio.open(buf, 'r') as ds:
-                return ds.read(masked=masked)
-
-        async def download_tile(
-            tile: Tile,
-            limit_requests: asyncio.Semaphore,
-            limit_cpus: asyncio.Semaphore,
-            session: aiohttp.ClientSession,
-            executor: ThreadPoolExecutor = None,
-            max_retries: int = 5,
-            backoff_factor: float = 2.0,
-        ) -> tuple[Tile, np.ndarray]:
-            """Download a tile to a numpy array, with retries."""
-            loop = asyncio.get_running_loop()
-            for retry in range(0, max_retries + 1):
-                try:
-                    # limit concurrent EE requests to avoid exceeding quota
-                    async with limit_requests:
-                        logger.debug(f'Getting URL for {tile!r}.')
-                        url = await loop.run_in_executor(executor, get_tile_url, tile)
-                        logger.debug(f'Downloading {tile!r} from {url}.')
-                        buf = await download_url(url, session)
-
-                    # limit concurrent tile reads to leave CPU capacity for the event loop
-                    async with limit_cpus:
-                        logger.debug(f'Reading GeoTIFF buffer for {tile!r}.')
-                        array = await loop.run_in_executor(executor, read_gtiff_buf, buf)
-                    return tile, array
-
-                except self._retry_exceptions as ex:
-                    # raise an error on maximum retries or 'user memory limit exceeded'
-                    if retry == max_retries or 'memory limit' in getattr(ex, 'message', ''):
-                        logger.debug(f'Tile download failed for {tile!r}.  Error: {ex!r}.')
-                        raise
-                    # otherwise retry
-                    logger.debug(f'Retry {retry + 1} of {max_retries} for {tile!r}. Error: {ex!r}.')
-                    await asyncio.sleep(backoff_factor * (2**retry))
-
-        with ExitStack() as exit_stack:
-            # use one thread per tile for reading GeoTIFF buffers so that CPU loading can be
-            # controlled with max_cpus
-            exit_stack.enter_context(rio.Env(GDAL_NUM_THREADS=1))
-            # default max_cpus to two less than the number of CPUs (leaves capacity for one
-            # thread to write tiles, and another to run the event loop)
-            max_cpus = max_cpus or max((os.cpu_count() or 0) - 2, 1)
-
-            # create thread pool for all synchronous tasks
-            executor = exit_stack.enter_context(
-                ThreadPoolExecutor(max_workers=max_requests + max_cpus)
-            )
-
-            # create semaphores for limiting concurrency
-            limit_requests = asyncio.Semaphore(max_requests)
-            limit_cpus = asyncio.Semaphore(max_cpus)
-
-            # yield async tasks for downloading tiles
-            timeout = aiohttp.ClientTimeout(total=300, sock_connect=30, ceil_threshold=5)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                tiles = [*self._tiles(tile_shape)]
-                tasks = {
-                    asyncio.create_task(
-                        download_tile(tile, limit_requests, limit_cpus, session, executor)
-                    )
-                    for tile in tiles
-                }
-                try:
-                    yield tasks
-
-                finally:
-                    # cancel and await any incomplete tasks
-                    logger.debug('Cleaning up tile download tasks...')
-                    [task.cancel() for task in tasks]
-                    await asyncio.gather(*tasks, return_exceptions=True)
-                    logger.debug('Clean up complete.')
-
-            # https://docs.aiohttp.org/en/latest/client_advanced.html#graceful-shutdown
-            await asyncio.sleep(0.25)
 
     def _write_metadata(self, ds: DatasetWriter):
         """Write Earth Engine and STAC metadata to an open rasterio dataset."""
@@ -822,7 +605,7 @@ class BaseImageAccessor:
         self,
         crs: str = None,
         crs_transform: Sequence[float] = None,
-        dimensions: tuple[int, int] = None,
+        shape: tuple[int, int] = None,
         region: dict | ee.Geometry = None,
         scale: float = None,
         resampling: str | ResamplingMethod = _default_resampling,
@@ -834,12 +617,12 @@ class BaseImageAccessor:
         Prepare the image for export.
 
         Bounds and resolution of the prepared image can be specified with ``region`` and
-        ``scale`` / ``dimensions``, or ``crs_transform`` and ``dimensions``.  Bounds default to
-        those of the source image when they are not specified (with either ``region``,
-        or ``crs_transform`` & ``dimensions``).
+        ``scale`` / ``shape``, or ``crs_transform`` and ``shape``.  Bounds default to those of
+        the source image when they are not specified (with either ``region``,
+        or ``crs_transform`` & ``shape``).
 
-        When ``crs``, ``scale``, ``crs_transform`` & ``dimensions`` are not provided, the pixel
-        grids of the prepared and source images will match.
+        When ``crs``, ``scale``, ``crs_transform`` & ``shape`` are not provided, the pixel grids
+        of the prepared and source images will match.
 
         ..warning::
             Depending on the provided arguments, the prepared image may be a reprojected and
@@ -854,8 +637,8 @@ class BaseImageAccessor:
             Geo-referencing transform of the prepared image, as a sequence of 6 numbers.  In
             row-major order: [xScale, xShearing, xTranslation, yShearing, yScale, yTranslation].
             All bands are re-projected to this transform.
-        :param dimensions:
-            (width, height) dimensions of the prepared image in pixels.
+        :param shape:
+            (height, width) dimensions of the prepared image in pixels.
         :param region:
             Region defining the prepared image bounds as a GeoJSON dictionary or ``ee.Geometry``.
             Defaults to the image geometry.
@@ -881,13 +664,6 @@ class BaseImageAccessor:
         :return:
             Prepared image.
         """
-        # TODO: considering that tiled export always uses crs, crs_transform & shape args,
-        #  can we do away with some / all of these checks?  if we allow exporting images w/o/
-        #  calling this, it would make things more consistent.  it would simplify the code,
-        #  reduce the need for getInfo().  and make it easier to map this over a collection's
-        #  images. (remember to check with constant images / bands though - those have no shape
-        #  or geometry.  the same as composites?)
-        # TODO: crs_transform -> crsTransform?
         # Create a new BaseImageAccessor if bands are provided.  This is done here so that crs,
         # scale etc parameters used below will have values specific to bands.
         exp_image = BaseImageAccessor(self._ee_image.select(bands)) if bands else self
@@ -897,20 +673,20 @@ class BaseImageAccessor:
         # scale in EPSG:4326 with global bounds, which is an unlikely use case prone to memory
         # limit errors).
         if (
-            (not crs or not region or not (scale or dimensions))
-            and (not crs or not crs_transform or not dimensions)
-            and not exp_image.dimensions
+            (not crs or not region or not (scale or shape))
+            and (not crs or not crs_transform or not shape)
+            and not exp_image.shape
         ):
             raise ValueError(
                 "This image does not have a fixed projection, you need to provide 'crs', "
-                "'region' & 'scale' / 'dimensions'; or 'crs', 'crs_transform' & 'dimensions'."
+                "'region' & 'scale' / 'shape'; or 'crs', 'crs_transform' & 'shape'."
             )
 
-        if scale and dimensions:
-            raise ValueError("You can provide one of 'scale' or 'dimensions', but not both.")
+        if scale and shape:
+            raise ValueError("You can provide one of 'scale' or 'shape', but not both.")
 
         # configure the export spatial parameters
-        if not crs_transform and not dimensions:
+        if not crs_transform and not shape:
             # Only pass crs to ee.Image.prepare_for_export() when it is different from the
             # source.  Passing same crs as source does not maintain the source pixel grid.
             crs = crs if crs is not None and crs != exp_image.crs else None
@@ -936,6 +712,7 @@ class BaseImageAccessor:
 
         # apply export spatial parameters
         crs_transform = crs_transform[:6] if crs_transform else None
+        dimensions = shape[::-1] if shape else None
         export_kwargs = dict(
             crs=crs, crs_transform=crs_transform, dimensions=dimensions, region=region, scale=scale
         )
@@ -1039,17 +816,17 @@ class BaseImageAccessor:
         filename: os.PathLike | str,
         overwrite: bool = False,
         nodata: bool | int | float = True,
-        max_tile_size: float = _ee_max_tile_size,
-        max_tile_dim: int = _ee_max_tile_dim,
-        max_tile_bands: int = _ee_max_tile_bands,
-        max_requests: int = _max_requests,
+        max_tile_size: float = Tiler._ee_max_tile_size,
+        max_tile_dim: int = Tiler._ee_max_tile_dim,
+        max_tile_bands: int = Tiler._ee_max_tile_bands,
+        max_requests: int = Tiler._max_requests,
         max_cpus: int = None,
     ) -> None:
         """
         Export the image to a GeoTIFF file.
 
         Export projection and bounds are defined by :attr:`crs`, :attr:`transform` and
-        :attr:`dimensions`, and data type by :attr:`dtype`. :meth:`prepareForExport` can be called
+        :attr:`shape`, and data type by :attr:`dtype`. :meth:`prepareForExport` can be called
         before this method to apply other export parameters.
 
         The image is retrieved as separate tiles which are downloaded and decompressed
@@ -1087,28 +864,9 @@ class BaseImageAccessor:
             number of CPUs, or one, whichever is greater.  Values larger than the default can
             stall the asynchronous event loop and are not recommended.
         """
-        # TODO: what happens if this, or to* is called on an image with inconsistent
-        #  projections, or a composite, w/o a call to prepareForExport()?
         filename = Path(filename)
         if not overwrite and filename.exists():
             raise FileExistsError(f'{filename} exists')
-
-        # TODO: move these checks into a common export fn
-        if not self.dimensions:
-            raise ValueError(
-                "This image cannot be exported as it does not have a fixed projection.  "
-                "'prepareForExport()' can be called to define one."
-            )
-        if self.size > 1e9:
-            size_str = tqdm.format_sizeof(self.size, suffix='B')
-            logger.warning(
-                f"Consider adjusting the image bounds, resolution and/or data type with "
-                f"'prepareForExport()' to reduce the export size: {size_str}."
-            )
-
-        tile_shape = self._get_tile_shape(
-            max_tile_size=max_tile_size, max_tile_dim=max_tile_dim, max_tile_bands=max_tile_bands
-        )
 
         # create a rasterio profile for the destination file
         profile = self.profile
@@ -1126,41 +884,31 @@ class BaseImageAccessor:
         )
 
         with ExitStack() as exit_stack:
-            # set up progress bar kwargs
-            exit_stack.enter_context(
-                logging_redirect_tqdm([logging.getLogger(__package__)], tqdm_class=tqdm)
-            )
-            tqdm_kwargs = utils.get_tqdm_kwargs(desc=filename.name, unit='tiles')
-
             # Open the destination file. GDAL_NUM_THREADS='ALL_CPUS' is needed here for
-            # building overviews once the download is complete.  It is overridden in nested
-            # functions to control concurrency of the download itself.
-            out_lock = threading.Lock()
+            # building overviews once the download is complete.  It is overridden in write_tile
+            # to control download concurrency.
             exit_stack.enter_context(rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False))
             out_ds = exit_stack.enter_context(rio.open(filename, 'w', **profile))
+            out_lock = threading.Lock()
 
-            # create a thread pool for writing tile arrays to file, and possibly for running the
-            # async event loop (see below)
-            executor = exit_stack.enter_context(ThreadPoolExecutor(max_workers=2))
+            # download and write tiles to file
+            def write_tile(tile: Tile, tile_array: np.ndarray):
+                """Write a tile array to file."""
+                with rio.Env(GDAL_NUM_THREADS=1), out_lock:
+                    logger.debug(f'Writing {tile!r} to file.')
+                    out_ds.write(tile_array, indexes=tile.indexes, window=tile.window)
 
-            async def download_tiles():
-                """Download and write tiles to file."""
-
-                def write_tile(tile: Tile, tile_array: np.ndarray):
-                    """Write a tile array to file."""
-                    with rio.Env(GDAL_NUM_THREADS=1), out_lock:
-                        logger.debug(f'Writing {tile!r} to file.')
-                        out_ds.write(tile_array, indexes=tile.indexes, window=tile.window)
-
-                async with self._tile_tasks(
-                    tile_shape, max_requests=max_requests, max_cpus=max_cpus
-                ) as tasks:
-                    loop = asyncio.get_running_loop()
-                    for task in tqdm(asyncio.as_completed(tasks), total=len(tasks), **tqdm_kwargs):
-                        tile, tile_array = await task
-                        await loop.run_in_executor(executor, write_tile, tile, tile_array)
-
-            self._asyncio_run(download_tiles(), executor)
+            tiler = exit_stack.enter_context(
+                Tiler(
+                    self,
+                    max_tile_size=max_tile_size,
+                    max_tile_dim=max_tile_dim,
+                    max_tile_bands=max_tile_bands,
+                    max_requests=max_requests,
+                    max_cpus=max_cpus,
+                )
+            )
+            tiler.map_tiles(write_tile)
 
             # populate GeoTIFF metadata
             self._write_metadata(out_ds)
@@ -1171,17 +919,17 @@ class BaseImageAccessor:
         self,
         masked: bool = False,
         structured: bool = False,
-        max_tile_size: float = _ee_max_tile_size,
-        max_tile_dim: int = _ee_max_tile_dim,
-        max_tile_bands: int = _ee_max_tile_bands,
-        max_requests: int = _max_requests,
+        max_tile_size: float = Tiler._ee_max_tile_size,
+        max_tile_dim: int = Tiler._ee_max_tile_dim,
+        max_tile_bands: int = Tiler._ee_max_tile_bands,
+        max_requests: int = Tiler._max_requests,
         max_cpus: int = None,
     ) -> np.ndarray:
         """
         Export the image to a NumPy array.
 
         Export projection and bounds are defined by :attr:`crs`, :attr:`transform` and
-        :attr:`dimensions`, and data type by :attr:`dtype`. :meth:`prepareForExport` can be called
+        :attr:`shape`, and data type by :attr:`dtype`. :meth:`prepareForExport` can be called
         before this method to apply other export parameters.
 
         The image is retrieved as separate tiles which are downloaded and decompressed
@@ -1213,62 +961,31 @@ class BaseImageAccessor:
             stall the asynchronous event loop and are not recommended.
 
         :returns:
-            3D NumPy array with (y, x, bands) dimensions.
+            3D NumPy array with (height, width, bands) dimensions.
         """
-        if not self.dimensions:
-            raise ValueError(
-                "This image cannot be exported as it does not have a fixed projection.  "
-                "'prepareForExport()' can be called to define one."
-            )
-        if self.size > 1e9:
-            size_str = tqdm.format_sizeof(self.size, suffix='B')
-            logger.warning(
-                f"Consider adjusting the image bounds, resolution and/or data type with "
-                f"'prepareForExport()' to reduce the export size: {size_str}."
-            )
+        # TODO: convert float nodata to nan?
+        im_shape = (*self.shape, self.count)
+        if masked:
+            array = np.ma.zeros(im_shape, dtype=self.dtype)
+        else:
+            array = np.zeros(im_shape, dtype=self.dtype)
 
-        tile_shape = self._get_tile_shape(
-            max_tile_size=max_tile_size, max_tile_dim=max_tile_dim, max_tile_bands=max_tile_bands
-        )
+        # download and write tiles to array
+        def write_tile(tile: Tile, tile_array: np.ndarray):
+            """Write a tile to array."""
+            # move band dimension from first to last
+            tile_array = np.moveaxis(tile_array, 0, -1)
+            array[tile.slices.row, tile.slices.col, tile.slices.band] = tile_array
 
-        with ExitStack() as exit_stack:
-            # set up progress bar kwargs
-            exit_stack.enter_context(
-                logging_redirect_tqdm([logging.getLogger(__package__)], tqdm_class=tqdm)
-            )
-            desc = self.index or self.id or 'Image'
-            tqdm_kwargs = utils.get_tqdm_kwargs(desc=desc, unit='tiles')
-
-            # create a thread pool for writing tiles into the array, and possibly for running the
-            # async event loop (see below)
-            executor = exit_stack.enter_context(ThreadPoolExecutor(max_workers=2))
-
-            async def download_tiles() -> np.ndarray:
-                """Download and write tiles to array."""
-
-                # TODO: convert float nodata to nan?
-                if masked:
-                    array = np.ma.zeros((*self.dimensions[::-1], self.count), dtype=self.dtype)
-                else:
-                    array = np.zeros((*self.dimensions[::-1], self.count), dtype=self.dtype)
-
-                def write_tile(tile: Tile, tile_array: np.ndarray):
-                    """Write a tile array to file."""
-                    # move band dimension from first to last
-                    tile_array = np.moveaxis(tile_array, 0, -1)
-                    array[tile.slices.row, tile.slices.col, tile.slices.band] = tile_array
-
-                async with self._tile_tasks(
-                    tile_shape, masked=masked, max_requests=max_requests, max_cpus=max_cpus
-                ) as tasks:
-                    loop = asyncio.get_running_loop()
-                    for task in tqdm(asyncio.as_completed(tasks), total=len(tasks), **tqdm_kwargs):
-                        tile, tile_array = await task
-                        await loop.run_in_executor(executor, write_tile, tile, tile_array)
-
-                return array
-
-            array = self._asyncio_run(download_tiles(), executor)
+        with Tiler(
+            self,
+            max_tile_size=max_tile_size,
+            max_tile_dim=max_tile_dim,
+            max_tile_bands=max_tile_bands,
+            max_requests=max_requests,
+            max_cpus=max_cpus,
+        ) as tiler:
+            tiler.map_tiles(write_tile, masked=masked)
 
         if structured:
             # TODO: return crs & transform or otherwise include them with the array?
@@ -1281,17 +998,17 @@ class BaseImageAccessor:
     def toXArray(
         self,
         masked: bool = False,
-        max_tile_size: float = _ee_max_tile_size,
-        max_tile_dim: int = _ee_max_tile_dim,
-        max_tile_bands: int = _ee_max_tile_bands,
-        max_requests: int = _max_requests,
+        max_tile_size: float = Tiler._ee_max_tile_size,
+        max_tile_dim: int = Tiler._ee_max_tile_dim,
+        max_tile_bands: int = Tiler._ee_max_tile_bands,
+        max_requests: int = Tiler._max_requests,
         max_cpus: int = None,
     ) -> xarray.DataArray:
         """
         Export the image to an XArray DataAray.
 
         Export projection and bounds are defined by the image :attr:`crs`, :attr:`transform` and
-        :attr:`dimensions`, and data type by :attr:`dtype`. :meth:`prepareForExport` can be called
+        :attr:`shape`, and data type by :attr:`dtype`. :meth:`prepareForExport` can be called
         before this method to apply other export parameters.
 
         The image is retrieved as separate tiles which are downloaded and decompressed
@@ -1327,7 +1044,6 @@ class BaseImageAccessor:
         if not xarray:
             raise ImportError("'toXArray()' requires the 'xarray' package to be installed.")
 
-        # TODO: add other checks
         if not self.transform[1] == self.transform[3] == 0:
             raise ValueError(
                 "'The image cannot be exported to XArray as its 'transform' is not aligned with "
@@ -1365,8 +1081,6 @@ class BaseImageAccessor:
         attrs['stac'] = json.dumps(self.stac._item_dict) if self.stac else None
         attrs = {k: v for k, v in attrs.items() if v is not None}
 
-        # TODO: this dimension ordering is different to xee and rioxarray.  is it straightforward
-        #  to convert between formats?  are there any limitations to doing it like this?
         return xarray.DataArray(data=array, coords=coords, dims=['y', 'x', 'band'], attrs=attrs)
 
 
@@ -1407,13 +1121,6 @@ class BaseImage(BaseImageAccessor):
         return self.id.replace('/', '-') if self.id else None
 
     @property
-    def shape(self) -> rio.Affine | None:
-        """Pixel dimensions of the minimum scale band (row, column). ``None`` if the image has no
-        fixed projection.
-        """
-        return self.dimensions[::-1]
-
-    @property
     def transform(self) -> rio.Affine | None:
         transform = super().transform
         return rio.Affine(*transform) if transform else None
@@ -1426,7 +1133,7 @@ class BaseImage(BaseImageAccessor):
     @property
     def has_fixed_projection(self) -> bool:
         """Whether the image has a fixed projection."""
-        return self.dimensions is not None
+        return self.shape is not None
 
     @property
     def refl_bands(self) -> list[str] | None:
@@ -1476,8 +1183,6 @@ class BaseImage(BaseImageAccessor):
         :return:
             Export task, started if ``wait`` is False, or completed if ``wait`` is True.
         """
-        if 'shape' in export_kwargs:
-            export_kwargs['dimensions'] = export_kwargs.pop('shape')[::-1]
         export_image = BaseImageAccessor(self.prepareForExport(**export_kwargs))
         return export_image.export(filename, type=type, folder=folder, wait=wait)
 
@@ -1486,10 +1191,10 @@ class BaseImage(BaseImageAccessor):
         filename: os.PathLike | str,
         overwrite: bool = False,
         num_threads: int = None,
-        max_tile_size: float = BaseImageAccessor._ee_max_tile_size,
-        max_tile_dim: int = BaseImageAccessor._ee_max_tile_dim,
-        max_tile_bands: int = BaseImageAccessor._ee_max_tile_bands,
-        max_requests: int = BaseImageAccessor._max_requests,
+        max_tile_size: float = Tiler._ee_max_tile_size,
+        max_tile_dim: int = Tiler._ee_max_tile_dim,
+        max_tile_bands: int = Tiler._ee_max_tile_bands,
+        max_requests: int = Tiler._max_requests,
         max_cpus: int = None,
         **export_kwargs,
     ) -> None:
@@ -1535,8 +1240,6 @@ class BaseImage(BaseImageAccessor):
                 "'num_threads' is deprecated and has no effect.  'max_requests' and 'max_cpus' "
                 "can be used to limit concurrency."
             )
-        if 'shape' in export_kwargs:
-            export_kwargs['dimensions'] = export_kwargs.pop('shape')[::-1]
 
         export_image = BaseImageAccessor(self.prepareForExport(**export_kwargs))
         export_image.toGeoTIFF(
