@@ -206,7 +206,7 @@ class Tiler:
         self._env = rio.Env(GDAL_NUM_THREAHDS=1)
 
     @staticmethod
-    def _validate_image(self, image: download.BaseImageAccessor):
+    def _validate_image(image: download.BaseImageAccessor):
         """Raise an error if the image does not have a fixed projection."""
         if not image.shape:
             raise ValueError(

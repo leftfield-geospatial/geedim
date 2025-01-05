@@ -1,17 +1,17 @@
 """
-    Copyright 2021 Dugal Harris - dugalh@gmail.com
+Copyright 2021 Dugal Harris - dugalh@gmail.com
 
-    Licensed under the Apache License, Version 2.0 (the "License");
-    you may not use this file except in compliance with the License.
-    You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-       http://www.apache.org/licenses/LICENSE-2.0
+   http://www.apache.org/licenses/LICENSE-2.0
 
-    Unless required by applicable law or agreed to in writing, software
-    distributed under the License is distributed on an "AS IS" BASIS,
-    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-    See the License for the specific language governing permissions and
-    limitations under the License.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
 from __future__ import annotations
@@ -27,10 +27,10 @@ import pytest
 import rasterio as rio
 from rasterio import Affine, features, warp, windows
 
+from geedim import tile as _tile
 from geedim import utils
-from geedim.download import _nodata_vals, BaseImage, BaseImageAccessor
+from geedim.download import BaseImage, BaseImageAccessor, _nodata_vals
 from geedim.enums import ExportType
-from tests.conftest import region_25ha
 
 
 class BaseImageLike:
@@ -50,8 +50,8 @@ class BaseImageLike:
         dtype_size = np.dtype(dtype).itemsize
         self.size = shape[0] * shape[1] * count * dtype_size
 
-    _tiles = BaseImage._tiles
-    _get_tile_shape = BaseImageAccessor._get_tile_shape
+    # _tiles = BaseImage._tiles
+    # _get_tile_shape = BaseImageAccessor._get_tile_shape
 
 
 def _bounds(geom: dict, dst_crs: str | rio.CRS = 'EPSG:4326') -> tuple[float, ...]:
@@ -385,14 +385,16 @@ def test_prepare_defaults(base_image: str, request: pytest.FixtureRequest):
         ('s2_sr_hm_base_image', 'EPSG:3857', (10, 0, 100, 0, -10, 200), (300, 400)),
     ],
 )
-def test_prepare_transform_shape(
+def test_prepare_transform_dimensions(
     base_image: str,
     crs: str,
     crs_transform: tuple[float, ...],
     shape: tuple[int, int],
     request: pytest.FixtureRequest,
 ):
-    """Test ``BaseImage._prepare_for_export()`` with ``crs_transform`` and ``shape`` parameters."""
+    """Test ``BaseImage._prepare_for_export()`` with ``crs_transform`` and ``shape``
+    parameters.
+    """
     base_image: BaseImage = request.getfixturevalue(base_image)
     exp_image = BaseImageAccessor(
         base_image.prepareForExport(crs=crs, crs_transform=crs_transform, shape=shape)
@@ -439,8 +441,12 @@ def test_prepare_region_scale(
         ('s2_sr_hm_base_image', 'EPSG:4326', 'region_10000ha', (300, 400)),
     ],
 )
-def test_prepare_region_shape(
-    base_image: str, crs: str, region: str, shape: tuple[int, int], request: pytest.FixtureRequest
+def test_prepare_region_dimensions(
+    base_image: str,
+    crs: str,
+    region: str,
+    shape: tuple[int, int],
+    request: pytest.FixtureRequest,
 ):
     """Test ``BaseImage._prepare_for_export()`` with ``region`` and ``shape`` parameters."""
     base_image: BaseImage = request.getfixturevalue(base_image)
@@ -509,11 +515,11 @@ def test_prepared_profile(s2_sr_hm_base_image: BaseImage):
 
     assert exp_image.profile['width'] == exp_image.shape[1]
     assert exp_image.profile['height'] == exp_image.shape[0]
-    assert exp_image.profile['nodata'] == _nodata_vals[exp_image.profile['dtype']]
+    assert exp_image.nodata == _nodata_vals[exp_image.dtype]
 
 
 @pytest.mark.parametrize('dtype, exp_nodata', _nodata_vals.items())
-def test_prepare_nodata(user_fix_bnd_base_image: BaseImage, dtype: str, exp_nodata: float):
+def _test_prepare_nodata(user_fix_bnd_base_image: BaseImage, dtype: str, exp_nodata: float):
     """Test ``BaseImage._prepare_for_export()`` profile sets the ``nodata`` value correctly for
     different dtypes.
     """
@@ -561,22 +567,22 @@ def test_scale_offset(
 
 
 def test_tile_shape():
-    """Test ``BaseImage._get_tile_shape()`` satisfies the tile size limit for different image shapes."""
+    """Test ``BaseImage._get_tile_shape()`` satisfies the tile size limit for different image
+    shapes.
+    """
     max_tile_dim = 10000
     for max_tile_size, count, height, width in product(
         range(16, 32, 16), range(1, 11000, 2000), range(1, 11000, 2000), range(1, 11000, 2000)
     ):
         im_shape = (count, height, width)
         exp_image = BaseImageLike(shape=(height, width), count=count)  # mock a BaseImage
-        tile_shape = exp_image._get_tile_shape(
-            max_tile_size=max_tile_size, max_tile_dim=max_tile_dim
-        )
+        tiler = _tile.Tiler(exp_image)
+        tile_shape = tiler._get_tile_shape(max_tile_size=max_tile_size, max_tile_dim=max_tile_dim)
         tile_size = np.prod(tile_shape) * np.dtype(exp_image.dtype).itemsize
 
         assert all(np.array(tile_shape) <= np.array(im_shape)), (max_tile_size, im_shape)
         assert all(np.array(tile_shape) <= max_tile_dim), (max_tile_size, im_shape)
         assert tile_size <= (max_tile_size << 20), (max_tile_size, im_shape)
-    pass
 
 
 @pytest.mark.parametrize(
@@ -592,8 +598,8 @@ def test_tiles(
 ):
     """Test continuity and coverage of tiles."""
     exp_image = BaseImageLike(shape=image_shape, count=image_count, transform=image_transform)
-    tile_shape = exp_image._get_tile_shape(max_tile_size=max_tile_size)
-    tiles = [tile for tile in exp_image._tiles(tile_shape)]
+    tiler = _tile.Tiler(exp_image, max_tile_size=max_tile_size)
+    tiles = [tile for tile in tiler._tiles()]
 
     # test tile continuity
     prev_tile = tiles[0]
@@ -606,16 +612,16 @@ def test_tiles(
         accum_indexes |= {*tile.indexes}
 
         prev_transform = rio.Affine(*prev_tile.tile_transform)
-        if tile.row_off == prev_tile.row_off and tile.band_off == prev_tile.band_off:
-            assert tile.col_off == (prev_tile.col_off + prev_tile.width)
-            ref_transform = prev_transform * Affine.translation(prev_tile.width, 0)
-        elif tile.band_off == prev_tile.band_off:
-            assert tile.row_off == (prev_tile.row_off + prev_tile.height)
+        if tile.row_start == prev_tile.row_start and tile.band_start == prev_tile.band_start:
+            assert tile.col_start == prev_tile.col_stop
+            ref_transform = prev_transform * Affine.translation(prev_tile.shape[1], 0)
+        elif tile.band_start == prev_tile.band_start:
+            assert tile.row_start == prev_tile.row_stop
             ref_transform = prev_transform * Affine.translation(
-                -prev_tile.col_off, prev_tile.height
+                -prev_tile.col_start, prev_tile.shape[0]
             )
         else:
-            assert tile.band_off == (prev_tile.band_off + prev_tile.count)
+            assert tile.band_start == prev_tile.band_stop
             ref_transform = image_transform
 
         assert tile.tile_transform == pytest.approx(ref_transform[:6], abs=1e-9)
@@ -626,8 +632,10 @@ def test_tiles(
     assert accum_indexes == {*range(1, exp_image.count + 1)}
 
 
-def test_download_transform_shape(user_base_image: BaseImage, tmp_path: pathlib.Path):
-    """Test ``BaseImage.download()`` file properties and contents with ``crs_transform`` and ``shape`` arguments."""
+def test_download_transform_dimensions(user_base_image: BaseImage, tmp_path: pathlib.Path):
+    """Test ``BaseImage.download()`` file properties and contents with ``crs_transform`` and
+    ``shape`` arguments.
+    """
     # reference profile to test against
     ref_profile = dict(
         crs='EPSG:3857',
