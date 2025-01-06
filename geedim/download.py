@@ -839,14 +839,14 @@ class BaseImageAccessor:
         and for floating point types, it is ``float('-inf')``.
 
         :param filename:
-            Destination file name.
+            Destination file path.
         :param overwrite:
             Whether to overwrite the destination file if it exists.
         :param nodata:
             Set the GeoTIFF nodata tag to :attr:`nodata` (``True``), or leave the nodata tag
-            unset (``False``).  Otherwise, if a custom integer or floating point value is
-            provided, the nodata tag is set to this value.  Usually, a custom value would be
-            provided when the image has been unmasked with ``ee.Image.unmask(nodata)``.
+            unset (``False``).  If a custom integer or floating point value is provided,
+            the nodata tag is set to this value.  Usually, a custom value would be provided when
+            the image has been unmasked with ``ee.Image.unmask(nodata)``.
         :param max_tile_size:
             Maximum tile size (MB).  Should be less than the `Earth Engine size limit
             <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (32 MB).
@@ -938,11 +938,12 @@ class BaseImageAccessor:
         ``max_cpus``.
 
         :param masked:
-            Return a :class:`~numpy.ma.MaskedArray` (``True``) or :class:`~numpy.ndarray`
-            (``False``).  If  ``False``, masked pixels are set to the :attr:`nodata` value.
+            Return a :class:`~numpy.ndarray` with masked pixels set to the :attr:`nodata` value
+            (``False``), or a :class:`~numpy.ma.MaskedArray` (``True``).
         :param structured:
-            Return a structured array (in the same format as ``ee.data.computePixels()``)
-            (``True``), or an unstructured array (``False``).
+            Return a 3D array with (row, column, band) dimensions and a numerical ``dtype``
+            (``False``), or a 2D array with (row, column) dimensions and a structured ``dtype``
+            representing the image bands (``True``).
         :param max_tile_size:
             Maximum tile size (MB).  Should be less than the `Earth Engine size limit
             <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (32 MB).
@@ -961,12 +962,12 @@ class BaseImageAccessor:
             stall the asynchronous event loop and are not recommended.
 
         :returns:
-            3D NumPy array with (height, width, bands) dimensions.
+            NumPy array.
         """
         # TODO: convert float nodata to nan?
         im_shape = (*self.shape, self.count)
         if masked:
-            array = np.ma.zeros(im_shape, dtype=self.dtype)
+            array = np.ma.zeros(im_shape, dtype=self.dtype, fill_value=self.nodata)
         else:
             array = np.zeros(im_shape, dtype=self.dtype)
 
@@ -992,10 +993,13 @@ class BaseImageAccessor:
             bands = [bd['name'] for bd in self.band_properties]
             dtype = np.dtype(dict(names=bands, formats=[self.dtype] * len(bands)))
             array = array.view(dtype=dtype).squeeze()
+            if isinstance(array, np.ma.MaskedArray):
+                # re-set masked array fill_value which is not copied in view
+                array.fill_value = self.nodata
 
         return array
 
-    def toXArray(
+    def toXarray(
         self,
         masked: bool = False,
         max_tile_size: float = Tiler._ee_max_tile_size,
@@ -1005,9 +1009,9 @@ class BaseImageAccessor:
         max_cpus: int = None,
     ) -> xarray.DataArray:
         """
-        Export the image to an XArray DataAray.
+        Export the image to an Xarray DataArray.
 
-        Export projection and bounds are defined by the image :attr:`crs`, :attr:`transform` and
+        Export projection and bounds are defined by :attr:`crs`, :attr:`transform` and
         :attr:`shape`, and data type by :attr:`dtype`. :meth:`prepareForExport` can be called
         before this method to apply other export parameters.
 
@@ -1016,11 +1020,16 @@ class BaseImageAccessor:
         ``max_tile_bands``, and download / decompress concurrency with ``max_requests`` and
         ``max_cpus``.
 
+        DataArray attributes include the export :attr:`crs`, :attr:`transform` and ``nodata``
+        values for compatibility with `rioxarray <https://github.com/corteva/rioxarray>`_,
+        as well as ``ee`` and ``stac`` JSON strings of the Earth Engine property and STAC
+        dictionaries.
+
         :param masked:
-            Set masked pixels in the returned array to NaN (``True``), or to the :attr:`nodata`
-            value (``False``).  If ``True``, the image :attr:`dtype` is integer, and one or more
-            pixels are masked, the returned array is converted to a minimal floating point type
-            able to represent :attr:`dtype`.
+            Set masked pixels in the returned array to the :attr:`nodata` value (``False``),
+            or to NaN (``True``).  If ``True``, the image :attr:`dtype` is integer, and one or
+            more pixels are masked, the returned array is converted to a minimal floating point
+            type able to represent :attr:`dtype`.
         :param max_tile_size:
             Maximum tile size (MB).  Should be less than the `Earth Engine size limit
             <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (32 MB).
@@ -1042,11 +1051,11 @@ class BaseImageAccessor:
             Image DataArray.
         """
         if not xarray:
-            raise ImportError("'toXArray()' requires the 'xarray' package to be installed.")
+            raise ImportError("'toXarray()' requires the 'xarray' package to be installed.")
 
         if not self.transform[1] == self.transform[3] == 0:
             raise ValueError(
-                "'The image cannot be exported to XArray as its 'transform' is not aligned with "
+                "'The image cannot be exported to Xarray as its 'transform' is not aligned with "
                 "its CRS axes.  It should be reprojected first."
             )
 
@@ -1201,13 +1210,12 @@ class BaseImage(BaseImageAccessor):
         """
         Download the image to a GeoTIFF file.
 
-        The image is retrieved as separate GeoTIFF tiles which are downloaded and read
+        The image is retrieved as separate tiles which are downloaded and decompressed
         concurrently.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
-        ``max_tile_bands``, and download / read concurrency with ``max_requests`` and ``max_cpus``.
+        ``max_tile_bands``, and download / decompress concurrency with ``max_requests`` and
+        ``max_cpus``.
 
-        The downloaded file is masked with a :attr:`dtype` dependent ``nodata`` value,
-        as provided by Earth Engine.  For integer types, ``nodata`` is the minimum value of the
-        :attr:`dtype`, and for floating point types, it is ``float('-inf')``.
+        The GeoTIFF nodata tag is set to the :attr:`nodata` value.
 
         :param filename:
             Destination file name.
