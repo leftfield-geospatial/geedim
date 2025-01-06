@@ -38,6 +38,7 @@ from geedim.enums import (
     ExportType,
     ResamplingMethod,
 )
+from geedim.tile import Tiler
 from geedim.utils import Spinner, asset_id, get_bounds
 
 logger = logging.getLogger(__name__)
@@ -712,7 +713,7 @@ def search(
     '-mts',
     '--max-tile-size',
     type=click.FLOAT,
-    default=BaseImageAccessor._ee_max_tile_size,
+    default=Tiler._ee_max_tile_size,
     show_default=True,
     help='Maximum download tile size (MB).',
 )
@@ -720,7 +721,7 @@ def search(
     '-mtd',
     '--max-tile-dim',
     type=click.INT,
-    default=BaseImageAccessor._ee_max_tile_dim,
+    default=Tiler._ee_max_tile_dim,
     show_default=True,
     help='Maximum download tile dimension (pixels).',
 )
