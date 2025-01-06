@@ -38,6 +38,7 @@ from geedim.errors import InputImageError
 from geedim.mask import MaskedImage, _MaskedImage, class_from_id
 from geedim.medoid import medoid
 from geedim.stac import StacCatalog, StacItem
+from geedim.tile import Tiler
 from geedim.utils import register_accessor, split_id
 
 try:
@@ -100,19 +101,17 @@ def abbreviate(name: str) -> str:
 
 @register_accessor('gd', ee.ImageCollection)
 class ImageCollectionAccessor:
-    _max_export_images = 1000
-
-    # TODO: strictly this is an _init_ docstring, not clas docstring.  does moving it (and all
-    #  other class docstrings) to _init_ work with sphinx?
-    """
-    Accessor for describing, searching and compositing an image collection, with support for
-    cloud/shadow masking.
-
-    :param ee_coll:
-        Image collection to access.
-    """
+    _max_export_images = 5000
 
     def __init__(self, ee_coll: ee.ImageCollection):
+        """
+        Accessor for describing, cloud / shadow masking and exporting an image collection.
+
+        :param ee_coll:
+            Image collection to access.
+        """
+        # TODO: strictly this is an _init_ docstring, not class docstring.  does moving it (and all
+        #  other class docstrings) to _init_ work with sphinx?
         self._ee_coll = ee_coll
         self._info = None
         self._schema = None
@@ -379,7 +378,7 @@ class ImageCollectionAccessor:
         band names, projections or bounds; or don't have fixed projections).
         """
         first_band_names = first_band = None
-        band_compare_keys = ['crs', 'crs_transform', 'dimensions']
+        band_compare_keys = ['crs', 'crs_transform', 'dimensions', 'data_type']
 
         # TODO: this test is stricter than it needs to be.  for image splitting, only the min
         #  scale band of each image should have a fixed projection and match all other min scale
@@ -404,11 +403,11 @@ class ImageCollectionAccessor:
                     if not first_band:
                         first_band = cmp_band
                     elif cmp_band != first_band:
-                        raise ValueError('Inconsistent band projections or bounds.')
+                        raise ValueError('Inconsistent band projections, bounds or data types.')
 
         except ValueError as ex:
             raise ValueError(
-                f"Cannot export collection: '{str(ex)}'.  You can call 'prepareForExport()' to "
+                f"Cannot export collection: '{str(ex)}'.  'prepareForExport()' can be called to "
                 f"create an export-ready collection."
             )
 
@@ -684,11 +683,11 @@ class ImageCollectionAccessor:
         the first image when they are not specified (with either ``region``, or ``crs_transform``
         & ``shape``).
 
-        All images in the prepared collection share a common pixel grid and bounds.
+        All images in the prepared collection will share a common projection and bounds.
 
-        When ``crs``, ``scale``, ``crs_transform`` & ``shape`` are not provided, the pixel grids
+        When ``crs``, ``scale``, ``crs_transform`` & ``shape`` are not provided, the projections
         of the prepared images and first source image will match (i.e. if all source images share
-        a pixel grid, the pixel grid of all prepared and source images will match).
+        a projection, the projection of all prepared and source images will match).
 
         ..warning::
             The prepared collection images are reprojected and clipped versions of their
@@ -705,7 +704,7 @@ class ImageCollectionAccessor:
             row-major order: [xScale, xShearing, xTranslation, yShearing, yScale, yTranslation].
             All image bands are re-projected to this transform.
         :param shape:
-            (height, width) shape of the prepared images in pixels.
+            (height, width) dimensions of the prepared images in pixels.
         :param region:
             Region defining the prepared image bounds as a GeoJSON dictionary or ``ee.Geometry``.
             Defaults to the geometry of the first image.
@@ -764,15 +763,68 @@ class ImageCollectionAccessor:
         dirname: os.PathLike | str,
         overwrite: bool = False,
         split: str | SplitType = SplitType.bands,
-        max_tile_size: float = BaseImageAccessor._ee_max_tile_size,
-        max_tile_dim: int = BaseImageAccessor._ee_max_tile_dim,
-        max_tile_bands: int = BaseImageAccessor._ee_max_tile_bands,
-        max_requests: int = BaseImageAccessor._max_requests,
+        max_tile_size: float = Tiler._ee_max_tile_size,
+        max_tile_dim: int = Tiler._ee_max_tile_dim,
+        max_tile_bands: int = Tiler._ee_max_tile_bands,
+        max_requests: int = Tiler._max_requests,
         max_cpus: int = None,
     ) -> None:
-        """Export the collection to GeoTIFF files."""
+        """
+        Export the collection to GeoTIFF files.
+
+        Export projection and bounds are defined by the
+        :attr:`~geedim.download.BaseImageAccessor.crs`,
+        :attr:`~geedim.download.BaseImageAccessor.transform` and
+        :attr:`~geedim.download.BaseImageAccessor.shape` properties, and the data type by the
+        :attr:`~geedim.download.BaseImageAccessor.dtype` property of the collection images. All
+        bands in the collection should share the same projection, bounds and data type.
+        :meth:`prepareForExport` can be called before this method to apply other export
+        parameters and create an export-ready collection.
+
+        Images are retrieved as separate tiles which are downloaded and decompressed
+        concurrently.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
+        ``max_tile_bands``, and download / decompress concurrency with ``max_requests`` and
+        ``max_cpus``.
+
+        The maximum number of images that can be exported is 5000.
+
+        :param dirname:
+            Destination directory path.
+        :param overwrite:
+            Whether to overwrite destination files if they exist.
+        :param split:
+            Export a file for each collection band (:attr:`SplitType.bands`), or for each
+            collection image (:attr:`SplitType.images`).  Files are named with their band name,
+            and file band descriptions are set to the ``system:index`` property of the band's
+            source image, when ``split`` is :attr:`SplitType.bands`.  Otherwise, files are named
+            with the ``system:index`` property of the file's source image, and file band
+            descriptions are set to the image band names, when ``split`` is
+            :attr:`SplitType.images`.
+        :param nodata:
+            Set GeoTIFF nodata tags to the shared
+            :attr:`~geedim.download.BaseImageAccessor.nodata` value of the collection images
+            (``True``), or leave nodata tags unset (``False``).  If a custom integer or floating
+            point value is provided, nodata tags are set to this value.  Usually, a custom value
+            would be provided when the collection images have been unmasked with
+            ``ee.Image.unmask(nodata)``.
+        :param max_tile_size:
+            Maximum tile size (MB).  Should be less than the `Earth Engine size limit
+            <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (32 MB).
+        :param max_tile_dim:
+            Maximum tile width / height (pixels).  Should be less than the `Earth Engine limit
+            <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (10000).
+        :param max_tile_bands:
+            Maximum number of tile bands.  Should be less than the Earth Engine limit (1024).
+        :param max_requests:
+            Maximum number of concurrent tile downloads.  Should be less than the `max concurrent
+            requests quota <https://developers.google.com/earth-engine/guides/usage
+            #adjustable_quota_limits>`__.
+        :param max_cpus:
+            Maximum number of tiles to decompress concurrently.  Defaults to two less than the
+            number of CPUs, or one, whichever is greater.  Values larger than the default can
+            stall the asynchronous event loop and are not recommended.
+        """
         # TODO: document limitation on number of images.
-        # TODO: can the max_* args be passed and documented as kwargs?
         split = SplitType(split)
         self._raise_image_consistency()
         images = self._split_images(split)
@@ -799,13 +851,67 @@ class ImageCollectionAccessor:
         masked: bool = False,
         structured: bool = False,
         split: str | SplitType = SplitType.bands,
-        max_tile_size: float = BaseImageAccessor._ee_max_tile_size,
-        max_tile_dim: int = BaseImageAccessor._ee_max_tile_dim,
-        max_tile_bands: int = BaseImageAccessor._ee_max_tile_bands,
-        max_requests: int = BaseImageAccessor._max_requests,
+        max_tile_size: float = Tiler._ee_max_tile_size,
+        max_tile_dim: int = Tiler._ee_max_tile_dim,
+        max_tile_bands: int = Tiler._ee_max_tile_bands,
+        max_requests: int = Tiler._max_requests,
         max_cpus: int = None,
     ) -> np.ndarray:
-        """Export the collection to a NumPy array."""
+        """
+        Export the collection to a NumPy array.
+
+        Export projection and bounds are defined by the
+        :attr:`~geedim.download.BaseImageAccessor.crs`,
+        :attr:`~geedim.download.BaseImageAccessor.transform` and
+        :attr:`~geedim.download.BaseImageAccessor.shape` properties, and the data type by the
+        :attr:`~geedim.download.BaseImageAccessor.dtype` property of the collection images. All
+        bands in the collection should share the same projection, bounds and data type.
+        :meth:`prepareForExport` can be called before this method to apply other export
+        parameters and create an export-ready collection.
+
+        Images are retrieved as separate tiles which are downloaded and decompressed
+        concurrently.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
+        ``max_tile_bands``, and download / decompress concurrency with ``max_requests`` and
+        ``max_cpus``.
+
+        The maximum number of images that can be exported is 5000.
+
+        :param masked:
+            Return a :class:`~numpy.ndarray` with masked pixels set to the shared :attr:`nodata`
+            value of the collection images (``False``), or a :class:`~numpy.ma.MaskedArray`
+            (``True``).
+        :param structured:
+            Return a 4D array with a numerical ``dtype`` (``False``), or a 2D array with a
+            structured ``dtype`` (``True``).  Array dimension ordering, and structured
+            ``dtype`` fields depend on the value of ``split``.
+        :param split:
+            Return a 4D array with (row, column, band, image) dimensions
+            (:attr:`SplitType.bands`), or a 4D array with with (row, column, image,
+            band) dimensions (:attr:`SplitType.images`), when ``structured`` is ``False``.
+            Otherwise, return a 2D array with (row, column) dimensions and a structured ``dtype``
+            representing images nested in bands (:attr:`SplitType.bands`), or a 2D array with
+            (row, column) dimensions and a structured ``dtype`` representing bands nested in
+            images (:attr:`SplitType.images`), when ``structured`` is ``True``.
+        :param max_tile_size:
+            Maximum tile size (MB).  Should be less than the `Earth Engine size limit
+            <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (32 MB).
+        :param max_tile_dim:
+            Maximum tile width / height (pixels).  Should be less than the `Earth Engine limit
+            <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (10000).
+        :param max_tile_bands:
+            Maximum number of tile bands.  Should be less than the Earth Engine limit (1024).
+        :param max_requests:
+            Maximum number of concurrent tile downloads.  Should be less than the `max concurrent
+            requests quota <https://developers.google.com/earth-engine/guides/usage
+            #adjustable_quota_limits>`__.
+        :param max_cpus:
+            Maximum number of tiles to decompress concurrently.  Defaults to two less than the
+            number of CPUs, or one, whichever is greater.  Values larger than the default can
+            stall the asynchronous event loop and are not recommended.
+
+        :returns:
+            NumPy array.
+        """
         split = SplitType(split)
         self._raise_image_consistency()
         images = self._split_images(split)
@@ -859,19 +965,74 @@ class ImageCollectionAccessor:
 
         return array
 
-    def toXArray(
+    def toXarray(
         self,
         masked: bool = False,
         split: str | SplitType = SplitType.bands,
-        max_tile_size: float = BaseImageAccessor._ee_max_tile_size,
-        max_tile_dim: int = BaseImageAccessor._ee_max_tile_dim,
-        max_tile_bands: int = BaseImageAccessor._ee_max_tile_bands,
-        max_requests: int = BaseImageAccessor._max_requests,
+        max_tile_size: float = Tiler._ee_max_tile_size,
+        max_tile_dim: int = Tiler._ee_max_tile_dim,
+        max_tile_bands: int = Tiler._ee_max_tile_bands,
+        max_requests: int = Tiler._max_requests,
         max_cpus: int = None,
     ) -> xarray.Dataset:
-        """Export the collection to an XArray DataSet."""
+        """
+        Export the collection to an Xarray Dataset.
+
+        Export projection and bounds are defined by the
+        :attr:`~geedim.download.BaseImageAccessor.crs`,
+        :attr:`~geedim.download.BaseImageAccessor.transform` and
+        :attr:`~geedim.download.BaseImageAccessor.shape` properties, and the data type by the
+        :attr:`~geedim.download.BaseImageAccessor.dtype` property of the collection images. All
+        bands in the collection should share the same projection, bounds and data type.
+        :meth:`prepareForExport` can be called before this method to apply other export
+        parameters and create an export-ready collection.
+
+        Images are retrieved as separate tiles which are downloaded and decompressed
+        concurrently.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
+        ``max_tile_bands``, and download / decompress concurrency with ``max_requests`` and
+        ``max_cpus``.
+
+        Dataset attributes include the export :attr:`crs`, :attr:`transform` and ``nodata``
+        values for compatibility with `rioxarray <https://github.com/corteva/rioxarray>`_,
+        as well as ``ee`` and ``stac`` JSON strings corresponding to Earth Engine property and
+        STAC dictionaries.
+
+        The maximum number of images that can be exported is 5000.
+
+        :param masked:
+            Set masked pixels in the returned array to the shared :attr:`nodata` value of the
+            collection images (``False``), or to NaN (``True``).  If ``True``, the export
+            ``dtype`` is integer, and one or more pixels are masked, the returned array is
+            converted to a minimal floating point type able to represent the export ``dtype``.
+        :param split:
+            Return a dataset with bands as variables (:attr:`SplitType.bands`), or a dataset with
+            images as variables (:attr:`SplitType.images`).  Variables are named with their band
+            name, and time coordinates are converted from the ``system:start_time`` property of
+            the images when ``split`` is :attr:`SplitType.bands`.  Variables are named with the
+            ``system:index`` property of their image, and band coordinates are set to image band
+            names when ``split`` is :attr:`SplitType.images`.
+        :param max_tile_size:
+            Maximum tile size (MB).  Should be less than the `Earth Engine size limit
+            <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (32 MB).
+        :param max_tile_dim:
+            Maximum tile width / height (pixels).  Should be less than the `Earth Engine limit
+            <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (10000).
+        :param max_tile_bands:
+            Maximum number of tile bands.  Should be less than the Earth Engine limit (1024).
+        :param max_requests:
+            Maximum number of concurrent tile downloads.  Should be less than the `max concurrent
+            requests quota <https://developers.google.com/earth-engine/guides/usage
+            #adjustable_quota_limits>`__.
+        :param max_cpus:
+            Maximum number of tiles to decompress concurrently.  Defaults to two less than the
+            number of CPUs, or one, whichever is greater.  Values larger than the default can
+            stall the asynchronous event loop and are not recommended.
+
+        :returns:
+            Xarray Dataset.
+        """
         if not xarray:
-            raise ImportError("'toXArray()' requires the 'xarray' package to be installed.")
+            raise ImportError("'toXarray()' requires the 'xarray' package to be installed.")
         split = SplitType(split)
         self._raise_image_consistency()
         images = self._split_images(split)
@@ -880,7 +1041,7 @@ class ImageCollectionAccessor:
         arrays = {}
         tqdm_kwargs = utils.get_tqdm_kwargs(desc=self.id, unit=split.value)
         for name, image in tqdm(images.items(), **tqdm_kwargs):
-            arrays[name] = image.toXArray(
+            arrays[name] = image.toXarray(
                 masked=masked,
                 max_tile_size=max_tile_size,
                 max_tile_dim=max_tile_dim,
@@ -911,7 +1072,7 @@ class ImageCollectionAccessor:
         attrs['stac'] = json.dumps(self.stac._item_dict) if self.stac else None
         attrs = {k: v for k, v in attrs.items() if v is not None}
 
-        # return a DataSet of split image DataArrays
+        # return a Dataset of split image DataArrays
         return xarray.Dataset(arrays, attrs=attrs)
 
 

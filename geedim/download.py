@@ -621,7 +621,7 @@ class BaseImageAccessor:
         the source image when they are not specified (with either ``region``,
         or ``crs_transform`` & ``shape``).
 
-        When ``crs``, ``scale``, ``crs_transform`` & ``shape`` are not provided, the pixel grids
+        When ``crs``, ``scale``, ``crs_transform`` & ``shape`` are not provided, the projections
         of the prepared and source images will match.
 
         ..warning::
