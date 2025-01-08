@@ -1,21 +1,22 @@
 """
-   Copyright 2021 Dugal Harris - dugalh@gmail.com
+Copyright 2021 Dugal Harris - dugalh@gmail.com
 
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-       http://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
 from __future__ import annotations
 
+import asyncio
 import itertools
 import json
 import logging
@@ -24,9 +25,10 @@ import pathlib
 import sys
 import time
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from threading import Thread
-from typing import Optional, Tuple, Generic, TypeVar, Callable
+from typing import Any, Callable, Coroutine, Generic, Optional, Tuple, TypeVar
 
 import ee
 import numpy as np
@@ -39,7 +41,7 @@ from requests.adapters import HTTPAdapter, Retry
 from tqdm.auto import tqdm
 
 from geedim.enums import ResamplingMethod
-from geedim.errors import GeedimWarning, GeedimError
+from geedim.errors import GeedimError, GeedimWarning
 
 if '__file__' in globals():
     root_path = pathlib.Path(__file__).absolute().parents[1]
@@ -208,7 +210,6 @@ def get_projection(image: ee.Image, min_scale: bool = True) -> ee.Projection:
 
 
 class Spinner(Thread):
-
     def __init__(self, label='', interval=0.2, leave=True, **kwargs):
         """
         Thread sub-class to run a non-blocking spinner.
@@ -461,21 +462,42 @@ def register_accessor(name: str, cls: type) -> Callable[[type[T]], type[T]]:
     return decorator
 
 
-def get_tqdm_kwargs(desc: str = None, unit: str = None, **kwargs) -> dict:
+def get_tqdm_kwargs(desc: str = None, unit: str = None, **kwargs) -> dict[str, Any]:
     """Return a dictionary of kwargs for a tqdm progress bar."""
-    tqdm_kwargs = dict(dynamic_ncols=True, leave=None, miniters=1, **kwargs)
+    tqdm_kwargs: dict[str, Any] = dict(dynamic_ncols=True, leave=True)
+    tqdm_kwargs.update(**kwargs)
     if desc:
-        desc_width = 50
-        desc = '...' + desc[-desc_width + 3 :] if len(desc) > desc_width else desc
+        # clip / pad the desc to max_width so that nested bars are aligned
+        max_width = 40  # length of an S2 system:index
+        desc_width = len(desc)
+        desc = '...' + desc[-max_width + 3 :] if desc_width > max_width else desc.rjust(max_width)
         tqdm_kwargs.update(desc=desc)
 
     if unit:
-        bar_format = (
-            '{desc:>50}: |{bar}| {n_fmt}/{total_fmt} ({unit}) [{percentage:3.0f}%] in {elapsed} '
-            '(eta: {remaining})'
-        )
+        bar_format = '{l_bar}{bar}|{n_fmt}/{total_fmt} {unit} [{elapsed}<{remaining}]'
         tqdm_kwargs.update(bar_format=bar_format, unit=unit)
     else:
-        bar_format = '{desc:>50}: |{bar}| [{percentage:3.0f}%] in {elapsed} (eta: {remaining})'
+        bar_format = '{l_bar}{bar}| [{elapsed}<{remaining}]'
         tqdm_kwargs.update(bar_format=bar_format)
     return tqdm_kwargs
+
+
+def asyncio_run(coro: Coroutine[Any, Any, T], executor: ThreadPoolExecutor = None, **kwargs) -> T:
+    """Run a coroutine and return the result, using a separate thread for the event loop if one is
+    already running.
+    """
+    # asyncio.run() cannot be called from a thread with an existing event loop, so test if there
+    # is a loop running in this thread (see https://stackoverflow.com/a/75341431)
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    if loop and loop.is_running():
+        # run in a separate thread if there is an existing loop (e.g. we are in a jupyter notebook)
+        # TODO: can we not just run it on the existing loop like this?  if so, remove executor arg
+        # res = asyncio.run_coroutine_threadsafe(coro, loop).result()
+        res = executor.submit(lambda: asyncio.run(coro, **kwargs)).result()
+    else:
+        # run in this thread if there is no existing loop
+        res = asyncio.run(coro, **kwargs)
+    return res

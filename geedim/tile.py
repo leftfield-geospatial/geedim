@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from functools import cached_property
 from io import BytesIO
 from itertools import product
-from typing import Any, Coroutine, Generator, Sequence, TypeVar
+from typing import Generator, Sequence
 
 import aiohttp
 import numpy as np
@@ -33,13 +33,10 @@ import rasterio as rio
 from rasterio.errors import RasterioIOError
 from rasterio.windows import Window
 from tqdm.auto import tqdm
-from tqdm.contrib.logging import logging_redirect_tqdm
 
 from geedim import download, utils
 
 logger = logging.getLogger(__name__)
-
-T = TypeVar('T')
 
 
 @dataclass(frozen=True)
@@ -107,25 +104,6 @@ class Tile:
             slice(self.row_start, self.row_stop),
             slice(self.col_start, self.col_stop),
         )
-
-
-def _asyncio_run(coro: Coroutine[Any, Any, T], executor: ThreadPoolExecutor, **kwargs) -> T:
-    """Run a coroutine and return the result, using a separate thread for the event loop if one is
-    already running.
-    """
-    # asyncio.run() cannot be called from a thread with an existing event loop, so test if there
-    # is a loop running in this thread (see https://stackoverflow.com/a/75341431)
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-    if loop and loop.is_running():
-        # run in a separate thread if there is an existing loop (e.g. we are in a jupyter notebook)
-        res = executor.submit(lambda: asyncio.run(coro, **kwargs)).result()
-    else:
-        # run in this thread if there is no existing loop
-        res = asyncio.run(coro, **kwargs)
-    return res
 
 
 class Tiler:
@@ -379,41 +357,41 @@ class Tiler:
             :class:`~numpy.ndarray` (``False``).  If  ``False``, masked pixels are set to the image
             :attr:`nodata` value.
         """
-        with logging_redirect_tqdm([logging.getLogger(__package__)], tqdm_class=tqdm):
-            # set up progress bar kwargs
-            desc = self._im.index or self._im.id or 'Image'
-            tqdm_kwargs = utils.get_tqdm_kwargs(desc=desc, unit='tiles')
+        # with logging_redirect_tqdm([logging.getLogger(__package__)], tqdm_class=tqdm):
+        # set up progress bar kwargs
+        desc = self._im.index or self._im.id
+        tqdm_kwargs = utils.get_tqdm_kwargs(desc=desc, unit='tiles')
 
-            async def _map_tiles() -> None:
-                """Download tiles and apply the map function asynchronously."""
-                loop = asyncio.get_running_loop()
-                # persisting the aiohttp.ClientSession outside the event loop is not recommended,
-                # so it is recreated for each export
-                timeout = aiohttp.ClientTimeout(total=300, sock_connect=30, ceil_threshold=5)
-                async with aiohttp.ClientSession(timeout=timeout) as session:
-                    # begin tile downloads
-                    tasks = {
-                        asyncio.create_task(self._download_tile(tile, masked, session))
-                        for tile in self._tiles()
-                    }
-                    # apply func to tiles in the order they are downloaded
-                    try:
-                        for task in tqdm(
-                            asyncio.as_completed(tasks), total=len(tasks), **tqdm_kwargs
-                        ):
+        async def _map_tiles() -> None:
+            """Download tiles and apply the map function asynchronously."""
+            loop = asyncio.get_running_loop()
+            # persisting the aiohttp.ClientSession outside the event loop is not recommended,
+            # so it is recreated for each export
+            timeout = aiohttp.ClientTimeout(total=300, sock_connect=30, ceil_threshold=5)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                # begin tile downloads
+                tasks = {
+                    asyncio.create_task(self._download_tile(tile, masked, session))
+                    for tile in self._tiles()
+                }
+                # apply func to tiles in the order they are downloaded
+                try:
+                    with tqdm(asyncio.as_completed(tasks), total=len(tasks), **tqdm_kwargs) as bar:
+                        # work around leave is None logic not working in tqdm.notebook
+                        bar.leave = False if bar.pos > 0 else True
+                        for task in bar:
                             tile, tile_array = await task
                             await loop.run_in_executor(self._executor, func, tile, tile_array)
+                finally:
+                    # cancel and await any incomplete tasks (except the current one)
+                    logger.debug('Cleaning up export tasks...')
+                    tasks = asyncio.all_tasks(loop)
+                    tasks.remove(asyncio.current_task(loop))
+                    [task.cancel() for task in tasks]
+                    await asyncio.gather(*tasks, return_exceptions=True)
+                    logger.debug('Clean up complete.')
 
-                    finally:
-                        # cancel and await any incomplete tasks (except the current one)
-                        logger.debug('Cleaning up export tasks...')
-                        tasks = asyncio.all_tasks(loop)
-                        tasks.remove(asyncio.current_task(loop))
-                        [task.cancel() for task in tasks]
-                        await asyncio.gather(*tasks, return_exceptions=True)
-                        logger.debug('Clean up complete.')
+            # https://docs.aiohttp.org/en/latest/client_advanced.html#graceful-shutdown
+            await asyncio.sleep(0.25)
 
-                # https://docs.aiohttp.org/en/latest/client_advanced.html#graceful-shutdown
-                await asyncio.sleep(0.25)
-
-            _asyncio_run(_map_tiles(), self._executor)
+        utils.asyncio_run(_map_tiles(), self._executor)
