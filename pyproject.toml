@@ -9,7 +9,6 @@ dependencies = [
     'click>=8',
     'tqdm>=4.6',
     'earthengine-api>=0.1.379',
-    'requests>=2.2',
     'tabulate>=0.9',
     'aiohttp>=3.11',
 ]
@@ -52,7 +51,7 @@ packages = ['geedim']
 version = {attr = 'geedim.version.__version__'}
 
 [tool.setuptools.package-data]
-geedim = ['data/ee_stac_urls.json']
+geedim = ['data/ee_stac_urls.json', 'py.typed']
 
 [tool.black]
 line-length = 100
@@ -60,5 +59,6 @@ skip-string-normalization = true
 
 [tool.ruff]
 line-length = 100
-lint = { extend-select = ["I"] }
-format = { quote-style = 'single' }
+lint = { extend-select = ['I'] }
+format = { quote-style = 'preserve' }
+
