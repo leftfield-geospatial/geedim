@@ -276,15 +276,16 @@ class Tiler:
             tile_stop = tile_stop.tolist()
             yield Tile(*tile_start, *tile_stop, image_transform=self._im.transform)
 
-    async def _download_tile(
+    async def _map_tile(
         self,
+        func: Callable[[Tile, np.ndarray], None],
         tile: Tile,
         masked: bool,
         session: aiohttp.ClientSession,
         max_retries: int = 5,
         backoff_factor: float = 2.0,
-    ) -> tuple[Tile, np.ndarray]:
-        """Download a tile to a NumPy array with retries."""
+    ) -> None:
+        """Download a tile with retries, and pass it to the provided ``func``."""
 
         def get_tile_url() -> str:
             """Return a download URL for the tile."""
@@ -333,7 +334,7 @@ class Tiler:
                 async with self._limit_cpus:
                     logger.debug(f'Reading GeoTIFF buffer for {tile!r}.')
                     array = await loop.run_in_executor(self._executor, read_gtiff_buf, buf)
-                return tile, array
+                break
 
             except self._retry_exceptions as ex:
                 # raise an error on maximum retries or 'user memory limit exceeded'
@@ -343,6 +344,8 @@ class Tiler:
                 # otherwise retry
                 logger.debug(f'Retry {retry + 1} of {max_retries} for {tile!r}. Error: {ex!r}.')
                 await asyncio.sleep(backoff_factor * (2**retry))
+
+        await loop.run_in_executor(self._executor, func, tile, array)
 
     def map_tiles(self, func: Callable[[Tile, np.ndarray], None], masked: bool = False) -> None:
         """
@@ -362,36 +365,28 @@ class Tiler:
         desc = self._im.index or self._im.id
         tqdm_kwargs = utils.get_tqdm_kwargs(desc=desc, unit='tiles')
 
-        async def _map_tiles() -> None:
+        async def _map_tiles(session: aiohttp.ClientSession) -> None:
             """Download tiles and apply the map function asynchronously."""
-            loop = asyncio.get_running_loop()
-            # persisting the aiohttp.ClientSession outside the event loop is not recommended,
-            # so it is recreated for each export
-            timeout = aiohttp.ClientTimeout(total=300, sock_connect=30, ceil_threshold=5)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                # begin tile downloads
-                tasks = {
-                    asyncio.create_task(self._download_tile(tile, masked, session))
-                    for tile in self._tiles()
-                }
-                # apply func to tiles in the order they are downloaded
-                try:
-                    with tqdm(asyncio.as_completed(tasks), total=len(tasks), **tqdm_kwargs) as bar:
-                        # work around leave is None logic not working in tqdm.notebook
-                        bar.leave = False if bar.pos > 0 else True
-                        for task in bar:
-                            tile, tile_array = await task
-                            await loop.run_in_executor(self._executor, func, tile, tile_array)
-                finally:
-                    # cancel and await any incomplete tasks (except the current one)
-                    logger.debug('Cleaning up export tasks...')
-                    tasks = asyncio.all_tasks(loop)
-                    tasks.remove(asyncio.current_task(loop))
-                    [task.cancel() for task in tasks]
-                    await asyncio.gather(*tasks, return_exceptions=True)
-                    logger.debug('Clean up complete.')
+            # begin tile downloads
+            tasks = {
+                asyncio.create_task(self._map_tile(func, tile, masked, session))
+                for tile in self._tiles()
+            }
+            # update progress bar as tiles are completed
+            try:
+                with tqdm(asyncio.as_completed(tasks), total=len(tasks), **tqdm_kwargs) as bar:
+                    # work around leave is None logic not working in tqdm.notebook
+                    bar.leave = False if bar.pos > 0 else True
+                    for task in bar:
+                        await task
 
-            # https://docs.aiohttp.org/en/latest/client_advanced.html#graceful-shutdown
-            await asyncio.sleep(0.25)
+            finally:
+                # cancel and await any incomplete tasks
+                logger.debug('Cleaning up export tasks...')
+                [task.cancel() for task in tasks]
+                await asyncio.gather(*tasks, return_exceptions=True)
+                logger.debug('Clean up complete.')
 
-        utils.asyncio_run(_map_tiles(), self._executor)
+        # download tiles using persistent session
+        runner = utils.AsyncRunner()
+        runner.run(_map_tiles(runner.session))
