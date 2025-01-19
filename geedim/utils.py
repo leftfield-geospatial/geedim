@@ -17,6 +17,7 @@ limitations under the License.
 from __future__ import annotations
 
 import asyncio
+import atexit
 import itertools
 import json
 import logging
@@ -30,6 +31,13 @@ from contextlib import contextmanager
 from threading import Thread
 from typing import Any, Callable, Coroutine, Generic, Optional, Tuple, TypeVar
 
+if sys.version_info >= (3, 11):
+    from asyncio.runners import Runner
+else:
+    # TODO: remove when min supported python >= 3.11
+    from geedim.runners import Runner
+
+import aiohttp
 import ee
 import numpy as np
 import rasterio as rio
@@ -42,6 +50,8 @@ from tqdm.auto import tqdm
 
 from geedim.enums import ResamplingMethod
 from geedim.errors import GeedimError, GeedimWarning
+
+logger = logging.getLogger(__name__)
 
 if '__file__' in globals():
     root_path = pathlib.Path(__file__).absolute().parents[1]
@@ -87,13 +97,13 @@ def Initialize(opt_url: Optional[str] = 'https://earthengine-highvolume.googleap
             ee.Initialize(opt_url=opt_url, **kwargs)
 
 
-def singleton(cls):
+def singleton(cls: T, *args, **kwargs) -> T:
     """Class decorator to make it a singleton."""
     instances = {}
 
     def getinstance() -> cls:
         if cls not in instances:
-            instances[cls] = cls()
+            instances[cls] = cls(*args, **kwargs)
         return instances[cls]
 
     return getinstance
@@ -482,22 +492,116 @@ def get_tqdm_kwargs(desc: str = None, unit: str = None, **kwargs) -> dict[str, A
     return tqdm_kwargs
 
 
-def asyncio_run(coro: Coroutine[Any, Any, T], executor: ThreadPoolExecutor = None, **kwargs) -> T:
-    """Run a coroutine and return the result, using a separate thread for the event loop if one is
-    already running.
-    """
-    # asyncio.run() cannot be called from a thread with an existing event loop, so test if there
-    # is a loop running in this thread (see https://stackoverflow.com/a/75341431)
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-    if loop and loop.is_running():
-        # run in a separate thread if there is an existing loop (e.g. we are in a jupyter notebook)
-        # TODO: can we not just run it on the existing loop like this?  if so, remove executor arg
-        # res = asyncio.run_coroutine_threadsafe(coro, loop).result()
-        res = executor.submit(lambda: asyncio.run(coro, **kwargs)).result()
-    else:
-        # run in this thread if there is no existing loop
-        res = asyncio.run(coro, **kwargs)
-    return res
+@singleton
+class AsyncRunner:
+    def __init__(self, **kwargs):
+        """
+        A singleton that manages the lifecycle of an :mod:`~python.asyncio` event loop and
+        :mod:`aiohttp` client session.
+
+        The :meth:`close` method is executed on normal python exit.  Can also be used as a
+        context manager.
+
+        :param kwargs:
+            Optional keywords arguments to :class:`~python.asyncio.runners.Runner`.
+        """
+        self._runner = Runner(**kwargs)
+        self._executor = None
+        self._session = None
+        self._closed = False
+        atexit.register(self.close)
+
+    def __enter__(self) -> AsyncRunner:
+        self._runner.__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def __del__(self):
+        if not self._closed:
+            warnings.warn(
+                f'{type(self).__name__} was never closed: {self!r}.', category=ResourceWarning
+            )
+
+    def close(self):
+        """Shutdown and close the client session and event loop."""
+
+        async def close_session():
+            logger.debug('Cancelling pending tasks...')
+            tasks = asyncio.all_tasks(self.loop)
+            tasks.remove(asyncio.current_task(self.loop))
+            await asyncio.gather(*tasks, return_exceptions=True)
+            logger.debug('Closing session...')
+            await self._session.close()
+            # https://docs.aiohttp.org/en/latest/client_advanced.html#graceful-shutdown
+            await asyncio.sleep(0.25)
+
+        if self._closed:
+            return
+        if self._session:
+            self.run(close_session())
+        logger.debug('Closing runner...')
+        self._runner.close()
+        if self._executor:
+            logger.debug('Shutting down executor...')
+            self._executor.shutdown(cancel_futures=True)
+        self._closed = True
+        logger.debug('Close complete.')
+
+    @property
+    def loop(self) -> asyncio.AbstractEventLoop:
+        """Embedded event loop."""
+        return self._runner.get_loop()
+
+    @property
+    def session(self) -> aiohttp.ClientSession:
+        """Embedded client session."""
+
+        async def create_session():
+            timeout = aiohttp.ClientTimeout(total=300, sock_connect=30, ceil_threshold=5)
+            return aiohttp.ClientSession(raise_for_status=True, timeout=timeout)
+
+        # a client session is bound to an event loop, so a persistent session requires the
+        self._session = self._session or self.run(create_session())
+        return self._session
+
+    def run(self, coro: Coroutine[Any, Any, T], **kwargs) -> T:
+        """Run a coroutine in the embedded event loop.
+
+        Uses a separate thread if an event loop is already running in the current thread (e.g. the
+        main thread is a jupyter notebook).
+
+        :param coro:
+            Coroutine to run.
+        :param kwargs:
+            Optional keywords arguments to :meth:`~python.asyncio.runners.Runner.run`.
+
+        :return:
+            Coroutine result.
+        """
+        # TODO:
+        #  - test a sensible exception is raised if Runner is closed
+        #  - test runner & loop are re-usable after async error
+        #  - test session is re-usable after aiohttp error
+        #  - what happens if the user has created their own loop on the main thread before
+        #  AsyncRunner is called - will this use the executor?  also, think about if users can
+        #  use this loop (either via AsyncRunner, or directly via asyncio) for their own async code
+        #  - can we run on the jupyter loop?
+        #  - revisit if we can do map_tiles clean up here
+
+        # Runner.run() cannot be called from a thread with an existing event loop, so test if
+        # there is a loop running in this thread (see https://stackoverflow.com/a/75341431)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            # run in a separate thread if there is an existing loop (e.g. we are in a jupyter
+            # notebook)
+            self._executor = self._executor or ThreadPoolExecutor(max_workers=1)
+            return self._executor.submit(lambda: self._runner.run(coro, **kwargs)).result()
+        else:
+            # run in this thread if there is no existing loop
+            return self._runner.run(coro, **kwargs)
