@@ -199,7 +199,7 @@ def run(main, *, debug=None, loop_factory=None):
 
         asyncio.run(main())
     """
-    if events._get_running_loop() is not None:
+    if events.get_running_loop() is not None:
         # fail fast with short traceback
         raise RuntimeError("asyncio.run() cannot be called from a running event loop")
 
