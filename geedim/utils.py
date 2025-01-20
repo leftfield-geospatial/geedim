@@ -49,7 +49,7 @@ from requests.adapters import HTTPAdapter, Retry
 from tqdm.auto import tqdm
 
 from geedim.enums import ResamplingMethod
-from geedim.errors import GeedimError, GeedimWarning
+from geedim.errors import GeedimError
 
 logger = logging.getLogger(__name__)
 
@@ -396,9 +396,9 @@ def asset_id(image_id: str, folder: str = None):
     """
     Convert an EE image ID and EE asset project into an EE asset ID.
 
-    If ``folder`` is not specified, ``image_id`` is returned as is. Otherwise, ``image_id`` is converted to a name by
-    changing forward slashes to dashes, ``folder`` is split into <root folder> and <sub folder> sections, and a string
-    is returned with EE asset ID format:
+    If ``folder`` is not supplied, ``image_id`` is returned as is. Otherwise, ``image_id`` is
+    converted to a name by changing forward slashes to dashes, ``folder`` is split into <root
+    folder> and <sub folder> sections, and a string is returned with EE asset ID format:
 
         projects/<root folder>/assets/<sub folder(s)>/<image_name>.
     """
@@ -464,7 +464,7 @@ def register_accessor(name: str, cls: type) -> Callable[[type[T]], type[T]]:
             warnings.warn(
                 f"Registration of accessor {accessor!r} under name '{name}' for type {cls!r} is"
                 "overriding a preexisting attribute with the same name.",
-                GeedimWarning,
+                category=RuntimeWarning,
             )
         setattr(cls, name, CachedAccessor(name, accessor))
         return accessor
@@ -587,8 +587,6 @@ class AsyncRunner:
         #  - what happens if the user has created their own loop on the main thread before
         #  AsyncRunner is called - will this use the executor?  also, think about if users can
         #  use this loop (either via AsyncRunner, or directly via asyncio) for their own async code
-        #  - can we run on the jupyter loop?
-        #  - revisit if we can do map_tiles clean up here
 
         # Runner.run() cannot be called from a thread with an existing event loop, so test if
         # there is a loop running in this thread (see https://stackoverflow.com/a/75341431)
