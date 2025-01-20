@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import warnings
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -193,9 +194,10 @@ class Tiler:
             )
         if image.size > 10e9:
             size_str = tqdm.format_sizeof(image.size, suffix='B')
-            logger.warning(
-                f"Consider adjusting the image bounds, resolution and/or data type with "
-                f"'prepareForExport()' to reduce the export size: {size_str}."
+            warnings.warn(
+                f"Consider adjusting the image bounds, resolution or data type with "
+                f"'prepareForExport()' to reduce the export size: {size_str}.",
+                category=RuntimeWarning,
             )
 
     def __enter__(self):
