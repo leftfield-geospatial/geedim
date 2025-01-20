@@ -23,6 +23,7 @@ import operator
 import os
 import threading
 import time
+import warnings
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from datetime import datetime, timezone
@@ -38,10 +39,10 @@ from rasterio.enums import Resampling as RioResampling
 from rasterio.io import DatasetWriter
 from tqdm.auto import tqdm
 
+import geedim.tile as tile_
 from geedim import utils
 from geedim.enums import ExportType, ResamplingMethod
 from geedim.stac import StacCatalog, StacItem
-from geedim.tile import Tile, Tiler
 
 try:
     import xarray
@@ -528,8 +529,10 @@ class BaseImageAccessor:
             source image.
         """
         if self.band_properties is None:
-            # TODO: raise error?
-            logger.warning('Cannot scale and offset this image, there is no STAC band information.')
+            warnings.warn(
+                'Cannot scale and offset this image, there is no STAC band information.',
+                category=UserWarning,
+            )
             return self._ee_image
 
         # create band scale and offset dicts
@@ -621,11 +624,11 @@ class BaseImageAccessor:
         the source image when they are not specified (with either ``region``,
         or ``crs_transform`` & ``shape``).
 
-        When ``crs``, ``scale``, ``crs_transform`` & ``shape`` are not provided, the projections
+        When ``crs``, ``scale``, ``crs_transform`` & ``shape`` are not supplied, the projections
         of the prepared and source images will match.
 
         ..warning::
-            Depending on the provided arguments, the prepared image may be a reprojected and
+            Depending on the supplied arguments, the prepared image may be a reprojected and
             clipped version of the source.  This type of image is `not recommended
             <https://developers.google.com/earth-engine/guides/best_practices>`__ for use in map
             display or further computation.
@@ -644,7 +647,7 @@ class BaseImageAccessor:
             Defaults to the image geometry.
         :param scale:
             Pixel scale (m) of the prepared image.  All bands are re-projected to this scale.
-            Ignored if ``crs`` and ``crs_transform`` are provided.  Defaults to the minimum
+            Ignored if ``crs`` and ``crs_transform`` are supplied.  Defaults to the minimum
             scale of the image bands.
         :param resampling:
             Resampling method to use for reprojecting.  Ignored for images without fixed
@@ -664,12 +667,12 @@ class BaseImageAccessor:
         :return:
             Prepared image.
         """
-        # Create a new BaseImageAccessor if bands are provided.  This is done here so that crs,
+        # Create a new BaseImageAccessor if bands are supplied.  This is done here so that crs,
         # scale etc parameters used below will have values specific to bands.
         exp_image = BaseImageAccessor(self._ee_image.select(bands)) if bands else self
 
         # Prevent exporting images with no fixed projection unless arguments defining the export
-        # pixel grid and bounds are provided (EE allows this in some cases, but uses a 1 degree
+        # pixel grid and bounds are supplied (EE allows this in some cases, but uses a 1 degree
         # scale in EPSG:4326 with global bounds, which is an unlikely use case prone to memory
         # limit errors).
         if (
@@ -743,7 +746,7 @@ class BaseImageAccessor:
             Earth Engine asset project (when ``type`` is :attr:`~geedim.enums.ExportType.asset`),
             or Google Cloud Storage bucket (when ``type`` is
             :attr:`~geedim.enums.ExportType.cloud`). If ``type`` is
-            :attr:`~geedim.enums.ExportType.asset` and ``folder`` is not provided, ``filename``
+            :attr:`~geedim.enums.ExportType.asset` and ``folder`` is not supplied, ``filename``
             should be a valid Earth Engine asset ID. If ``type`` is
             :attr:`~geedim.enums.ExportType.cloud` then ``folder`` is required.
         :param wait:
@@ -760,7 +763,7 @@ class BaseImageAccessor:
         if logger.getEffectiveLevel() <= logging.DEBUG:
             logger.debug(f"Uncompressed size: {tqdm.format_sizeof(self.size, suffix='B')}")
 
-        # update defaults with any provided **kwargs
+        # update defaults with any supplied **kwargs
         export_kwargs = dict(
             description=filename.replace('/', '-')[:100],
             maxPixels=1e9,
@@ -783,7 +786,7 @@ class BaseImageAccessor:
             )
 
         elif type == ExportType.asset:
-            # if folder is provided create an EE asset ID from it and filename, else treat
+            # if folder is supplied create an EE asset ID from it and filename, else treat
             # filename as a valid EE asset ID
             asset_id = utils.asset_id(filename, folder) if folder else filename
             export_kwargs.pop('formatOptions')  # not used for asset export
@@ -816,10 +819,10 @@ class BaseImageAccessor:
         filename: os.PathLike | str,
         overwrite: bool = False,
         nodata: bool | int | float = True,
-        max_tile_size: float = Tiler._ee_max_tile_size,
-        max_tile_dim: int = Tiler._ee_max_tile_dim,
-        max_tile_bands: int = Tiler._ee_max_tile_bands,
-        max_requests: int = Tiler._max_requests,
+        max_tile_size: float = tile_.Tiler._ee_max_tile_size,
+        max_tile_dim: int = tile_.Tiler._ee_max_tile_dim,
+        max_tile_bands: int = tile_.Tiler._ee_max_tile_bands,
+        max_requests: int = tile_.Tiler._max_requests,
         max_cpus: int = None,
     ) -> None:
         """
@@ -830,7 +833,7 @@ class BaseImageAccessor:
         before this method to apply other export parameters.
 
         The image is retrieved as separate tiles which are downloaded and decompressed
-        concurrently.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
+        concurrently.  tile_.Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
         ``max_tile_bands``, and download / decompress concurrency with ``max_requests`` and
         ``max_cpus``.
 
@@ -844,8 +847,8 @@ class BaseImageAccessor:
             Whether to overwrite the destination file if it exists.
         :param nodata:
             Set the GeoTIFF nodata tag to :attr:`nodata` (``True``), or leave the nodata tag
-            unset (``False``).  If a custom integer or floating point value is provided,
-            the nodata tag is set to this value.  Usually, a custom value would be provided when
+            unset (``False``).  If a custom integer or floating point value is supplied,
+            the nodata tag is set to this value.  Usually, a custom value would be supplied when
             the image has been unmasked with ``ee.Image.unmask(nodata)``.
         :param max_tile_size:
             Maximum tile size (MB).  Should be less than the `Earth Engine size limit
@@ -892,14 +895,14 @@ class BaseImageAccessor:
             out_lock = threading.Lock()
 
             # download and write tiles to file
-            def write_tile(tile: Tile, tile_array: np.ndarray):
+            def write_tile(tile: tile_.Tile, tile_array: np.ndarray):
                 """Write a tile array to file."""
                 with rio.Env(GDAL_NUM_THREADS=1), out_lock:
                     logger.debug(f'Writing {tile!r} to file.')
                     out_ds.write(tile_array, indexes=tile.indexes, window=tile.window)
 
             tiler = exit_stack.enter_context(
-                Tiler(
+                tile_.Tiler(
                     self,
                     max_tile_size=max_tile_size,
                     max_tile_dim=max_tile_dim,
@@ -919,10 +922,10 @@ class BaseImageAccessor:
         self,
         masked: bool = False,
         structured: bool = False,
-        max_tile_size: float = Tiler._ee_max_tile_size,
-        max_tile_dim: int = Tiler._ee_max_tile_dim,
-        max_tile_bands: int = Tiler._ee_max_tile_bands,
-        max_requests: int = Tiler._max_requests,
+        max_tile_size: float = tile_.Tiler._ee_max_tile_size,
+        max_tile_dim: int = tile_.Tiler._ee_max_tile_dim,
+        max_tile_bands: int = tile_.Tiler._ee_max_tile_bands,
+        max_requests: int = tile_.Tiler._max_requests,
         max_cpus: int = None,
     ) -> np.ndarray:
         """
@@ -933,7 +936,7 @@ class BaseImageAccessor:
         before this method to apply other export parameters.
 
         The image is retrieved as separate tiles which are downloaded and decompressed
-        concurrently.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
+        concurrently.  tile_.Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
         ``max_tile_bands``, and download / decompress concurrency with ``max_requests`` and
         ``max_cpus``.
 
@@ -972,13 +975,13 @@ class BaseImageAccessor:
             array = np.zeros(im_shape, dtype=self.dtype)
 
         # download and write tiles to array
-        def write_tile(tile: Tile, tile_array: np.ndarray):
+        def write_tile(tile: tile_.Tile, tile_array: np.ndarray):
             """Write a tile to array."""
             # move band dimension from first to last
             tile_array = np.moveaxis(tile_array, 0, -1)
             array[tile.slices.row, tile.slices.col, tile.slices.band] = tile_array
 
-        with Tiler(
+        with tile_.Tiler(
             self,
             max_tile_size=max_tile_size,
             max_tile_dim=max_tile_dim,
@@ -1002,10 +1005,10 @@ class BaseImageAccessor:
     def toXarray(
         self,
         masked: bool = False,
-        max_tile_size: float = Tiler._ee_max_tile_size,
-        max_tile_dim: int = Tiler._ee_max_tile_dim,
-        max_tile_bands: int = Tiler._ee_max_tile_bands,
-        max_requests: int = Tiler._max_requests,
+        max_tile_size: float = tile_.Tiler._ee_max_tile_size,
+        max_tile_dim: int = tile_.Tiler._ee_max_tile_dim,
+        max_tile_bands: int = tile_.Tiler._ee_max_tile_bands,
+        max_requests: int = tile_.Tiler._max_requests,
         max_cpus: int = None,
     ) -> xarray.DataArray:
         """
@@ -1016,7 +1019,7 @@ class BaseImageAccessor:
         before this method to apply other export parameters.
 
         The image is retrieved as separate tiles which are downloaded and decompressed
-        concurrently.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
+        concurrently.  tile_.Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
         ``max_tile_bands``, and download / decompress concurrency with ``max_requests`` and
         ``max_cpus``.
 
@@ -1181,7 +1184,7 @@ class BaseImage(BaseImageAccessor):
             Earth Engine asset project (when ``type`` is :attr:`~geedim.enums.ExportType.asset`),
             or Google Cloud Storage bucket (when ``type`` is
             :attr:`~geedim.enums.ExportType.cloud`). If ``type`` is
-            :attr:`~geedim.enums.ExportType.asset` and ``folder`` is not provided, ``filename``
+            :attr:`~geedim.enums.ExportType.asset` and ``folder`` is not supplied, ``filename``
             should be a valid Earth Engine asset ID. If ``type`` is
             :attr:`~geedim.enums.ExportType.cloud` then ``folder`` is required.
         :param wait:
@@ -1200,10 +1203,10 @@ class BaseImage(BaseImageAccessor):
         filename: os.PathLike | str,
         overwrite: bool = False,
         num_threads: int = None,
-        max_tile_size: float = Tiler._ee_max_tile_size,
-        max_tile_dim: int = Tiler._ee_max_tile_dim,
-        max_tile_bands: int = Tiler._ee_max_tile_bands,
-        max_requests: int = Tiler._max_requests,
+        max_tile_size: float = tile_.Tiler._ee_max_tile_size,
+        max_tile_dim: int = tile_.Tiler._ee_max_tile_dim,
+        max_tile_bands: int = tile_.Tiler._ee_max_tile_bands,
+        max_requests: int = tile_.Tiler._max_requests,
         max_cpus: int = None,
         **export_kwargs,
     ) -> None:
@@ -1211,7 +1214,7 @@ class BaseImage(BaseImageAccessor):
         Download the image to a GeoTIFF file.
 
         The image is retrieved as separate tiles which are downloaded and decompressed
-        concurrently.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
+        concurrently.  tile_.Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
         ``max_tile_bands``, and download / decompress concurrency with ``max_requests`` and
         ``max_cpus``.
 
@@ -1244,9 +1247,10 @@ class BaseImage(BaseImageAccessor):
             Arguments to :meth:`BaseImageAccessor.prepareForExport`.
         """
         if num_threads:
-            raise DeprecationWarning(
+            warnings.warn(
                 "'num_threads' is deprecated and has no effect.  'max_requests' and 'max_cpus' "
-                "can be used to limit concurrency."
+                "can be used to limit concurrency.",
+                category=DeprecationWarning,
             )
 
         export_image = BaseImageAccessor(self.prepareForExport(**export_kwargs))
