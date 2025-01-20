@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import re
+import warnings
 from datetime import datetime, timezone
 from functools import cached_property
 from pathlib import Path
@@ -145,10 +146,8 @@ class ImageCollectionAccessor:
         ee_coll = ee.ImageCollection(images)
 
         # check the images are from compatible collections
-        ids = [
-            split_id(im_props.get('id', None))[0]
-            for im_props in ee_coll.gd.info.get('features', [])
-        ]
+        info = ee_coll.select(None).getInfo()
+        ids = [split_id(im_props.get('id', None))[0] for im_props in info.get('features', [])]
         if not _compatible_collections(ids):
             # TODO: test raises an error if any/all names are None
             raise InputImageError(
@@ -332,7 +331,7 @@ class ImageCollectionAccessor:
 
         if date and region:
             # TODO: test for this error
-            raise ValueError("One of 'date' or 'region' can be specified, but not both.")
+            raise ValueError("One of 'date' or 'region' can be supplied, but not both.")
 
         def prepare_image(ee_image: ee.Image) -> ee.Image:
             """Prepare an Earth Engine image for use in compositing."""
@@ -349,7 +348,7 @@ class ImageCollectionAccessor:
                 )
             if mask:
                 ee_image = self._mi.mask_clouds(ee_image)
-            return ee_image.gd.resample(resampling)
+            return BaseImageAccessor(ee_image).resample(resampling)
 
         ee_coll = self._ee_coll.map(prepare_image)
 
@@ -367,9 +366,13 @@ class ImageCollectionAccessor:
                 ee_coll = ee_coll.sort('system:time_start')
         else:
             if date:
-                logger.warning(f"'date' is valid for {sort_methods} methods only.")
+                warnings.warn(
+                    f"'date' is valid for {sort_methods} methods only.", category=UserWarning
+                )
             elif region:
-                logger.warning(f"'region' is valid for {sort_methods} methods only.")
+                warnings.warn(
+                    f"'region' is valid for {sort_methods} methods only.", category=UserWarning
+                )
 
         return ee_coll
 
@@ -481,7 +484,7 @@ class ImageCollectionAccessor:
         """
         return medoid(self._ee_coll, bands=bands or self.reflBands)
 
-    def search(
+    def filter(
         self,
         start_date: str | datetime | ee.Date = None,
         end_date: str | datetime | ee.Date = None,
@@ -497,20 +500,21 @@ class ImageCollectionAccessor:
 
         Filled and cloudless portions are only calculated and included in collection
         :attr:`properties` when one or both of ``fill_portion`` / ``cloudless_portion`` are
-        provided.
+        supplied.  If ``fill_portion`` or ``cloudless_portion`` are supplied, ``region`` is
+        required.
 
-        Search speed can be increased by specifying ``custom_filter``, and or by omitting
-        ``fill_portion`` / ``cloudless_portion``.
+        Search speeds can be improved by supplying multiple of the ``start_date``, ``end_date``,
+        ``region`` and ``custom_filter`` arguments.
 
         :param start_date:
             Start date, in ISO format if a string.
         :param end_date:
-            End date, in ISO format if a string.  Defaults to a day after ``start_date``, if
-            ``end_date`` is ``None``, and ``start_date`` is supplied.
+            End date, in ISO format if a string.  Defaults to a day after ``start_date`` if
+            ``start_date`` is supplied.  Ignored if ``start_date`` is not supplied.
         :param region:
             Region that images should intersect as a GeoJSON dictionary or ``ee.Geometry``.
         :param fill_portion:
-            Lower limit on the portion of region that contains filled/valid image pixels (%).
+            Lower limit on the portion of ``region`` that contains filled pixels (%).
         :param cloudless_portion:
             Lower limit on the portion of filled pixels that are cloud/shadow free (%).
         :param custom_filter:
@@ -523,20 +527,10 @@ class ImageCollectionAccessor:
         :return:
             Filtered image collection containing search result image(s).
         """
-        # TODO: refactor error classes and what gets raised where.
-        # TODO: test for these errors
-        # TODO: refactor as e.g. filterCoverage / filterClouds?  rename as filter?
-        # TODO: if the collection has been filtered elsewhere, we should not enforce start_date
-        #  or region
-        if not start_date and not region:
-            raise ValueError("At least one of 'start_date' or 'region' should be specified")
+        # TODO: refactor error classes and what gets raised where & test for these errors
         if (fill_portion is not None or cloudless_portion is not None) and not region:
             raise ValueError(
-                "'region' is required when 'fill_portion' or 'cloudless_portion' are specified."
-            )
-        if not start_date or not region:
-            logger.warning(
-                "Specifying 'start_date' together with 'region' will help limit the search."
+                "'region' is required when 'fill_portion' or 'cloudless_portion' are supplied."
             )
 
         # filter the image collection, finding cloud/shadow masks and region stats
@@ -645,7 +639,7 @@ class ImageCollectionAccessor:
             comp_image = ee_coll.qualityMosaic('CLOUD_DIST')
         elif method == CompositeMethod.medoid:
             # limit medoid to surface reflectance bands
-            comp_image: ee.Image = ee_coll.gd.medoid(bands=self.reflBands)
+            comp_image: ee.Image = ImageCollectionAccessor(ee_coll).medoid(bands=self.reflBands)
         else:
             comp_image = getattr(ee_coll, method.name)()
 
@@ -685,7 +679,7 @@ class ImageCollectionAccessor:
 
         All images in the prepared collection will share a common projection and bounds.
 
-        When ``crs``, ``scale``, ``crs_transform`` & ``shape`` are not provided, the projections
+        When ``crs``, ``scale``, ``crs_transform`` & ``shape`` are not supplied, the projections
         of the prepared images and first source image will match (i.e. if all source images share
         a projection, the projection of all prepared and source images will match).
 
@@ -710,7 +704,7 @@ class ImageCollectionAccessor:
             Defaults to the geometry of the first image.
         :param scale:
             Pixel scale (m) of the prepared images.  All image bands are re-projected to this
-            scale. Ignored if ``crs`` and ``crs_transform`` are provided.  Defaults to the
+            scale. Ignored if ``crs`` and ``crs_transform`` are supplied.  Defaults to the
             minimum scale of the first image's bands.
         :param resampling:
             Resampling method to use for reprojecting.  Ignored for images without fixed
@@ -804,8 +798,8 @@ class ImageCollectionAccessor:
             Set GeoTIFF nodata tags to the shared
             :attr:`~geedim.download.BaseImageAccessor.nodata` value of the collection images
             (``True``), or leave nodata tags unset (``False``).  If a custom integer or floating
-            point value is provided, nodata tags are set to this value.  Usually, a custom value
-            would be provided when the collection images have been unmasked with
+            point value is supplied, nodata tags are set to this value.  Usually, a custom value
+            would be supplied when the collection images have been unmasked with
             ``ee.Image.unmask(nodata)``.
         :param max_tile_size:
             Maximum tile size (MB).  Should be less than the `Earth Engine size limit
@@ -824,7 +818,6 @@ class ImageCollectionAccessor:
             number of CPUs, or one, whichever is greater.  Values larger than the default can
             stall the asynchronous event loop and are not recommended.
         """
-        # TODO: document limitation on number of images.
         split = SplitType(split)
         self._raise_image_consistency()
         images = self._split_images(split)
@@ -1201,12 +1194,12 @@ class MaskedCollection(ImageCollectionAccessor):
         return self.reflBands
 
     def search(self, *args, **kwargs) -> MaskedCollection:
-        ee_coll = self._ee_coll.gd.search(*args, **kwargs)
+        ee_coll = self.filter(*args, **kwargs)
         gd_coll = MaskedCollection(ee_coll)
         gd_coll.schemaPropertyNames = self.schemaPropertyNames
         return gd_coll
 
     def composite(self, *args, **kwargs) -> MaskedImage:
-        ee_image = self._ee_coll.gd.composite(*args, **kwargs)
+        ee_image = super().composite(*args, **kwargs)
         gd_image = MaskedImage(ee_image)
         return gd_image
