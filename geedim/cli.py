@@ -17,10 +17,10 @@ limitations under the License.
 import json
 import logging
 import os
-import pathlib
 import re
-import sys
+import warnings
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import click
@@ -28,8 +28,10 @@ import ee
 import rasterio as rio
 from click.core import ParameterSource
 from rasterio.errors import CRSError
+from tqdm.auto import tqdm
+from tqdm.contrib import logging as tqdm_logging
 
-from geedim import Initialize, schema, version
+from geedim import Initialize, schema, utils, version
 from geedim.download import BaseImageAccessor, _nodata_vals
 from geedim.enums import (
     CloudMaskMethod,
@@ -39,20 +41,8 @@ from geedim.enums import (
     ResamplingMethod,
 )
 from geedim.tile import Tiler
-from geedim.utils import Spinner, asset_id, get_bounds
 
 logger = logging.getLogger(__name__)
-
-
-class PlainInfoFormatter(logging.Formatter):
-    """logging formatter to format INFO logs without the module name etc prefix"""
-
-    def format(self, record):
-        if record.levelno == logging.INFO:
-            self._style._fmt = "%(message)s"
-        else:
-            self._style._fmt = "%(levelname)s:%(name)s: %(message)s"
-        return super().format(record)
 
 
 @dataclass
@@ -126,20 +116,25 @@ class ChainedCommand(click.Command):
         return click.Command.invoke(self, ctx)
 
 
-def _configure_logging(verbosity):
-    """Configure python logging level."""
-    # adapted from rasterio https://github.com/rasterio/rasterio
-    log_level = max(10, 20 - 10 * verbosity)
+def _configure_logging(verbosity: int):
+    """Configure logging level, redirecting warnings to the logger and logs to ``tqdm.write()``."""
 
-    # limit logging config to geedim by applying to package logger, rather than root logger
-    # pkg_logger level etc are then 'inherited' by logger = getLogger(__name__) in the modules
+    # configure the package logger (adapted from rasterio:
+    # https://github.com/rasterio/rasterio/blob/main/rasterio/rio/main.py)
     pkg_logger = logging.getLogger(__package__)
-    formatter = PlainInfoFormatter()
-    handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(formatter)
+    log_level = max(10, 20 - 10 * verbosity)
+    # route logs through tqdm handler so they don't interfere with progress bars
+    handler = tqdm_logging._TqdmLoggingHandler(tqdm_class=tqdm)
+    handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
     pkg_logger.addHandler(handler)
     pkg_logger.setLevel(log_level)
-    logging.captureWarnings(True)
+
+    # redirect warnings to package logger
+    def showwarning(message, category, filename, lineno, file=None, line=None):
+        """Redirect warnings to the package logger."""
+        pkg_logger.warning(message)
+
+    warnings.showwarning = showwarning
 
 
 def _im_name(im: ee.Image) -> str:
@@ -156,7 +151,7 @@ def _crs_cb(ctx, param, crs):
     """click callback to validate and parse the CRS."""
     if crs is not None:
         try:
-            wkt_fn = pathlib.Path(crs)
+            wkt_fn = Path(crs)
             # read WKT from file, if it exists
             if wkt_fn.exists():
                 with open(wkt_fn, 'r') as f:
@@ -187,7 +182,7 @@ def _region_cb(ctx, param, value):
             with click.open_file(value, encoding='utf-8') as f:
                 value = json.load(f)
         else:
-            value = get_bounds(value, expand=10)
+            value = utils.get_bounds(value, expand=10)
     elif value is not None and len(value) != 0:
         raise click.BadParameter(f'Invalid region: {filename}.', param=param)
     return value
@@ -314,8 +309,7 @@ like_option = click.option(
 def cli(ctx, verbose, quiet):
     """Search, composite and download Google Earth Engine imagery."""
     ctx.obj = ChainedData()
-    verbosity = verbose - quiet
-    _configure_logging(verbosity)
+    _configure_logging(verbose - quiet)
 
 
 # TODO: add clear docs on what is piped out of or into each command.
@@ -524,6 +518,7 @@ def config(ctx, **kwargs):
     help='Lower limit on the portion of the region that contains filled/valid image pixels (%).  '
     'Uses zero if VALUE is not specified.',
 )
+# TODO: use 'supply/supplied' not 'specified'
 @click.option(
     '-cp',
     '--cloudless-portion',
@@ -628,17 +623,17 @@ def search(
     """
     if not obj.region and not start_date:
         # TODO: refactor error msgs to follow oty
+        # TODO: update req'd param combinations to match new search method
         raise click.BadOptionUsage(
             'start-date / region',
             'Specify at least --start-date and/or a region with --region/--bbox',
         )
 
     # create collection and search
-    logger.info('')
     coll = ee.ImageCollection(collection)
     label = f'Searching for {collection} images: '
-    with Spinner(label=label, leave=' '):
-        coll = coll.gd.search(
+    with utils.Spinner(label=label, leave=' '):
+        coll = coll.gd.filter(
             start_date,
             end_date,
             obj.region,
@@ -653,19 +648,19 @@ def search(
         num_images = len(coll.gd.properties)
 
     if num_images == 0:
-        logger.info('No images found\n')
+        tqdm.write('No images found\n')
     else:
         # store images for chained commands
         # TODO: can the chain store keep this as a collection?
         im_list = coll.toList(coll.gd._max_export_images)
         obj.image_list += [ee.Image(im_list.get(i)) for i in range(len(coll.gd.properties))]
-        logger.info(f'{num_images} images found\n')
-        logger.info(f'Image property descriptions:\n\n{coll.gd.schemaTable}\n')
-        logger.info(f'Search Results:\n\n{coll.gd.propertiesTable}')
+        tqdm.write(f'{num_images} images found\n')
+        tqdm.write(f'Image property descriptions:\n\n{coll.gd.schemaTable}\n')
+        tqdm.write(f'Search Results:\n\n{coll.gd.propertiesTable}')
 
     # write results to file
     if output is not None:
-        output = pathlib.Path(output)
+        output = Path(output)
         with open(output, 'w', encoding='utf8', newline='') as f:
             json.dump(coll.gd.properties, f)
 
@@ -801,14 +796,17 @@ def download(
 
         geedim search -c MODIS/006/MCD43A4 -s 2022-01-01 -e 2022-01-03 --bbox 23 -34 24 -33 download --crs EPSG:3857 --scale 500
     """
-    logger.info('\nDownloading:\n')
+    tqdm.write('\nDownloading:\n')
     download_dir = download_dir or os.getcwd()
     image_list = _prepare_image_list(obj, mask=mask)
     for im in image_list:
-        filename = pathlib.Path(download_dir, _im_name(im) + '.tif')
+        filename = Path(download_dir, _im_name(im) + '.tif')
         im = im.gd.prepareForExport(region=obj.region, **kwargs)
         im.gd.toGeoTIFF(
-            filename, overwrite=overwrite, max_tile_size=max_tile_size, max_tile_dim=max_tile_dim
+            filename,
+            overwrite=overwrite,
+            max_tile_size=max_tile_size,
+            max_tile_dim=max_tile_dim,
         )
 
 
@@ -923,7 +921,7 @@ def export(obj, image_id, type, folder, bbox, region, like, mask, wait, **kwargs
 
         geedim search -c MODIS/006/MCD43A4 -s 2022-01-01 -e 2022-01-03 --bbox 23 -34 24 -33 export --crs EPSG:3857 --scale 500 -df geedim
     """
-    logger.info('\nExporting:\n')
+    tqdm.write('\nExporting:\n')
     if (type in [ExportType.asset, ExportType.cloud]) and not folder:
         raise click.MissingParameter(param_hint="'-f' / '--folder'", param_type='option')
     image_list = _prepare_image_list(obj, mask=mask)
@@ -934,7 +932,7 @@ def export(obj, image_id, type, folder, bbox, region, like, mask, wait, **kwargs
         im = im.gd.prepareForExport(region=obj.region, **kwargs)
         task = im.gd.export(name, type=type, folder=folder, wait=False)
         export_tasks.append(task)
-        logger.info(f'Started {name}') if not wait else None
+        tqdm.write(f'Started {name}') if not wait else None
 
     if wait:
         obj.image_list = [] if type == ExportType.asset else obj.image_list
@@ -942,7 +940,7 @@ def export(obj, image_id, type, folder, bbox, region, like, mask, wait, **kwargs
             BaseImageAccessor.monitorExport(task)
             if type == ExportType.asset:
                 # add asset images, so they can be downloaded or composited with chained commands
-                obj.image_list += [ee.Image(asset_id(_im_name(im), folder))]
+                obj.image_list += [ee.Image(utils.asset_id(_im_name(im), folder))]
 
 
 # composite command
