@@ -42,7 +42,7 @@ from tqdm.auto import tqdm
 import geedim.tile as tile_
 from geedim import utils
 from geedim.enums import ExportType, ResamplingMethod
-from geedim.stac import StacCatalog, StacItem
+from geedim.stac import STACClient
 
 try:
     import xarray
@@ -61,7 +61,7 @@ _nodata_vals = dict(
     float32=float('-inf'),
     float64=float('-inf'),
 )
-"""Nodata values for supported download / export dtypes. """
+"""Nodata values for supported download / export dtypes."""
 # Note:
 # - There are a some problems with *int64: While gdal >= 3.5 supports it, rasterio casts the
 # nodata value to float64 which cannot represent the int64 range.  Also, EE provides int64
@@ -134,17 +134,17 @@ class BaseImageAccessor:
             bdict['scale'] = scale
         return ee_info
 
-    @cached_property
-    def stac(self) -> StacItem | None:
-        """STAC information.  ``None`` if there is no STAC entry for this image."""
-        return StacCatalog().get_item(self.id)
+    @property
+    def stac(self) -> dict[str, Any] | None:
+        """STAC dictionary.  ``None`` if there is no STAC entry for this image."""
+        return STACClient().get(self.id)
 
-    @cached_property
+    @property
     def id(self) -> str | None:
         """Earth Engine ID."""
         return self.info.get('id', None)
 
-    @cached_property
+    @property
     def index(self) -> str | None:
         """Earth Engine index."""
         return self.properties.get('system:index', None)
@@ -277,22 +277,24 @@ class BaseImageAccessor:
         bands = self.info.get('bands', [])
         return [bd['id'] for bd in bands]
 
-    @property
-    def band_properties(self) -> list[dict]:
-        """Merged STAC and Earth Engine band properties."""
-        # TODO: possibly remove after we've decided how to deal with STAC
-        return self._get_band_properties()
+    @cached_property
+    def bandProps(self) -> list[dict[str, Any]]:
+        """STAC band properties."""
+        band_props = self.stac.get('summaries', {}).get('eo:bands', []) if self.stac else []
+        band_props = {bp['name']: bp for bp in band_props}
+        band_props = [band_props.get(bn, dict(name=bn)) for bn in self.bandNames]
+        return band_props
 
     @property
     def reflBands(self) -> list[str] | None:
         """List of spectral / reflectance band names.  ``None`` if there is no :attr:`stac`
         entry, or no spectral / reflectance bands.
         """
+        # TODO: these can also be temp bands - come up with a better name / description
         if not self.stac:
             return None
-        return [
-            bname for bname, bdict in self.stac.band_props.items() if 'center_wavelength' in bdict
-        ]
+        band_props = self.stac.get('summaries', {}).get('eo:bands', [])
+        return [bp['name'] for bp in band_props if 'center_wavelength' in bp]
 
     @staticmethod
     def _build_overviews(ds: DatasetWriter, max_num_levels: int = 8, min_level_pixels: int = 256):
@@ -347,47 +349,35 @@ class BaseImageAccessor:
             res = asyncio.run(coro, **kwargs)
         return res
 
-    def _get_band_properties(self) -> list[dict]:
-        """Merge Earth Engine and STAC band properties for this image."""
-        if self.stac:
-            stac_bands_props = self.stac.band_props
-            band_props = [
-                stac_bands_props[bid] if bid in stac_bands_props else dict(name=bid)
-                for bid in self.bandNames
-            ]
-        else:  # just use the image band IDs
-            band_props = [dict(name=bid) for bid in self.bandNames]
-        return band_props
-
     def _write_metadata(self, ds: DatasetWriter):
         """Write Earth Engine and STAC metadata to an open rasterio dataset."""
         # TODO: Xee with rioxarray writes an html description - can we do the same?
-        # replace 'system:*' property keys with 'system-*', and remove footprint if its there
+        # populate dataset tags with Earth Engine properties and license
         properties = {k.replace(':', '-'): v for k, v in self.properties.items()}
-        if 'system-footprint' in properties:
-            properties.pop('system-footprint')
-        ds.update_tags(**self.properties)
+        ds.update_tags(**properties)
+        links = self.stac.get('links', []) if self.stac else []
+        license_link = [lnk.get('href', None) for lnk in links if lnk.get('rel', '') == 'license']
+        if license_link:
+            ds.update_tags(LICENSE=license_link[0])
 
-        if self.stac and self.stac.license:
-            ds.update_tags(LICENSE=self.stac.license)
+        # populate band tags with STAC properties
+        def clean(value: Any) -> Any:
+            """Strip and remove newlines from ``value`` if it is a string."""
+            if isinstance(value, str):
+                value = ' '.join(value.strip().splitlines())
+            return value
 
-        def clean_text(text, width=80) -> str:
-            """Return a shortened tidied string."""
-            if not isinstance(text, str):
-                return text
-            text = text.split('.')[0] if len(text) > width else text
-            text = text.strip()
-            text = '-\n' + text if len(text) > width else text
-            return text
+        for bi, bp in enumerate(self.bandProps):
+            clean_bp = {k.replace(':', '-'): clean(v) for k, v in bp.items()}
+            ds.set_band_description(bi + 1, clean_bp.get('name', str(bi)))
+            ds.update_tags(bi + 1, **clean_bp)
 
-        # populate band metadata
-        for band_i, band_dict in enumerate(self.band_properties):
-            # TODO: check how gdal/qgis handles scale/offset metadata and set here if / if not
-            #  applied
-            clean_band_dict = {k.replace(':', '-'): clean_text(v) for k, v in band_dict.items()}
-            if 'name' in band_dict:
-                ds.set_band_description(band_i + 1, clean_band_dict['name'])
-            ds.update_tags(band_i + 1, **clean_band_dict)
+        # TODO: make writing scales/offsets an option and consistent with a similar xarray option
+        #  that includes units
+        # populate band scales and offsets
+        # if self.stac:
+        #     ds.scales = [bp.get('gee:scale', 1.0) for bp in self.bandProps]
+        #     ds.offsets = [bp.get('gee:offset', 0.0) for bp in self.bandProps]
 
     @staticmethod
     def monitorExport(task: ee.batch.Task, label: str = None) -> None:
@@ -528,16 +518,17 @@ class BaseImageAccessor:
             Scaled and offset image if STAC scales and offsets are available, otherwise the
             source image.
         """
-        if self.band_properties is None:
+        if self.stac is None:
             warnings.warn(
-                'Cannot scale and offset this image, there is no STAC band information.',
+                'Cannot scale and offset this image, there is no STAC information.',
                 category=UserWarning,
             )
             return self._ee_image
 
         # create band scale and offset dicts
-        scale_dict = {bp['name']: bp.get('scale', 1.0) for bp in self.band_properties}
-        offset_dict = {bp['name']: bp.get('offset', 0.0) for bp in self.band_properties}
+        band_props = self.stac.get('summaries', {}).get('eo:bands', [])
+        scale_dict = {bp['name']: bp.get('gee:scale', 1.0) for bp in band_props}
+        offset_dict = {bp['name']: bp.get('gee:offset', 0.0) for bp in band_props}
 
         # return if all scales are 1 and all offsets are 0
         if set(scale_dict.values()) == {1} and set(offset_dict.values()) == {0}:
@@ -833,7 +824,7 @@ class BaseImageAccessor:
         before this method to apply other export parameters.
 
         The image is retrieved as separate tiles which are downloaded and decompressed
-        concurrently.  tile_.Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
+        concurrently.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
         ``max_tile_bands``, and download / decompress concurrency with ``max_requests`` and
         ``max_cpus``.
 
@@ -871,6 +862,9 @@ class BaseImageAccessor:
         if not overwrite and filename.exists():
             raise FileExistsError(f'{filename} exists')
 
+        # TODO: there is no equivalent check to ImageCollectionAccessor._raise_image_consistency(
+        #  ). if a to*() method is called on a non-fixed projection image, there will be an obscure
+        #  error.
         # create a rasterio profile for the destination file
         profile = self.profile
         if nodata is True:
@@ -936,7 +930,7 @@ class BaseImageAccessor:
         before this method to apply other export parameters.
 
         The image is retrieved as separate tiles which are downloaded and decompressed
-        concurrently.  tile_.Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
+        concurrently.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
         ``max_tile_bands``, and download / decompress concurrency with ``max_requests`` and
         ``max_cpus``.
 
@@ -993,8 +987,7 @@ class BaseImageAccessor:
 
         if structured:
             # TODO: return crs & transform or otherwise include them with the array?
-            bands = [bd['name'] for bd in self.band_properties]
-            dtype = np.dtype(dict(names=bands, formats=[self.dtype] * len(bands)))
+            dtype = np.dtype(dict(names=self.bandNames, formats=[self.dtype] * len(self.bandNames)))
             array = array.view(dtype=dtype).squeeze()
             if isinstance(array, np.ma.MaskedArray):
                 # re-set masked array fill_value which is not copied in view
@@ -1019,7 +1012,7 @@ class BaseImageAccessor:
         before this method to apply other export parameters.
 
         The image is retrieved as separate tiles which are downloaded and decompressed
-        concurrently.  tile_.Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
+        concurrently.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
         ``max_tile_bands``, and download / decompress concurrency with ``max_requests`` and
         ``max_cpus``.
 
@@ -1074,8 +1067,7 @@ class BaseImageAccessor:
         # create coordinates
         y = np.arange(0.5, array.shape[0] + 0.5) * self.transform[4] + self.transform[5]
         x = np.arange(0.5, array.shape[1] + 0.5) * self.transform[0] + self.transform[2]
-        band = [bd['name'] for bd in self.band_properties]
-        coords = dict(y=y, x=x, band=band)
+        coords = dict(y=y, x=x, band=self.bandNames)
 
         # create attributes dict
         attrs = dict(
@@ -1090,7 +1082,7 @@ class BaseImageAccessor:
         # add EE / STAC attributes (use json strings here, then drop all Nones for serialisation
         # compatibility e.g. netcdf)
         attrs['ee'] = json.dumps(self.properties) if self.properties else None
-        attrs['stac'] = json.dumps(self.stac._item_dict) if self.stac else None
+        attrs['stac'] = json.dumps(self.stac) if self.stac else None
         attrs = {k: v for k, v in attrs.items() if v is not None}
 
         return xarray.DataArray(data=array, coords=coords, dims=['y', 'x', 'band'], attrs=attrs)
@@ -1151,6 +1143,11 @@ class BaseImage(BaseImageAccessor):
     def refl_bands(self) -> list[str] | None:
         """List of spectral / reflectance bands, if any."""
         return self.reflBands
+
+    @property
+    def band_properties(self) -> list[dict]:
+        """STAC band properties."""
+        return super().bandProps
 
     @staticmethod
     def monitor_export(task: ee.batch.Task, label: str = None) -> None:
@@ -1214,7 +1211,7 @@ class BaseImage(BaseImageAccessor):
         Download the image to a GeoTIFF file.
 
         The image is retrieved as separate tiles which are downloaded and decompressed
-        concurrently.  tile_.Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
+        concurrently.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
         ``max_tile_bands``, and download / decompress concurrency with ``max_requests`` and
         ``max_cpus``.
 
