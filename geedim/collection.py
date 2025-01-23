@@ -38,7 +38,7 @@ from geedim.enums import CompositeMethod, ResamplingMethod, SplitType
 from geedim.errors import InputImageError
 from geedim.mask import MaskedImage, _MaskedImage, class_from_id
 from geedim.medoid import medoid
-from geedim.stac import StacCatalog, StacItem
+from geedim.stac import STACClient
 from geedim.tile import Tiler
 from geedim.utils import register_accessor, split_id
 
@@ -164,16 +164,30 @@ class ImageCollectionAccessor:
         return class_from_id(self.id)
 
     @cached_property
-    def _portion_scale(self) -> float | None:
-        """Scale to use for finding mask portions.  ``None`` if there is no STAC entry for this
-        collection.
+    def _portion_scale(self) -> float | int | None:
+        """Scale to use for finding mask portions.  ``None`` if there is no STAC band information
+        for this collection.
         """
         if not self.stac:
             return None
-        gsds = [float(band_dict['gsd']) for band_dict in self.stac.band_props.values()]
-        max_gsd = max(gsds)
-        min_gsd = min(gsds)
-        return min_gsd if (max_gsd > 10 * min_gsd) and (min_gsd > 0) else max_gsd
+
+        # TODO: test different global and per-band gsd cases (e.g. MODIS/MCD43A1,
+        #  COPERNICUS/S5P/OFFL/L3_O3_TCL, NASA/GSFC/MERRA/aer_nv/2, COPERNICUS/S2_SR_HARMONIZED,
+        #  LANDSAT/LC08/C02/T1_L2)
+        # derive scale from the global GSD if it exists
+        summaries = self.stac.get('summaries', {})
+        global_gsd = summaries.get('gsd', None)
+        if global_gsd:
+            return float(np.sqrt(np.prod(global_gsd))) if len(global_gsd) > 1 else global_gsd[0]
+
+        # derive scale from band GSDs if they exist
+        band_props = summaries.get('eo:bands', [])
+        band_gsds = [float(bp['gsd']) for bp in band_props if 'gsd' in bp]
+        if not band_gsds:
+            return None
+        max_scale = max(band_gsds)
+        min_scale = min(band_gsds)
+        return min_scale if (max_scale > 10 * min_scale) and (min_scale > 0) else max_scale
 
     @cached_property
     def id(self) -> str | None:
@@ -185,16 +199,15 @@ class ImageCollectionAccessor:
         else:
             return self._ee_coll.get('system:id').getInfo()
 
-    @cached_property
-    def stac(self) -> StacItem | None:
-        """STAC information.  ``None`` if there is no STAC entry for this collection."""
-        # TODO: look into refactoring StacItem and/or use raw STAC dictionaries where possible
-        return StacCatalog().get_item(self.id)
+    @property
+    def stac(self) -> dict[str, Any] | None:
+        """STAC dictionary.  ``None`` if there is no STAC entry for this collection."""
+        return STACClient().get(self.id)
 
     @property
     def info(self) -> dict[str, Any]:
         """Earth Engine information as returned by :meth:`ee.ImageCollection.getInfo`,
-        but limited to the first 1000 images with band information excluded.
+        but limited to the first 5000 images.
         """
         if not self._info:
             self._info = self._ee_coll.limit(self._max_export_images).getInfo()
@@ -231,16 +244,24 @@ class ImageCollectionAccessor:
                 coll_schema = schema.default_prop_schema
 
             self._schema = {}
+
+            # get STAC property descriptions (if any)
+            summaries = self.stac.get('summaries', {}) if self.stac else {}
+            gee_schema = summaries.get('gee:schema', {})
+            gee_descriptions = {item['name']: item['description'] for item in gee_schema}
+
             for prop_name in self.schemaPropertyNames:
                 if prop_name in coll_schema:
                     prop_schema = coll_schema[prop_name]
-                elif prop_name in self.stac.descriptions:
-                    prop_schema = dict(
-                        abbrev=abbreviate(prop_name), description=self.stac.descriptions[prop_name]
-                    )
+                elif prop_name in gee_descriptions:
+                    descr = gee_descriptions[prop_name]
+                    # remove newlines from description and crop to the first sentence
+                    descr = ' '.join(descr.strip().splitlines()).split('. ')[0]
+                    prop_schema = dict(abbrev=abbreviate(prop_name), description=descr)
                 else:
                     prop_schema = dict(abbrev=abbreviate(prop_name), description=None)
                 self._schema[prop_name] = prop_schema
+
         return self._schema
 
     @property
@@ -305,9 +326,9 @@ class ImageCollectionAccessor:
         """
         if not self.stac:
             return None
-        return [
-            bname for bname, bdict in self.stac.band_props.items() if 'center_wavelength' in bdict
-        ]
+
+        band_props = self.stac.get('summaries', {}).get('eo:bands', [])
+        return [bp['name'] for bp in band_props if 'center_wavelength' in bp]
 
     def _prepare_for_composite(
         self,
@@ -543,7 +564,8 @@ class ImageCollectionAccessor:
         if region:
             ee_coll = ee_coll.filterBounds(region)
 
-        # when possible filter on custom_filter before calling set_region_stats to reduce computation
+        # when possible filter on custom_filter before calling set_region_stats to reduce
+        # computation
         if custom_filter and all(
             [prop_key not in custom_filter for prop_key in ['FILL_PORTION', 'CLOUDLESS_PORTION']]
         ):
@@ -819,6 +841,10 @@ class ImageCollectionAccessor:
             stall the asynchronous event loop and are not recommended.
         """
         split = SplitType(split)
+        # TODO: a getInfo() on the whole collection is inefficient if prepareForExport() has
+        #  been called already.  is there a way around this?  We could just call
+        #  prepareForExport() without params.  Or we could add **exp_kwargs to the export methods
+        #  and call prepareForExport() with those.  Then the check wouldn't be required.
         self._raise_image_consistency()
         images = self._split_images(split)
 
@@ -1062,7 +1088,7 @@ class ImageCollectionAccessor:
         # add EE / STAC attributes (use json strings here, then drop all Nones for serialisation
         # compatibility e.g. netcdf)
         attrs['ee'] = json.dumps(self.info['properties']) if 'properties' in self.info else None
-        attrs['stac'] = json.dumps(self.stac._item_dict) if self.stac else None
+        attrs['stac'] = json.dumps(self.stac) if self.stac else None
         attrs = {k: v for k, v in attrs.items() if v is not None}
 
         # return a Dataset of split image DataArrays
