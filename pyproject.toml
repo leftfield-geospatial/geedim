@@ -51,7 +51,7 @@ packages = ['geedim']
 version = {attr = 'geedim.version.__version__'}
 
 [tool.setuptools.package-data]
-geedim = ['data/ee_stac_urls.json', 'py.typed']
+geedim = ['py.typed']
 
 [tool.black]
 line-length = 100
