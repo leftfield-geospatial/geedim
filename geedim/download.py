@@ -284,15 +284,17 @@ class BaseImageAccessor:
         return band_props
 
     @property
-    def reflBands(self) -> list[str] | None:
-        """List of spectral / reflectance band names.  ``None`` if there is no :attr:`stac`
-        entry, or no spectral / reflectance bands.
+    def specBands(self) -> list[str] | None:
+        """List of spectral band names.  ``None`` if there is no :attr:`stac` entry,
+        or no spectral bands.
         """
-        # TODO: these can also be temp bands - come up with a better name / description
         if not self.stac:
             return None
         band_props = self.stac.get('summaries', {}).get('eo:bands', [])
-        return [bp['name'] for bp in band_props if 'center_wavelength' in bp]
+        band_props = {bp['name']: bp for bp in band_props}
+        return [
+            band_props[bn] for bn in self.bandNames if 'center_wavelength' in band_props.get(bn, {})
+        ]
 
     def _raise_not_fixed(self):
         """Raise an error if the image cannot be exported as it has no fixed projection."""
@@ -1107,7 +1109,7 @@ class BaseImage(BaseImageAccessor):
     @property
     def refl_bands(self) -> list[str] | None:
         """List of spectral / reflectance bands, if any."""
-        return self.reflBands
+        return self.specBands
 
     @property
     def band_properties(self) -> list[dict]:

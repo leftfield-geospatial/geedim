@@ -140,9 +140,9 @@ class ImageCollectionAccessor:
         :return:
             Image collection.
         """
-        # TODO: previously there was error checking here to see if images were in compatible
-        #  collections and all had IDs and dates.  Rather than check here, check/get search and
-        #  composite to behave sensibly when this is not the case.
+        # TODO: previously there was error checking here to see if images all had IDs and dates.
+        #  Rather than check here, check/get search and composite to behave sensibly when this is
+        #  not the case.
         ee_coll = ee.ImageCollection(images)
 
         # check the images are from compatible collections
@@ -319,16 +319,14 @@ class ImageCollectionAccessor:
             missingval='-',
         )
 
-    @property
-    def reflBands(self) -> list[str] | None:
-        """List of the collection's spectral / reflectance band names.  ``None`` if there is no
-        :attr:`stac` entry, or no spectral / reflectance bands.
+    @cached_property
+    def specBands(self) -> list[str] | None:
+        """List of spectral band names.  ``None`` if there is no :attr:`stac` entry,
+        or no spectral bands.
         """
         if not self.stac:
             return None
-
-        band_props = self.stac.get('summaries', {}).get('eo:bands', [])
-        return [bp['name'] for bp in band_props if 'center_wavelength' in bp]
+        return BaseImageAccessor(self._ee_coll.first()).specBands
 
     def _prepare_for_composite(
         self,
@@ -503,7 +501,7 @@ class ImageCollectionAccessor:
         :return:
             Medoid composite image.
         """
-        return medoid(self._ee_coll, bands=bands or self.reflBands)
+        return medoid(self._ee_coll, bands=bands or self.specBands)
 
     def filter(
         self,
@@ -661,7 +659,7 @@ class ImageCollectionAccessor:
             comp_image = ee_coll.qualityMosaic('CLOUD_DIST')
         elif method == CompositeMethod.medoid:
             # limit medoid to surface reflectance bands
-            comp_image: ee.Image = ImageCollectionAccessor(ee_coll).medoid(bands=self.reflBands)
+            comp_image: ee.Image = ImageCollectionAccessor(ee_coll).medoid(bands=self.specBands)
         else:
             comp_image = getattr(ee_coll, method.name)()
 
@@ -841,10 +839,6 @@ class ImageCollectionAccessor:
             stall the asynchronous event loop and are not recommended.
         """
         split = SplitType(split)
-        # TODO: a getInfo() on the whole collection is inefficient if prepareForExport() has
-        #  been called already.  is there a way around this?  We could just call
-        #  prepareForExport() without params.  Or we could add **exp_kwargs to the export methods
-        #  and call prepareForExport() with those.  Then the check wouldn't be required.
         self._raise_image_consistency()
         images = self._split_images(split)
 
@@ -1217,7 +1211,7 @@ class MaskedCollection(ImageCollectionAccessor):
         """List of the collection's spectral / reflectance band names.  ``None`` if there is no
         :attr:`stac` entry, or no spectral / reflectance bands.
         """
-        return self.reflBands
+        return self.specBands
 
     def search(self, *args, **kwargs) -> MaskedCollection:
         ee_coll = self.filter(*args, **kwargs)
