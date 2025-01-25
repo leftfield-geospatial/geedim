@@ -16,7 +16,6 @@ limitations under the License.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import operator
@@ -24,12 +23,11 @@ import os
 import threading
 import time
 import warnings
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from datetime import datetime, timezone
 from functools import cached_property
 from pathlib import Path
-from typing import Any, Coroutine, Sequence, TypeVar
+from typing import Any, Sequence, TypeVar
 
 import ee
 import numpy as np
@@ -296,6 +294,14 @@ class BaseImageAccessor:
         band_props = self.stac.get('summaries', {}).get('eo:bands', [])
         return [bp['name'] for bp in band_props if 'center_wavelength' in bp]
 
+    def _raise_not_fixed(self):
+        """Raise an error if the image cannot be exported as it has no fixed projection."""
+        if not self.shape:
+            raise ValueError(
+                "This image cannot be exported as it doesn't have a fixed projection.  "
+                "'prepareForExport()' can be called to define one."
+            )
+
     @staticmethod
     def _build_overviews(ds: DatasetWriter, max_num_levels: int = 8, min_level_pixels: int = 256):
         """Build internal overviews for an open dataset.  Each overview level is downsampled by a
@@ -307,47 +313,6 @@ class BaseImageAccessor:
         num_ovw_levels = np.min([max_num_levels, max_ovw_levels - min_level_shape_pow2])
         ovw_levels = [2**m for m in range(1, num_ovw_levels + 1)]
         ds.build_overviews(ovw_levels, resampling=RioResampling.average)
-
-    @staticmethod
-    def _get_tqdm_kwargs(desc: str = None, unit: str = None) -> dict:
-        """Return a dictionary of kwargs for a tqdm progress bar."""
-        tqdm_kwargs = dict(dynamic_ncols=True)
-        if desc:
-            desc_width = 50
-            desc = '...' + desc[-desc_width:] if len(desc) > desc_width else desc
-            tqdm_kwargs.update(desc=desc)
-
-        if unit:
-            bar_format = (
-                '{desc}: |{bar}| {n_fmt}/{total_fmt} ({unit}) [{percentage:3.0f}%] in {elapsed} '
-                '(eta: {remaining})'
-            )
-            tqdm_kwargs.update(bar_format=bar_format, unit=unit)
-        else:
-            bar_format = '{desc}: |{bar}| [{percentage:3.0f}%] in {elapsed} (eta: {remaining})'
-            tqdm_kwargs.update(bar_format=bar_format)
-        return tqdm_kwargs
-
-    @staticmethod
-    def _asyncio_run(coro: Coroutine[Any, Any, T], executor: ThreadPoolExecutor, **kwargs) -> T:
-        """Run a coroutine and return the result, using a separate thread if an event loop is
-        already running.
-        """
-        # asyncio.run() cannot be called from a thread with an existing event loop, so test
-        # if there is a loop running in this (the main) thread (see
-        # https://stackoverflow.com/a/75341431)
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-        if loop and loop.is_running():
-            # run in a separate thread if there is an existing loop (e.g. we are in a jupyter
-            # notebook)
-            res = executor.submit(lambda: asyncio.run(coro, **kwargs)).result()
-        else:
-            # run in this thread if there is no existing loop
-            res = asyncio.run(coro, **kwargs)
-        return res
 
     def _write_metadata(self, ds: DatasetWriter):
         """Write Earth Engine and STAC metadata to an open rasterio dataset."""
@@ -715,7 +680,7 @@ class BaseImageAccessor:
 
         return ee_image
 
-    def export(
+    def toGoogleCloud(
         self,
         filename: str,
         type: ExportType = _default_export_type,
@@ -724,7 +689,8 @@ class BaseImageAccessor:
         **kwargs,
     ) -> ee.batch.Task:
         """
-        Export the image to Google Drive, Earth Engine asset or Google Cloud Storage.
+        Export the image to Google Drive, Earth Engine asset or Google Cloud Storage using the
+        Earth Engine batch environment.
 
         :meth:`prepareForExport` can be called before this method to apply export parameters.
 
@@ -755,12 +721,12 @@ class BaseImageAccessor:
             logger.debug(f"Uncompressed size: {tqdm.format_sizeof(self.size, suffix='B')}")
 
         # update defaults with any supplied **kwargs
-        export_kwargs = dict(
+        exp_kwargs = dict(
             description=filename.replace('/', '-')[:100],
             maxPixels=1e9,
             formatOptions=dict(cloudOptimized=True),
         )
-        export_kwargs.update(**kwargs)
+        exp_kwargs.update(**kwargs)
 
         # create export task and start
         type = ExportType(type)
@@ -773,16 +739,16 @@ class BaseImageAccessor:
                 image=self._ee_image,
                 folder=folder,
                 fileNamePrefix=filename,
-                **export_kwargs,
+                **exp_kwargs,
             )
 
         elif type == ExportType.asset:
             # if folder is supplied create an EE asset ID from it and filename, else treat
             # filename as a valid EE asset ID
             asset_id = utils.asset_id(filename, folder) if folder else filename
-            export_kwargs.pop('formatOptions')  # not used for asset export
+            exp_kwargs.pop('formatOptions')  # not used for asset export
             task = ee.batch.Export.image.toAsset(
-                image=self._ee_image, assetId=asset_id, **export_kwargs
+                image=self._ee_image, assetId=asset_id, **exp_kwargs
             )
 
         else:
@@ -796,7 +762,7 @@ class BaseImageAccessor:
                 image=self._ee_image,
                 bucket=folder,
                 fileNamePrefix=filename,
-                **export_kwargs,
+                **exp_kwargs,
             )
         task.start()
 
@@ -861,10 +827,8 @@ class BaseImageAccessor:
         filename = Path(filename)
         if not overwrite and filename.exists():
             raise FileExistsError(f'{filename} exists')
+        self._raise_not_fixed()
 
-        # TODO: there is no equivalent check to ImageCollectionAccessor._raise_image_consistency(
-        #  ). if a to*() method is called on a non-fixed projection image, there will be an obscure
-        #  error.
         # create a rasterio profile for the destination file
         profile = self.profile
         if nodata is True:
@@ -961,7 +925,7 @@ class BaseImageAccessor:
         :returns:
             NumPy array.
         """
-        # TODO: convert float nodata to nan?
+        self._raise_not_fixed()
         im_shape = (*self.shape, self.count)
         if masked:
             array = np.ma.zeros(im_shape, dtype=self.dtype, fill_value=self.nodata)
@@ -1049,6 +1013,7 @@ class BaseImageAccessor:
         if not xarray:
             raise ImportError("'toXarray()' requires the 'xarray' package to be installed.")
 
+        self._raise_not_fixed()
         if not self.transform[1] == self.transform[3] == 0:
             raise ValueError(
                 "'The image cannot be exported to Xarray as its 'transform' is not aligned with "
@@ -1193,7 +1158,7 @@ class BaseImage(BaseImageAccessor):
             Export task, started if ``wait`` is False, or completed if ``wait`` is True.
         """
         export_image = BaseImageAccessor(self.prepareForExport(**export_kwargs))
-        return export_image.export(filename, type=type, folder=folder, wait=wait)
+        return export_image.toGoogleCloud(filename, type=type, folder=folder, wait=wait)
 
     def download(
         self,
