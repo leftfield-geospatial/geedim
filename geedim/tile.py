@@ -20,13 +20,12 @@ import asyncio
 import logging
 import os
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Generator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from functools import cached_property
 from io import BytesIO
 from itertools import product
-from typing import Generator, Sequence
 
 import aiohttp
 import numpy as np
@@ -107,6 +106,8 @@ class Tile:
         )
 
 
+# TODO: standardise on public / non-public naming.  in mask.py, there are _Class named classes,
+#  here I have assumed tile.py will not be included in the documentation.
 class Tiler:
     # TODO: if there's little speed cost, default max_tile_size to << 32 to avoid memory limit (
     #  could actually speed up downloads with few tiles by increasing concurrency)
@@ -135,7 +136,7 @@ class Tiler:
         max_tile_dim: int = _ee_max_tile_dim,
         max_tile_bands: int = _ee_max_tile_bands,
         max_requests: int = _max_requests,
-        max_cpus: int = None,
+        max_cpus: int | None = None,
     ):
         """
         Image tiler.
@@ -197,6 +198,7 @@ class Tiler:
             warnings.warn(
                 f"Consider adjusting the image bounds, resolution or data type with "
                 f"'prepareForExport()' to reduce the export size: {size_str}.",
+                stacklevel=2,
                 category=RuntimeWarning,
             )
 
@@ -308,11 +310,11 @@ class Tiler:
                     # get a more detailed error message if possible
                     try:
                         response.reason = (await response.json())['error']['message']
-                    except:
+                    except aiohttp.ClientError:
                         pass
                     response.raise_for_status()
 
-                async for data in response.content.iter_chunked(102400):
+                async for data, _ in response.content.iter_chunks():
                     buf.write(data)
             return buf
 
@@ -323,12 +325,12 @@ class Tiler:
                 return ds.read(masked=masked)
 
         loop = asyncio.get_running_loop()
-        for retry in range(0, max_retries + 1):
+        for retry in range(max_retries + 1):
             try:
                 # limit concurrent EE requests to avoid exceeding quota
                 async with self._limit_requests:
                     logger.debug(f'Getting URL for {tile!r}.')
-                    url = await loop.run_in_executor(self._executor, get_tile_url)
+                    url = await loop.run_in_executor(self._executor, get_tile_url, tile)
                     logger.debug(f'Downloading {tile!r} from {url}.')
                     buf = await download_url(url)
 
@@ -382,12 +384,13 @@ class Tiler:
                     for task in bar:
                         await task
 
-            finally:
+            except:
                 # cancel and await any incomplete tasks
                 logger.debug('Cleaning up export tasks...')
                 [task.cancel() for task in tasks]
                 await asyncio.gather(*tasks, return_exceptions=True)
                 logger.debug('Clean up complete.')
+                raise
 
         # download tiles using persistent session
         runner = utils.AsyncRunner()
