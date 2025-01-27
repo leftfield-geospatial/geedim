@@ -23,11 +23,12 @@ import os
 import threading
 import time
 import warnings
+from collections.abc import Sequence
 from contextlib import ExitStack
 from datetime import datetime, timezone
 from functools import cached_property
 from pathlib import Path
-from typing import Any, Sequence, TypeVar
+from typing import Any, TypeVar
 
 import ee
 import numpy as np
@@ -149,7 +150,9 @@ class BaseImageAccessor:
 
     @property
     def date(self) -> datetime | None:
-        """Acquisition date & time.  ``None`` if the ``system:time_start`` property is not present."""
+        """Acquisition date & time.  ``None`` if the ``system:time_start`` property is not
+        present.
+        """
         if 'system:time_start' in self.properties:
             timestamp = self.properties['system:time_start']
             return datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc)
@@ -292,9 +295,7 @@ class BaseImageAccessor:
             return None
         band_props = self.stac.get('summaries', {}).get('eo:bands', [])
         band_props = {bp['name']: bp for bp in band_props}
-        return [
-            band_props[bn] for bn in self.bandNames if 'center_wavelength' in band_props.get(bn, {})
-        ]
+        return [bn for bn in self.bandNames if 'center_wavelength' in band_props.get(bn, {})]
 
     def _raise_not_fixed(self):
         """Raise an error if the image cannot be exported as it has no fixed projection."""
@@ -347,7 +348,7 @@ class BaseImageAccessor:
         #     ds.offsets = [bp.get('gee:offset', 0.0) for bp in self.bandProps]
 
     @staticmethod
-    def monitorExport(task: ee.batch.Task, label: str = None) -> None:
+    def monitorExport(task: ee.batch.Task, label: str | None = None) -> None:
         """
         Monitor and display the progress of an export task.
 
@@ -369,7 +370,7 @@ class BaseImageAccessor:
                 if 'progress' in status['metadata']:
                     break
                 elif status['metadata']['state'] == 'FAILED':
-                    raise IOError(f'Export failed: {status}')
+                    raise OSError(f'Export failed: {status}')
 
         # wait for export to complete, displaying a progress bar
         tqdm_kwargs.update(desc='Exporting ' + tqdm_kwargs['desc'])
@@ -382,7 +383,7 @@ class BaseImageAccessor:
             if status['metadata']['state'] == 'SUCCEEDED':
                 bar.update(bar.total - bar.n)
             else:
-                raise IOError(f'Export failed: {status}.')
+                raise OSError(f'Export failed: {status}.')
 
     def projection(self, min_scale: bool = True) -> ee.Projection:
         """
@@ -489,6 +490,7 @@ class BaseImageAccessor:
             warnings.warn(
                 'Cannot scale and offset this image, there is no STAC information.',
                 category=UserWarning,
+                stacklevel=2,
             )
             return self._ee_image
 
@@ -564,13 +566,13 @@ class BaseImageAccessor:
 
     def prepareForExport(
         self,
-        crs: str = None,
-        crs_transform: Sequence[float] = None,
-        shape: tuple[int, int] = None,
-        region: dict | ee.Geometry = None,
-        scale: float = None,
+        crs: str | None = None,
+        crs_transform: Sequence[float] | None = None,
+        shape: tuple[int, int] | None = None,
+        region: dict | ee.Geometry | None = None,
+        scale: float | None = None,
         resampling: str | ResamplingMethod = _default_resampling,
-        dtype: str = None,
+        dtype: str | None = None,
         scale_offset: bool = False,
         bands: list[str | int] | str | ee.List = None,
     ) -> ee.Image:
@@ -686,7 +688,7 @@ class BaseImageAccessor:
         self,
         filename: str,
         type: ExportType = _default_export_type,
-        folder: str = None,
+        folder: str | None = None,
         wait: bool = True,
         **kwargs,
     ) -> ee.batch.Task:
@@ -782,7 +784,7 @@ class BaseImageAccessor:
         max_tile_dim: int = tile_.Tiler._ee_max_tile_dim,
         max_tile_bands: int = tile_.Tiler._ee_max_tile_bands,
         max_requests: int = tile_.Tiler._max_requests,
-        max_cpus: int = None,
+        max_cpus: int | None = None,
     ) -> None:
         """
         Export the image to a GeoTIFF file.
@@ -886,7 +888,7 @@ class BaseImageAccessor:
         max_tile_dim: int = tile_.Tiler._ee_max_tile_dim,
         max_tile_bands: int = tile_.Tiler._ee_max_tile_bands,
         max_requests: int = tile_.Tiler._max_requests,
-        max_cpus: int = None,
+        max_cpus: int | None = None,
     ) -> np.ndarray:
         """
         Export the image to a NumPy array.
@@ -968,7 +970,7 @@ class BaseImageAccessor:
         max_tile_dim: int = tile_.Tiler._ee_max_tile_dim,
         max_tile_bands: int = tile_.Tiler._ee_max_tile_bands,
         max_requests: int = tile_.Tiler._max_requests,
-        max_cpus: int = None,
+        max_cpus: int | None = None,
     ) -> xarray.DataArray:
         """
         Export the image to an Xarray DataArray.
@@ -1117,7 +1119,7 @@ class BaseImage(BaseImageAccessor):
         return super().bandProps
 
     @staticmethod
-    def monitor_export(task: ee.batch.Task, label: str = None) -> None:
+    def monitor_export(task: ee.batch.Task, label: str | None = None) -> None:
         """
         Monitor and display the progress of an export task.
 
@@ -1132,7 +1134,7 @@ class BaseImage(BaseImageAccessor):
         self,
         filename: str,
         type: ExportType = BaseImageAccessor._default_export_type,
-        folder: str = None,
+        folder: str | None = None,
         wait: bool = True,
         **export_kwargs,
     ) -> ee.batch.Task:
@@ -1166,12 +1168,12 @@ class BaseImage(BaseImageAccessor):
         self,
         filename: os.PathLike | str,
         overwrite: bool = False,
-        num_threads: int = None,
+        num_threads: int | None = None,
         max_tile_size: float = tile_.Tiler._ee_max_tile_size,
         max_tile_dim: int = tile_.Tiler._ee_max_tile_dim,
         max_tile_bands: int = tile_.Tiler._ee_max_tile_bands,
         max_requests: int = tile_.Tiler._max_requests,
-        max_cpus: int = None,
+        max_cpus: int | None = None,
         **export_kwargs,
     ) -> None:
         """
@@ -1215,6 +1217,7 @@ class BaseImage(BaseImageAccessor):
                 "'num_threads' is deprecated and has no effect.  'max_requests' and 'max_cpus' "
                 "can be used to limit concurrency.",
                 category=DeprecationWarning,
+                stacklevel=2,
             )
 
         export_image = BaseImageAccessor(self.prepareForExport(**export_kwargs))
