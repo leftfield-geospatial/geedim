@@ -30,7 +30,7 @@ from rasterio import Affine, features, warp, windows
 from geedim import tile as _tile
 from geedim import utils
 from geedim.download import BaseImage, BaseImageAccessor, _nodata_vals
-from geedim.enums import ExportType
+from geedim.enums import ExportType, ResamplingMethod
 
 
 class BaseImageLike:
@@ -171,7 +171,7 @@ def _test_export_image(exp_image: BaseImageAccessor, ref_image: BaseImageAccesso
     exp_kwargs = {k: v for k, v in exp_kwargs.items() if v is not None}
 
     assert exp_image.dtype == exp_kwargs.get('dtype', ref_image.dtype)
-    assert exp_image.band_properties == ref_image.band_properties
+    assert exp_image.bandNames == ref_image.bandNames
 
     # test crs and scale
     crs = exp_kwargs.get('crs', ref_image.crs)
@@ -258,9 +258,24 @@ def test_band_props(base_image: str, request: pytest.FixtureRequest):
     assert [bd['name'] for bd in base_image.band_properties] == [
         bd['id'] for bd in base_image.info['bands']
     ]
-    for key in ['gsd', 'description']:
+    for key in ['description']:
         has_key = [key in bd for bd in base_image.band_properties]
         assert all(has_key)
+
+
+def test_projection(s2_sr_masked_image):
+    """Test projection()."""
+    min_proj = s2_sr_masked_image.projection(min_scale=True)
+    min_crs = min_proj.crs().getInfo()
+    min_scale = min_proj.nominalScale().getInfo()
+    max_proj = s2_sr_masked_image.projection(min_scale=False)
+    max_crs = max_proj.crs().getInfo()
+    max_scale = max_proj.nominalScale().getInfo()
+
+    assert min_crs.startswith('EPSG:')
+    assert min_crs == max_crs
+    assert max_scale == 60
+    assert min_scale == 10
 
 
 def test_has_fixed_projection(
@@ -334,6 +349,69 @@ def _test_convert_dtype_error():
 
 
 @pytest.mark.parametrize(
+    'image, method, scale',
+    [
+        ('l9_base_image', ResamplingMethod.bilinear, 15),
+        ('s2_sr_hm_base_image', ResamplingMethod.average, 25),
+        ('modis_nbar_base_image', ResamplingMethod.bicubic, 100),
+    ],
+)
+def test_resample_fixed(
+    image: str,
+    method: ResamplingMethod,
+    scale: float,
+    region_100ha: dict,
+    request: pytest.FixtureRequest,
+):
+    """Test that resample() smooths images with a fixed projection."""
+    source_im = request.getfixturevalue(image)._ee_image
+    resampled_im = BaseImageAccessor(source_im).resample(method)
+
+    # find mean of std deviations of bands for each image
+    crs = source_im.select(0).projection().crs()
+    stds = []
+    for im in [source_im, resampled_im]:
+        im = im.reproject(crs=crs, scale=scale)  # required to resample at scale
+        std = im.reduceRegion('stdDev', geometry=region_100ha).values().reduce('mean')
+        stds.append(std)
+    stds = ee.List(stds).getInfo()
+
+    # test resampled_im is smoother than source_im
+    assert stds[1] < stds[0]
+
+
+@pytest.mark.parametrize(
+    'masked_image, method, scale',
+    [
+        ('user_masked_image', ResamplingMethod.bilinear, 50),
+        ('landsat_ndvi_masked_image', ResamplingMethod.average, 50),
+    ],
+)
+def test_resample_comp(
+    masked_image: str,
+    method: ResamplingMethod,
+    scale: float,
+    region_100ha: dict,
+    request: pytest.FixtureRequest,
+):
+    """Test that resample() leaves composite images unaltered."""
+    source_im = request.getfixturevalue(masked_image)._ee_image
+    resampled_im = BaseImageAccessor(source_im).resample(method)
+
+    # find mean of std deviations of bands for each image
+    crs = source_im.select(0).projection().crs()
+    stds = []
+    for im in [source_im, resampled_im]:
+        im = im.reproject(crs=crs, scale=scale)  # required to resample at scale
+        std = im.reduceRegion('stdDev', geometry=region_100ha).values().reduce('mean')
+        stds.append(std)
+    stds = ee.List(stds).getInfo()
+
+    # test no change between resampled_im and source_im
+    assert stds[1] == stds[0]
+
+
+@pytest.mark.parametrize(
     'params',
     [
         dict(),
@@ -401,7 +479,7 @@ def test_prepare_transform_dimensions(
     )
 
     assert exp_image.dtype == base_image.dtype
-    assert exp_image.band_properties == base_image.band_properties
+    assert exp_image.bandNames == base_image.bandNames
 
     assert exp_image.crs == crs or base_image.crs
     # assert exp_image.scale == np.abs((crs_transform[0], crs_transform[4])).mean()
@@ -535,18 +613,21 @@ def _test_prepare_nodata(user_fix_bnd_base_image: BaseImage, dtype: str, exp_nod
 def test_scale_offset(
     src_image: str, dtype: str, region_100ha: Dict, request: pytest.FixtureRequest
 ):
-    """Test ``BaseImage._prepare_for_export(scale_offset=True)`` gives expected properties and reflectance ranges."""
+    """Test ``BaseImage._prepare_for_export(scale_offset=True)`` gives expected properties and
+    reflectance ranges.
+    """
     src_image: BaseImage = request.getfixturevalue(src_image)
     exp_image = BaseImageAccessor(src_image.prepareForExport(scale_offset=True))
 
     assert exp_image.crs == src_image.crs
     assert exp_image.scale == src_image.scale
-    assert exp_image.band_properties == src_image.band_properties
+    assert exp_image.bandNames == src_image.bandNames
+    assert exp_image.stac == src_image.stac
     assert exp_image.dtype == dtype or 'float64'
 
     def get_min_max_refl(base_image: BaseImage) -> tuple[dict, dict]:
         """Return the min & max of each reflectance band of ``base_image``."""
-        band_props = base_image.band_properties
+        band_props = base_image.stac['summaries']['eo:bands']
         refl_bands = [
             bp['name']
             for bp in band_props
@@ -749,7 +830,7 @@ def test_start_export(type: ExportType, user_fix_base_image: BaseImage, region_2
 def __test_export_asset(user_fix_base_image: BaseImage, region_25ha: Dict):
     """Test start of a small export to EE asset."""
     # TODO: consider removing this slow test in favour of the equivalent integration test
-    filename = f'test_export_{np.random.randint(1<<31)}'
+    filename = f'test_export_{np.random.randint(1 << 31)}'
     folder = 'geedim'
     asset_id = utils.asset_id(filename, folder)
     # Note: to allow parallel tests exporting to assets, we use random asset names to prevent conflicts.  The test
