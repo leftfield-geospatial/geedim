@@ -1,24 +1,24 @@
 """
-    Copyright 2021 Dugal Harris - dugalh@gmail.com
+Copyright 2021 Dugal Harris - dugalh@gmail.com
 
-    Licensed under the Apache License, Version 2.0 (the "License");
-    you may not use this file except in compliance with the License.
-    You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-       http://www.apache.org/licenses/LICENSE-2.0
+   http://www.apache.org/licenses/LICENSE-2.0
 
-    Unless required by applicable law or agreed to in writing, software
-    distributed under the License is distributed on an "AS IS" BASIS,
-    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-    See the License for the specific language governing permissions and
-    limitations under the License.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
 from __future__ import annotations
 
 import logging
 import warnings
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from functools import cached_property
 
 import ee
@@ -26,12 +26,12 @@ import ee
 from geedim import schema
 from geedim.download import BaseImage, BaseImageAccessor
 from geedim.enums import CloudMaskMethod, CloudScoreBand
-from geedim.utils import split_id, register_accessor
+from geedim.utils import register_accessor, split_id
 
 logger = logging.getLogger(__name__)
 
 
-class _MaskedImage(ABC):
+class _MaskedImage:
     """Masking method container for images without cloud/shadow support."""
 
     @staticmethod
@@ -69,7 +69,7 @@ class _MaskedImage(ABC):
         ee_image: ee.Image, region: dict | ee.Geometry = None, scale: float | ee.Number = None
     ) -> ee.Image:
         """Return the given image with the ``FILL_PORTION`` property set to the filled percentage
-        of the given region, and the ``CLOUDLESS_PORTION`` property set to the and cloudless
+        of the given region, and the ``CLOUDLESS_PORTION`` property set to the cloudless
         percentage of ``FILL_PORTION``.  ``CLOUDLESS_PORTION`` is set to ``100`` if cloud/shadow
         masking is not supported.
         """
@@ -197,20 +197,21 @@ class _Sentinel2Image(_CloudlessImage):
         dark: float = 0.15,
         shadow_dist: float = 1000,
         buffer: int = 50,
-        cdi_thresh: float = None,
+        cdi_thresh: float | None = None,
         max_cloud_dist: float = 5000,
         score: float = 0.6,
         cs_band: str | CloudScoreBand = CloudScoreBand.cs,
     ) -> dict[str, ee.Image]:
-        """Return an dictionary of mask bands and related images for the given Sentinel-2 image.
-        Parts adapted from https://github.com/r-earthengine/ee_extra, under Apache 2.0 license.
+        """Return a dictionary of mask bands and related images for the given Sentinel-2 image.
+        Parts adapted from https://github.com/r-earthengine/ee_extra, under Apache 2.0 licence.
         """
         mask_method = CloudMaskMethod(mask_method)
         if mask_method is not CloudMaskMethod.cloud_score:
             warnings.warn(
                 f"The '{mask_method}' mask method is deprecated and will be removed in a future "
                 f"release.  Please switch to 'cloud-score'.",
-                category=FutureWarning,
+                category=DeprecationWarning,
+                stacklevel=2,
             )
         cs_band = CloudScoreBand(cs_band)
 
@@ -253,7 +254,8 @@ class _Sentinel2Image(_CloudlessImage):
                 ee.Number(ee_image.get('MEAN_SOLAR_AZIMUTH_ANGLE'))
             )
 
-            # Project the cloud mask in the shadow direction (can project the mask into invalid areas).
+            # Project the cloud mask in the shadow direction (can project the mask into invalid
+            # areas).
             proj_pixels = ee.Number(shadow_dist).divide(proj.nominalScale()).round()
             cloud_cast_proj = cloud_mask.directionalDistanceTransform(
                 shadow_azimuth, proj_pixels
@@ -493,6 +495,8 @@ class ImageAccessor(BaseImageAccessor):
         #  e.g.  at a very different scale to other bands. As EE already has per-band validity
         #  masks applied, applying FILL_MASK over this seems questionable.  FILL_MASK is needed for
         #  FILL_PORTION when searching though.
+        # TODO: test masking when the image has a subset of bands selected (S2 should work, but
+        #  Landsat requires the QA band)
         return self._mi.mask_clouds(self._ee_image)
 
 
@@ -549,7 +553,7 @@ class MaskedImage(ImageAccessor, BaseImage):
         """
         return MaskedImage(ee.Image(image_id), **kwargs)
 
-    def _set_region_stats(self, region: dict | ee.Geometry = None, scale: float = None):
+    def _set_region_stats(self, region: dict | ee.Geometry = None, scale: float | None = None):
         """Set FILL_PORTION and CLOUDLESS_PORTION on the encapsulated image for the specified
         region.
         """

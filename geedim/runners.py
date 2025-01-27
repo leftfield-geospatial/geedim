@@ -131,11 +131,11 @@ class Runner:
         self._interrupt_count = 0
         try:
             return self._loop.run_until_complete(task)
-        except exceptions.CancelledError:
+        except exceptions.CancelledError as ex:
             if self._interrupt_count > 0:
                 uncancel = getattr(task, "uncancel", None)
                 if uncancel is not None and uncancel() == 0:
-                    raise KeyboardInterrupt()
+                    raise KeyboardInterrupt() from ex
             raise  # CancelledError
         finally:
             if sigint_handler is not None and signal.getsignal(signal.SIGINT) is sigint_handler:

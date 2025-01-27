@@ -1,20 +1,19 @@
 """
-    Copyright 2021 Dugal Harris - dugalh@gmail.com
+Copyright 2021 Dugal Harris - dugalh@gmail.com
 
-    Licensed under the Apache License, Version 2.0 (the "License");
-    you may not use this file except in compliance with the License.
-    You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-       http://www.apache.org/licenses/LICENSE-2.0
+   http://www.apache.org/licenses/LICENSE-2.0
 
-    Unless required by applicable law or agreed to in writing, software
-    distributed under the License is distributed on an "AS IS" BASIS,
-    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-    See the License for the specific language governing permissions and
-    limitations under the License.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
-# schema definitions for MaskedImage.from_id(), geedim <-> EE collection names, and search properties
 from textwrap import wrap
 
 from tabulate import tabulate
@@ -136,21 +135,21 @@ collection_schema = {
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED',
         'description': 'Harmonised Sentinel-2, level 2A, surface reflectance.',
     },
-    'MODIS/061/MCD43A4': {
-        'gd_coll_name': 'modis-nbar',
-        'prop_schema': default_prop_schema,
-        'image_type': geedim.mask._MaskedImage,
-        'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD43A4',
-        'description': 'MODIS nadir BRDF adjusted daily reflectance.',
-    },
+    # 'MODIS/061/MCD43A4': {
+    #     'gd_coll_name': 'modis-nbar',
+    #     'prop_schema': default_prop_schema,
+    #     'image_type': geedim.mask._MaskedImage,
+    #     'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD43A4',
+    #     'description': 'MODIS nadir BRDF adjusted daily reflectance.',
+    # },
 }
 
 
 # Dict to convert from geedim to Earth Engine collection names
-ee_to_gd = dict([(k, v['gd_coll_name']) for k, v in collection_schema.items()])
+ee_to_gd = {k: v['gd_coll_name'] for k, v in collection_schema.items()}
 
 # Dict to convert from Earth Engine to geedim collection names
-gd_to_ee = dict([(v['gd_coll_name'], k) for k, v in collection_schema.items()])
+gd_to_ee = {v['gd_coll_name']: k for k, v in collection_schema.items()}
 
 # "Two way" dict to convert Earth Engine to/from geedim collection names
 coll_names = dict(**gd_to_ee, **ee_to_gd)
@@ -172,15 +171,9 @@ def cli_cloud_coll_table() -> str:
 
 
 def cloud_coll_table(descr_join='\n') -> str:
-    """
-    Return a table of cloud/shadow mask supported collections.
+    """Return a table of cloud/shadow mask supported collections as a printable string.
     * Use descr_join='\n' for github README friendly formatting.
     * Use descr_join='\n\n' for RTD/Sphinx friendly formatting.
-
-    Instructions for adding cloud/shadow supported collections to CLI help and github README:
-    * print(cli_cloud_coll_table()) and paste into cli.search() and cli.config() command docstrings.
-    * print(cloud_coll_table()) and paste into the README.
-    * The equivalent RTD table is auto-generated in docs/conf.py.
     """
     headers = dict(ee_coll_name='EE name', descr='Description')
     data = []

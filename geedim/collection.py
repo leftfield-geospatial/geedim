@@ -21,10 +21,11 @@ import logging
 import os
 import re
 import warnings
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from functools import cached_property
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 import ee
 import numpy as np
@@ -122,7 +123,7 @@ class ImageCollectionAccessor:
     @staticmethod
     def fromImages(images: Any) -> ee.ImageCollection:
         """
-        Create a image collection with support for cloud/shadow masking, that contains the given
+        Create an image collection with support for cloud/shadow masking, that contains the given
         images.
 
         Images from spectrally compatible Landsat collections can be combined i.e. Landsat-4 with
@@ -386,11 +387,15 @@ class ImageCollectionAccessor:
         else:
             if date:
                 warnings.warn(
-                    f"'date' is valid for {sort_methods} methods only.", category=UserWarning
+                    f"'date' is valid for {sort_methods} methods only.",
+                    category=UserWarning,
+                    stacklevel=2,
                 )
             elif region:
                 warnings.warn(
-                    f"'region' is valid for {sort_methods} methods only.", category=UserWarning
+                    f"'region' is valid for {sort_methods} methods only.",
+                    category=UserWarning,
+                    stacklevel=2,
                 )
 
         return ee_coll
@@ -416,7 +421,7 @@ class ImageCollectionAccessor:
                 elif not cmp_bands.keys() == first_band_names:
                     raise ValueError('Inconsistent number of bands or band names.')
 
-                for band_id, band in cmp_bands.items():
+                for band in cmp_bands.values():
                     cmp_band = {k: band.get(k, None) for k in band_compare_keys}
                     # test band has a fixed projections
                     if not cmp_band['dimensions']:
@@ -429,9 +434,9 @@ class ImageCollectionAccessor:
 
         except ValueError as ex:
             raise ValueError(
-                f"Cannot export collection: '{str(ex)}'.  'prepareForExport()' can be called to "
+                f"Cannot export collection: '{ex!s}'.  'prepareForExport()' can be called to "
                 f"create an export-ready collection."
-            )
+            ) from ex
 
     def _split_images(self, split: SplitType) -> dict[str, BaseImageAccessor]:
         """Split the collection into images according to ``split``."""
@@ -510,7 +515,7 @@ class ImageCollectionAccessor:
         region: dict | ee.Geometry = None,
         fill_portion: float | ee.Number = None,
         cloudless_portion: float | ee.Number = None,
-        custom_filter: str = None,
+        custom_filter: str | None = None,
         **kwargs,
     ) -> ee.ImageCollection:
         """
@@ -565,7 +570,7 @@ class ImageCollectionAccessor:
         # when possible filter on custom_filter before calling set_region_stats to reduce
         # computation
         if custom_filter and all(
-            [prop_key not in custom_filter for prop_key in ['FILL_PORTION', 'CLOUDLESS_PORTION']]
+            prop_key not in custom_filter for prop_key in ['FILL_PORTION', 'CLOUDLESS_PORTION']
         ):
             ee_coll = ee_coll.filter(ee.Filter.expression(custom_filter))
             custom_filter = None
@@ -679,15 +684,15 @@ class ImageCollectionAccessor:
 
     def prepareForExport(
         self,
-        crs: str = None,
-        crs_transform: Sequence[float] = None,
-        shape: tuple[int, int] = None,
-        region: dict | ee.Geometry = None,
-        scale: float = None,
+        crs: str | None = None,
+        crs_transform: Sequence[float] | None = None,
+        shape: tuple[int, int] | None = None,
+        region: dict | ee.Geometry | None = None,
+        scale: float | None = None,
         resampling: str | ResamplingMethod = BaseImageAccessor._default_resampling,
-        dtype: str = None,
-        scale_offset: bool = False,
-        bands: list[str | int] | str = None,
+        dtype: str | None = None,
+        scale_offset: bool | None = False,
+        bands: list[str | int] | str | None = None,
     ) -> ee.ImageCollection:
         """
         Prepare the collection for export.
@@ -733,7 +738,7 @@ class ImageCollectionAccessor:
         :param dtype:
             Data type of the prepared images (``uint8``, ``int8``, ``uint16``, ``int16``,
             ``uint32``, ``int32``, ``float32`` or ``float64``).  Defaults to the minimum size
-            data type able to represent all of the first image's bands.
+            data type able to represent all the first image's bands.
         :param scale_offset:
             Whether to apply any STAC band scales and offsets to the images (e.g. for converting
             digital numbers to physical units).
@@ -777,11 +782,12 @@ class ImageCollectionAccessor:
         dirname: os.PathLike | str,
         overwrite: bool = False,
         split: str | SplitType = SplitType.bands,
+        nodata: bool | int | float = True,
         max_tile_size: float = Tiler._ee_max_tile_size,
         max_tile_dim: int = Tiler._ee_max_tile_dim,
         max_tile_bands: int = Tiler._ee_max_tile_bands,
         max_requests: int = Tiler._max_requests,
-        max_cpus: int = None,
+        max_cpus: int | None = None,
     ) -> None:
         """
         Export the collection to GeoTIFF files.
@@ -852,6 +858,7 @@ class ImageCollectionAccessor:
             image.toGeoTIFF(
                 filename,
                 overwrite=overwrite,
+                nodata=nodata,
                 max_tile_size=max_tile_size,
                 max_tile_dim=max_tile_dim,
                 max_tile_bands=max_tile_bands,
@@ -868,7 +875,7 @@ class ImageCollectionAccessor:
         max_tile_dim: int = Tiler._ee_max_tile_dim,
         max_tile_bands: int = Tiler._ee_max_tile_bands,
         max_requests: int = Tiler._max_requests,
-        max_cpus: int = None,
+        max_cpus: int | None = None,
     ) -> np.ndarray:
         """
         Export the collection to a NumPy array.
@@ -898,13 +905,13 @@ class ImageCollectionAccessor:
             structured ``dtype`` (``True``).  Array dimension ordering, and structured
             ``dtype`` fields depend on the value of ``split``.
         :param split:
-            Return a 4D array with (row, column, band, image) dimensions
-            (:attr:`SplitType.bands`), or a 4D array with with (row, column, image,
-            band) dimensions (:attr:`SplitType.images`), when ``structured`` is ``False``.
-            Otherwise, return a 2D array with (row, column) dimensions and a structured ``dtype``
-            representing images nested in bands (:attr:`SplitType.bands`), or a 2D array with
-            (row, column) dimensions and a structured ``dtype`` representing bands nested in
-            images (:attr:`SplitType.images`), when ``structured`` is ``True``.
+            Return a 4D array with (row, column, band, image) dimensions (
+            :attr:`SplitType.bands`), or a 4D array with (row, column, image, band) dimensions (
+            :attr:`SplitType.images`), when ``structured`` is ``False``. Otherwise, return a 2D
+            array with (row, column) dimensions and a structured ``dtype`` representing images
+            nested in bands (:attr:`SplitType.bands`), or a 2D array with (row, column)
+            dimensions and a structured ``dtype`` representing bands nested in images (
+            :attr:`SplitType.images`), when ``structured`` is ``True``.
         :param max_tile_size:
             Maximum tile size (MB).  Should be less than the `Earth Engine size limit
             <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (32 MB).
@@ -986,7 +993,7 @@ class ImageCollectionAccessor:
         max_tile_dim: int = Tiler._ee_max_tile_dim,
         max_tile_bands: int = Tiler._ee_max_tile_bands,
         max_requests: int = Tiler._max_requests,
-        max_cpus: int = None,
+        max_cpus: int | None = None,
     ) -> xarray.Dataset:
         """
         Export the collection to an Xarray Dataset.
@@ -1090,7 +1097,7 @@ class ImageCollectionAccessor:
 
 
 class MaskedCollection(ImageCollectionAccessor):
-    def __init__(self, ee_collection: ee.ImageCollection, add_props: list[str] = None):
+    def __init__(self, ee_collection: ee.ImageCollection, add_props: list[str] | None = None):
         """
         A class for describing, searching and compositing an Earth Engine image collection,
         with support for cloud/shadow masking.
@@ -1107,7 +1114,7 @@ class MaskedCollection(ImageCollectionAccessor):
             self.schemaPropertyNames += add_props
 
     @classmethod
-    def from_name(cls, name: str, add_props: list[str] = None) -> MaskedCollection:
+    def from_name(cls, name: str, add_props: list[str] | None = None) -> MaskedCollection:
         """
 
         :param name:
@@ -1125,7 +1132,7 @@ class MaskedCollection(ImageCollectionAccessor):
 
     @classmethod
     def from_list(
-        cls, image_list: list[str | MaskedImage | ee.Image], add_props: list[str] = None
+        cls, image_list: list[str | MaskedImage | ee.Image], add_props: list[str] | None = None
     ) -> MaskedCollection:
         """
         Create a MaskedCollection instance from a list of Earth Engine image ID strings,

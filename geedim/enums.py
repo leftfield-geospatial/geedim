@@ -1,52 +1,49 @@
 """
-   Copyright 2021 Dugal Harris - dugalh@gmail.com
+Copyright 2021 Dugal Harris - dugalh@gmail.com
 
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-       http://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
 from enum import Enum
 
 
 class CompositeMethod(str, Enum):
-    """
-    Enumeration for the compositing method, i.e. the method for finding a composite pixel from the stack of
-    corresponding input image pixels.
+    """Enumeration for the compositing method, i.e. the method for finding a composite pixel from
+    the stack of corresponding input image pixels.
     """
 
     q_mosaic = 'q-mosaic'
-    """ 
-    Use the unmasked pixel with the highest cloud distance (distance to nearest cloud). Where more than one pixel has 
-    the same cloud distance, the first one in the stack is selected.     
+    """Use the unmasked pixel with the highest cloud distance (distance to nearest cloud). Where
+    more than one pixel has the same cloud distance, the first one in the stack is selected.
     """
 
     mosaic = 'mosaic'
-    """ Use the first unmasked pixel in the stack. """
+    """Use the first unmasked pixel in the stack."""
 
     medoid = 'medoid'
-    """
-    Use the medoid of the unmasked pixels.  This is the pixel from the image having the minimum sum of spectral 
-    distances to the rest of the images. 
-    Maintains the original relationship between bands. See https://www.mdpi.com/2072-4292/5/12/6481 for detail.
+    """Use the medoid of the unmasked pixels.  This is the pixel from the image having the
+    minimum sum of spectral distances to the rest of the images. Maintains the original
+    relationship between bands. See https://www.mdpi.com/2072-4292/5/12/6481 for detail.
     """
 
     median = 'median'
-    """ Use the median of the unmasked pixels. """
+    """Use the median of the unmasked pixels."""
 
     mode = 'mode'
-    """ Use the mode of the unmasked pixels. """
+    """Use the mode of the unmasked pixels."""
 
     mean = 'mean'
-    """ Use the mean of the unmasked pixels. """
+    """Use the mean of the unmasked pixels."""
 
     def __repr__(self):
         return self._name_
@@ -83,7 +80,9 @@ class CloudScoreBand(str, Enum):
     """Pixel quality score based on spectral distance from a (theoretical) clear reference."""
 
     cs_cdf = 'cs_cdf'
-    """Value of the cumulative distribution function of possible cs values for the estimated cs value."""
+    """Value of the cumulative distribution function of possible cs values for the estimated cs
+    value.
+    """
 
     def __repr__(self):
         return self._name_
@@ -96,16 +95,16 @@ class ResamplingMethod(str, Enum):
     """Enumeration for the resampling method."""
 
     near = 'near'
-    """ Nearest neighbour. """
+    """Nearest neighbour."""
 
     bilinear = 'bilinear'
-    """ Bilinear. """
+    """Bilinear."""
 
     bicubic = 'bicubic'
-    """ Bicubic. """
+    """Bicubic."""
 
     average = 'average'
-    """ Average (recommended for downsampling). """
+    """Average (recommended for downsampling)."""
 
     def __repr__(self):
         return self._name_
@@ -118,13 +117,13 @@ class ExportType(str, Enum):
     """Enumeration for the export type."""
 
     drive = 'drive'
-    """ Export to Google Drive. """
+    """Export to Google Drive."""
 
     asset = 'asset'
-    """ Export to an Earth Engine asset. """
+    """Export to an Earth Engine asset."""
 
     cloud = 'cloud'
-    """ Export to Google Cloud Storage. """
+    """Export to Google Cloud Storage."""
 
     def __repr__(self):
         return self._name_
@@ -137,16 +136,16 @@ class SpectralDistanceMetric(str, Enum):
     """Enumeration for the spectral distance metric."""
 
     sam = 'sam'
-    """ Spectral angle mapper. """
+    """Spectral angle mapper."""
 
     sid = 'sid'
-    """ Spectral information divergence. """
+    """Spectral information divergence."""
 
     sed = 'sed'
-    """ Squared euclidean distance. """
+    """Squared euclidean distance."""
 
     emd = 'emd'
-    """ Earth movers distance. """
+    """Earth movers distance."""
 
     def __repr__(self):
         return self._name_
