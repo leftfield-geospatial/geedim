@@ -54,7 +54,7 @@ class STACClient:
                 return None
             # populate the URL dictionary at this level if it has not been populated already
             if isinstance(url_dict[title], str):
-                logger.debug(f"Requesting STAC entry for '{title}' from '{url_dict[title]}'.")
+                logger.debug(f"Requesting STAC catalog for '{title}' from '{url_dict[title]}'.")
                 async with session.get(url_dict[title]) as response:
                     catalog = await response.json(content_type='text/plain')
                 url_dict[title] = {
@@ -69,14 +69,15 @@ class STACClient:
         id_title = '_'.join(parts)
         parent_title = '_'.join(parts[:-1])
         if id_title in url_dict:
-            url = url_dict[id_title]
+            title = id_title
         elif parent_title in url_dict:
-            url = url_dict[parent_title]
+            title = parent_title
         else:
             return None
 
         # get and cache the STAC dictionary for ee_id
-        async with session.get(url) as response:
+        logger.debug(f"Requesting STAC collection for '{title}' from '{url_dict[title]}'.")
+        async with session.get(url_dict[title]) as response:
             self._cache[ee_id] = await response.json(content_type='text/plain')
         return self._cache[ee_id]
 
@@ -94,5 +95,9 @@ class STACClient:
             runner = utils.AsyncRunner()
             self._cache[ee_id] = runner.run(self._get(ee_id, runner.session))
             if self._cache[ee_id] is None:
-                warnings.warn(f"Couldn't find STAC entry for: '{ee_id}'.", category=RuntimeWarning)
+                warnings.warn(
+                    f"Couldn't find STAC entry for: '{ee_id}'.",
+                    category=RuntimeWarning,
+                    stacklevel=2,
+                )
         return self._cache[ee_id]
