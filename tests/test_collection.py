@@ -25,10 +25,11 @@ import pytest
 
 from geedim import schema
 from geedim.collection import MaskedCollection
+from geedim.download import BaseImageAccessor
 from geedim.enums import CompositeMethod, ResamplingMethod
 from geedim.errors import InputImageError
 from geedim.mask import MaskedImage
-from geedim.utils import get_projection, split_id
+from geedim.utils import split_id
 
 
 @pytest.fixture()
@@ -422,7 +423,7 @@ def _get_masked_portion(
     """Return the valid portion of the ``ee_image`` inside ``region``.  Assumes the ``region`` is
     completely covered by ``ee_image``.
     """
-    proj = proj or get_projection(ee_image)
+    proj = proj or BaseImageAccessor(ee_image).projection()
     ee_mask = (
         ee_image.select('SR_B.*|B.*|rh.*').mask().reduce(ee.Reducer.allNonZero()).rename('EE_MASK')
     )
@@ -452,7 +453,7 @@ def test_composite_mask(image_list, method, mask, region_100ha, request):
     gd_collection = MaskedCollection.from_list(image_list)
     ee_collection = gd_collection._prepare_for_composite(method=method, mask=mask)
     composite_im = gd_collection.composite(method=method, mask=mask)
-    proj = get_projection(ee_collection.first(), min_scale=True)
+    proj = BaseImageAccessor(ee_collection.first()).projection()
 
     def get_masked_portions(ee_image: ee.Image, portions: ee.List) -> ee.List:
         """Append the valid portion of ``ee_image`` to  ``portions``."""
@@ -499,7 +500,7 @@ def test_composite_s2_mask_missing_data(
 
     ee_collection = gd_collection._prepare_for_composite(method=method, mask=True, **mask_kwargs)
     composite_im = gd_collection.composite(method=method, mask=True, **mask_kwargs)
-    proj = get_projection(ee_collection.first(), min_scale=True)
+    proj = BaseImageAccessor(ee_collection.first()).projection()
 
     # get the mask portions for the component and composite images
     component_portion = _get_masked_portion(
@@ -526,7 +527,7 @@ def test_composite_s2_q_mosaic_missing_data(
     kwargs = dict(method='q-mosaic', mask_method='cloud-score', mask=False)
     ee_collection = gd_collection._prepare_for_composite(**kwargs)
     composite_im = gd_collection.composite(**kwargs)
-    proj = get_projection(ee_collection.first(), min_scale=True)
+    proj = BaseImageAccessor(ee_collection.first()).projection()
 
     # get and test the mask portions for the component and composite images
     component_portion = _get_masked_portion(
@@ -554,11 +555,11 @@ def test_composite_resampling(
     image_list: str,
     resampling: ResamplingMethod,
     scale: float,
-    region_100ha: Dict,
+    region_100ha: dict,
     request: pytest.FixtureRequest,
 ):
     """Test that resampling smooths the composite image."""
-    image_list: List = request.getfixturevalue(image_list)
+    image_list: list = request.getfixturevalue(image_list)
     gd_collection = MaskedCollection.from_list(image_list)
     comp_im = gd_collection.composite(method=CompositeMethod.mosaic, mask=False)
     comp_im_resampled = gd_collection.composite(
@@ -585,7 +586,7 @@ def test_composite_s2_cloud_mask_params(s2_sr_hm_images, region_100ha):
     Sentinel2ClImage._aux_image().
     """
     gd_collection = MaskedCollection.from_list(s2_sr_hm_images)
-    proj = get_projection(gd_collection.ee_collection.first())
+    proj = BaseImageAccessor(gd_collection.ee_collection.first()).projection()
     mask_portions = []
     for score in [0.3, 0.5]:
         comp_im = gd_collection.composite(mask_method='cloud-score', score=score)
@@ -713,7 +714,7 @@ def test_composite_mult_kwargs(region_100ha):
     """
     gd_collection = MaskedCollection.from_name('COPERNICUS/S2_SR_HARMONIZED')
     filt_collection = gd_collection.search('2022-01-01', '2022-01-10', region_100ha)
-    proj = get_projection(filt_collection.ee_collection.first())
+    proj = BaseImageAccessor(filt_collection.ee_collection.first()).projection()
     mask_portions = []
     for score in [0.3, 0.5]:
         comp_im = filt_collection.composite(mask_method='cloud-score', score=score)
