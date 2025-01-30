@@ -32,7 +32,6 @@ from tqdm.auto import tqdm
 from tqdm.contrib import logging as tqdm_logging
 
 from geedim import Initialize, schema, utils, version
-from geedim.download import BaseImageAccessor, _nodata_vals
 from geedim.enums import (
     CloudMaskMethod,
     CloudScoreBand,
@@ -40,6 +39,7 @@ from geedim.enums import (
     ExportType,
     ResamplingMethod,
 )
+from geedim.image import ImageAccessor, _nodata_vals
 from geedim.tile import Tiler
 
 logger = logging.getLogger(__name__)
@@ -98,15 +98,15 @@ class ChainedCommand(click.Command):
         Initialize()
 
         # combine `region` and `bbox` into a single region in the context object
-        region = ctx.params.get('region', None)
-        bbox = ctx.params.get('bbox', None)
+        region = ctx.params.get('region')
+        bbox = ctx.params.get('bbox')
         ctx.obj.region = region or bbox or ctx.obj.region
 
         if 'image_id' in ctx.params:
             # append any images to the image_list
             ctx.obj.image_list += [ee.Image(ee_id) for ee_id in ctx.params['image_id']]
 
-        if ctx.params.get('like', None):
+        if ctx.params.get('like'):
             # populate crs, crs_transform & shape parameters from a template raster
             with rio.open(ctx.params['like'], 'r') as im:
                 ctx.params['crs'] = im.crs.to_string()
@@ -154,12 +154,12 @@ def _crs_cb(ctx, param, crs):
             wkt_fn = Path(crs)
             # read WKT from file, if it exists
             if wkt_fn.exists():
-                with open(wkt_fn, 'r') as f:
+                with open(wkt_fn) as f:
                     crs = f.read()
 
             crs = rio.CRS.from_string(crs).to_wkt()
         except CRSError as ex:
-            raise click.BadParameter(f'Invalid CRS value: {crs}.\n {str(ex)}', param=param)
+            raise click.BadParameter(f'Invalid CRS value: {crs}.\n {ex!s}', param=param)
     return crs
 
 
@@ -261,7 +261,7 @@ resampling_option = click.option(
     '-rs',
     '--resampling',
     type=click.Choice(ResamplingMethod, case_sensitive=True),
-    default=BaseImageAccessor._default_resampling,
+    default=ImageAccessor._default_resampling,
     show_default=True,
     help='Resampling method.',
 )
@@ -824,7 +824,7 @@ def download(
     '-t',
     '--type',
     type=click.Choice(ExportType, case_sensitive=True),
-    default=BaseImageAccessor._default_export_type.value,
+    default=ImageAccessor._default_export_type.value,
     show_default=True,
     help='Export type.',
 )
@@ -930,14 +930,14 @@ def export(obj, image_id, type, folder, bbox, region, like, mask, wait, **kwargs
     for im in image_list:
         name = _im_name(im)
         im = im.gd.prepareForExport(region=obj.region, **kwargs)
-        task = im.gd.export(name, type=type, folder=folder, wait=False)
+        task = im.gd.toGoogleCloud(name, type=type, folder=folder, wait=False)
         export_tasks.append(task)
         tqdm.write(f'Started {name}') if not wait else None
 
     if wait:
         obj.image_list = [] if type == ExportType.asset else obj.image_list
         for task, im in zip(export_tasks, image_list):
-            BaseImageAccessor.monitorExport(task)
+            ImageAccessor.monitorExport(task)
             if type == ExportType.asset:
                 # add asset images, so they can be downloaded or composited with chained commands
                 obj.image_list += [ee.Image(utils.asset_id(_im_name(im), folder))]
@@ -974,7 +974,7 @@ def export(obj, image_id, type, folder, bbox, region, like, mask, wait, **kwargs
     '-rs',
     '--resampling',
     type=click.Choice(ResamplingMethod, case_sensitive=True),
-    default=BaseImageAccessor._default_resampling,
+    default=ImageAccessor._default_resampling,
     show_default=True,
     help='Resample images with this method before compositing.',
 )

@@ -1,34 +1,34 @@
 """
-    Copyright 2021 Dugal Harris - dugalh@gmail.com
+Copyright 2021 Dugal Harris - dugalh@gmail.com
 
-    Licensed under the Apache License, Version 2.0 (the "License");
-    you may not use this file except in compliance with the License.
-    You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-       http://www.apache.org/licenses/LICENSE-2.0
+   http://www.apache.org/licenses/LICENSE-2.0
 
-    Unless required by applicable law or agreed to in writing, software
-    distributed under the License is distributed on an "AS IS" BASIS,
-    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-    See the License for the specific language governing permissions and
-    limitations under the License.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
-from typing import Dict, Iterable
+from collections.abc import Iterable
 
 import ee
 import numpy as np
 import pytest
 import rasterio as rio
 
-from geedim import CloudMaskMethod, utils, schema
+from geedim import CloudMaskMethod, schema, utils
 from geedim.enums import CloudScoreBand
-from geedim.mask import class_from_id, MaskedImage
+from geedim.mask import MaskedImage, class_from_id
 
 
 def test_class_from_id(landsat_image_ids, s2_sr_image_id, s2_toa_hm_image_id, generic_image_ids):
     """Test class_from_id()."""
-    from geedim.mask import _LandsatImage, _Sentinel2SrImage, _Sentinel2ToaImage, _MaskedImage
+    from geedim.mask import _LandsatImage, _MaskedImage, _Sentinel2SrImage, _Sentinel2ToaImage
 
     assert all([class_from_id(im_id) == _LandsatImage for im_id in landsat_image_ids])
     assert all([class_from_id(im_id) == _MaskedImage for im_id in generic_image_ids])
@@ -190,7 +190,7 @@ def test_landsat_cloudmask_params(image_id: str, request: pytest.FixtureRequest)
 
 @pytest.mark.parametrize('image_id', ['s2_sr_hm_image_id', 's2_toa_hm_image_id'])
 def test_s2_cloudmask_mask_shadows(
-    image_id: str, region_10000ha: Dict, request: pytest.FixtureRequest
+    image_id: str, region_10000ha: dict, request: pytest.FixtureRequest
 ):
     """Test S2 cloud/shadow masking `mask_shadows` parameter."""
     image_id: str = request.getfixturevalue(image_id)
@@ -206,7 +206,7 @@ def test_s2_cloudmask_mask_shadows(
 
 
 @pytest.mark.parametrize('image_id', ['s2_sr_hm_image_id', 's2_toa_hm_image_id'])
-def test_s2_cloudmask_prob(image_id: str, region_10000ha: Dict, request: pytest.FixtureRequest):
+def test_s2_cloudmask_prob(image_id: str, region_10000ha: dict, request: pytest.FixtureRequest):
     """Test S2 cloud/shadow masking `prob` parameter with the `cloud-prob` method."""
     image_id: str = request.getfixturevalue(image_id)
     cl_portions = []
@@ -221,7 +221,7 @@ def test_s2_cloudmask_prob(image_id: str, region_10000ha: Dict, request: pytest.
 
 
 @pytest.mark.parametrize('image_id', ['s2_sr_hm_image_id', 's2_toa_hm_image_id'])
-def test_s2_cloudmask_score(image_id: str, region_10000ha: Dict, request: pytest.FixtureRequest):
+def test_s2_cloudmask_score(image_id: str, region_10000ha: dict, request: pytest.FixtureRequest):
     """Test S2 cloud/shadow masking `score` parameter with the `cloud-score` method."""
     image_id: str = request.getfixturevalue(image_id)
     cl_portions = []
@@ -236,7 +236,7 @@ def test_s2_cloudmask_score(image_id: str, region_10000ha: Dict, request: pytest
 
 
 @pytest.mark.parametrize('image_id', ['s2_sr_hm_image_id', 's2_toa_hm_image_id'])
-def test_s2_cloudmask_cs_band(image_id: str, region_10000ha: Dict, request: pytest.FixtureRequest):
+def test_s2_cloudmask_cs_band(image_id: str, region_10000ha: dict, request: pytest.FixtureRequest):
     """Test S2 cloud/shadow masking `cs_band` parameter with the `cloud-score` method."""
     image_id: str = request.getfixturevalue(image_id)
     cl_portions = []
@@ -252,7 +252,7 @@ def test_s2_cloudmask_cs_band(image_id: str, region_10000ha: Dict, request: pyte
 
 
 @pytest.mark.parametrize('image_id', ['s2_sr_hm_image_id', 's2_toa_hm_image_id'])
-def test_s2_cloudmask_method(image_id: str, region_10000ha: Dict, request: pytest.FixtureRequest):
+def test_s2_cloudmask_method(image_id: str, region_10000ha: dict, request: pytest.FixtureRequest):
     """Test S2 cloud/shadow masking `mask_method` parameter."""
     image_id: str = request.getfixturevalue(image_id)
     cl_portions = []
@@ -269,7 +269,7 @@ def test_s2_cloudmask_method(image_id: str, region_10000ha: Dict, request: pytes
 
 @pytest.mark.parametrize('image_id', ['s2_sr_hm_image_id', 's2_toa_hm_image_id'])
 def test_s2_cloudmask_mask_cirrus(
-    image_id: str, region_10000ha: Dict, request: pytest.FixtureRequest
+    image_id: str, region_10000ha: dict, request: pytest.FixtureRequest
 ):
     """Test S2 cloud/shadow masking `mask_cirrus` parameter with the `qa` method."""
     image_id: str = request.getfixturevalue(image_id)
@@ -285,7 +285,7 @@ def test_s2_cloudmask_mask_cirrus(
 
 
 @pytest.mark.parametrize('image_id', ['s2_sr_hm_image_id', 's2_toa_hm_image_id'])
-def test_s2_cloudmask_dark(image_id: str, region_10000ha: Dict, request: pytest.FixtureRequest):
+def test_s2_cloudmask_dark(image_id: str, region_10000ha: dict, request: pytest.FixtureRequest):
     """Test S2 cloud/shadow masking `dark` parameter."""
     image_id: str = request.getfixturevalue(image_id)
     masked_image = MaskedImage.from_id(image_id, mask_method='cloud-prob', dark=0.5)
@@ -301,7 +301,7 @@ def test_s2_cloudmask_dark(image_id: str, region_10000ha: Dict, request: pytest.
 
 @pytest.mark.parametrize('image_id', ['s2_sr_hm_image_id', 's2_toa_hm_image_id'])
 def test_s2_cloudmask_shadow_dist(
-    image_id: str, region_10000ha: Dict, request: pytest.FixtureRequest
+    image_id: str, region_10000ha: dict, request: pytest.FixtureRequest
 ):
     """Test S2 cloud/shadow masking `shadow_dist` parameter."""
     image_id: str = request.getfixturevalue(image_id)
@@ -318,7 +318,7 @@ def test_s2_cloudmask_shadow_dist(
 
 @pytest.mark.parametrize('image_id', ['s2_sr_hm_image_id', 's2_toa_hm_image_id'])
 def test_s2_cloudmask_cdi_thresh(
-    image_id: str, region_10000ha: Dict, request: pytest.FixtureRequest
+    image_id: str, region_10000ha: dict, request: pytest.FixtureRequest
 ):
     """Test S2 cloud/shadow masking `cdi_thresh` parameter."""
     image_id: str = request.getfixturevalue(image_id)
@@ -337,7 +337,7 @@ def test_s2_cloudmask_cdi_thresh(
     'image_id, max_cloud_dist', [('s2_sr_hm_image_id', 100), ('s2_sr_hm_image_id', 400)]
 )
 def test_s2_cloud_dist_max(
-    image_id: str, max_cloud_dist: int, region_10000ha: Dict, request: pytest.FixtureRequest
+    image_id: str, max_cloud_dist: int, region_10000ha: dict, request: pytest.FixtureRequest
 ):
     """Test S2 cloud distance `max_cloud_dist` parameter."""
 
@@ -373,7 +373,7 @@ def test_s2_region_stats_missing_data(
     assert masked_image.properties['FILL_PORTION'] == pytest.approx(100, abs=1)
 
 
-def _test_aux_stats(masked_image: MaskedImage, region: Dict):
+def _test_aux_stats(masked_image: MaskedImage, region: dict):
     """Sanity tests on cloud/shadow etc. aux bands for a given MaskedImage and region."""
     # create a pan image for testing brightnesses
     ee_image = masked_image.ee_image
@@ -431,7 +431,7 @@ def _test_aux_stats(masked_image: MaskedImage, region: Dict):
     'masked_image',
     ['l9_masked_image', 'l8_masked_image', 'l7_masked_image', 'l5_masked_image', 'l4_masked_image'],
 )
-def test_landsat_aux_bands(masked_image: str, region_10000ha: Dict, request: pytest.FixtureRequest):
+def test_landsat_aux_bands(masked_image: str, region_10000ha: dict, request: pytest.FixtureRequest):
     """Test Landsat auxiliary band values for sanity."""
     masked_image: MaskedImage = request.getfixturevalue(masked_image)
     _test_aux_stats(masked_image, region_10000ha)
@@ -449,7 +449,7 @@ def test_landsat_aux_bands(masked_image: str, region_10000ha: Dict, request: pyt
     ],
 )
 def test_s2_aux_bands(
-    image_id: str, mask_methods: Iterable, region_10000ha: Dict, request: pytest.FixtureRequest
+    image_id: str, mask_methods: Iterable, region_10000ha: dict, request: pytest.FixtureRequest
 ):
     """Test Sentinel-2 auxiliary band values for sanity with all masking methods."""
     image_id: str = request.getfixturevalue(image_id)
@@ -463,7 +463,7 @@ def test_s2_aux_bands(
     ['s2_sr_hm_nocp_masked_image', 's2_sr_hm_qa_zero_masked_image', 's2_sr_hm_nocs_masked_image'],
 )
 def test_s2_aux_bands_missing_data(
-    masked_image: str, region_10000ha: Dict, request: pytest.FixtureRequest
+    masked_image: str, region_10000ha: dict, request: pytest.FixtureRequest
 ):
     """Test Sentinel-2 auxiliary band masking / transparency for unmasked images missing required cloud data."""
     masked_image: MaskedImage = request.getfixturevalue(masked_image)
@@ -503,13 +503,13 @@ def test_s2_aux_bands_missing_data(
     ],
 )
 def test_mask_clouds(
-    masked_image: str, region_100ha: Dict, tmp_path, request: pytest.FixtureRequest
+    masked_image: str, region_100ha: dict, tmp_path, request: pytest.FixtureRequest
 ):
     """Test MaskedImage.mask_clouds() masks the fill or cloudless portion by downloading and
     examining dataset masks.
     """
     masked_image: MaskedImage = request.getfixturevalue(masked_image)
-    filename = tmp_path.joinpath(f'test_image.tif')
+    filename = tmp_path.joinpath('test_image.tif')
     masked_image.mask_clouds()
     proj_scale = masked_image._ee_proj.nominalScale()
     masked_image.download(filename, region=region_100ha, dtype='float32', scale=proj_scale)
@@ -536,13 +536,13 @@ def test_mask_clouds(
     ['s2_sr_hm_nocp_masked_image', 's2_sr_hm_qa_zero_masked_image', 's2_sr_hm_nocs_masked_image'],
 )
 def test_s2_mask_clouds_missing_data(
-    masked_image: str, region_100ha: Dict, tmp_path, request: pytest.FixtureRequest
+    masked_image: str, region_100ha: dict, tmp_path, request: pytest.FixtureRequest
 ):
     """Test Sentinel2SrClImage.mask_clouds() masks the entire image when it is missing required
     cloud data. Downloads and examines dataset masks.
     """
     masked_image: MaskedImage = request.getfixturevalue(masked_image)
-    filename = tmp_path.joinpath(f'test_image.tif')
+    filename = tmp_path.joinpath('test_image.tif')
     masked_image.mask_clouds()
     proj_scale = masked_image._ee_proj.nominalScale()
     masked_image.download(filename, region=region_100ha, dtype='float32', scale=proj_scale)

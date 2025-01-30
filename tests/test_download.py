@@ -19,7 +19,6 @@ from __future__ import annotations
 import pathlib
 from datetime import datetime, timezone
 from itertools import product
-from typing import Dict, List
 
 import ee
 import numpy as np
@@ -29,8 +28,9 @@ from rasterio import Affine, features, warp, windows
 
 from geedim import tile as _tile
 from geedim import utils
-from geedim.download import BaseImage, BaseImageAccessor, _nodata_vals
+from geedim.download import BaseImage
 from geedim.enums import ExportType, ResamplingMethod
+from geedim.image import _nodata_vals
 
 
 class BaseImageLike:
@@ -41,12 +41,12 @@ class BaseImageLike:
         shape: tuple[int, int],
         count: int = 10,
         dtype: str = 'uint16',
-        transform: Affine = Affine.identity(),
+        transform: Affine | None = None,
     ):
         self.shape = shape
         self.count = count
         self.dtype = dtype
-        self.transform = transform
+        self.transform = transform or Affine.identity()
         dtype_size = np.dtype(dtype).itemsize
         self.size = shape[0] * shape[1] * count * dtype_size
 
@@ -133,7 +133,7 @@ def modis_nbar_base_image_unbnd(modis_nbar_image_id: str) -> BaseImage:
 
 
 @pytest.fixture(scope='session')
-def modis_nbar_base_image(modis_nbar_image_id: str, region_100ha: Dict) -> BaseImage:
+def modis_nbar_base_image(modis_nbar_image_id: str, region_100ha: dict) -> BaseImage:
     """A BaseImage instance encapsulating a MODIS NBAR image.  Covers `region_*ha`."""
     return BaseImage(ee.Image(modis_nbar_image_id).clipToBoundsAndScale(region_100ha))
 
@@ -163,7 +163,7 @@ def bounds_polygon(left: float, bottom: float, right: float, top: float, crs: st
     return poly
 
 
-def _test_export_image(exp_image: BaseImageAccessor, ref_image: BaseImageAccessor, **exp_kwargs):
+def _test_export_image(exp_image: BaseImage, ref_image: BaseImage, **exp_kwargs):
     """Test ``exp_image`` against ``ref_image``, and optional crs, region & scale ``exp_kwargs``
     arguments to ``BaseImage._prepare_for_export``.
     """
@@ -331,7 +331,7 @@ def test_has_fixed_projection(
         ),
     ],
 )
-def test_min_dtype(data_types: List, exp_dtype: str):
+def test_min_dtype(data_types: list, exp_dtype: str):
     """Test ``BaseImage.dtype`` with mocked EE info dicts."""
     # mock a BaseImage with data_types in its EE info
     info = dict(bands=[dict(data_type=data_type) for data_type in data_types])
@@ -343,7 +343,6 @@ def test_min_dtype(data_types: List, exp_dtype: str):
 
 def _test_convert_dtype_error():
     """Test ``BaseImage.test_convert_dtype()`` raises an error with incorrect dtype."""
-    # TODO: replace with BaseImageAccessor test
     with pytest.raises(TypeError):
         BaseImage._convert_dtype(ee.Image(1), dtype='unknown')
 
@@ -365,7 +364,7 @@ def test_resample_fixed(
 ):
     """Test that resample() smooths images with a fixed projection."""
     source_im = request.getfixturevalue(image)._ee_image
-    resampled_im = BaseImageAccessor(source_im).resample(method)
+    resampled_im = BaseImage(source_im).resample(method)
 
     # find mean of std deviations of bands for each image
     crs = source_im.select(0).projection().crs()
@@ -396,7 +395,7 @@ def test_resample_comp(
 ):
     """Test that resample() leaves composite images unaltered."""
     source_im = request.getfixturevalue(masked_image)._ee_image
-    resampled_im = BaseImageAccessor(source_im).resample(method)
+    resampled_im = BaseImage(source_im).resample(method)
 
     # find mean of std deviations of bands for each image
     crs = source_im.select(0).projection().crs()
@@ -425,7 +424,7 @@ def test_resample_comp(
     ],
 )
 def test_prepare_no_fixed_projection(
-    user_base_image: BaseImage, params: Dict, request: pytest.FixtureRequest
+    user_base_image: BaseImage, params: dict, request: pytest.FixtureRequest
 ):
     """Test ``BaseImage._prepare_for_export()`` raises an exception when the image has no fixed projection,
     and insufficient CRS & region defining arguments.
@@ -450,7 +449,7 @@ def test_prepare_no_fixed_projection(
 def test_prepare_defaults(base_image: str, request: pytest.FixtureRequest):
     """Test ``BaseImage._prepare_for_export()`` with no (i.e. default) arguments."""
     base_image: BaseImage = request.getfixturevalue(base_image)
-    exp_image = BaseImageAccessor(base_image.prepareForExport())
+    exp_image = BaseImage(base_image.prepareForExport())
 
     _test_export_image(exp_image, base_image)
 
@@ -474,7 +473,7 @@ def test_prepare_transform_dimensions(
     parameters.
     """
     base_image: BaseImage = request.getfixturevalue(base_image)
-    exp_image = BaseImageAccessor(
+    exp_image = BaseImage(
         base_image.prepareForExport(crs=crs, crs_transform=crs_transform, shape=shape)
     )
 
@@ -506,7 +505,7 @@ def test_prepare_region_scale(
     region: dict = request.getfixturevalue(region) if region else None
 
     exp_kwargs = dict(crs=crs, region=region, scale=scale)
-    exp_image = BaseImageAccessor(base_image.prepareForExport(**exp_kwargs))
+    exp_image = BaseImage(base_image.prepareForExport(**exp_kwargs))
 
     _test_export_image(exp_image, base_image, **exp_kwargs)
 
@@ -531,7 +530,7 @@ def test_prepare_region_dimensions(
     region: dict = request.getfixturevalue(region) if region else None
 
     exp_kwargs = dict(crs=crs, region=region, shape=shape)
-    exp_image = BaseImageAccessor(base_image.prepareForExport(**exp_kwargs))
+    exp_image = BaseImage(base_image.prepareForExport(**exp_kwargs))
 
     _test_export_image(exp_image, base_image, **exp_kwargs)
 
@@ -555,7 +554,7 @@ def test_prepare_src_grid(base_image: str, region: str, request: pytest.FixtureR
     region: dict = request.getfixturevalue(region)
 
     exp_kwargs = dict(region=region)
-    exp_image = BaseImageAccessor(base_image.prepareForExport(**exp_kwargs))
+    exp_image = BaseImage(base_image.prepareForExport(**exp_kwargs))
 
     _test_export_image(exp_image, base_image, **exp_kwargs)
 
@@ -565,12 +564,12 @@ def test_prepare_src_grid(base_image: str, region: str, request: pytest.FixtureR
     [('s2_sr_hm_base_image', ['B1', 'B5']), ('l9_base_image', ['SR_B4', 'SR_B3', 'SR_B2'])],
 )
 def test_prepare_bands(
-    base_image: str, bands: List[str], region_25ha: dict, request: pytest.FixtureRequest
+    base_image: str, bands: list[str], region_25ha: dict, request: pytest.FixtureRequest
 ):
     """Test ``BaseImage._prepare_for_export()`` with ``bands`` parameter."""
     base_image: BaseImage = request.getfixturevalue(base_image)
-    ref_image = BaseImageAccessor(base_image.ee_image.select(bands))
-    exp_image = BaseImageAccessor(base_image.prepareForExport(bands=bands))
+    ref_image = BaseImage(base_image.ee_image.select(bands))
+    exp_image = BaseImage(base_image.prepareForExport(bands=bands))
 
     _test_export_image(exp_image, ref_image)
 
@@ -584,7 +583,7 @@ def test_prepare_bands_error(s2_sr_hm_base_image):
 
 def test_prepared_profile(s2_sr_hm_base_image: BaseImage):
     """Test the profile on image returned by ``BaseImage._prepare_for_export()``."""
-    exp_image = BaseImageAccessor(s2_sr_hm_base_image.prepareForExport())
+    exp_image = BaseImage(s2_sr_hm_base_image.prepareForExport())
     _test_export_image(exp_image, s2_sr_hm_base_image)
 
     # test dynamic values
@@ -601,7 +600,7 @@ def _test_prepare_nodata(user_fix_bnd_base_image: BaseImage, dtype: str, exp_nod
     """Test ``BaseImage._prepare_for_export()`` profile sets the ``nodata`` value correctly for
     different dtypes.
     """
-    exp_image = BaseImageAccessor(user_fix_bnd_base_image.prepareForExport(dtype=dtype))
+    exp_image = user_fix_bnd_base_image.prepareForExport(dtype=dtype)
     assert exp_image.dtype == dtype
     assert exp_image.profile['nodata'] == exp_nodata
 
@@ -611,13 +610,13 @@ def _test_prepare_nodata(user_fix_bnd_base_image: BaseImage, dtype: str, exp_nod
     [('s2_sr_hm_base_image', 'float32'), ('l9_base_image', None), ('modis_nbar_base_image', None)],
 )
 def test_scale_offset(
-    src_image: str, dtype: str, region_100ha: Dict, request: pytest.FixtureRequest
+    src_image: str, dtype: str, region_100ha: dict, request: pytest.FixtureRequest
 ):
     """Test ``BaseImage._prepare_for_export(scale_offset=True)`` gives expected properties and
     reflectance ranges.
     """
     src_image: BaseImage = request.getfixturevalue(src_image)
-    exp_image = BaseImageAccessor(src_image.prepareForExport(scale_offset=True))
+    exp_image = BaseImage(src_image.prepareForExport(scale_offset=True))
 
     assert exp_image.crs == src_image.crs
     assert exp_image.scale == src_image.scale
@@ -788,7 +787,7 @@ def test_download_region_scale(user_base_image: BaseImage, tmp_path: pathlib.Pat
             assert np.all(array[i] == i + 1)
 
 
-def test_overviews(user_base_image: BaseImage, region_25ha: Dict, tmp_path: pathlib.Path):
+def test_overviews(user_base_image: BaseImage, region_25ha: dict, tmp_path: pathlib.Path):
     """Test overviews get built by ``BaseImage.download()``."""
     filename = tmp_path.joinpath('test_user_download.tif')
     user_base_image.download(filename, region=region_25ha, crs='EPSG:3857', scale=1)
@@ -799,7 +798,7 @@ def test_overviews(user_base_image: BaseImage, region_25ha: Dict, tmp_path: path
             assert ds.overviews(bi)[0] == 2
 
 
-def test_metadata(s2_sr_hm_base_image: BaseImage, region_25ha: Dict, tmp_path: pathlib.Path):
+def test_metadata(s2_sr_hm_base_image: BaseImage, region_25ha: dict, tmp_path: pathlib.Path):
     """Test metadata is written by ``BaseImage.download()``."""
     filename = tmp_path.joinpath('test_s2_band_subset_download.tif')
     s2_sr_hm_base_image.download(
@@ -816,7 +815,7 @@ def test_metadata(s2_sr_hm_base_image: BaseImage, region_25ha: Dict, tmp_path: p
 
 
 @pytest.mark.parametrize('type', ExportType)
-def test_start_export(type: ExportType, user_fix_base_image: BaseImage, region_25ha: Dict):
+def test_start_export(type: ExportType, user_fix_base_image: BaseImage, region_25ha: dict):
     """Test ``BaseImage.export()`` starts a small export."""
     # Note that this export should start successfully, but will ultimately fail for the asset and cloud options.  For
     # the asset option, there will be an overwrite issue.  For cloud storage, there is no 'geedim' bucket.
@@ -827,7 +826,7 @@ def test_start_export(type: ExportType, user_fix_base_image: BaseImage, region_2
     assert task.status()['state'] == 'READY' or task.status()['state'] == 'RUNNING'
 
 
-def __test_export_asset(user_fix_base_image: BaseImage, region_25ha: Dict):
+def __test_export_asset(user_fix_base_image: BaseImage, region_25ha: dict):
     """Test start of a small export to EE asset."""
     # TODO: consider removing this slow test in favour of the equivalent integration test
     filename = f'test_export_{np.random.randint(1 << 31)}'
@@ -857,7 +856,7 @@ def test_prepare_ee_geom(l9_base_image: BaseImage, tmp_path: pathlib.Path):
     #6).
     """
     region = l9_base_image.ee_image.geometry()
-    exp_image = BaseImageAccessor(l9_base_image.prepareForExport(region=region))
+    exp_image = BaseImage(l9_base_image.prepareForExport(region=region))
     assert exp_image.scale == l9_base_image.scale
 
 

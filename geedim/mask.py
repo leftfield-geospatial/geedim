@@ -19,14 +19,14 @@ from __future__ import annotations
 import logging
 import warnings
 from abc import abstractmethod
-from functools import cached_property
 
 import ee
 
 from geedim import schema
-from geedim.download import BaseImage, BaseImageAccessor
+from geedim.download import BaseImage
 from geedim.enums import CloudMaskMethod, CloudScoreBand
-from geedim.utils import register_accessor, split_id
+from geedim.image import ImageAccessor
+from geedim.utils import split_id
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ class _MaskedImage:
         """
         mask_bands = cls._get_mask_bands(ee_image, **kwargs)
         # add/overwrite mask bands unless the image has no fixed projection
-        add = BaseImageAccessor(ee_image).fixed()
+        add = ImageAccessor(ee_image).fixed()
         return ee.Image(
             ee.Algorithms.If(
                 add, ee_image.addBands(list(mask_bands.values()), overwrite=True), ee_image
@@ -73,7 +73,7 @@ class _MaskedImage:
         percentage of ``FILL_PORTION``.  ``CLOUDLESS_PORTION`` is set to ``100`` if cloud/shadow
         masking is not supported.
         """
-        portions = BaseImageAccessor(ee_image.select('FILL_MASK')).maskCoverage(
+        portions = ImageAccessor(ee_image.select('FILL_MASK')).maskCoverage(
             region=region, scale=scale, maxPixels=1e6, bestEffort=True
         )
         return ee_image.set('FILL_PORTION', portions.get('FILL_MASK'), 'CLOUDLESS_PORTION', 100)
@@ -97,7 +97,7 @@ class _CloudlessImage(_MaskedImage):
     ) -> ee.Image:
         # TODO: is this maxPixels value ok? it results in bestEffort using lower scales for the
         #  test region_10000ha
-        portions = BaseImageAccessor(ee_image.select(['FILL_MASK', 'CLOUDLESS_MASK'])).maskCoverage(
+        portions = ImageAccessor(ee_image.select(['FILL_MASK', 'CLOUDLESS_MASK'])).maskCoverage(
             region=region, scale=scale, maxPixels=1e6, bestEffort=True
         )
         fill_portion = ee.Number(portions.get('FILL_MASK'))
@@ -209,8 +209,8 @@ class _Sentinel2Image(_CloudlessImage):
         if mask_method is not CloudMaskMethod.cloud_score:
             warnings.warn(
                 f"The '{mask_method}' mask method is deprecated and will be removed in a future "
-                f"release.  Please switch to 'cloud-score'.",
-                category=DeprecationWarning,
+                f"release.  Please use the 'cloud-score' method instead.",
+                category=FutureWarning,
                 stacklevel=2,
             )
         cs_band = CloudScoreBand(cs_band)
@@ -413,94 +413,7 @@ def class_from_id(image_id: str) -> type[_MaskedImage]:
         return _MaskedImage
 
 
-@register_accessor('gd', ee.Image)
-class ImageAccessor(BaseImageAccessor):
-    @cached_property
-    def _mi(self) -> type[_MaskedImage]:
-        """Masking method container."""
-        return class_from_id(self.id)
-
-    def addMaskBands(self, **kwargs) -> ee.Image:
-        """
-        Return this image with cloud/shadow masks and related bands added when supported,
-        otherwise with fill (validity) mask added.
-
-        Existing mask bands are overwritten except if this image has no fixed projection,
-        in which case no bands are added or overwritten.
-
-        :param bool mask_cirrus:
-            Whether to mask cirrus clouds.  Valid for Landsat 8-9 images, and for Sentinel-2
-            images with the :attr:`~geedim.enums.CloudMaskMethod.qa` ``mask_method``.  Defaults
-            to ``True``.
-        :param bool mask_shadows:
-            Whether to mask cloud shadows.  Valid for Landsat images, and for Sentinel-2 images
-            with the :attr:`~geedim.enums.CloudMaskMethod.qa` or
-            :attr:`~geedim.enums.CloudMaskMethod.cloud_prob` ``mask_method``.  Defaults to ``True``.
-        :param ~geedim.enums.CloudMaskMethod mask_method:
-            Method used to mask clouds.  Valid for Sentinel-2 images.  See
-            :class:`~geedim.enums.CloudMaskMethod` for details.  Defaults to
-            :attr:`~geedim.enums.CloudMaskMethod.cloud_score`.
-        :param float prob:
-            Cloud probability threshold (%). Valid for Sentinel-2 images with the
-            :attr:`~geedim.enums.CloudMaskMethod.cloud_prob` ``mask_method``.  Defaults to ``60``.
-        :param float dark:
-            NIR threshold [0-1]. NIR values below this threshold are potential cloud shadows.
-            Valid for Sentinel-2 images with the :attr:`~geedim.enums.CloudMaskMethod.qa` or
-            :attr:`~geedim.enums.CloudMaskMethod.cloud_prob` ``mask_method``.  Defaults to ``0.15``.
-        :param int shadow_dist:
-            Maximum distance (m) to look for cloud shadows from cloud edges.  Valid for Sentinel-2
-            images with the :attr:`~geedim.enums.CloudMaskMethod.qa` or
-            :attr:`~geedim.enums.CloudMaskMethod.cloud_prob` ``mask_method``.  Defaults to ``1000``.
-        :param int buffer:
-            Distance (m) to dilate cloud/shadow.  Valid for Sentinel-2 images with the
-            :attr:`~geedim.enums.CloudMaskMethod.qa` or
-            :attr:`~geedim.enums.CloudMaskMethod.cloud_prob` ``mask_method``.  Defaults to ``50``.
-        :param float cdi_thresh:
-            Cloud Displacement Index threshold. Values below this threshold are considered
-            potential clouds. If this parameter is ``None`` (the default), the index is not used.
-            Valid for Sentinel-2 images with the :attr:`~geedim.enums.CloudMaskMethod.qa` or
-            :attr:`~geedim.enums.CloudMaskMethod.cloud_prob` ``mask_method``.  See
-            https://developers.google.com/earth-engine/apidocs/ee-algorithms-sentinel2-cdi for
-            details.
-        :param int max_cloud_dist:
-            Maximum distance (m) to look for clouds when forming the 'cloud distance' band.  Valid
-            for Sentinel-2 images.  Defaults to ``5000``.
-        :param float score:
-            Cloud Score+ threshold.  Valid for Sentinel-2 images with the
-            :attr:`~geedim.enums.CloudMaskMethod.cloud_score` ``mask_method``.  Defaults to ``0.6``.
-        :param ~geedim.enums.CloudScoreBand cs_band:
-            Cloud Score+ band to threshold.  Valid for Sentinel-2 images with the
-            :attr:`~geedim.enums.CloudMaskMethod.cloud_score` ``mask_method``.  Defaults to
-            :attr:`~geedim.enums.CloudScoreBand.cs`.
-
-        :return:
-            Image with added mask bands.
-        """
-        return self._mi.add_mask_bands(self._ee_image, **kwargs)
-
-    def maskClouds(self) -> ee.Image:
-        """
-        Return this image with cloud/shadow masks applied when supported, otherwise with fill
-        (validity) mask applied.
-
-        Mask bands should be added with :meth:`addMaskBands` before calling this method.
-
-        :return:
-            Masked image.
-        """
-        # TODO: should we still mask with FILL_MASK when there is no CLOUDLESS_MASK,
-        #  and incorporate it into the CLOUDLESS_MASK when there is?  If any band FILL_MASK is
-        #  derived from is transparent, FILL_MASK will also be transparent.  Also, FILL_MASK will
-        #  have the projection of the first band in the stack it is derived from, which could be
-        #  e.g.  at a very different scale to other bands. As EE already has per-band validity
-        #  masks applied, applying FILL_MASK over this seems questionable.  FILL_MASK is needed for
-        #  FILL_PORTION when searching though.
-        # TODO: test masking when the image has a subset of bands selected (S2 should work, but
-        #  Landsat requires the QA band)
-        return self._mi.mask_clouds(self._ee_image)
-
-
-class MaskedImage(ImageAccessor, BaseImage):
+class MaskedImage(BaseImage):
     _default_mask = False
 
     def __init__(
@@ -520,7 +433,7 @@ class MaskedImage(ImageAccessor, BaseImage):
         :param region:
             Region over which to find filled and cloudless percentages for the image,
             as a GeoJSON dictionary or ``ee.Geometry``.  Percentages are stored in the image
-            properties. If None, statistics are not found (the default).
+            properties. If ``None``, statistics are not found (the default).
         :param kwargs:
             Cloud/shadow masking parameters - see :meth:`ImageAccessor.addMaskBands` for details.
         """

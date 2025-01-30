@@ -1,17 +1,17 @@
 """
-    Copyright 2021 Dugal Harris - dugalh@gmail.com
+Copyright 2021 Dugal Harris - dugalh@gmail.com
 
-    Licensed under the Apache License, Version 2.0 (the "License");
-    you may not use this file except in compliance with the License.
-    You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-       http://www.apache.org/licenses/LICENSE-2.0
+   http://www.apache.org/licenses/LICENSE-2.0
 
-    Unless required by applicable law or agreed to in writing, software
-    distributed under the License is distributed on an "AS IS" BASIS,
-    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-    See the License for the specific language governing permissions and
-    limitations under the License.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
 import json
@@ -156,7 +156,7 @@ def test_search(
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code == 0
     assert results_file.exists()
-    with open(results_file, 'r') as f:
+    with open(results_file) as f:
         properties = json.load(f)
 
     start_date = datetime.strptime(start_date, '%Y-%m-%d')
@@ -197,7 +197,7 @@ def test_config_search_s2(
         result = runner.invoke(cli, cli_str.split())
         assert result.exit_code == 0
         assert results_file.exists()
-        with open(results_file, 'r') as f:
+        with open(results_file) as f:
             properties = json.load(f)
         cl_portions.append(
             np.array([prop_dict['CLOUDLESS_PORTION'] for prop_dict in properties.values()])
@@ -222,7 +222,7 @@ def test_config_search_l9(
         result = runner.invoke(cli, cli_str.split())
         assert result.exit_code == 0
         assert results_file.exists()
-        with open(results_file, 'r') as f:
+        with open(results_file) as f:
             properties = json.load(f)
         cl_portion_list.append(
             np.array([prop_dict['CLOUDLESS_PORTION'] for prop_dict in properties.values()])
@@ -238,7 +238,7 @@ def test_region_bbox_search(
     """Test --bbox gives same search results as --region <geojson file>."""
 
     results_file = tmp_path.joinpath('search_results.json')
-    with open(region_100ha_file, 'r') as f:
+    with open(region_100ha_file) as f:
         region = json.load(f)
     bbox = bounds(region)
     bbox_str = ' '.join([str(b) for b in bbox])
@@ -252,7 +252,7 @@ def test_region_bbox_search(
         result = runner.invoke(cli, cli_str.split())
         assert result.exit_code == 0
         assert results_file.exists()
-        with open(results_file, 'r') as f:
+        with open(results_file) as f:
             properties = json.load(f)
         props_list.append(properties)
 
@@ -275,7 +275,7 @@ def test_raster_region_search(
         result = runner.invoke(cli, cli_str.split())
         assert result.exit_code == 0
         assert results_file.exists()
-        with open(results_file, 'r') as f:
+        with open(results_file) as f:
             properties = json.load(f)
         props_list.append(properties)
 
@@ -294,7 +294,7 @@ def test_search_add_props_l9(
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code == 0
     assert results_file.exists()
-    with open(results_file, 'r') as f:
+    with open(results_file) as f:
         properties = json.load(f)
     prop_keys = list(properties.values())[0].keys()
     assert all([add_prop in prop_keys for add_prop in add_props])
@@ -316,7 +316,7 @@ def test_search_custom_filter_l9(
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code == 0
     assert results_file.exists()
-    with open(results_file, 'r') as f:
+    with open(results_file) as f:
         properties = json.load(f)
     prop_keys = list(properties.values())[0].keys()
     assert add_prop in prop_keys
@@ -327,7 +327,7 @@ def test_search_cloudless_portion_no_value(
     region_25ha_file: pathlib.Path, runner: CliRunner, tmp_path: pathlib.Path
 ):
     """Test `search --cloudless-portion` gives the same results as `search --cloudless-portion 0`."""
-    results_file = tmp_path.joinpath(f'search_results.json')
+    results_file = tmp_path.joinpath('search_results.json')
     name = 'LANDSAT/LC09/C02/T1_L2'
     clp_list = []
     for post_fix, cp_spec in zip(['no_val', 'zero_val'], ['-cp', '-cp 0']):
@@ -335,7 +335,7 @@ def test_search_cloudless_portion_no_value(
         result = runner.invoke(cli, cli_str.split())
         assert result.exit_code == 0
         assert results_file.exists()
-        with open(results_file, 'r') as f:
+        with open(results_file) as f:
             props = json.load(f)
         prop_keys = list(props.values())[0].keys()
         assert 'FILL_PORTION' in prop_keys
@@ -524,7 +524,7 @@ def test_download_like(
             10000,
         ),
     ],
-)  # yapf: disable
+)  # fmt: skip
 def test_download_params(
     image_id: str,
     region_file: str,
@@ -614,7 +614,7 @@ def test_export_asset_params(l8_image_id: str, region_25ha_file: pathlib.Path, r
     # Note when e.g. github runs this test in parallel, it could run into problems trying to overwrite an existing
     # asset.  The overwrite error won't be raised with --no-wait though.  So this test serves at least to check the
     # CLI export options work, and won't fail if run in parallel, even if it runs into overwrite problems.
-    folder = f'geedim'
+    folder = 'geedim'
     test_asset_id = asset_id(l8_image_id, folder)
     try:
         ee.data.deleteAsset(test_asset_id)
@@ -662,7 +662,7 @@ def test_composite_defaults(
     assert result.exit_code == 0
 
     # test downloaded file exists
-    out_files = glob(str(tmp_path.joinpath(f'*COMP*.tif')))
+    out_files = glob(str(tmp_path.joinpath('*COMP*.tif')))
     assert len(out_files) == 1
 
     # test downloaded file readability and format
@@ -709,7 +709,7 @@ def test_composite_params(
     assert result.exit_code == 0
 
     # test downloaded file exists
-    out_files = glob(str(tmp_path.joinpath(f'*COMP*.tif')))
+    out_files = glob(str(tmp_path.joinpath('*COMP*.tif')))
     assert len(out_files) == 1
 
     # test downloaded file readability and format
@@ -724,14 +724,14 @@ def test_search_composite_download(region_25ha_file, runner: CliRunner, tmp_path
     cli_search_str = (
         f'search -c COPERNICUS/S1_GRD -s 2022-01-01 -e 2022-02-01 -r {region_25ha_file}'
     )
-    cli_comp_str = f'composite --mask'
+    cli_comp_str = 'composite --mask'
     cli_download_str = f'download --crs EPSG:3857 --scale 10 -dd {tmp_path}'
     cli_str = cli_search_str + ' ' + cli_comp_str + ' ' + cli_download_str
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code == 0
 
     # test downloaded file exists
-    out_files = glob(str(tmp_path.joinpath(f'*COMP*.tif')))
+    out_files = glob(str(tmp_path.joinpath('*COMP*.tif')))
     assert len(out_files) == 1
 
     # test downloaded file readability and format
@@ -747,15 +747,15 @@ def test_search_composite_x2_download(region_25ha_file, runner: CliRunner, tmp_p
     """
 
     cli_search_str = f'search -c l7-c2-l2 -s 2022-01-15 -e 2022-04-01 -r {region_25ha_file} -cp 20'
-    cli_comp1_str = f'composite --mask'
-    cli_comp2_str = f'composite -i LANDSAT/LE07/C02/T1_L2/LE07_173083_20220103 -cm mosaic --date 2022-04-01 --mask'
+    cli_comp1_str = 'composite --mask'
+    cli_comp2_str = 'composite -i LANDSAT/LE07/C02/T1_L2/LE07_173083_20220103 -cm mosaic --date 2022-04-01 --mask'
     cli_download_str = f'download --crs EPSG:3857 --scale 30 -dd {tmp_path}'
     cli_str = cli_search_str + ' ' + cli_comp1_str + ' ' + cli_comp2_str + ' ' + cli_download_str
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code == 0
 
     # test downloaded file exists
-    out_files = glob(str(tmp_path.joinpath(f'*COMP*.tif')))
+    out_files = glob(str(tmp_path.joinpath('*COMP*.tif')))
     assert len(out_files) == 1
 
     # test downloaded file readability and format

@@ -34,9 +34,10 @@ from tabulate import DataRow, Line, TableFormat
 from tqdm.auto import tqdm
 
 from geedim import schema, utils
-from geedim.download import BaseImage, BaseImageAccessor
+from geedim.download import BaseImage
 from geedim.enums import CompositeMethod, ResamplingMethod, SplitType
 from geedim.errors import InputImageError
+from geedim.image import ImageAccessor
 from geedim.mask import MaskedImage, _MaskedImage, class_from_id
 from geedim.medoid import medoid
 from geedim.stac import STACClient
@@ -327,13 +328,13 @@ class ImageCollectionAccessor:
         """
         if not self.stac:
             return None
-        return BaseImageAccessor(self._ee_coll.first()).specBands
+        return ImageAccessor(self._ee_coll.first()).specBands
 
     def _prepare_for_composite(
         self,
         method: CompositeMethod | str,
         mask: bool = True,
-        resampling: ResamplingMethod | str = BaseImageAccessor._default_resampling,
+        resampling: ResamplingMethod | str = ImageAccessor._default_resampling,
         date: str | datetime | ee.Date = None,
         region: dict | ee.Geometry = None,
         **kwargs,
@@ -368,7 +369,7 @@ class ImageCollectionAccessor:
                 )
             if mask:
                 ee_image = self._mi.mask_clouds(ee_image)
-            return BaseImageAccessor(ee_image).resample(resampling)
+            return ImageAccessor(ee_image).resample(resampling)
 
         ee_coll = self._ee_coll.map(prepare_image)
 
@@ -438,7 +439,7 @@ class ImageCollectionAccessor:
                 f"create an export-ready collection."
             ) from ex
 
-    def _split_images(self, split: SplitType) -> dict[str, BaseImageAccessor]:
+    def _split_images(self, split: SplitType) -> dict[str, ImageAccessor]:
         """Split the collection into images according to ``split``."""
         indexes = [*self.properties.keys()]
 
@@ -461,8 +462,8 @@ class ImageCollectionAccessor:
             im_list = self._ee_coll.toList(self._max_export_images)
             im_names = indexes
 
-        # return a dictionary of image name keys, and BaseImageAccessor values
-        return {k: BaseImageAccessor(ee.Image(im_list.get(i))) for i, k in enumerate(im_names)}
+        # return a dictionary of image name keys, and ImageAccessor values
+        return {k: ImageAccessor(ee.Image(im_list.get(i))) for i, k in enumerate(im_names)}
 
     def addMaskBands(self, **kwargs) -> ee.ImageCollection:
         """
@@ -602,7 +603,7 @@ class ImageCollectionAccessor:
         self,
         method: CompositeMethod | str = None,
         mask: bool = True,
-        resampling: ResamplingMethod | str = BaseImageAccessor._default_resampling,
+        resampling: ResamplingMethod | str = ImageAccessor._default_resampling,
         date: str | datetime | ee.Date = None,
         region: dict | ee.Geometry = None,
         **kwargs,
@@ -689,7 +690,7 @@ class ImageCollectionAccessor:
         shape: tuple[int, int] | None = None,
         region: dict | ee.Geometry | None = None,
         scale: float | None = None,
-        resampling: str | ResamplingMethod = BaseImageAccessor._default_resampling,
+        resampling: str | ResamplingMethod = ImageAccessor._default_resampling,
         dtype: str | None = None,
         scale_offset: bool | None = False,
         bands: list[str | int] | str | None = None,
@@ -750,7 +751,7 @@ class ImageCollectionAccessor:
             Prepared collection.
         """
         # apply the export args to the first image
-        first = BaseImageAccessor(self._ee_coll.first()).prepareForExport(
+        first = ImageAccessor(self._ee_coll.first()).prepareForExport(
             crs=crs,
             crs_transform=crs_transform,
             shape=shape,
@@ -761,11 +762,11 @@ class ImageCollectionAccessor:
             scale_offset=scale_offset,
             bands=bands,
         )
-        first = BaseImageAccessor(first)
+        first = ImageAccessor(first)
 
         # prepare collection images to have the same grid and bounds as the first image
         def prepare_image(ee_image: ee.Image) -> ee.Image:
-            return BaseImageAccessor(ee_image).prepareForExport(
+            return ImageAccessor(ee_image).prepareForExport(
                 crs=first.crs,
                 crs_transform=first.transform,
                 shape=first.shape,
@@ -793,10 +794,10 @@ class ImageCollectionAccessor:
         Export the collection to GeoTIFF files.
 
         Export projection and bounds are defined by the
-        :attr:`~geedim.download.BaseImageAccessor.crs`,
-        :attr:`~geedim.download.BaseImageAccessor.transform` and
-        :attr:`~geedim.download.BaseImageAccessor.shape` properties, and the data type by the
-        :attr:`~geedim.download.BaseImageAccessor.dtype` property of the collection images. All
+        :attr:`~geedim.image.ImageAccessor.crs`,
+        :attr:`~geedim.image.ImageAccessor.transform` and
+        :attr:`~geedim.image.ImageAccessor.shape` properties, and the data type by the
+        :attr:`~geedim.image.ImageAccessor.dtype` property of the collection images. All
         bands in the collection should share the same projection, bounds and data type.
         :meth:`prepareForExport` can be called before this method to apply other export
         parameters and create an export-ready collection.
@@ -822,7 +823,7 @@ class ImageCollectionAccessor:
             :attr:`SplitType.images`.
         :param nodata:
             Set GeoTIFF nodata tags to the shared
-            :attr:`~geedim.download.BaseImageAccessor.nodata` value of the collection images
+            :attr:`~geedim.image.ImageAccessor.nodata` value of the collection images
             (``True``), or leave nodata tags unset (``False``).  If a custom integer or floating
             point value is supplied, nodata tags are set to this value.  Usually, a custom value
             would be supplied when the collection images have been unmasked with
@@ -850,7 +851,7 @@ class ImageCollectionAccessor:
 
         dirname = Path(dirname)
         dirname.mkdir(exist_ok=True)
-        tqdm_kwargs = utils.get_tqdm_kwargs(desc=self.id or 'Collection', unit=split)
+        tqdm_kwargs = utils.get_tqdm_kwargs(desc=self.id or 'Collection', unit=split.value)
 
         # download the split images sequentially, each into its own file
         for name, image in tqdm(images.items(), **tqdm_kwargs):
@@ -881,10 +882,10 @@ class ImageCollectionAccessor:
         Export the collection to a NumPy array.
 
         Export projection and bounds are defined by the
-        :attr:`~geedim.download.BaseImageAccessor.crs`,
-        :attr:`~geedim.download.BaseImageAccessor.transform` and
-        :attr:`~geedim.download.BaseImageAccessor.shape` properties, and the data type by the
-        :attr:`~geedim.download.BaseImageAccessor.dtype` property of the collection images. All
+        :attr:`~geedim.image.ImageAccessor.crs`,
+        :attr:`~geedim.image.ImageAccessor.transform` and
+        :attr:`~geedim.image.ImageAccessor.shape` properties, and the data type by the
+        :attr:`~geedim.image.ImageAccessor.dtype` property of the collection images. All
         bands in the collection should share the same projection, bounds and data type.
         :meth:`prepareForExport` can be called before this method to apply other export
         parameters and create an export-ready collection.
@@ -946,7 +947,7 @@ class ImageCollectionAccessor:
             array = np.zeros(shape, dtype=dtype)
 
         # download the split image arrays sequentially, copying into the destination array
-        tqdm_kwargs = utils.get_tqdm_kwargs(desc=self.id, unit=split.value)
+        tqdm_kwargs = utils.get_tqdm_kwargs(desc=self.id or 'Collection', unit=split.value)
         for i, image in enumerate(tqdm(images.values(), **tqdm_kwargs)):
             array[:, :, i, :] = image.toNumPy(
                 masked=masked,
@@ -999,10 +1000,10 @@ class ImageCollectionAccessor:
         Export the collection to an Xarray Dataset.
 
         Export projection and bounds are defined by the
-        :attr:`~geedim.download.BaseImageAccessor.crs`,
-        :attr:`~geedim.download.BaseImageAccessor.transform` and
-        :attr:`~geedim.download.BaseImageAccessor.shape` properties, and the data type by the
-        :attr:`~geedim.download.BaseImageAccessor.dtype` property of the collection images. All
+        :attr:`~geedim.image.ImageAccessor.crs`,
+        :attr:`~geedim.image.ImageAccessor.transform` and
+        :attr:`~geedim.image.ImageAccessor.shape` properties, and the data type by the
+        :attr:`~geedim.image.ImageAccessor.dtype` property of the collection images. All
         bands in the collection should share the same projection, bounds and data type.
         :meth:`prepareForExport` can be called before this method to apply other export
         parameters and create an export-ready collection.
@@ -1059,7 +1060,7 @@ class ImageCollectionAccessor:
 
         # download the split image DataArrays sequentially, storing in a dict
         arrays = {}
-        tqdm_kwargs = utils.get_tqdm_kwargs(desc=self.id, unit=split.value)
+        tqdm_kwargs = utils.get_tqdm_kwargs(desc=self.id or 'Collection', unit=split.value)
         for name, image in tqdm(images.items(), **tqdm_kwargs):
             arrays[name] = image.toXarray(
                 masked=masked,
@@ -1109,7 +1110,7 @@ class MaskedCollection(ImageCollectionAccessor):
         """
         warnings.warn(
             f"'{self.__class__.__name__}' is deprecated and will be removed in a future release. "
-            f"Please use the 'gd' accessor on 'ee.ImageCollection'.",
+            f"Please use the 'gd' accessor on 'ee.ImageCollection' instead.",
             category=FutureWarning,
             stacklevel=2,
         )
