@@ -1058,7 +1058,15 @@ class BaseImageAccessor:
 
 
 class BaseImage(BaseImageAccessor):
-    # TODO: deprecate, along with MaskedImage etc
+    def __init__(self, ee_image: ee.Image):
+        warnings.warn(
+            f"'{self.__class__.__name__}' is deprecated and will be removed in a future release. "
+            f"Please use the 'gd' accessor on 'ee.Image'.",
+            category=FutureWarning,
+            stacklevel=2,
+        )
+        super().__init__(ee_image)
+
     @classmethod
     def from_id(cls, image_id: str) -> BaseImage:
         """
@@ -1216,7 +1224,7 @@ class BaseImage(BaseImageAccessor):
             warnings.warn(
                 "'num_threads' is deprecated and has no effect.  'max_requests' and 'max_cpus' "
                 "can be used to limit concurrency.",
-                category=DeprecationWarning,
+                category=FutureWarning,
                 stacklevel=2,
             )
 

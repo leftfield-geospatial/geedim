@@ -1107,6 +1107,12 @@ class MaskedCollection(ImageCollectionAccessor):
         :param add_props:
             Additional Earth Engine image properties to include in :attr:`properties`.
         """
+        warnings.warn(
+            f"'{self.__class__.__name__}' is deprecated and will be removed in a future release. "
+            f"Please use the 'gd' accessor on 'ee.ImageCollection'.",
+            category=FutureWarning,
+            stacklevel=2,
+        )
         if not isinstance(ee_collection, ee.ImageCollection):
             raise TypeError('`ee_collection` must be an instance of ee.ImageCollection')
         super().__init__(ee_collection)
