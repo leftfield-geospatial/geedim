@@ -17,7 +17,17 @@ limitations under the License.
 from enum import Enum
 
 
-class CompositeMethod(str, Enum):
+class _StrChoiceEnum(str, Enum):
+    """String value enumeration that can be used with a ``click.Choice()`` parameter type."""
+
+    def __repr__(self):
+        return self._value_
+
+    def __str__(self):
+        return self._value_
+
+
+class CompositeMethod(_StrChoiceEnum):
     """Enumeration for the compositing method, i.e. the method for finding a composite pixel from
     the stack of corresponding input image pixels.
     """
@@ -45,14 +55,8 @@ class CompositeMethod(str, Enum):
     mean = 'mean'
     """Use the mean of the unmasked pixels."""
 
-    def __repr__(self):
-        return self._name_
 
-    def __str__(self):
-        return self._name_
-
-
-class CloudMaskMethod(str, Enum):
+class CloudMaskMethod(_StrChoiceEnum):
     """Enumeration for the Sentinel-2 cloud masking method."""
 
     cloud_prob = 'cloud-prob'
@@ -64,14 +68,8 @@ class CloudMaskMethod(str, Enum):
     cloud_score = 'cloud-score'
     """Threshold the Sentinel-2 Cloud Score+."""
 
-    def __repr__(self):
-        return self._name_
 
-    def __str__(self):
-        return self._name_
-
-
-class CloudScoreBand(str, Enum):
+class CloudScoreBand(_StrChoiceEnum):
     """Enumeration for the Sentinel-2 Cloud Score+ band to use with the
     :attr:`~CloudMaskMethod.cloud_score` cloud masking method.
     """
@@ -84,14 +82,8 @@ class CloudScoreBand(str, Enum):
     value.
     """
 
-    def __repr__(self):
-        return self._name_
 
-    def __str__(self):
-        return self._name_
-
-
-class ResamplingMethod(str, Enum):
+class ResamplingMethod(_StrChoiceEnum):
     """Enumeration for the resampling method."""
 
     near = 'near'
@@ -106,14 +98,8 @@ class ResamplingMethod(str, Enum):
     average = 'average'
     """Average (recommended for downsampling)."""
 
-    def __repr__(self):
-        return self._name_
 
-    def __str__(self):
-        return self._name_
-
-
-class ExportType(str, Enum):
+class ExportType(_StrChoiceEnum):
     """Enumeration for the export type."""
 
     drive = 'drive'
@@ -125,14 +111,8 @@ class ExportType(str, Enum):
     cloud = 'cloud'
     """Export to Google Cloud Storage."""
 
-    def __repr__(self):
-        return self._name_
 
-    def __str__(self):
-        return self._name_
-
-
-class SpectralDistanceMetric(str, Enum):
+class SpectralDistanceMetric(_StrChoiceEnum):
     """Enumeration for the spectral distance metric."""
 
     sam = 'sam'
@@ -147,14 +127,8 @@ class SpectralDistanceMetric(str, Enum):
     emd = 'emd'
     """Earth movers distance."""
 
-    def __repr__(self):
-        return self._name_
 
-    def __str__(self):
-        return self._name_
-
-
-class SplitType(str, Enum):
+class SplitType(_StrChoiceEnum):
     """Enumeration for how an image collection is split when exporting."""
 
     bands = 'bands'
@@ -162,9 +136,3 @@ class SplitType(str, Enum):
 
     images = 'images'
     """Split collection by image."""
-
-    def __repr__(self):
-        return self._name_
-
-    def __str__(self):
-        return self._name_
