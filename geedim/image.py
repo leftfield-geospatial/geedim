@@ -39,9 +39,9 @@ from rasterio.io import DatasetWriter
 from tqdm.auto import tqdm
 
 from geedim import mask, utils
-from geedim import tile as tile_
 from geedim.enums import ExportType, ResamplingMethod
 from geedim.stac import STACClient
+from geedim.tile import Tile, Tiler
 
 try:
     import xarray
@@ -868,10 +868,10 @@ class ImageAccessor:
         filename: os.PathLike | str,
         overwrite: bool = False,
         nodata: bool | int | float = True,
-        max_tile_size: float = tile_.Tiler._ee_max_tile_size,
-        max_tile_dim: int = tile_.Tiler._ee_max_tile_dim,
-        max_tile_bands: int = tile_.Tiler._ee_max_tile_bands,
-        max_requests: int = tile_.Tiler._max_requests,
+        max_tile_size: float = Tiler._ee_max_tile_size,
+        max_tile_dim: int = Tiler._ee_max_tile_dim,
+        max_tile_bands: int = Tiler._ee_max_tile_bands,
+        max_requests: int = Tiler._max_requests,
         max_cpus: int | None = None,
     ) -> None:
         """
@@ -945,14 +945,14 @@ class ImageAccessor:
             out_lock = threading.Lock()
 
             # download and write tiles to file
-            def write_tile(tile: tile_.Tile, tile_array: np.ndarray):
+            def write_tile(tile: Tile, tile_array: np.ndarray):
                 """Write a tile array to file."""
                 with rio.Env(GDAL_NUM_THREADS=1), out_lock:
                     logger.debug(f'Writing {tile!r} to file.')
                     out_ds.write(tile_array, indexes=tile.indexes, window=tile.window)
 
             tiler = exit_stack.enter_context(
-                tile_.Tiler(
+                Tiler(
                     self,
                     max_tile_size=max_tile_size,
                     max_tile_dim=max_tile_dim,
@@ -972,10 +972,10 @@ class ImageAccessor:
         self,
         masked: bool = False,
         structured: bool = False,
-        max_tile_size: float = tile_.Tiler._ee_max_tile_size,
-        max_tile_dim: int = tile_.Tiler._ee_max_tile_dim,
-        max_tile_bands: int = tile_.Tiler._ee_max_tile_bands,
-        max_requests: int = tile_.Tiler._max_requests,
+        max_tile_size: float = Tiler._ee_max_tile_size,
+        max_tile_dim: int = Tiler._ee_max_tile_dim,
+        max_tile_bands: int = Tiler._ee_max_tile_bands,
+        max_requests: int = Tiler._max_requests,
         max_cpus: int | None = None,
     ) -> np.ndarray:
         """
@@ -1025,13 +1025,13 @@ class ImageAccessor:
             array = np.zeros(im_shape, dtype=self.dtype)
 
         # download and write tiles to array
-        def write_tile(tile: tile_.Tile, tile_array: np.ndarray):
+        def write_tile(tile: Tile, tile_array: np.ndarray):
             """Write a tile to array."""
             # move band dimension from first to last
             tile_array = np.moveaxis(tile_array, 0, -1)
             array[tile.slices.row, tile.slices.col, tile.slices.band] = tile_array
 
-        with tile_.Tiler(
+        with Tiler(
             self,
             max_tile_size=max_tile_size,
             max_tile_dim=max_tile_dim,
@@ -1054,10 +1054,10 @@ class ImageAccessor:
     def toXarray(
         self,
         masked: bool = False,
-        max_tile_size: float = tile_.Tiler._ee_max_tile_size,
-        max_tile_dim: int = tile_.Tiler._ee_max_tile_dim,
-        max_tile_bands: int = tile_.Tiler._ee_max_tile_bands,
-        max_requests: int = tile_.Tiler._max_requests,
+        max_tile_size: float = Tiler._ee_max_tile_size,
+        max_tile_dim: int = Tiler._ee_max_tile_dim,
+        max_tile_bands: int = Tiler._ee_max_tile_bands,
+        max_requests: int = Tiler._max_requests,
         max_cpus: int | None = None,
     ) -> xarray.DataArray:
         """
