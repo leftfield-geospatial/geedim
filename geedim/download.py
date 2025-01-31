@@ -24,7 +24,8 @@ import ee
 import rasterio as rio
 
 from geedim.enums import ExportType
-from geedim.image import ImageAccessor, tile_
+from geedim.image import ImageAccessor
+from geedim.tile import Tiler
 
 logger = logging.getLogger(__name__)
 
@@ -149,10 +150,10 @@ class BaseImage(ImageAccessor):
         filename: os.PathLike | str,
         overwrite: bool = False,
         num_threads: int | None = None,
-        max_tile_size: float = tile_.Tiler._ee_max_tile_size,
-        max_tile_dim: int = tile_.Tiler._ee_max_tile_dim,
-        max_tile_bands: int = tile_.Tiler._ee_max_tile_bands,
-        max_requests: int = tile_.Tiler._max_requests,
+        max_tile_size: float = Tiler._ee_max_tile_size,
+        max_tile_dim: int = Tiler._ee_max_tile_dim,
+        max_tile_bands: int = Tiler._ee_max_tile_bands,
+        max_requests: int = Tiler._max_requests,
         max_cpus: int | None = None,
         **export_kwargs,
     ) -> None:

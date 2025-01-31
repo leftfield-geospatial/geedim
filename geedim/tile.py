@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from functools import cached_property
 from io import BytesIO
 from itertools import product
+from typing import TYPE_CHECKING
 
 import aiohttp
 import numpy as np
@@ -34,7 +35,11 @@ from rasterio.errors import RasterioIOError
 from rasterio.windows import Window
 from tqdm.auto import tqdm
 
-from geedim import download, utils
+from geedim import utils
+
+# avoid circular import
+if TYPE_CHECKING:
+    from geedim.image import ImageAccessor
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +136,7 @@ class Tiler:
 
     def __init__(
         self,
-        image: download.BaseImageAccessor,
+        image: ImageAccessor,
         max_tile_size: float = _ee_max_tile_size,
         max_tile_dim: int = _ee_max_tile_dim,
         max_tile_bands: int = _ee_max_tile_bands,
@@ -186,7 +191,7 @@ class Tiler:
         self._env = rio.Env(GDAL_NUM_THREAHDS=1)
 
     @staticmethod
-    def _validate_image(image: download.BaseImageAccessor):
+    def _validate_image(image: ImageAccessor):
         """Raise an error if the image does not have a fixed projection."""
         if not image.shape:
             raise ValueError(
@@ -330,7 +335,7 @@ class Tiler:
                 # limit concurrent EE requests to avoid exceeding quota
                 async with self._limit_requests:
                     logger.debug(f'Getting URL for {tile!r}.')
-                    url = await loop.run_in_executor(self._executor, get_tile_url, tile)
+                    url = await loop.run_in_executor(self._executor, get_tile_url)
                     logger.debug(f'Downloading {tile!r} from {url}.')
                     buf = await download_url(url)
 
