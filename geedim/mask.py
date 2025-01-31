@@ -73,7 +73,7 @@ class _MaskedImage:
         percentage of ``FILL_PORTION``.  ``CLOUDLESS_PORTION`` is set to ``100`` if cloud/shadow
         masking is not supported.
         """
-        portions = ImageAccessor(ee_image.select('FILL_MASK')).maskCoverage(
+        portions = ImageAccessor(ee_image.select('FILL_MASK')).regionCoverage(
             region=region, scale=scale, maxPixels=1e6, bestEffort=True
         )
         return ee_image.set('FILL_PORTION', portions.get('FILL_MASK'), 'CLOUDLESS_PORTION', 100)
@@ -97,7 +97,7 @@ class _CloudlessImage(_MaskedImage):
     ) -> ee.Image:
         # TODO: is this maxPixels value ok? it results in bestEffort using lower scales for the
         #  test region_10000ha
-        portions = ImageAccessor(ee_image.select(['FILL_MASK', 'CLOUDLESS_MASK'])).maskCoverage(
+        portions = ImageAccessor(ee_image.select(['FILL_MASK', 'CLOUDLESS_MASK'])).regionCoverage(
             region=region, scale=scale, maxPixels=1e6, bestEffort=True
         )
         fill_portion = ee.Number(portions.get('FILL_MASK'))

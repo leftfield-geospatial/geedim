@@ -527,7 +527,7 @@ class ImageAccessor:
         # copy source image properties and return
         return ee.Image(adj_im.copyProperties(self._ee_image, self._ee_image.propertyNames()))
 
-    def maskCoverage(
+    def regionCoverage(
         self,
         region: dict | ee.Geometry = None,
         scale: float | ee.Number = None,
@@ -550,9 +550,12 @@ class ImageAccessor:
             Dictionary with band name keys, and band cover percentage values.
         """
         region = region or self._ee_image.geometry()
+        # TODO: the current test_mask.py tests are slow due to min_scale=True here, perhaps they
+        #  could pass scale=ImageAccessor.projection(min_scale=False).nominalScale() and/or use
+        #  smaller region...?
         proj = self.projection(min_scale=True)
         scale = scale or proj.nominalScale()
-        kwargs = kwargs if len(kwargs) > 0 else dict(bestEffort=True)
+        kwargs = kwargs or dict(bestEffort=True)
 
         # Find the coverage as the sum over the region of the image divided by the sum over
         # the region of a constant (==1) image.  Note that a mean reducer does not find the
