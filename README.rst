@@ -169,7 +169,7 @@ created composite image will be downloaded, or if the ``search`` command is chai
 search result images will be composited.
 
 Common command options are also piped between chained commands. For example, if the ``config`` command is chained with
-other commands, the configuration specified with ``config`` will be applied to subsequent commands in the pipeline. Many
+other commands, the configuration supplied with ``config`` will be applied to subsequent commands in the pipeline. Many
 command combinations are possible.
 
 .. _examples-1:
