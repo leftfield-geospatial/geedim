@@ -12,10 +12,10 @@
 #
 import os
 import sys
-sys.path.insert(0, os.path.abspath('..'))
-from geedim.version import __version__
-from geedim.schema import cloud_coll_table
 
+sys.path.insert(0, os.path.abspath('..'))
+from geedim.schema import cloud_coll_table
+from geedim.version import __version__
 
 # -- Project information -----------------------------------------------------
 
@@ -33,13 +33,14 @@ release = __version__
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
-    'sphinx_click',
+    'sphinx.ext.intersphinx',
     'sphinx.ext.autodoc',
     'sphinx.ext.autosummary',
     'sphinx.ext.napoleon',
+    'sphinx_click',
     'jupyter_sphinx',
-    'nbsphinx'
-] # yapf: disable
+    'nbsphinx',
+]
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -83,8 +84,19 @@ nbsphinx_prolog = """
    This page was generated from a Jupyter notebook. To run and interact with it, 
    you can download it :download:`here <../{{ env.docname }}.ipynb>`.
 """
-nbsphinx_widgets_path=''
-nbsphinx_requirejs_path=''
+nbsphinx_widgets_path = ''
+nbsphinx_requirejs_path = ''
+
+# -- Options for intersphinx ---------------------------------------------------
+intersphinx_mapping = {
+    'python': ('https://docs.python.org/3', None),
+    'numpy': ('https://numpy.org/doc/stable', None),
+    'rasterio': ('https://rasterio.readthedocs.io/en/stable/', None),
+    'gdal': ('https://gdal.org/', None),
+    'fsspec': ('https://filesystem-spec.readthedocs.io/en/latest/', None),
+    'affine': ('https://affine.readthedocs.io/en/latest/', None),
+    'aiohttp': ('https://docs.aiohttp.org/en/stable/', None),
+}
 
 # -- Generate cloud/shadow supported collection tables for github README and RTD
 # docs
