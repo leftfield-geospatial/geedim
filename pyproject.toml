@@ -59,6 +59,15 @@ skip-string-normalization = true
 
 [tool.ruff]
 line-length = 100
-lint = { extend-select = ['I'] }
 format = { quote-style = 'preserve' }
 
+[tool.ruff.lint]
+select = [
+    "B",  # flake8-bugbear
+    "E",  # pycodestyle error
+    "F",  # pyflakes
+    "I",  # isort
+    "UP",  # pyupgrade
+    "W",  # pycodestyle warning
+    "RUF"
+]
