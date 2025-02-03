@@ -161,8 +161,7 @@ def modis_nbar_image_id() -> str:
 
 @pytest.fixture(scope='session')
 def gch_image_id() -> str:
-    """
-    Global Canopy Height (10m) image derived from Sentinel-2 and GEDI.  WGS84 @ 10m.
+    """Global Canopy Height (10m) image derived from Sentinel-2 and GEDI.  WGS84 @ 10m.
     https://nlang.users.earthengine.app/view/global-canopy-height-2020.
     """
     return 'users/nlang/ETH_GlobalCanopyHeight_2020_10m_v1'
@@ -283,7 +282,7 @@ def s2_sr_hm_nocp_masked_image(s2_sr_hm_image_id) -> MaskedImage:
     """
     # create an image with unknown id to prevent linking to cloud probability
     ee_image = ee.Image(s2_sr_hm_image_id)
-    ee_image = ee_image.set('system:index', 'COPERNICUS/S2_HARMONIZED/unknown')
+    ee_image = ee_image.set('system:index', 'unknown')
     return MaskedImage(ee_image, mask_method='cloud-prob')
 
 
@@ -294,7 +293,7 @@ def s2_sr_hm_nocs_masked_image(s2_sr_hm_image_id) -> MaskedImage:
     """
     # create an image with unknown id to prevent linking to cloud score
     ee_image = ee.Image(s2_sr_hm_image_id)
-    ee_image = ee_image.set('system:index', 'COPERNICUS/S2_HARMONIZED/unknown')
+    ee_image = ee_image.set('system:index', 'unknown')
     return MaskedImage(ee_image, mask_method='cloud-score')
 
 
