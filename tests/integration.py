@@ -1,17 +1,17 @@
 """
-    Copyright 2021 Dugal Harris - dugalh@gmail.com
+Copyright 2021 Dugal Harris - dugalh@gmail.com
 
-    Licensed under the Apache License, Version 2.0 (the "License");
-    you may not use this file except in compliance with the License.
-    You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-       http://www.apache.org/licenses/LICENSE-2.0
+   http://www.apache.org/licenses/LICENSE-2.0
 
-    Unless required by applicable law or agreed to in writing, software
-    distributed under the License is distributed on an "AS IS" BASIS,
-    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-    See the License for the specific language governing permissions and
-    limitations under the License.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
 import json
@@ -106,8 +106,12 @@ def test_geeml_integration(tmp_path: Path):
         # sometimes the top/bottom bounds of the dataset are swapped, so extract and compare UL and BR corners
         print(f'region_bounds: {region_bounds}')
         print(f'ds.bounds: {ds.bounds}')
-        ds_ul = np.array([min(ds.bounds.left, ds.bounds.right), min(ds.bounds.top, ds.bounds.bottom)])
-        ds_lr = np.array([max(ds.bounds.left, ds.bounds.right), max(ds.bounds.top, ds.bounds.bottom)])
+        ds_ul = np.array(
+            [min(ds.bounds.left, ds.bounds.right), min(ds.bounds.top, ds.bounds.bottom)]
+        )
+        ds_lr = np.array(
+            [max(ds.bounds.left, ds.bounds.right), max(ds.bounds.top, ds.bounds.bottom)]
+        )
         assert region_cnrs.min(axis=0) == pytest.approx(ds_ul, abs=1e-3)
         assert region_cnrs.max(axis=0) == pytest.approx(ds_lr, abs=1e-3)
 
@@ -135,7 +139,7 @@ def test_cli_asset_export(l8_image_id, region_25ha_file: Path, runner: CliRunner
 
         # download the asset image
         asset_image = gd.download.BaseImage.from_id(test_asset_id)
-        download_filename = tmp_path.joinpath(f'integration_test.tif')
+        download_filename = tmp_path.joinpath('integration_test.tif')
         asset_image.download(download_filename)
         assert download_filename.exists()
 
@@ -165,7 +169,9 @@ def test_cli_asset_export(l8_image_id, region_25ha_file: Path, runner: CliRunner
         )
 
 
-@pytest.mark.parametrize('dtype', ['float32', 'float64', 'uint8', 'int8', 'uint16', 'int16', 'uint32', 'int32'])
+@pytest.mark.parametrize(
+    'dtype', ['float32', 'float64', 'uint8', 'int8', 'uint16', 'int16', 'uint32', 'int32']
+)
 def test_ee_geotiff_nodata(dtype: str, l9_image_id: str):
     """Test the nodata value of the Earth Engine GeoTIFF returned by ``ee.data.computePixels()`` or
     ``ee.Image.getDownloadUrl()`` equals the geedim expected value (see
@@ -175,11 +181,11 @@ def test_ee_geotiff_nodata(dtype: str, l9_image_id: str):
     gd.Initialize()
     masked_image = gd.MaskedImage.from_id(l9_image_id)
     shape = (10, 10)
-    exp_image, profile = masked_image._prepare_for_download(shape=shape, dtype=dtype)
+    exp_image = BaseImage(masked_image.prepareForExport(shape=shape, dtype=dtype))
 
     # download a small tile with ee.data.computePixels
     request = {
-        'expression': exp_image.ee_image,
+        'expression': exp_image._ee_image,
         'bandIds': ['SR_B3'],
         'grid': {'dimensions': {'width': shape[1], 'height': shape[0]}},
         'fileFormat': 'GEO_TIFF',
@@ -188,6 +194,6 @@ def test_ee_geotiff_nodata(dtype: str, l9_image_id: str):
 
     # test nodata with rasterio
     with rio.MemoryFile(im_bytes) as mf, mf.open() as ds:
-        assert ds.nodata == profile['nodata']
+        assert ds.nodata == exp_image.nodata
         # test the EE dtype is not lower precision compared to expected dtype
-        assert np.promote_types(profile['dtype'], ds.dtypes[0]) == ds.dtypes[0]
+        assert np.promote_types(exp_image.profile['dtype'], ds.dtypes[0]) == ds.dtypes[0]
