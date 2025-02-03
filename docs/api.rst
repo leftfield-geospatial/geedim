@@ -68,7 +68,7 @@ Compositing
 Let's form a cloud/shadow-free composite of the search result images, using the *q-mosaic* method, then download the result.  By specifying the ``region`` parameter to :meth:`.MaskedCollection.composite`, we prioritise selection of pixels from the least cloudy images when forming the composite.
 
 .. note::
-    When downloading composite images, the ``region``, ``crs`` and ``scale`` parameters must be specified, as the image has no fixed (known) projection.
+    When downloading composite images, the ``region``, ``crs`` and ``scale`` parameters must be supplied, as the image has no fixed (known) projection.
 
 .. literalinclude:: examples/api_getting_started.py
     :language: python
