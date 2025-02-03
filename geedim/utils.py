@@ -246,7 +246,7 @@ class Spinner(Thread):
 
     def run(self):
         """Run the spinner thread."""
-        cursors_it = itertools.cycle("/-\|")
+        cursors_it = itertools.cycle(r"/-\|")
 
         while self._run:
             cursor = next(cursors_it)
