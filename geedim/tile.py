@@ -24,7 +24,6 @@ from collections.abc import Callable, Generator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from functools import cached_property
-from io import BytesIO
 from itertools import product
 from typing import TYPE_CHECKING
 
@@ -173,6 +172,8 @@ class Tiler:
         """
         self._validate_image(image)
         self._im = image
+        # TODO: auto choose tile_shape and or max_tile_size to have ~ max_requests tiles.  should
+        #  speed up downloads.
         self._tile_shape = self._get_tile_shape(
             max_tile_size=max_tile_size, max_tile_dim=max_tile_dim, max_tile_bands=max_tile_bands
         )
@@ -307,9 +308,9 @@ class Tiler:
                 )
             )
 
-        async def download_url(url: str) -> BytesIO:
-            """Download the GeoTIFF at the given URL into a buffer."""
-            buf = BytesIO()
+        async def download_url(url: str) -> rio.MemoryFile:
+            """Download the GeoTIFF at the given URL into a memory file."""
+            mem_file = rio.MemoryFile()
             async with session.get(url, chunked=True, raise_for_status=False) as response:
                 if not response.ok:
                     # get a more detailed error message if possible
@@ -320,29 +321,33 @@ class Tiler:
                     response.raise_for_status()
 
                 async for data, _ in response.content.iter_chunks():
-                    buf.write(data)
-            return buf
+                    mem_file.write(data)
+            return mem_file
 
-        def read_gtiff_buf(buf: BytesIO) -> np.ndarray:
-            """Read the given GeoTIFF buffer into a NumPy array."""
-            buf.seek(0)
-            with rio.open(buf, 'r') as ds:
+        def read_gtiff_buf(mem_file: rio.MemoryFile) -> np.ndarray:
+            """Read the given GeoTIFF memory file into a NumPy array."""
+            # TODO: exception here causes hang when there are still get_tile_url tasks waiting
+            with mem_file.open() as ds:
                 return ds.read(masked=masked)
 
         loop = asyncio.get_running_loop()
         for retry in range(max_retries + 1):
             try:
+                # TODO: download mem usage is high (>> _limit_requests * max_tile_size).  are there
+                #  copies happening in buffering / rasterio that we can avoid?
                 # limit concurrent EE requests to avoid exceeding quota
                 async with self._limit_requests:
                     logger.debug(f'Getting URL for {tile!r}.')
                     url = await loop.run_in_executor(self._executor, get_tile_url)
                     logger.debug(f'Downloading {tile!r} from {url}.')
-                    buf = await download_url(url)
+                    mem_file = await download_url(url)
 
-                # limit concurrent tile reads to leave CPU capacity for the event loop
-                async with self._limit_cpus:
-                    logger.debug(f'Reading GeoTIFF buffer for {tile!r}.')
-                    array = await loop.run_in_executor(self._executor, read_gtiff_buf, buf)
+                # enter memory file context (it must be closed when done)
+                with mem_file:
+                    # limit concurrent tile reads to leave CPU capacity for the event loop
+                    async with self._limit_cpus:
+                        logger.debug(f'Reading GeoTIFF buffer for {tile!r}.')
+                        array = await loop.run_in_executor(self._executor, read_gtiff_buf, mem_file)
                 break
 
             except self._retry_exceptions as ex:
