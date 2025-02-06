@@ -23,17 +23,17 @@ import rasterio as rio
 
 from geedim import CloudMaskMethod, schema, utils
 from geedim.enums import CloudScoreBand
-from geedim.mask import MaskedImage, class_from_id
+from geedim.mask import MaskedImage, _get_class_for_id
 
 
 def test_class_from_id(landsat_image_ids, s2_sr_image_id, s2_toa_hm_image_id, generic_image_ids):
     """Test class_from_id()."""
     from geedim.mask import _LandsatImage, _MaskedImage, _Sentinel2SrImage, _Sentinel2ToaImage
 
-    assert all([class_from_id(im_id) == _LandsatImage for im_id in landsat_image_ids])
-    assert all([class_from_id(im_id) == _MaskedImage for im_id in generic_image_ids])
-    assert class_from_id(s2_sr_image_id) == _Sentinel2SrImage
-    assert class_from_id(s2_toa_hm_image_id) == _Sentinel2ToaImage
+    assert all([_get_class_for_id(im_id) == _LandsatImage for im_id in landsat_image_ids])
+    assert all([_get_class_for_id(im_id) == _MaskedImage for im_id in generic_image_ids])
+    assert _get_class_for_id(s2_sr_image_id) == _Sentinel2SrImage
+    assert _get_class_for_id(s2_toa_hm_image_id) == _Sentinel2ToaImage
 
 
 @pytest.mark.parametrize(
@@ -421,10 +421,7 @@ def _test_aux_stats(masked_image: MaskedImage, region: dict):
     # test cloudless areas have greater distance to cloud than cloudy areas
     assert stats['CDIST_CLOUDLESS'] > stats['CDIST_CLOUD']
     # test min distance to cloud is pixel size
-    assert (
-        stats['CDIST_MIN']
-        == ee_image.select('CLOUDLESS_MASK').projection().nominalScale().getInfo()
-    )
+    assert stats['CDIST_MIN'] == ee_image.select('B1').projection().nominalScale().getInfo()
 
 
 @pytest.mark.parametrize(

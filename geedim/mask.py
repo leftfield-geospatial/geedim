@@ -151,15 +151,18 @@ class _Sentinel2Image(_CloudlessImage):
     """Abstract masking method container for Sentinel-2 TOA / SR images."""
 
     @staticmethod
-    def _get_cloud_dist(cloudless_mask: ee.Image, max_cloud_dist: float = 5000) -> ee.Image:
+    def _get_cloud_dist(
+        cloudless_mask: ee.Image, proj: ee.Projection = None, max_cloud_dist: float = 5000
+    ) -> ee.Image:
         """Return a cloud/shadow distance (m) image for the given cloudless mask."""
         # TODO: previously this used a 60m scale for S2 - does S2 q-mosaic compositing with
         #  cloud-prob mask method work ok?
-        # use the projection & scale of cloudless_mask for the distance image
-        proj = cloudless_mask.projection()
+        # projection & scale of the distance image
+        proj = proj or cloudless_mask.projection()
+        scale = proj.nominalScale()
 
         # max_cloud_dist in pixels
-        max_cloud_pix = ee.Number(max_cloud_dist).divide(proj.nominalScale()).round()
+        max_cloud_pix = ee.Number(max_cloud_dist).divide(scale).round()
 
         # Find distance to nearest cloud/shadow (m).  Distances are found for all pixels, including
         # masked / invalid pixels, which are treated as 0 (non cloud/shadow).
@@ -169,11 +172,11 @@ class _Sentinel2Image(_CloudlessImage):
                 neighborhood=max_cloud_pix, units='pixels', metric='squared_euclidean'
             )
             .sqrt()
-            .multiply(proj.nominalScale())
+            .multiply(scale)
         )
 
         # reproject to force calculation at correct scale
-        cloud_dist = cloud_dist.reproject(crs=proj, scale=proj.nominalScale()).rename('CLOUD_DIST')
+        cloud_dist = cloud_dist.reproject(crs=proj).rename('CLOUD_DIST')
 
         # prevent use of invalid pixels
         cloud_dist = cloud_dist.updateMask(cloudless_mask.mask())
@@ -182,7 +185,7 @@ class _Sentinel2Image(_CloudlessImage):
         cloud_dist = cloud_dist.clamp(0, max_cloud_dist)
 
         # cloud_dist is float64 by default, so convert to Uint16 here to avoid forcing the whole
-        # image to float64 on download.
+        # image to float64 on export.
         return cloud_dist.toUint16().rename('CLOUD_DIST')
 
     @staticmethod
@@ -240,7 +243,7 @@ class _Sentinel2Image(_CloudlessImage):
             projected shadows from ``cloud_mask``. Adapted from
             https://developers.google.com/earth-engine/tutorials/community/sentinel-2-s2cloudless.
             """
-            # use the 60m B1 projection for shadow mask
+            # use the 60m B1 projection for shadow mask to save some computation
             proj = ee_image.select('B1').projection()
 
             dark_mask = ee_image.select('B8').lt(dark * 1e4)
@@ -370,7 +373,7 @@ class _Sentinel2Image(_CloudlessImage):
 
         # TODO: check if clipping is necessary - should be avoided if possible
         # clip fill mask to the image footprint (without this step we get memory limit errors on
-        # download)
+        # export)
         # aux_bands['fill'] = aux_bands['fill'].clip(ee_image.geometry()).rename('FILL_MASK')
 
         # combine masks into cloudless_mask
@@ -379,9 +382,12 @@ class _Sentinel2Image(_CloudlessImage):
         )
         aux_bands.pop('cloud_shadow')
 
-        # construct and return the auxiliary image
+        # find cloud distance from cloudless mask
         aux_bands['dist'] = _Sentinel2Image._get_cloud_dist(
-            cloudless_mask=aux_bands['cloudless'], max_cloud_dist=max_cloud_dist
+            aux_bands['cloudless'],
+            # use 60m B1 projection for the cloud distance to save some computation
+            proj=ee_image.select('B1').projection(),
+            max_cloud_dist=max_cloud_dist,
         )
         return aux_bands
 
@@ -402,7 +408,7 @@ class _Sentinel2SrImage(_CloudlessImage):
         return _Sentinel2Image._get_mask_bands(ee_image, s2_toa=False, **kwargs)
 
 
-def class_from_id(image_id: str) -> type[_MaskedImage]:
+def _get_class_for_id(image_id: str) -> type[_MaskedImage]:
     """Return the masking class for the given Earth Engine image/collection ID."""
     ee_coll_name, _ = split_id(image_id)
     if image_id in schema.collection_schema:
