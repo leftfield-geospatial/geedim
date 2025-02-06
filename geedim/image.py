@@ -94,7 +94,7 @@ class ImageAccessor:
     @cached_property
     def _mi(self) -> type[mask._MaskedImage]:
         """Masking method container."""
-        return mask.class_from_id(self.id)
+        return mask._get_class_for_id(self.id)
 
     @cached_property
     def _min_projection(self) -> dict[str, Any]:
