@@ -38,7 +38,7 @@ from geedim.download import BaseImage
 from geedim.enums import CompositeMethod, ResamplingMethod, SplitType
 from geedim.errors import InputImageError
 from geedim.image import ImageAccessor
-from geedim.mask import MaskedImage, _MaskedImage, class_from_id
+from geedim.mask import MaskedImage, _get_class_for_id, _MaskedImage
 from geedim.medoid import medoid
 from geedim.stac import STACClient
 from geedim.tile import Tiler
@@ -86,7 +86,7 @@ def _compatible_collections(ids: list[str]) -> bool:
     return True
 
 
-def abbreviate(name: str) -> str:
+def _abbreviate(name: str) -> str:
     """Return an acronym for a string in camel or snake case."""
     name = name.strip()
     if len(name) <= 5:
@@ -163,7 +163,7 @@ class ImageCollectionAccessor:
     @cached_property
     def _mi(self) -> type[_MaskedImage]:
         """Masking method container."""
-        return class_from_id(self.id)
+        return _get_class_for_id(self.id)
 
     @cached_property
     def _portion_scale(self) -> float | int | None:
@@ -259,9 +259,9 @@ class ImageCollectionAccessor:
                     descr = gee_descriptions[prop_name]
                     # remove newlines from description and crop to the first sentence
                     descr = ' '.join(descr.strip().splitlines()).split('. ')[0]
-                    prop_schema = dict(abbrev=abbreviate(prop_name), description=descr)
+                    prop_schema = dict(abbrev=_abbreviate(prop_name), description=descr)
                 else:
-                    prop_schema = dict(abbrev=abbreviate(prop_name), description=None)
+                    prop_schema = dict(abbrev=_abbreviate(prop_name), description=None)
                 self._schema[prop_name] = prop_schema
 
         return self._schema
@@ -552,6 +552,7 @@ class ImageCollectionAccessor:
         :return:
             Filtered image collection containing search result image(s).
         """
+        # TODO: no error is raised if kwargs contains unsupported args
         # TODO: refactor error classes and what gets raised where & test for these errors
         if (fill_portion is not None or cloudless_portion is not None) and not region:
             raise ValueError(
