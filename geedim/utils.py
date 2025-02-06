@@ -49,9 +49,9 @@ logger = logging.getLogger(__name__)
 if '__file__' in globals():
     root_path = pathlib.Path(__file__).absolute().parents[1]
 else:
-    root_path = pathlib.Path(os.getcwd())
+    root_path = pathlib.Path.cwd()
 
-_GDAL_AT_LEAST_35 = GDALVersion.runtime().at_least("3.5")
+_GDAL_AT_LEAST_35 = GDALVersion.runtime().at_least('3.5')
 T = TypeVar('T')
 
 
@@ -80,7 +80,7 @@ def Initialize(opt_url: str = 'https://earthengine-highvolume.googleapis.com', *
             credentials = ee.ServiceAccountCredentials(
                 key_dict['client_email'], key_data=key_dict['private_key']
             )
-            ee.Initialize(credentials, opt_url=opt_url, **kwargs)
+            ee.Initialize(credentials, opt_url=opt_url, project=key_dict['project_id'], **kwargs)
         else:
             ee.Initialize(opt_url=opt_url, **kwargs)
 
