@@ -10,6 +10,7 @@ dependencies = [
     'tqdm>=4.6',
     'earthengine-api>=0.1.379',
     'tabulate>=0.9',
+    'fsspec>=2025.2',
     'aiohttp>=3.11',
 ]
 authors = [{name = 'Leftfield Geospatial'}]
@@ -63,11 +64,11 @@ format = { quote-style = 'preserve' }
 
 [tool.ruff.lint]
 select = [
-    "B",  # flake8-bugbear
-    "E",  # pycodestyle error
-    "F",  # pyflakes
-    "I",  # isort
-    "UP",  # pyupgrade
-    "W",  # pycodestyle warning
-    "RUF"
+    'B',  # flake8-bugbear
+    'E',  # pycodestyle error
+    'F',  # pyflakes
+    'I',  # isort
+    'UP',  # pyupgrade
+    'W',  # pycodestyle warning
+    'RUF'
 ]

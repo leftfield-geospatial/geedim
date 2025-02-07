@@ -31,8 +31,11 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 import ee
+import fsspec
 import numpy as np
 import rasterio as rio
+from fsspec.core import OpenFile
+from fsspec.implementations.local import LocalFileSystem
 from rasterio import features
 from rasterio.enums import Resampling as RioResampling
 from rasterio.io import DatasetWriter
@@ -865,7 +868,7 @@ class ImageAccessor:
 
     def toGeoTIFF(
         self,
-        filename: os.PathLike | str,
+        file: os.PathLike | str | OpenFile,
         overwrite: bool = False,
         nodata: bool | int | float = True,
         max_tile_size: float = Tiler._ee_max_tile_size,
@@ -890,8 +893,9 @@ class ImageAccessor:
         Earth Engine.  For integer types, this is the minimum value of the :attr:`dtype`,
         and for floating point types, it is ``float('-inf')``.
 
-        :param filename:
-            Destination file path.
+        :param file:
+            Destination file.  Can be a path or URI string, or an :class:`~fsspec.core.OpenFile`
+            object in binary mode (``'wb'``).
         :param overwrite:
             Whether to overwrite the destination file if it exists.
         :param nodata:
@@ -916,9 +920,9 @@ class ImageAccessor:
             number of CPUs, or one, whichever is greater.  Values larger than the default can
             stall the asynchronous event loop and are not recommended.
         """
-        filename = Path(filename)
-        if not overwrite and filename.exists():
-            raise FileExistsError(f'{filename} exists')
+        ofile = fsspec.open(os.fspath(file), 'wb') if not isinstance(file, OpenFile) else file
+        if not overwrite and ofile.fs.exists(ofile.path):
+            raise FileExistsError(f"'{ofile.path}'")
         self._raise_not_fixed()
 
         # create a rasterio profile for the destination file
@@ -937,11 +941,19 @@ class ImageAccessor:
         )
 
         with ExitStack() as exit_stack:
-            # Open the destination file. GDAL_NUM_THREADS='ALL_CPUS' is needed here for
-            # building overviews once the download is complete.  It is overridden in write_tile
-            # to control download concurrency.
+            # Use GDAL_NUM_THREADS='ALL_CPUS' for building overviews once the download is
+            # complete.  GDAL_NUM_THREADS is overridden in Tiler.map_tiles() to control download
+            # concurrency.
             exit_stack.enter_context(rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False))
-            out_ds = exit_stack.enter_context(rio.open(filename, 'w', **profile))
+
+            # open the destination file, using the GDAL internal file system for local files,
+            # and fsspec otherwise
+            if isinstance(ofile.fs, LocalFileSystem):
+                out_ds = exit_stack.enter_context(rio.open(ofile.path, 'w', **profile))
+            else:
+                file_obj = exit_stack.enter_context(ofile.open())
+                out_ds = exit_stack.enter_context(rio.open(file_obj, 'w', **profile))
+
             out_lock = threading.Lock()
 
             # download and write tiles to file

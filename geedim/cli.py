@@ -16,7 +16,7 @@ limitations under the License.
 
 import json
 import logging
-import os
+import posixpath
 import re
 import warnings
 from dataclasses import dataclass, field
@@ -25,8 +25,10 @@ from typing import Any
 
 import click
 import ee
+import fsspec
 import rasterio as rio
 from click.core import ParameterSource
+from fsspec.core import OpenFile
 from rasterio.errors import CRSError
 from tqdm.auto import tqdm
 from tqdm.contrib import logging as tqdm_logging
@@ -159,7 +161,7 @@ def _crs_cb(ctx, param, crs):
 
             crs = rio.CRS.from_string(crs).to_wkt()
         except CRSError as ex:
-            raise click.BadParameter(f'Invalid CRS value: {crs}.\n {ex!s}', param=param)
+            raise click.BadParameter(f'Invalid CRS value: {crs}.\n {ex!s}', param=param) from ex
     return crs
 
 
@@ -186,6 +188,21 @@ def _region_cb(ctx, param, value):
     elif value is not None and len(value) != 0:
         raise click.BadParameter(f'Invalid region: {filename}.', param=param)
     return value
+
+
+def _dir_cb(ctx: click.Context, param: click.Parameter, uri_path: str) -> OpenFile:
+    """Click callback to convert a directory to an fsspec OpenFile, and validate."""
+    try:
+        ofile = fsspec.open(uri_path)
+    except Exception as ex:
+        raise click.BadParameter(str(ex), param=param) from ex
+
+    # isdir() requires a trailing slash on some file systems (e.g. gcs)
+    if not ofile.fs.isdir(posixpath.join(ofile.path, '')):
+        raise click.BadParameter(
+            f"'{uri_path}' is not a directory or cannot be accessed.", param=param
+        )
+    return ofile
 
 
 def _prepare_image_list(obj: ChainedData, mask=False) -> list[ee.Image]:
@@ -699,10 +716,11 @@ def search(
 @click.option(
     '-dd',
     '--download-dir',
-    type=click.Path(exists=True, file_okay=False, dir_okay=True, writable=True),
-    default=None,
-    show_default='current working directory.',
-    help='Directory to download image file(s) into.',
+    type=click.Path(file_okay=False),
+    default=str(Path.cwd()),
+    show_default='current working',
+    callback=_dir_cb,
+    help='Path / URI of the download directory.',
 )
 @click.option(
     '-mts',
@@ -734,7 +752,7 @@ def download(
     bbox,
     region,
     like,
-    download_dir,
+    download_dir: OpenFile,
     mask,
     max_tile_size,
     max_tile_dim,
@@ -797,13 +815,14 @@ def download(
         geedim search -c MODIS/006/MCD43A4 -s 2022-01-01 -e 2022-01-03 --bbox 23 -34 24 -33 download --crs EPSG:3857 --scale 500
     """
     tqdm.write('\nDownloading:\n')
-    download_dir = download_dir or os.getcwd()
     image_list = _prepare_image_list(obj, mask=mask)
     for im in image_list:
-        filename = Path(download_dir, _im_name(im) + '.tif')
+        joined_path = posixpath.join(download_dir.path, _im_name(im) + '.tif')
+        ofile = OpenFile(download_dir.fs, joined_path, mode='wb')
+
         im = im.gd.prepareForExport(region=obj.region, **kwargs)
         im.gd.toGeoTIFF(
-            filename,
+            ofile,
             overwrite=overwrite,
             max_tile_size=max_tile_size,
             max_tile_dim=max_tile_dim,
