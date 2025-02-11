@@ -155,8 +155,6 @@ class _Sentinel2Image(_CloudlessImage):
         cloudless_mask: ee.Image, proj: ee.Projection = None, max_cloud_dist: float = 5000
     ) -> ee.Image:
         """Return a cloud/shadow distance (m) image for the given cloudless mask."""
-        # TODO: previously this used a 60m scale for S2 - does S2 q-mosaic compositing with
-        #  cloud-prob mask method work ok?
         # projection & scale of the distance image
         proj = proj or cloudless_mask.projection()
         scale = proj.nominalScale()
@@ -392,7 +390,7 @@ class _Sentinel2Image(_CloudlessImage):
         return aux_bands
 
 
-class _Sentinel2ToaImage(_CloudlessImage):
+class _Sentinel2ToaImage(_Sentinel2Image):
     """Masking method container for Sentinel-2 TOA images."""
 
     @staticmethod
@@ -400,7 +398,7 @@ class _Sentinel2ToaImage(_CloudlessImage):
         return _Sentinel2Image._get_mask_bands(ee_image, s2_toa=True, **kwargs)
 
 
-class _Sentinel2SrImage(_CloudlessImage):
+class _Sentinel2SrImage(_Sentinel2Image):
     """Masking method container for Sentinel-2 SR images."""
 
     @staticmethod
