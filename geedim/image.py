@@ -24,7 +24,7 @@ import threading
 import time
 import warnings
 from collections.abc import Sequence
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from datetime import datetime, timezone
 from functools import cached_property
 from pathlib import Path
@@ -42,7 +42,7 @@ from rasterio.io import DatasetWriter
 from tqdm.auto import tqdm
 
 from geedim import mask, utils
-from geedim.enums import ExportType, ResamplingMethod
+from geedim.enums import Driver, ExportType, ResamplingMethod
 from geedim.stac import STACClient
 from geedim.tile import Tile, Tiler
 
@@ -75,6 +75,38 @@ _nodata_vals = dict(
 # smallest - largest, signed ints smallest to largest, float types smallest to largest.
 
 T = TypeVar('T')
+
+
+@contextmanager
+def _open_raster(ofile: OpenFile, **profile) -> DatasetWriter:
+    """Open a local or remote Rasterio Dataset for writing."""
+    if isinstance(ofile.fs, LocalFileSystem):
+        # use the GDAL internal file system for local files
+        with rio.open(ofile.path, 'w', **profile) as ds:
+            yield ds
+    else:
+        # Otherwise, cache the raster in memory then write the cache to file with fsspec. Rather
+        # than pass a file object to rio.open(), this manages MemoryFile and dataset contexts to
+        # work around https://github.com/rasterio/rasterio/issues/3064.
+
+        # open the destination file before yielding so we raise any errors early
+        with rio.MemoryFile() as mem_file, ofile.open() as file_obj:
+            with mem_file.open(**profile) as ds:
+                yield ds
+            logger.debug(f"Writing memory file to '{ofile.path}'.")
+            file_obj.write(mem_file.read())
+
+
+def _build_overviews(ds: DatasetWriter, max_num_levels: int = 8, min_level_pixels: int = 256):
+    """Build internal overviews for an open dataset.  Each overview level is downsampled by a
+    factor of 2.  The number of overview levels is determined by whichever of the
+    ``max_num_levels`` or ``min_level_pixels`` limits is reached first.
+    """
+    max_ovw_levels = int(np.min(np.log2(ds.shape)))
+    min_level_shape_pow2 = int(np.log2(min_level_pixels))
+    num_ovw_levels = np.min([max_num_levels, max_ovw_levels - min_level_shape_pow2])
+    ovw_levels = [2**m for m in range(1, num_ovw_levels + 1)]
+    ds.build_overviews(ovw_levels, resampling=RioResampling.average)
 
 
 @utils.register_accessor('gd', ee.Image)
@@ -254,7 +286,7 @@ class ImageAccessor:
             return None
         return dict(
             crs=utils.rio_crs(self.crs),
-            transform=self.transform,
+            transform=rio.Affine(*self.transform),
             width=self.shape[1],
             height=self.shape[0],
             count=self.count,
@@ -313,18 +345,6 @@ class ImageAccessor:
                 "This image cannot be exported as it doesn't have a fixed projection.  "
                 "'prepareForExport()' can be called to define one."
             )
-
-    @staticmethod
-    def _build_overviews(ds: DatasetWriter, max_num_levels: int = 8, min_level_pixels: int = 256):
-        """Build internal overviews for an open dataset.  Each overview level is downsampled by a
-        factor of 2.  The number of overview levels is determined by whichever of the
-        ``max_num_levels`` or ``min_level_pixels`` limits is reached first.
-        """
-        max_ovw_levels = int(np.min(np.log2(ds.shape)))
-        min_level_shape_pow2 = int(np.log2(min_level_pixels))
-        num_ovw_levels = np.min([max_num_levels, max_ovw_levels - min_level_shape_pow2])
-        ovw_levels = [2**m for m in range(1, num_ovw_levels + 1)]
-        ds.build_overviews(ovw_levels, resampling=RioResampling.average)
 
     def _write_metadata(self, ds: DatasetWriter):
         """Write Earth Engine and STAC metadata to an open rasterio dataset."""
@@ -871,6 +891,7 @@ class ImageAccessor:
         file: os.PathLike | str | OpenFile,
         overwrite: bool = False,
         nodata: bool | int | float = True,
+        driver: str | Driver = Driver.gtiff,
         max_tile_size: float = Tiler._ee_max_tile_size,
         max_tile_dim: int = Tiler._ee_max_tile_dim,
         max_tile_bands: int = Tiler._ee_max_tile_bands,
@@ -903,6 +924,8 @@ class ImageAccessor:
             unset (``False``).  If a custom integer or floating point value is supplied,
             the nodata tag is set to this value.  Usually, a custom value would be supplied when
             the image has been unmasked with ``ee.Image.unmask(nodata)``.
+        :param driver:
+            File format driver.
         :param max_tile_size:
             Maximum tile size (MB).  Should be less than the `Earth Engine size limit
             <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (32 MB).
@@ -920,6 +943,7 @@ class ImageAccessor:
             number of CPUs, or one, whichever is greater.  Values larger than the default can
             stall the asynchronous event loop and are not recommended.
         """
+        driver = Driver(driver)
         ofile = fsspec.open(os.fspath(file), 'wb') if not isinstance(file, OpenFile) else file
         if not overwrite and ofile.fs.exists(ofile.path):
             raise FileExistsError(f"'{ofile.path}'")
@@ -932,13 +956,17 @@ class ImageAccessor:
         elif nodata is False:
             nodata = None
         profile.update(
-            driver='GTiff',
+            driver=driver.value,
             compress='deflate',
-            interleave='band',
-            tiled=True,
             bigtiff='if_safer',
             nodata=nodata,
         )
+        # configure driver specific options
+        if driver is Driver.gtiff:
+            profile.update(interleave='band', tiled=True, blockxsize=512, blockysize=512)
+        else:
+            # use existing overviews built with DatasetWriter.build_overviews()
+            profile.update(blocksize=512, overviews='force_use_existing')
 
         with ExitStack() as exit_stack:
             # Use GDAL_NUM_THREADS='ALL_CPUS' for building overviews once the download is
@@ -946,17 +974,12 @@ class ImageAccessor:
             # concurrency.
             exit_stack.enter_context(rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False))
 
-            # open the destination file, using the GDAL internal file system for local files,
-            # and fsspec otherwise
-            if isinstance(ofile.fs, LocalFileSystem):
-                out_ds = exit_stack.enter_context(rio.open(ofile.path, 'w', **profile))
-            else:
-                file_obj = exit_stack.enter_context(ofile.open())
-                out_ds = exit_stack.enter_context(rio.open(file_obj, 'w', **profile))
-
-            out_lock = threading.Lock()
+            # open the destination file
+            out_ds = exit_stack.enter_context(_open_raster(ofile, **profile))
 
             # download and write tiles to file
+            out_lock = threading.Lock()
+
             def write_tile(tile: Tile, tile_array: np.ndarray):
                 """Write a tile array to file."""
                 with rio.Env(GDAL_NUM_THREADS=1), out_lock:
@@ -975,10 +998,10 @@ class ImageAccessor:
             )
             tiler.map_tiles(write_tile)
 
-            # populate GeoTIFF metadata
+            # populate metadata & build overviews
             self._write_metadata(out_ds)
-            # build overviews
-            self._build_overviews(out_ds)
+            logger.debug(f"Building overviews for '{ofile.path}'.")
+            _build_overviews(out_ds)
 
     def toNumPy(
         self,
