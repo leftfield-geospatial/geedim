@@ -136,3 +136,13 @@ class SplitType(_StrChoiceEnum):
 
     images = 'images'
     """Split collection by image."""
+
+
+class Driver(_StrChoiceEnum):
+    """Enumeration for image file format."""
+
+    gtiff = 'gtiff'
+    """GeoTIFF."""
+
+    cog = 'cog'
+    """Cloud Optimised GeoTIFF."""

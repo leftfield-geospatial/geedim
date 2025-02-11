@@ -38,6 +38,7 @@ from geedim.enums import (
     CloudMaskMethod,
     CloudScoreBand,
     CompositeMethod,
+    Driver,
     ExportType,
     ResamplingMethod,
 )
@@ -722,6 +723,15 @@ def search(
     callback=_dir_cb,
     help='Path / URI of the download directory.',
 )
+# TODO: add nodata option
+@click.option(
+    '-dv',
+    '--driver',
+    type=click.Choice(Driver, case_sensitive=True),
+    default=Driver.gtiff,
+    show_default=True,
+    help='File format driver.',
+)
 @click.option(
     '-mts',
     '--max-tile-size',
@@ -753,6 +763,7 @@ def download(
     region,
     like,
     download_dir: OpenFile,
+    driver: Driver,
     mask,
     max_tile_size,
     max_tile_dim,
@@ -824,6 +835,7 @@ def download(
         im.gd.toGeoTIFF(
             ofile,
             overwrite=overwrite,
+            driver=driver,
             max_tile_size=max_tile_size,
             max_tile_dim=max_tile_dim,
         )
