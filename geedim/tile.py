@@ -58,7 +58,7 @@ class Tile:
     band_stop: int
     row_stop: int
     col_stop: int
-    # source image geo-referencing transform (excluded from repr)
+    # source image georeferencing transform (excluded from repr)
     image_transform: Sequence[float] = field(repr=False)
 
     @dataclass(frozen=True)
@@ -94,7 +94,7 @@ class Tile:
 
     @cached_property
     def tile_transform(self) -> list[float]:
-        """Tile geo-referencing transform."""
+        """Tile georeferencing transform."""
         transform = rio.Affine(*self.image_transform) * rio.Affine.translation(
             self.col_start, self.row_start
         )

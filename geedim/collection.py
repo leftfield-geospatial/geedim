@@ -721,7 +721,7 @@ class ImageCollectionAccessor:
             re-projected to this CRS.  Defaults to the CRS of the minimum scale band of the first
             image.
         :param crs_transform:
-            Geo-referencing transform of the prepared images, as a sequence of 6 numbers.  In
+            Georeferencing transform of the prepared images, as a sequence of 6 numbers.  In
             row-major order: [xScale, xShearing, xTranslation, yShearing, yScale, yTranslation].
             All image bands are re-projected to this transform.
         :param shape:

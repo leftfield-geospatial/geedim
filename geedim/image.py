@@ -212,7 +212,7 @@ class ImageAccessor:
 
     @property
     def transform(self) -> list[float] | None:
-        """Geo-referencing transform of the minimum scale band."""
+        """Georeferencing transform of the minimum scale band."""
         return self._min_projection['transform']
 
     @property
@@ -379,13 +379,14 @@ class ImageAccessor:
     @staticmethod
     def monitorExport(task: ee.batch.Task, label: str | None = None) -> None:
         """
-        Monitor and display the progress of an export task.
+        Monitor and display the progress of a :meth:`toGoogleCloud` export task.
 
         :param task:
             Earth Engine task to monitor (as returned by :meth:`export`).
         :param label:
             Optional label for progress display.  Defaults to the task description.
         """
+        # TODO: rename method to fit with toGoogleCloud
         pause = 0.1
         status = ee.data.getOperation(task.name)
         label = label or status['metadata']['description']
@@ -412,7 +413,8 @@ class ImageAccessor:
             if status['metadata']['state'] == 'SUCCEEDED':
                 bar.update(bar.total - bar.n)
             else:
-                raise OSError(f'Export failed: {status}.')
+                msg = status.get('error', {}).get('message', status)
+                raise OSError(f'Export failed: {msg}')
 
     def projection(self, min_scale: bool = True) -> ee.Projection:
         """
@@ -673,6 +675,7 @@ class ImageAccessor:
         #  FILL_PORTION when searching though.
         # TODO: test masking when the image has a subset of bands selected (S2 should work, but
         #  Landsat requires the QA band)
+        # TODO: if we really have to FILL_MASK, should this method be called maskClouds?
         return self._mi.mask_clouds(self._ee_image)
 
     def prepareForExport(
@@ -708,7 +711,7 @@ class ImageAccessor:
             CRS of the prepared image as an EPSG or WKT string.  All bands are re-projected to
             this CRS.  Defaults to the CRS of the minimum scale band.
         :param crs_transform:
-            Geo-referencing transform of the prepared image, as a sequence of 6 numbers.  In
+            Georeferencing transform of the prepared image, as a sequence of 6 numbers.  In
             row-major order: [xScale, xShearing, xTranslation, yShearing, yScale, yTranslation].
             All bands are re-projected to this transform.
         :param shape:
@@ -946,7 +949,7 @@ class ImageAccessor:
         driver = Driver(driver)
         ofile = fsspec.open(os.fspath(file), 'wb') if not isinstance(file, OpenFile) else file
         if not overwrite and ofile.fs.exists(ofile.path):
-            raise FileExistsError(f"'{ofile.path}'")
+            raise FileExistsError(f"File exists: '{ofile.path}'.")
         self._raise_not_fixed()
 
         # create a rasterio profile for the destination file
