@@ -40,7 +40,6 @@ else:
 import aiohttp
 import ee
 import rasterio as rio
-from rasterio import warp
 from rasterio.env import GDALVersion
 from tqdm.auto import tqdm
 
@@ -113,43 +112,6 @@ def split_id(image_id: str) -> tuple[str | None, str | None]:
     index = parts[-1]
     ee_coll_name = '/'.join(parts[:-1])
     return ee_coll_name, index
-
-
-def get_bounds(filename: pathlib.Path, expand: float = 5) -> dict:
-    """
-    Return a GeoJSON geometry representing the bounds of an image file.
-
-    :param filename:
-        Path to the image file.
-    :param expand:
-        Percentage (0-100) by which to expand the bounds.
-
-    :return:
-        GeoJSON geometry.
-    """
-    with rio.Env(GTIFF_FORCE_RGBA=False), rio.open(filename) as im:
-        bounds = im.bounds
-        if expand != 0:
-            expand_x = (bounds.right - bounds.left) * expand / 100.0
-            expand_y = (bounds.top - bounds.bottom) * expand / 100.0
-            bounds = rio.coords.BoundingBox(
-                bounds.left - expand_x,
-                bounds.bottom - expand_y,
-                bounds.right + expand_x,
-                bounds.top + expand_y,
-            )
-
-        coords = [
-            [bounds.right, bounds.bottom],
-            [bounds.right, bounds.top],
-            [bounds.left, bounds.top],
-            [bounds.left, bounds.bottom],
-            [bounds.right, bounds.bottom],
-        ]
-
-        poly = dict(type='Polygon', coordinates=[coords])
-        poly = warp.transform_geom(im.crs, 'EPSG:4326', poly)
-    return poly
 
 
 class Spinner(Thread):
@@ -443,3 +405,21 @@ class AsyncRunner:
         else:
             # run in this thread if there is no existing loop
             return self._runner.run(coro, **kwargs)
+
+
+class TqdmLoggingHandler(logging.StreamHandler):
+    """Logging handler that logs to ``tqdm.write()``.  Prevents logs interacting with any tqdm
+    progress bars.
+
+    Adapted from https://github.com/tqdm/tqdm/blob/master/tqdm/contrib/logging.py.
+    """
+
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            tqdm.write(msg, file=self.stream)
+            self.flush()
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except:  # noqa: E722
+            self.handleError(record)

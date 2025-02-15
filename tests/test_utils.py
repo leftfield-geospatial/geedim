@@ -17,9 +17,8 @@ limitations under the License.
 import time
 
 import pytest
-from rasterio.features import bounds
 
-from geedim.utils import Spinner, asset_id, get_bounds, split_id
+from geedim.utils import Spinner, asset_id, split_id
 
 
 @pytest.mark.parametrize(
@@ -28,13 +27,6 @@ from geedim.utils import Spinner, asset_id, get_bounds, split_id
 def test_split_id(id, exp_split):
     """Test split_id()."""
     assert split_id(id) == exp_split
-
-
-def test_get_bounds(const_image_25ha_file, region_25ha):
-    """Test get_bounds()."""
-    raster_bounds = bounds(get_bounds(const_image_25ha_file, expand=0))
-    test_bounds = bounds(region_25ha)
-    assert raster_bounds == pytest.approx(test_bounds, abs=0.001)
 
 
 def test_spinner():
