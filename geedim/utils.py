@@ -18,17 +18,16 @@ from __future__ import annotations
 
 import asyncio
 import atexit
-import itertools
+import io
 import json
 import logging
 import os
 import pathlib
 import sys
-import time
+import threading
 import warnings
 from collections.abc import Coroutine
 from concurrent.futures import ThreadPoolExecutor
-from threading import Thread
 from typing import Any, Callable, Generic, TypeVar
 
 if sys.version_info >= (3, 11):
@@ -114,64 +113,80 @@ def split_id(image_id: str) -> tuple[str | None, str | None]:
     return ee_coll_name, index
 
 
-class Spinner(Thread):
-    def __init__(self, label='', interval=0.2, leave=True, **kwargs):
-        """
-        Thread subclass to run a non-blocking spinner.
+class Spinner(tqdm):
+    _ascii = r'/-\|'
 
-        :param label:
-            Prepend spinner with this label.
-        :param interval:
-            Spinner update interval (s).
-        :param leave:
-            What to do with the spinner display on stop():
-                ``False``: clear the label + spinner.
-                ``True``:  leave the label + spinner as is.
-                <string message>: print this message in place of the spinner
-        :param kwargs:
-            Additional kwargs to pass to ``Thread.__init__()``.
+    def __init__(
+        self,
+        desc: str | None = None,
+        leave: bool | str = '',
+        file: io.TextIOBase | None = None,
+        ascii: str = _ascii,
+        disable: bool = False,
+        position: int | None = None,
+        interval: float = 0.2,
+    ):
         """
-        Thread.__init__(self, **kwargs)
-        self._label = label
+        Spinner context manager that cooperates with tqdm.
+
+        :param desc:
+            Prefix for the spinner.
+        :param leave:
+            Whether to leave the spinner on termination (``True``), clear it (``False``),
+            or replace the spinner character with the ``leave`` value when it is a string.
+        :param file:
+            File object to write to (defaults to ``sys.stderr``).
+        :param ascii:
+            Spinner characters to cycle through.
+        :param disable:
+            Whether to disable spinner display.
+        :param position:
+            Line offset to print the spinner.  Automatic if ``None``.  Useful for multiple
+            spinners / tqdm bars.
+        :param interval:
+            Update interval (seconds).
+        """
+        super().__init__(
+            desc=desc,
+            leave=leave,
+            file=file,
+            disable=disable,
+            position=position,
+            ascii=ascii,
+            miniters=0,
+            smoothing=0,
+        )
         self._interval = interval
-        self._run = True
-        self._leave = leave
-        self._file = sys.stderr
+        self._stop = threading.Event()
+        self._thread = None
 
     def __enter__(self):
-        self.start()
+        if self.disable:
+            return self
+
+        def run():
+            while not self._stop.wait(self._interval):
+                self.update()
+
+        self._thread = threading.Thread(target=run)
+        self._thread.start()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.stop()
-        self.join()
+        if self._thread:
+            self._stop.set()
+            self._thread.join()
+        super().__exit__(exc_type, exc_val, exc_tb)
 
-    def run(self):
-        """Run the spinner thread."""
-        cursors_it = itertools.cycle(r'/-\|')
+    @staticmethod
+    def format_meter(n: int, prefix: str = '', ascii: str = _ascii, **kwargs):
+        return prefix + ascii[n % len(ascii)]
 
-        while self._run:
-            cursor = next(cursors_it)
-            tqdm.write('\r' + self._label + cursor, file=self._file, end='')
-            self._file.flush()
-            time.sleep(self._interval)
-
-        if self._leave is True:
-            tqdm.write('', file=self._file, end='\n')
-        elif self._leave is False:
-            tqdm.write('\r', file=self._file, end='')
-        elif isinstance(self._leave, str):
-            tqdm.write('\r' + self._label + self._leave + ' ', file=self._file, end='\n')
-        self._file.flush()
-
-    def start(self):
-        """Start the spinner thread."""
-        self._run = True
-        Thread.start(self)
-
-    def stop(self):
-        """Stop the spinner thread."""
-        self._run = False
+    def close(self):
+        if isinstance(self.leave, str):
+            self.display(self.desc + self.leave + '\n')
+            self.leave = False
+        super().close()
 
 
 def rio_crs(crs: str | rio.CRS) -> str | rio.CRS:

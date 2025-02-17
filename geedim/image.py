@@ -393,14 +393,15 @@ class ImageAccessor:
         tqdm_kwargs = utils.get_tqdm_kwargs(desc=label)
 
         # poll EE until the export preparation is complete
-        with utils.Spinner(label=f"Preparing {tqdm_kwargs['desc']}: ", leave='done'):
+        with utils.Spinner(desc=f"Preparing {tqdm_kwargs['desc']}: ", leave='done'):
             while not status.get('done', False):
                 time.sleep(5 * pause)
                 status = ee.data.getOperation(task.name)
                 if 'progress' in status['metadata']:
                     break
                 elif status['metadata']['state'] == 'FAILED':
-                    raise OSError(f'Export failed: {status}')
+                    msg = status.get('error', {}).get('message', status)
+                    raise OSError(f'Export failed: {msg}')
 
         # wait for export to complete, displaying a progress bar
         tqdm_kwargs.update(desc='Exporting ' + tqdm_kwargs['desc'])
