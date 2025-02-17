@@ -377,7 +377,7 @@ class ImageAccessor:
         #     ds.offsets = [bp.get('gee:offset', 0.0) for bp in self.bandProps]
 
     @staticmethod
-    def monitorExport(task: ee.batch.Task, label: str | None = None) -> None:
+    def monitorTask(task: ee.batch.Task, label: str | None = None) -> None:
         """
         Monitor and display the progress of a :meth:`toGoogleCloud` export task.
 
@@ -887,7 +887,7 @@ class ImageAccessor:
 
         if wait:
             # wait for completion
-            ImageAccessor.monitorExport(task)
+            ImageAccessor.monitorTask(task)
         return task
 
     def toGeoTIFF(

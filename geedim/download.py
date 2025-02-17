@@ -109,7 +109,7 @@ class BaseImage(ImageAccessor):
         :param label:
             Optional label for progress display.  Defaults to the task description.
         """
-        ImageAccessor.monitorExport(task, label)
+        ImageAccessor.monitorTask(task, label)
 
     def export(
         self,
