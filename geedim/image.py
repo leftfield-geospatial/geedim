@@ -386,16 +386,14 @@ class ImageAccessor:
         :param label:
             Optional label for progress display.  Defaults to the task description.
         """
-        # TODO: rename method to fit with toGoogleCloud
-        pause = 0.1
         status = ee.data.getOperation(task.name)
         label = label or status['metadata']['description']
         tqdm_kwargs = utils.get_tqdm_kwargs(desc=label)
 
         # poll EE until the export preparation is complete
-        with utils.Spinner(desc=f"Preparing {tqdm_kwargs['desc']}: ", leave='done'):
+        with utils.Spinner(desc=tqdm_kwargs['desc'] + ': ', leave=False):
             while not status.get('done', False):
-                time.sleep(5 * pause)
+                time.sleep(0.5)
                 status = ee.data.getOperation(task.name)
                 if 'progress' in status['metadata']:
                     break
@@ -404,10 +402,9 @@ class ImageAccessor:
                     raise OSError(f'Export failed: {msg}')
 
         # wait for export to complete, displaying a progress bar
-        tqdm_kwargs.update(desc='Exporting ' + tqdm_kwargs['desc'])
         with tqdm(total=1, **tqdm_kwargs) as bar:
             while not status.get('done', False):
-                time.sleep(10 * pause)
+                time.sleep(1)
                 status = ee.data.getOperation(task.name)
                 bar.update(status['metadata']['progress'] - bar.n)
 
@@ -814,14 +811,14 @@ class ImageAccessor:
         :meth:`prepareForExport` can be called before this method to apply export parameters.
 
         :param filename:
-            Destination file or asset name.  Also used to form the task name.
+            Destination file or asset name (excluding extension).  Also used to form the task name.
         :param type:
             Export type.
         :param folder:
             Google Drive folder (when ``type`` is :attr:`~geedim.enums.ExportType.drive`),
             Earth Engine asset project (when ``type`` is :attr:`~geedim.enums.ExportType.asset`),
             or Google Cloud Storage bucket (when ``type`` is
-            :attr:`~geedim.enums.ExportType.cloud`). If ``type`` is
+            :attr:`~geedim.enums.ExportType.cloud`).  Can include sub-folders.  If ``type`` is
             :attr:`~geedim.enums.ExportType.asset` and ``folder`` is not supplied, ``filename``
             should be a valid Earth Engine asset ID. If ``type`` is
             :attr:`~geedim.enums.ExportType.cloud` then ``folder`` is required.
@@ -832,7 +829,7 @@ class ImageAccessor:
             ``Export.image.toDrive``, ``Export.image.toAsset`` or ``Export.image.toCloudStorage``.
 
         :return:
-            Export task, started if ``wait`` is False, or completed if ``wait`` is True.
+            Export task, started if ``wait`` is ``False``, or completed if ``wait`` is ``True``.
         """
         # TODO: establish & document if folder/filename can be a path with sub-folders,
         #  or what the interaction between folder & filename is for the different export types.
@@ -907,7 +904,7 @@ class ImageAccessor:
 
         Export projection and bounds are defined by :attr:`crs`, :attr:`transform` and
         :attr:`shape`, and data type by :attr:`dtype`. :meth:`prepareForExport` can be called
-        before this method to apply other export parameters.
+        before this method to apply export parameters.
 
         The image is retrieved as separate tiles which are downloaded and decompressed
         concurrently.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
@@ -1022,7 +1019,7 @@ class ImageAccessor:
 
         Export projection and bounds are defined by :attr:`crs`, :attr:`transform` and
         :attr:`shape`, and data type by :attr:`dtype`. :meth:`prepareForExport` can be called
-        before this method to apply other export parameters.
+        before this method to apply export parameters.
 
         The image is retrieved as separate tiles which are downloaded and decompressed
         concurrently.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
@@ -1104,7 +1101,7 @@ class ImageAccessor:
 
         Export projection and bounds are defined by :attr:`crs`, :attr:`transform` and
         :attr:`shape`, and data type by :attr:`dtype`. :meth:`prepareForExport` can be called
-        before this method to apply other export parameters.
+        before this method to apply export parameters.
 
         The image is retrieved as separate tiles which are downloaded and decompressed
         concurrently.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
