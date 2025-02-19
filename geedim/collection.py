@@ -19,23 +19,25 @@ from __future__ import annotations
 import json
 import logging
 import os
+import posixpath
 import re
 import warnings
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from functools import cached_property
-from pathlib import Path
 from typing import Any
 
 import ee
+import fsspec
 import numpy as np
 import tabulate
+from fsspec.core import OpenFile
 from tabulate import DataRow, Line, TableFormat
 from tqdm.auto import tqdm
 
 from geedim import schema, utils
 from geedim.download import BaseImage
-from geedim.enums import CompositeMethod, ResamplingMethod, SplitType
+from geedim.enums import CompositeMethod, Driver, ExportType, ResamplingMethod, SplitType
 from geedim.errors import InputImageError
 from geedim.image import ImageAccessor
 from geedim.mask import MaskedImage, _get_class_for_id, _MaskedImage
@@ -779,12 +781,80 @@ class ImageCollectionAccessor:
 
         return self._ee_coll.map(prepare_image)
 
+    def toGoogleCloud(
+        self,
+        type: ExportType = ImageAccessor._default_export_type,
+        folder: str | None = None,
+        wait: bool = True,
+        split: str | SplitType = SplitType.bands,
+        **kwargs,
+    ) -> list[ee.batch.Task]:
+        """
+        Export the collection as GeoTIFF files to Google Drive, Earth Engine assets or Google Cloud
+        Storage using the Earth Engine batch environment.
+
+        Export projection and bounds are defined by the
+        :attr:`~geedim.image.ImageAccessor.crs`,
+        :attr:`~geedim.image.ImageAccessor.transform` and
+        :attr:`~geedim.image.ImageAccessor.shape` properties, and the data type by the
+        :attr:`~geedim.image.ImageAccessor.dtype` property of the collection images. All
+        bands in the collection should share the same projection, bounds and data type.
+        :meth:`prepareForExport` can be called before this method to apply export parameters and
+        create an export-ready collection.
+
+        A maximum of 5000 images can be exported.
+
+        :param type:
+            Export type.
+        :param folder:
+            Google Drive folder (when ``type`` is :attr:`~geedim.enums.ExportType.drive`),
+            Earth Engine asset project (when ``type`` is :attr:`~geedim.enums.ExportType.asset`),
+            or Google Cloud Storage bucket (when ``type`` is
+            :attr:`~geedim.enums.ExportType.cloud`).  Can be include sub-folders.  If ``type`` is
+            :attr:`~geedim.enums.ExportType.asset` or :attr:`~geedim.enums.ExportType.cloud` then
+            ``folder`` is required.
+        :param wait:
+            Whether to wait for the exports to complete before returning.
+        :param split:
+            Export a file for each collection band (:attr:`SplitType.bands`), or for each
+            collection image (:attr:`SplitType.images`).  Files are named with their band name,
+            and file band descriptions are set to the ``system:index`` property of the band's
+            source image, when ``split`` is :attr:`SplitType.bands`.  Otherwise, files are named
+            with the ``system:index`` property of the file's source image, and file band
+            descriptions are set to the image band names, when ``split`` is
+            :attr:`SplitType.images`.
+        :param kwargs:
+            Additional arguments to the ``type`` dependent Earth Engine function:
+            ``Export.image.toDrive``, ``Export.image.toAsset`` or ``Export.image.toCloudStorage``.
+
+        :return:
+            List of image export tasks, started if ``wait`` is ``False``, or completed if
+            ``wait`` is ``True``.
+        """
+        split = SplitType(split)
+        self._raise_image_consistency()
+        images = self._split_images(split)
+
+        # start exporting the split images concurrently
+        tasks = {}
+        for name, image in images.items():
+            tasks[name] = image.toGoogleCloud(filename=name, folder=folder, wait=False, **kwargs)
+
+        if not wait:
+            return list(tasks.values())
+
+        # wait for tasks to complete
+        tqdm_kwargs = utils.get_tqdm_kwargs(desc=self.id or 'Collection', unit=split.value)
+        for name, task in tqdm(tasks.items(), **tqdm_kwargs):
+            ImageAccessor.monitorTask(task, name)
+
     def toGeoTIFF(
         self,
-        dirname: os.PathLike | str,
+        dirname: os.PathLike | str | OpenFile,
         overwrite: bool = False,
         split: str | SplitType = SplitType.bands,
         nodata: bool | int | float = True,
+        driver: str | Driver = Driver.gtiff,
         max_tile_size: float = Tiler._ee_max_tile_size,
         max_tile_dim: int = Tiler._ee_max_tile_dim,
         max_tile_bands: int = Tiler._ee_max_tile_bands,
@@ -800,18 +870,19 @@ class ImageCollectionAccessor:
         :attr:`~geedim.image.ImageAccessor.shape` properties, and the data type by the
         :attr:`~geedim.image.ImageAccessor.dtype` property of the collection images. All
         bands in the collection should share the same projection, bounds and data type.
-        :meth:`prepareForExport` can be called before this method to apply other export
-        parameters and create an export-ready collection.
+        :meth:`prepareForExport` can be called before this method to apply export parameters and
+        create an export-ready collection.
 
         Images are retrieved as separate tiles which are downloaded and decompressed
         concurrently.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
         ``max_tile_bands``, and download / decompress concurrency with ``max_requests`` and
         ``max_cpus``.
 
-        The maximum number of images that can be exported is 5000.
+        A maximum of 5000 images can be exported.
 
         :param dirname:
-            Destination directory path.
+            Destination directory.  Can be a path or URI string, or an
+            :class:`~fsspec.core.OpenFile` object.
         :param overwrite:
             Whether to overwrite destination files if they exist.
         :param split:
@@ -829,6 +900,8 @@ class ImageCollectionAccessor:
             point value is supplied, nodata tags are set to this value.  Usually, a custom value
             would be supplied when the collection images have been unmasked with
             ``ee.Image.unmask(nodata)``.
+        :param driver:
+            File format driver.
         :param max_tile_size:
             Maximum tile size (MB).  Should be less than the `Earth Engine size limit
             <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (32 MB).
@@ -846,21 +919,24 @@ class ImageCollectionAccessor:
             number of CPUs, or one, whichever is greater.  Values larger than the default can
             stall the asynchronous event loop and are not recommended.
         """
+        odir = (
+            fsspec.open(os.fspath(dirname), 'wb') if not isinstance(dirname, OpenFile) else dirname
+        )
         split = SplitType(split)
+        driver = Driver(driver)
         self._raise_image_consistency()
         images = self._split_images(split)
 
-        dirname = Path(dirname)
-        dirname.mkdir(exist_ok=True)
-        tqdm_kwargs = utils.get_tqdm_kwargs(desc=self.id or 'Collection', unit=split.value)
-
         # download the split images sequentially, each into its own file
+        tqdm_kwargs = utils.get_tqdm_kwargs(desc=self.id or 'Collection', unit=split.value)
         for name, image in tqdm(images.items(), **tqdm_kwargs):
-            filename = dirname.joinpath(str(name) + '.tif')
+            joined_path = posixpath.join(odir.path, name + '.tif')
+            ofile = OpenFile(odir.fs, joined_path, mode='wb')
             image.toGeoTIFF(
-                filename,
+                ofile,
                 overwrite=overwrite,
                 nodata=nodata,
+                driver=driver,
                 max_tile_size=max_tile_size,
                 max_tile_dim=max_tile_dim,
                 max_tile_bands=max_tile_bands,
@@ -888,15 +964,15 @@ class ImageCollectionAccessor:
         :attr:`~geedim.image.ImageAccessor.shape` properties, and the data type by the
         :attr:`~geedim.image.ImageAccessor.dtype` property of the collection images. All
         bands in the collection should share the same projection, bounds and data type.
-        :meth:`prepareForExport` can be called before this method to apply other export
-        parameters and create an export-ready collection.
+        :meth:`prepareForExport` can be called before this method to apply export parameters and
+        create an export-ready collection.
 
         Images are retrieved as separate tiles which are downloaded and decompressed
         concurrently.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
         ``max_tile_bands``, and download / decompress concurrency with ``max_requests`` and
         ``max_cpus``.
 
-        The maximum number of images that can be exported is 5000.
+        A maximum of 5000 images can be exported.
 
         :param masked:
             Return a :class:`~numpy.ndarray` with masked pixels set to the shared :attr:`nodata`
@@ -1006,8 +1082,8 @@ class ImageCollectionAccessor:
         :attr:`~geedim.image.ImageAccessor.shape` properties, and the data type by the
         :attr:`~geedim.image.ImageAccessor.dtype` property of the collection images. All
         bands in the collection should share the same projection, bounds and data type.
-        :meth:`prepareForExport` can be called before this method to apply other export
-        parameters and create an export-ready collection.
+        :meth:`prepareForExport` can be called before this method to apply export parameters and
+        create an export-ready collection.
 
         Images are retrieved as separate tiles which are downloaded and decompressed
         concurrently.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
@@ -1019,7 +1095,7 @@ class ImageCollectionAccessor:
         as well as ``ee`` and ``stac`` JSON strings corresponding to Earth Engine property and
         STAC dictionaries.
 
-        The maximum number of images that can be exported is 5000.
+        A maximum of 5000 images can be exported.
 
         :param masked:
             Set masked pixels in the returned array to the shared :attr:`nodata` value of the
