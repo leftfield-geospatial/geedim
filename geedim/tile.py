@@ -116,6 +116,7 @@ class Tiler:
     # TODO: if there's little speed cost, default max_tile_size to << 32 to avoid memory limit (
     #  could actually speed up downloads with few tiles by increasing concurrency)
     _ee_max_tile_size = 32
+    _default_max_tile_size = 4
     _ee_max_tile_dim = 10000
     _ee_max_tile_bands = 1024
     _max_requests = 32
@@ -136,7 +137,7 @@ class Tiler:
     def __init__(
         self,
         image: ImageAccessor,
-        max_tile_size: float = _ee_max_tile_size,
+        max_tile_size: float = _default_max_tile_size,
         max_tile_dim: int = _ee_max_tile_dim,
         max_tile_bands: int = _ee_max_tile_bands,
         max_requests: int = _max_requests,
@@ -218,7 +219,7 @@ class Tiler:
 
     def _get_tile_shape(
         self,
-        max_tile_size: float = _ee_max_tile_size,
+        max_tile_size: float = _default_max_tile_size,
         max_tile_dim: int = _ee_max_tile_dim,
         max_tile_bands: int = _ee_max_tile_bands,
     ) -> Sequence[int]:

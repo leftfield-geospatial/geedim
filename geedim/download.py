@@ -150,7 +150,7 @@ class BaseImage(ImageAccessor):
         filename: os.PathLike | str,
         overwrite: bool = False,
         num_threads: int | None = None,
-        max_tile_size: float = Tiler._ee_max_tile_size,
+        max_tile_size: float = Tiler._default_max_tile_size,
         max_tile_dim: int = Tiler._ee_max_tile_dim,
         max_tile_bands: int = Tiler._ee_max_tile_bands,
         max_requests: int = Tiler._max_requests,
