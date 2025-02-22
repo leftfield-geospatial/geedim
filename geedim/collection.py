@@ -701,17 +701,6 @@ class ImageCollectionAccessor:
         """
         Prepare the collection for export.
 
-        Bounds and resolution of the collection images can be specified with ``region`` and
-        ``scale`` / ``shape``, or ``crs_transform`` and ``shape``.  Bounds default to those of
-        the first image when they are not specified (with either ``region``, or ``crs_transform``
-        & ``shape``).
-
-        All images in the prepared collection will share a common projection and bounds.
-
-        When ``crs``, ``scale``, ``crs_transform`` & ``shape`` are not supplied, the projections
-        of the prepared images and first source image will match (i.e. if all source images share
-        a projection, the projection of all prepared and source images will match).
-
         ..warning::
             The prepared collection images are reprojected and clipped versions of their
             source images. This type of image is `not recommended
@@ -719,30 +708,27 @@ class ImageCollectionAccessor:
             display or further computation.
 
         :param crs:
-            CRS of the prepared images as an EPSG or WKT string.  All image bands are
-            re-projected to this CRS.  Defaults to the CRS of the minimum scale band of the first
-            image.
+            CRS of the prepared images as a well-known authority (e.g. EPSG) or WKT string.
+            Defaults to the CRS of the minimum scale band of the first image.
         :param crs_transform:
             Georeferencing transform of the prepared images, as a sequence of 6 numbers.  In
             row-major order: [xScale, xShearing, xTranslation, yShearing, yScale, yTranslation].
-            All image bands are re-projected to this transform.
         :param shape:
             (height, width) dimensions of the prepared images in pixels.
         :param region:
             Region defining the prepared image bounds as a GeoJSON dictionary or ``ee.Geometry``.
-            Defaults to the geometry of the first image.
+            Defaults to the geometry of the first image.  Ignored if ``crs_transform`` is supplied.
         :param scale:
-            Pixel scale (m) of the prepared images.  All image bands are re-projected to this
-            scale. Ignored if ``crs`` and ``crs_transform`` are supplied.  Defaults to the
-            minimum scale of the first image's bands.
+            Pixel scale (m) of the prepared images.  Defaults to the minimum scale of the first
+            image's bands.  Ignored if ``crs_transform`` is supplied.
         :param resampling:
             Resampling method to use for reprojecting.  Ignored for images without fixed
             projections e.g. composites.  Composites can be resampled by resampling their
             component images.
         :param dtype:
             Data type of the prepared images (``uint8``, ``int8``, ``uint16``, ``int16``,
-            ``uint32``, ``int32``, ``float32`` or ``float64``).  Defaults to the minimum size
-            data type able to represent all the first image's bands.
+            ``uint32``, ``int32``, ``float32`` or ``float64``).  Defaults to the minimum size data
+            type able to represent all the first image's bands.
         :param scale_offset:
             Whether to apply any STAC band scales and offsets to the images (e.g. for converting
             digital numbers to physical units).
