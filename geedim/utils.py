@@ -168,7 +168,7 @@ class Spinner(tqdm):
             while not self._stop.wait(self._interval):
                 self.update()
 
-        self._thread = threading.Thread(target=run)
+        self._thread = threading.Thread(target=run, daemon=True)
         self._thread.start()
         return self
 
