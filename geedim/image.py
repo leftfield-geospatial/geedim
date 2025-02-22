@@ -691,14 +691,6 @@ class ImageAccessor:
         """
         Prepare the image for export.
 
-        Bounds and resolution of the prepared image can be specified with ``region`` and
-        ``scale`` / ``shape``, or ``crs_transform`` and ``shape``.  Bounds default to those of
-        the source image when they are not specified (with either ``region``,
-        or ``crs_transform`` & ``shape``).
-
-        When ``crs``, ``scale``, ``crs_transform`` & ``shape`` are not supplied, the projections
-        of the prepared and source images will match.
-
         ..warning::
             Depending on the supplied arguments, the prepared image may be a reprojected and
             clipped version of the source.  This type of image is `not recommended
@@ -706,21 +698,19 @@ class ImageAccessor:
             display or further computation.
 
         :param crs:
-            CRS of the prepared image as an EPSG or WKT string.  All bands are re-projected to
-            this CRS.  Defaults to the CRS of the minimum scale band.
+            CRS of the prepared image as an EPSG or WKT string.  Defaults to the CRS of the minimum
+            scale band.
         :param crs_transform:
             Georeferencing transform of the prepared image, as a sequence of 6 numbers.  In
             row-major order: [xScale, xShearing, xTranslation, yShearing, yScale, yTranslation].
-            All bands are re-projected to this transform.
         :param shape:
             (height, width) dimensions of the prepared image in pixels.
         :param region:
             Region defining the prepared image bounds as a GeoJSON dictionary or ``ee.Geometry``.
-            Defaults to the image geometry.
+            Defaults to the image geometry.  Ignored if ``crs_transform`` is supplied.
         :param scale:
-            Pixel scale (m) of the prepared image.  All bands are re-projected to this scale.
-            Ignored if ``crs`` and ``crs_transform`` are supplied.  Defaults to the minimum
-            scale of the image bands.
+            Pixel scale (m) of the prepared image.  Defaults to the minimum scale of the image
+            bands.  Ignored if ``crs_transform`` is supplied.
         :param resampling:
             Resampling method to use for reprojecting.  Ignored for images without fixed
             projections e.g. composites.  Composites can be resampled by resampling their
@@ -758,18 +748,21 @@ class ImageAccessor:
             )
 
         if scale and shape:
+            # Earth Engine raises an exception in this situation, but its message is obscure
             raise ValueError("You can provide one of 'scale' or 'shape', but not both.")
 
-        # configure the export spatial parameters
-        if not crs_transform and not shape:
+        # set a default scale and try to maintain pixel grid if no scaling params supplied
+        if not crs_transform and not shape and not scale:
+            # default to the minimum scale
+            scale = exp_image.projection().nominalScale()
             # Only pass crs to ee.Image.prepare_for_export() when it is different from the
             # source.  Passing same crs as source does not maintain the source pixel grid.
             crs = crs if crs is not None and crs != exp_image.crs else None
-            # Default scale to the minimum scale in meters
-            scale = scale or exp_image.projection().nominalScale()
-        else:
-            # crs argument is required with crs_transform
-            crs = crs or exp_image.projection().crs()
+
+        # set a default crs argument when crs_transform is provided (crs is required with
+        # crs_transform)
+        if crs_transform and not crs:
+            crs = exp_image.projection().crs()
 
         # apply export scale/offset, dtype and resampling
         if scale_offset:
@@ -831,8 +824,6 @@ class ImageAccessor:
         :return:
             Export task, started if ``wait`` is ``False``, or completed if ``wait`` is ``True``.
         """
-        # TODO: establish & document if folder/filename can be a path with sub-folders,
-        #  or what the interaction between folder & filename is for the different export types.
         if logger.getEffectiveLevel() <= logging.DEBUG:
             logger.debug(f"Uncompressed size: {tqdm.format_sizeof(self.size, suffix='B')}")
 
