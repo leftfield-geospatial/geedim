@@ -724,8 +724,8 @@ def test_search_composite_download(region_25ha_file, runner: CliRunner, tmp_path
     cli_search_str = (
         f'search -c COPERNICUS/S1_GRD -s 2022-01-01 -e 2022-02-01 -r {region_25ha_file}'
     )
-    cli_comp_str = 'composite --mask'
-    cli_download_str = f'download --crs EPSG:3857 --scale 10 -dd {tmp_path}'
+    cli_comp_str = 'composite --mask --region -'
+    cli_download_str = f'download --crs EPSG:3857 --region - --scale 10 -dd {tmp_path}'
     cli_str = cli_search_str + ' ' + cli_comp_str + ' ' + cli_download_str
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code == 0
@@ -747,9 +747,9 @@ def test_search_composite_x2_download(region_25ha_file, runner: CliRunner, tmp_p
     """
 
     cli_search_str = f'search -c l7-c2-l2 -s 2022-01-15 -e 2022-04-01 -r {region_25ha_file} -cp 20'
-    cli_comp1_str = 'composite --mask'
+    cli_comp1_str = 'composite --mask --region -'
     cli_comp2_str = 'composite -i LANDSAT/LE07/C02/T1_L2/LE07_173083_20220103 -cm mosaic --date 2022-04-01 --mask'
-    cli_download_str = f'download --crs EPSG:3857 --scale 30 -dd {tmp_path}'
+    cli_download_str = f'download --crs EPSG:3857 --region - --scale 30 -dd {tmp_path}'
     cli_str = cli_search_str + ' ' + cli_comp1_str + ' ' + cli_comp2_str + ' ' + cli_download_str
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code == 0

@@ -95,12 +95,15 @@ def _bbox_cb(
     """click callback to convert --bbox to a GeoJSON polygon."""
     if bounds:
         bounds = _convert_bounds_to_geojson(bounds)
+        ctx.obj['region'] = bounds
     return bounds
 
 
 def _region_cb(ctx: click.Context, param: click.Parameter, region: str) -> dict[str, Any] | None:
     """click callback to read --region and convert to an GeoJSON polygon."""
-    if region:
+    if region == '-':
+        region = ctx.obj['region']
+    elif region:
         try:
             if region.lower().endswith('json'):
                 with fsspec.open(region, 'rt', encoding='utf-8') as f:
@@ -112,6 +115,7 @@ def _region_cb(ctx: click.Context, param: click.Parameter, region: str) -> dict[
                     region = _convert_bounds_to_geojson(bounds)
         except Exception as ex:
             raise click.BadParameter(str(ex)) from ex
+        ctx.obj['region'] = region
     return region
 
 
@@ -174,7 +178,7 @@ def _get_images(obj: dict[str, Any], image_ids: tuple[str]) -> list[ee.Image]:
     images = [ee.Image(ee_id) for ee_id in image_ids] + obj.get('images', [])
     if len(images) == 0:
         raise click.UsageError(
-            "No images - either supply '--id' / '-i', or chain this command after 'search'."
+            "No images - either supply '--id' / '-i' or pipe images into this command."
         )
     return images
 
@@ -186,12 +190,19 @@ def _prepare_obj_for_export(
     region: dict[str, Any] | None = None,
     like: dict[str, Any] | None = None,
     mask: bool = False,
+    buffer: float | None = None,
     **kwargs,
 ) -> dict[str, Any]:
     """Updates the click context object with export-ready images and export region."""
     utils.Initialize()
-    # resolve and store region
-    obj['region'] = bbox or region or obj.get('region')
+    # resolve and buffer region
+    region = bbox or region
+    if buffer is not None:
+        if not region:
+            raise click.UsageError(
+                "'-b' / '--bbox' or '-r' / '--region' is required with '-buf' / '--buffer'"
+            )
+        region = ee.Geometry(region).buffer(buffer)
 
     if like:
         # overwrite crs, crs_transform and shape from --like
@@ -201,17 +212,14 @@ def _prepare_obj_for_export(
     obj['images'] = _get_images(obj, image_ids)
 
     for i, im in enumerate(obj['images']):
-        if mask:
-            # TODO: previously mask bands were always added
-            im = im.gd.addMaskBands(**obj.get('cloud_kwargs', {})).gd.maskClouds()
-        im = im.gd.prepareForExport(region=obj['region'], **kwargs)
+        im = im.gd.addMaskBands(**obj.get('cloud_kwargs', {})).gd.maskClouds()
+        im = im.gd.prepareForExport(region=region, **kwargs)
         obj['images'][i] = im
 
     return obj
 
 
 # Define click options that are common to more than one command
-# TODO: define separate help for search --bbox and --region... and composite :/.  maybe not.
 bbox_option = click.option(
     '-b',
     '--bbox',
@@ -228,17 +236,18 @@ region_option = click.option(
     '--region',
     type=click.Path(dir_okay=False),
     default=None,
+    show_default='source image bounds',
     callback=_region_cb,
-    help='Path / URI of a GeoJSON or georeferenced image file defining the export bounds.',
+    help="Path / URI of a GeoJSON or georeferenced image file defining the export bounds.  Use "
+    "'-' to read from previous --bbox / --region options in the pipeline.",
 )
-# TODO: implement buffering
 buffer_option = click.option(
-    '-b',
+    '-buf',
     '--buffer',
     type=click.FLOAT,
-    default=0,
+    default=None,
     show_default=True,
-    help='Distance (m) to buffer --region / --bbox by.',
+    help='Distance (m) to buffer --bbox / --region with.',
 )
 crs_option = click.option(
     '-c',
@@ -255,7 +264,7 @@ scale_option = click.option(
     '--scale',
     type=click.FLOAT,
     default=None,
-    show_default='auto',
+    show_default='minimum scale of source image bands',
     help='Pixel scale of the export image(s) (m).',
 )
 dtype_option = click.option(
@@ -290,7 +299,6 @@ scale_offset_option = click.option(
     help='Whether to apply any STAC scales and offsets to the export image(s) (e.g. to convert '
     'digital numbers to physical units).',
 )
-# TODO: move "use with --shape.." help to command docstring
 crs_transform_option = click.option(
     '-ct',
     '--crs-transform',
@@ -344,18 +352,13 @@ band_name_option = click.option(
 @click.version_option(version=version.__version__, message='%(version)s')
 @click.pass_context
 def cli(ctx: click.Context, verbose: int, quiet: int):
-    """Search, composite and download Google Earth Engine imagery."""
+    """Search, composite and export Google Earth Engine imagery."""
     ctx.obj = {}
     _configure_logging(verbose - quiet)
 
 
-# TODO: add clear docs on what is piped out of or into each command.
-# TODO: use cloup and linear help layout & move lists of option values from command docsting to corresponding option
-#  help
-
-
 # config command
-@cli.command()
+@cli.command(epilog='See https://geedim.readthedocs.io/ for more details.')
 @click.option(
     '-mc/-nmc',
     '--mask-cirrus/--no-mask-cirrus',
@@ -458,47 +461,9 @@ def config(ctx: click.Context, **kwargs):
     """
     Configure cloud/shadow masking.
 
-    Chain this command with one or more other command(s) to configure cloud/shadow masking for
-    those operation(s). A sensible default configuration is used if this command is not specified.
-
-    Cloud/shadow masking is supported for the collections:
-    \b
-
-        ===========  ===========================
-        geedim name  EE name
-        ===========  ===========================
-        l4-c2-l2     LANDSAT/LT04/C02/T1_L2
-        l5-c2-l2     LANDSAT/LT05/C02/T1_L2
-        l7-c2-l2     LANDSAT/LE07/C02/T1_L2
-        l8-c2-l2     LANDSAT/LC08/C02/T1_L2
-        l9-c2-l2     LANDSAT/LC09/C02/T1_L2
-        s2-toa       COPERNICUS/S2
-        s2-sr        COPERNICUS/S2_SR
-        s2-toa-hm    COPERNICUS/S2_HARMONIZED
-        s2-sr-hm     COPERNICUS/S2_SR_HARMONIZED
-        ===========  ===========================
-    \b
-
-    For Sentinel-2 collections, ``--mask-method`` can be one of:
-    \b
-
-        * | `cloud-prob`: Threshold the Sentinel-2 Cloud Probability.
-        * | `qa`: Bit mask the `QA60` quality assessment band.
-        * | `cloud-score`: Threshold the Sentinel-2 Cloud Score+.
-    \b
-
-    Examples
-    --------
-
-    Search the Sentinel-2 SR collection for images with a cloudless portion of at least 60%,
-    where cloud/shadow is identified with the `qa` ``mask-method``::
-
-        geedim config --mask-method qa search -c s2-sr --cloudless-portion 60 -s 2022-01-01 -e 2022-01-14 --bbox 24 -34 24.5 -33.5
-
-    Download and cloud/shadow mask a Landsat-8 image, where shadows are excluded from the mask::
-
-        geedim config --no-mask-shadows download -i LANDSAT/LC08/C02/T1_L2/LC08_172083_20220104 --mask --bbox 24.25 -34 24.5 -33.75
-    """  # noqa: E501
+    Cloud/shadow configuration is piped out of this command and used by subsequent pipeline
+    commands that require it.
+    """
     # store configuration in the context object for use by other commands (only include command
     # line options so that the mask._CloudlessImage._get_mask_bands() does not get unexpected
     # default value kwargs)
@@ -510,10 +475,11 @@ def config(ctx: click.Context, **kwargs):
 
 
 # search command
-@cli.command()
+@cli.command(epilog='See https://geedim.readthedocs.io/ for more details.')
 @click.option(
     '-c',
     '--collection',
+    'coll_id',
     type=click.STRING,
     required=True,
     callback=_collection_cb,
@@ -551,7 +517,6 @@ def config(ctx: click.Context, **kwargs):
     help='Lower limit on the portion of --bbox / --region that contains filled pixels (%). '
     'Uses zero if VALUE is not supplied.',
 )
-# TODO: use 'supply/supplied' not 'specified'
 @click.option(
     '-cp',
     '--cloudless-portion',
@@ -590,10 +555,10 @@ def config(ctx: click.Context, **kwargs):
     default=None,
     help='Path / URI of a file to write JSON search results to.',
 )
-@click.pass_obj
+@click.pass_context
 def search(
-    obj: dict[str, Any],
-    collection: str,
+    ctx: click.Context,
+    coll_id: str,
     bbox: dict[str, Any] | None,
     region: dict[str, Any] | None,
     output: str | None,
@@ -601,83 +566,39 @@ def search(
     **kwargs,
 ):
     """
-    Search for images.
+    Search a collection for images.
 
-    Search a Google Earth Engine image collection for images, based on date, region, portion of
-    filled pixels in region, and custom filters.  Filtering on cloud/shadow-free (cloudless)
-    portion of filled pixels is supported on the following collections:
-    \b
+    Search result images are added to images piped in from previous commands, and piped out for
+    use by subsequent commands.
+    """
+    # resolve region and store in context object for chained commands
+    region = bbox or region
 
-        ===========  ===========================
-        geedim name  EE name
-        ===========  ===========================
-        l4-c2-l2     LANDSAT/LT04/C02/T1_L2
-        l5-c2-l2     LANDSAT/LT05/C02/T1_L2
-        l7-c2-l2     LANDSAT/LE07/C02/T1_L2
-        l8-c2-l2     LANDSAT/LC08/C02/T1_L2
-        l9-c2-l2     LANDSAT/LC09/C02/T1_L2
-        s2-toa       COPERNICUS/S2
-        s2-sr        COPERNICUS/S2_SR
-        s2-toa-hm    COPERNICUS/S2_HARMONIZED
-        s2-sr-hm     COPERNICUS/S2_SR_HARMONIZED
-        ===========  ===========================
-
-    The search must be filtered with at least one of the ``--start-date``, ``--bbox`` or
-    ``--region`` options.
-
-    Note that filled/cloudless portions are not taken from the granule metadata, but are
-    calculated as portions inside the specified search region for improved accuracy.  These
-    portions are only found and reported when one or both of ``--fill-portion`` /
-    ``--cloudless-portion`` are specified.
-
-    Search speed can be improved by specifying ``--custom-filter``, and or by omitting
-    ``--fill-portion`` / ``--cloudless-portion``.
-    \b
-
-    Examples
-    --------
-
-    Search the GEDI canopy height collection for images with a filled portion of at least 0.5%::
-
-        geedim search -c LARSE/GEDI/GEDI02_A_002_MONTHLY -s 2021-12-01 -e 2022-02-01 --bbox 23 -34 23.2 -33.8 --fill-portion 0.5
-
-    Search the Landsat-9 collection for images, reporting the cloud/shadow free portion::
-
-        geedim search -c l9-c2-l2 -s 2022-01-01 -e 2022-03-01 --bbox 23 -34 23.2 -33.8 --cloudless-portion
-
-    Search the Landsat-8 collection for images whose `CLOUD_COVER_LAND` property is less than
-    50%, and include the `CLOUD_COVER_LAND`, and `CLOUD_COVER` image properties in the search
-    results::
-
-        geedim search -c l8-c2-l2 -s 2022-01-01 -e 2022-05-01 --bbox 23 -34 23.2 -33.8 -cf "CLOUD_COVER_LAND<50" -ap CLOUD_COVER_LAND -ap CLOUD_COVER
-    """  # noqa: E501
-    # resolve region and store for chained commands
-    obj['region'] = bbox or region or obj.get('region')
-
-    for option, option_str in zip(
-        ['fill_portion', 'cloudless_portion'],
-        ["'-fp' / '--fill-portion'", "'-cp' / '--cloudless-portion'"],
-    ):
-        # TODO: refactor error msgs to follow oty
-        if option in kwargs and not obj['region']:
-            raise click.UsageError(
-                f"'-b' / '--bbox' or '-r' / '--region' is required with {option_str}"
-            )
+    # raise an error if --fill-portion / --cloudless-portion were supplied without --bbox / --region
+    if not region:
+        for option, option_str in zip(
+            ['fill_portion', 'cloudless_portion'],
+            ["'-fp' / '--fill-portion'", "'-cp' / '--cloudless-portion'"],
+        ):
+            if ctx.get_parameter_source(option) is ParameterSource.COMMANDLINE:
+                raise click.UsageError(
+                    f"'-b' / '--bbox' or '-r' / '--region' is required with {option_str}"
+                )
 
     # create collection and search
     utils.Initialize()
-    coll = ee.ImageCollection(collection)
-    label = f'Searching for {collection} images: '
-    with utils.Spinner(label=label, leave=' '):
-        coll = coll.gd.filter(region=obj['region'], **kwargs, **obj.get('cloud_kwargs', {}))
+    coll = ee.ImageCollection(coll_id)
+    label = f'Searching for {coll_id} images: '
+    with utils.Spinner(desc=label, leave=' '):
+        coll = coll.gd.filter(region=region, **kwargs, **ctx.obj.get('cloud_kwargs', {}))
 
         # retrieve search result properties from EE
         coll.gd.schemaPropertyNames += add_props
         num_images = len(coll.gd.properties)
 
-        # store images for chained commands
+        # update context object images for chained commands
         images = coll.toList(num_images)
-        obj['images'] = obj.get('images', []) + [
+        ctx.obj['images'] = ctx.obj.get('images', []) + [
             ee.Image(images.get(i)) for i in (range(num_images))
         ]
 
@@ -696,7 +617,7 @@ def search(
 
 
 # download command
-@cli.command()
+@cli.command(epilog='See https://geedim.readthedocs.io/ for more details.')
 @image_ids_option
 @crs_option
 @bbox_option
@@ -710,6 +631,8 @@ def search(
 @mask_option
 @resampling_option
 @scale_offset_option
+@buffer_option
+# TODO: reorder options (e.g. --download-dir with --overwrite ?)
 @click.option(
     '-dd',
     '--download-dir',
@@ -719,20 +642,28 @@ def search(
     callback=_dir_cb,
     help='Path / URI of the download directory.',
 )
-# TODO: add nodata option
+@click.option(
+    '-n/-nn',
+    '--nodata/--no-nodata',
+    type=click.BOOL,
+    default=True,
+    show_default=True,
+    help='Set download file nodata tag(s) to the --dtype dependent value provided by Earth Engine '
+    '(--nodata), or leave them unset (--no-nodata).',
+)
 @click.option(
     '-dv',
     '--driver',
     type=click.Choice(Driver, case_sensitive=True),
     default=Driver.gtiff,
     show_default=True,
-    help='Format driver for the download file.',
+    help='Format driver for the downloaded file(s).',
 )
 @click.option(
     '-mts',
     '--max-tile-size',
     type=click.FLOAT,
-    default=Tiler._ee_max_tile_size,
+    default=Tiler._default_max_tile_size,
     show_default=True,
     help='Maximum download tile size (MB).',
 )
@@ -745,97 +676,80 @@ def search(
     help='Maximum download tile dimension (pixels).',
 )
 @click.option(
+    '-mr',
+    '--max-requests',
+    type=click.INT,
+    default=Tiler._max_requests,
+    show_default=True,
+    help='Maximum concurrent tile downloads.',
+)
+@click.option(
+    '-mc',
+    '--max-cpus',
+    type=click.INT,
+    default=None,
+    show_default='auto',
+    help='Maximum number of tiles to decompress concurrently.',
+)
+@click.option(
     '-o',
     '--overwrite',
     is_flag=True,
     default=False,
-    help='Overwrite the destination file if it exists.',
+    help='Overwrite destination file(s) if they exist.',
 )
 @click.pass_obj
 def download(
     obj: dict[str, Any],
     download_dir: OpenFile,
+    nodata: bool,
     driver: Driver,
     max_tile_size: float,
-    max_tile_dim: float,
+    max_tile_dim: int,
+    max_requests: int,
+    max_cpus: int,
     overwrite: bool,
     **kwargs,
 ):
     """
-    Download image(s).
+    Export image(s) to GeoTIFF file(s).
 
-    Download Earth Engine image(s) to GeoTIFF file(s), allowing optional region of interest,
-    and other image formatting options to be specified.  Images larger than the `Earth Engine
-    size limit <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`_ are
-    split and downloaded as separate tiles, then re-assembled into a single GeoTIFF.  Downloaded
-    image files are populated with metadata from the Earth Engine image and STAC.
+    Images piped from previous commands will be exported, in addition to any images specified
+    with --id.  All exported images are piped out of this command for use by subsequent commands.
 
-    This command can be chained after the ``composite`` command, to download the composite image,
-    or it can be chained after an asset ``export`` to download the asset image.  It can also be
-    chained after the ``search`` command, in which case the search result images will be
-    downloaded, without the need to specify image IDs with ``--id``, or region with ``--bbox`` /
-    ``--region``.
+    Exported images include a fill (validity) mask band, and cloud/shadow related bands when
+    supported.
 
-    The following auxiliary bands are added to images from collections with support for
-    cloud/shadow masking:
-    \b
+    Images are retrieved as separate tiles which are downloaded and decompressed
+    concurrently.  Tile size can be controlled with --max-tile-size and --max-tile-dim, and
+    download / decompress concurrency with --max-requests and --max-cpus.
 
-        ==============  =========================================
-        Band name       Description
-        ==============  =========================================
-        FILL_MASK       Mask of filled (valid) pixels.
-        SHADOW_MASK     Mask of cloud shadows.
-        CLOUD_MASK      Mask of clouds.
-        CLOUDLESS_MASK  Mask of filled & cloud/shadow-free pixels.
-        CLOUD_DIST      Distance to nearest cloud (10m).
-        ==============  =========================================
-
-    Images from other collections, will contain the FILL_MASK band only.
-
-    Bounds and resolution of the downloaded image can be specified with ``--region`` / ``--bbox``
-    and ``--scale`` / ``--shape``, or ``--crs-transform`` and ``--shape``.  The ``--like`` option
-    will automatically derive ``--crs``, ``--crs-transform`` and ``--shape`` from a provided
-    template raster.  If no bounds are specified (with either ``--region``,
-    or ``--crs-transform`` & ``--shape``), the entire image granule is downloaded.
-
-    When ``--crs``, ``--scale``, ``--crs-transform`` and ``--shape`` are not specified, the pixel
-    grids of the downloaded and Earth Engine images will coincide.
-
-    Image filenames are derived from their Earth Engine ID.
-    \b
-
-    Examples
-    --------
-
-    Download a region of a Landsat-9 image, applying the cloud/shadow mask and converting to
-    uint16::
-
-        geedim download -i LANDSAT/LC09/C02/T1_L2/LC09_173083_20220308 --mask --bbox 21.6 -33.5 21.7 -33.4 --dtype uint16
-
-    Download the results of a MODIS NBAR search, specifying a CRS and scale to reproject to::
-
-        geedim search -c MODIS/006/MCD43A4 -s 2022-01-01 -e 2022-01-03 --bbox 23 -34 24 -33 download --crs EPSG:3857 --scale 500
-    """  # noqa: E501
+    Filenames are derived from image Earth Engine IDs.
+    """
     obj = _prepare_obj_for_export(obj, **kwargs)
 
     tqdm.write('\nDownloading:\n')
-    for im in obj['images']:
+    tqdm_kwargs = utils.get_tqdm_kwargs(desc='Total', unit='images')
+    for im in tqdm(obj['images'], **tqdm_kwargs):
         joined_path = posixpath.join(download_dir.path, _get_im_name(im) + '.tif')
         ofile = OpenFile(download_dir.fs, joined_path, mode='wb')
         try:
             im.gd.toGeoTIFF(
                 ofile,
                 overwrite=overwrite,
+                nodata=nodata,
                 driver=driver,
                 max_tile_size=max_tile_size,
                 max_tile_dim=max_tile_dim,
+                max_requests=max_requests,
+                max_cpus=max_cpus,
             )
         except FileExistsError as ex:
             raise click.UsageError(str(ex)) from ex
 
 
 # export command
-@cli.command()
+@cli.command(epilog='See https://geedim.readthedocs.io/ for more details.')
 @image_ids_option
 @click.option(
     '-t',
@@ -883,57 +797,20 @@ def export(
     **kwargs,
 ):
     """
-    Export image(s).
+    Export image(s) to Google cloud platforms.
 
-    Export Earth Engine image(s) to Google Drive, Earth Engine asset, or Google Cloud Storage,
-    allowing optional region of interest, and other image formatting options to be specified.
+    Images piped from previous commands will be exported, in addition to any images specified
+    with --id.  All exported images are piped out of this command for use by subsequent commands.
 
-    This command can be chained after the ``composite`` command, to export the composite image.
-    It can also be chained after the ``search`` command, in which case the search result images
-    will be exported, without the need to specify image IDs with ``--id``, or region with
-    ``--bbox`` / ``--region``.
+    Exported images include a fill (validity) mask band, and cloud/shadow related bands when
+    supported.
 
-    The following auxiliary bands are added to images from collections with support for
-    cloud/shadow masking:
-    \b
+    Images are retrieved as separate tiles which are downloaded and decompressed
+    concurrently.  Tile size can be controlled with --max-tile-size and --max-tile-dim, and
+    download / decompress concurrency with --max-requests and --max-cpus.
 
-        ==============  =========================================
-        Band name       Description
-        ==============  =========================================
-        FILL_MASK       Mask of filled (valid) pixels.
-        SHADOW_MASK     Mask of cloud shadows.
-        CLOUD_MASK      Mask of clouds.
-        CLOUDLESS_MASK  Mask of filled & cloud/shadow-free pixels.
-        CLOUD_DIST      Distance to nearest cloud (10m).
-        ==============  =========================================
-
-    Images from other collections, will contain the FILL_MASK band only.
-
-    Bounds and resolution of the exported image can be specified with ``--region`` / ``--bbox``
-    and ``--scale`` / ``--shape``, or ``--crs-transform`` and ``--shape``.  The ``--like`` option
-    will automatically derive ``--crs``, ``--crs-transform`` and ``--shape`` from a provided
-    template raster.  If no bounds are specified (with either ``--region``,
-    or ``--crs-transform`` & ``--shape``), the entire image granule is exported.
-
-    When ``--crs``, ``--scale``, ``--crs-transform`` and ``--shape`` are not specified, the pixel
-    grids of the exported and Earth Engine images will coincide.
-
-    Image file or asset names are derived from their Earth Engine ID.
-    \b
-
-    Examples
-    --------
-
-    Export a region of a Landsat-9 image to an Earth Engine asset, applying the cloud/shadow mask
-    and converting to uint16::
-
-        geedim export -i LANDSAT/LC09/C02/T1_L2/LC09_173083_20220308 --type asset --folder <your cloud project> --mask --bbox 21.6 -33.5 21.7 -33.4 --dtype uint16
-
-    Export the results of a MODIS NBAR search to Google Drive in the 'geedim' folder, specifying
-    a CRS and scale to reproject to::
-
-        geedim search -c MODIS/006/MCD43A4 -s 2022-01-01 -e 2022-01-03 --bbox 23 -34 24 -33 export --crs EPSG:3857 --scale 500 -df geedim
-    """  # noqa: E501
+    Filenames are derived from image Earth Engine IDs.
+    """
     if (type in [ExportType.asset, ExportType.cloud]) and not folder:
         raise click.MissingParameter(param_hint="'-f' / '--folder'", param_type='option')
 
@@ -950,8 +827,15 @@ def export(
         export_tasks.append(task)
         tqdm.write(f'Started {name}') if not wait else None
 
-    # TODO: should images be piped out in all cases?
     if wait:
+        # wait for export tasks
+        tqdm_kwargs = utils.get_tqdm_kwargs(desc='Total', unit='images')
+        for task in tqdm(export_tasks, **tqdm_kwargs):
+            try:
+                ImageAccessor.monitorTask(task)
+            except (ee.EEException, OSError) as ex:
+                raise click.ClickException(str(ex)) from ex
+
         if type is ExportType.asset:
             # replace context object images with asset images so they can be downloaded in a
             # chained command
@@ -959,16 +843,9 @@ def export(
                 ee.Image(utils.asset_id(_get_im_name(im), folder)) for im in obj['images']
             ]
 
-        # wait for export tasks
-        for task in export_tasks:
-            try:
-                ImageAccessor.monitorExport(task)
-            except (ee.EEException, OSError) as ex:
-                raise click.ClickException(str(ex)) from ex
-
 
 # composite command
-@cli.command()
+@cli.command(epilog='See https://geedim.readthedocs.io/ for more details.')
 @click.option(
     '-i',
     '--id',
@@ -984,7 +861,7 @@ def export(
     type=click.Choice(CompositeMethod, case_sensitive=False),
     default=None,
     show_default="'q-mosaic' for cloud/shadow supported collections, 'mosaic' otherwise.",
-    help='Compositing method.',
+    help="Compositing method.",
 )
 @click.option(
     '-m/-nm',
@@ -1011,7 +888,7 @@ def export(
     callback=_bbox_cb,
     metavar='LEFT BOTTOM RIGHT TOP',
     help="Prioritise component images by their cloudless / filled portion inside these bounds.  "
-    "Valid for the 'mosaic' and 'q-mosaic' compositing --method.",
+    "Valid for the 'mosaic' and 'q-mosaic' --method.",
 )
 @click.option(
     '-r',
@@ -1019,9 +896,10 @@ def export(
     type=click.Path(dir_okay=False),
     default=None,
     callback=_region_cb,
-    help="Prioritise component images by their cloudless / filled portion inside the region / "
-    "bounds defined by this GeoJSON / georeferenced image file.  Valid for the 'mosaic' and "
-    "'q-mosaic' --method.",
+    help="Prioritise component images by their cloudless / filled portion inside the bounds "
+    "defined by this GeoJSON / georeferenced image file.  Valid for the 'mosaic' and "
+    "'q-mosaic' --method.  Use '-' to read from previous --bbox / --region options in the "
+    "pipeline.",
 )
 @click.option(
     '-d',
@@ -1041,73 +919,18 @@ def composite(
     """
     Create a composite image.
 
-    Create cloud/shadow-free and other composite image(s) from specified input images.
+    Images piped from previous commands are used to create the composite, in addition to any
+    images specified with --id.  The composite image is piped out of this command for use by
+    subsequent commands.
 
-    ``download`` or ``export`` commands can be chained after the ``composite`` command to
-    download/export the composite image. ``composite`` can also be chained after ``search``,
-    ``download`` or ``composite``, in which case it will composite the output image(s) from the
-    previous command.  Images specified with the ``--id`` option will be added to any existing
-    chained images i.e. images output from previous chained commands.
+    Input images should belong to the same collection or to spectrally compatible Landsat
+    collections i.e. Landsat-4 with Landsat-5, or Landsat-8 with Landsat-9.
 
-    In general, input images should belong to the same collection.  In the specific case of
-    Landsat, images from spectrally compatible collections can be combined i.e. Landsat-4 with
-    Landsat-5, and Landsat-8 with Landsat-9.
-
-    ``--method`` specifies the method for finding a composite pixel from the stack of
-    corresponding input image pixels.  The following options are available:
-    \b
-
-        ==========  ========================================================
-        Method      Description
-        ==========  ========================================================
-        `q-mosaic`  | Use the unmasked pixel with the highest cloud distance
-                    | (i.e. distance to nearest cloud).  Where more than one
-                    | pixel has the same cloud distance, the first one in the
-                    | stack is selected.
-        `mosaic`    Use the first unmasked pixel in the stack.
-        `medoid`    | Use the medoid of the unmasked pixels i.e. the pixel
-                    | of the image with the minimum sum of spectral distances
-                    | to the rest of the input images.
-                    | Maintains relationship between bands.
-        `median`    Use the median of the unmasked pixels.
-        `mode`      Use the mode of the unmasked pixels.
-        `mean`      Use the mean of the unmasked pixels.
-        ==========  ========================================================
-
-    For the `mosaic`, `q-mosaic` and `medoid` methods there are three ways of ordering (i.e.
-    prioritising) images in the stack:
-    \b
-
-        * | If ``--date`` is specified, images are sorted by the absolute
-          | difference of their capture time from this date.
-        * | If either ``--region`` or ``--bbox`` are specified, images are sorted
-          | by their cloudless/filled portion inside this region.
-        * | If none of the above options are specified, images are sorted by their
-          | capture time.
-
-    By default, input images are masked before compositing.  This means that only
-    cloud/shadow-free (or filled) pixels are used to make the composite.  You can turn off this
-    behaviour with the ``--no-mask`` option.
-    \b
-
-    Examples
-    --------
-    Composite two Landsat-7 images using the default options and download the result::
-
-        geedim composite -i LANDSAT/LE07/C02/T1_L2/LE07_173083_20100203 -i LANDSAT/LE07/C02/T1_L2/LE07_173083_20100219 download --bbox 22 -33.1 22.1 -33 --crs EPSG:3857 --scale 30
-
-    Create and download a composite of a year of GEDI canopy height data, by chaining with
-    ``search``::
-
-        geedim search -c LARSE/GEDI/GEDI02_A_002_MONTHLY -s 2021-01-01 -e 2022-01-01 --bbox 23 -34 23.1 -33.9 --fill-portion 0.1 composite -cm mosaic download --crs EPSG:3857 --scale 25
-
-    Create and download a cloud/shadow-free composite of Sentinel-2 SR images, by chaining with
-    ``search``::
-
-        geedim search -c s2-sr -s 2021-01-12 -e 2021-01-23 --bbox 23 -33.5 23.1 -33.4 composite -cm q-mosaic download --crs EPSG:3857 --scale 10
-    """  # noqa: E501
+    When supported, the default is to cloud/shadow mask input images.  This can be turned off
+    with --no-mask.  The 'q-mosaic' --method uses distance to the nearest cloud as the quality
+    measure and requires cloud/shadow support.
+    """
     utils.Initialize()
-    # TODO: should region be chained with e.g. search - it has a different meaning here
 
     images = _get_images(obj, image_ids)
     coll = ee.ImageCollection.gd.fromImages(images)
