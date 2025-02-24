@@ -421,7 +421,7 @@ def _test_aux_stats(masked_image: MaskedImage, region: dict):
     # test cloudless areas have greater distance to cloud than cloudy areas
     assert stats['CDIST_CLOUDLESS'] > stats['CDIST_CLOUD']
     # test min distance to cloud is pixel size
-    assert stats['CDIST_MIN'] == ee_image.select('B1').projection().nominalScale().getInfo()
+    assert stats['CDIST_MIN'] == ee_image.select(0).projection().nominalScale().getInfo()
 
 
 @pytest.mark.parametrize(
