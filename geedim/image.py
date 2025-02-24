@@ -338,6 +338,11 @@ class ImageAccessor:
         band_props = {bp['name']: bp for bp in band_props}
         return [bn for bn in self.bandNames if 'center_wavelength' in band_props.get(bn, {})]
 
+    @property
+    def cloudShadowSupport(self) -> bool:
+        """Whether this image has cloud/shadow support."""
+        return issubclass(self._mi, mask._CloudlessImage)
+
     def _raise_not_fixed(self):
         """Raise an error if the image cannot be exported as it has no fixed projection."""
         if not self.shape:
@@ -698,8 +703,8 @@ class ImageAccessor:
             display or further computation.
 
         :param crs:
-            CRS of the prepared image as an EPSG or WKT string.  Defaults to the CRS of the minimum
-            scale band.
+            CRS of the prepared image as a well-known authority (e.g. EPSG) or WKT string.
+            Defaults to the CRS of the minimum scale band.
         :param crs_transform:
             Georeferencing transform of the prepared image, as a sequence of 6 numbers.  In
             row-major order: [xScale, xShearing, xTranslation, yShearing, yScale, yTranslation].

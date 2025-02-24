@@ -40,7 +40,7 @@ from geedim.download import BaseImage
 from geedim.enums import CompositeMethod, Driver, ExportType, ResamplingMethod, SplitType
 from geedim.errors import InputImageError
 from geedim.image import ImageAccessor
-from geedim.mask import MaskedImage, _get_class_for_id, _MaskedImage
+from geedim.mask import MaskedImage, _CloudlessImage, _get_class_for_id, _MaskedImage
 from geedim.medoid import medoid
 from geedim.stac import STACClient
 from geedim.tile import Tiler
@@ -331,6 +331,11 @@ class ImageCollectionAccessor:
         if not self.stac:
             return None
         return ImageAccessor(self._ee_coll.first()).specBands
+
+    @property
+    def cloudShadowSupport(self) -> bool:
+        """Whether this collection has cloud/shadow support."""
+        return issubclass(self._mi, _CloudlessImage)
 
     def _prepare_for_composite(
         self,
