@@ -157,7 +157,7 @@ def test_non_fixed_props(image: str, request: pytest.FixtureRequest):
     assert image.profile is None
 
 
-def test_stac_props(s2_sr_hm_image: ImageAccessor, request: pytest.FixtureRequest):
+def test_stac_props(s2_sr_hm_image: ImageAccessor):
     """Test the stac and stac-related properties."""
     assert s2_sr_hm_image.stac is not None
     assert len(s2_sr_hm_image.bandProps) == len(s2_sr_hm_image.bandNames)
@@ -232,6 +232,97 @@ def test_resample(
             assert std_test[0] > std_test[1], std_info
         else:
             assert std_test[0] == std_test[1], std_info
+
+
+def test_to_dtype(landsat_ndvi_image):
+    """Test toDType()."""
+    # convert to all possible dtypes
+    dtypes = list(_nodata_vals.keys())
+    converted_images = [landsat_ndvi_image.toDType(dtype) for dtype in dtypes]
+    # combine getInfo() of converted images into one
+    infos = ee.List(converted_images).getInfo()
+
+    # test dtype of converted images
+    for info, dtype in zip(infos, dtypes):
+        # patch image.info with the converted EE info dict
+        # TODO: if we are doing this patching trick a lot, rather make a _withInfo() class method
+        #  that takes an ee.Image and ee info dictionary
+        image = ImageAccessor(ee.Image(0))
+        image.info = info
+        assert image.dtype == dtype, dtype
+
+
+def test_scale_offset(
+    s2_sr_hm_image: ImageAccessor,
+    l9_sr_image: ImageAccessor,
+    modis_nbar_image: ImageAccessor,
+    region_100ha: dict,
+):
+    """Test scaleOffset()."""
+    # find min / max of reflectance bands after they have been scaled & offset
+    src_ims = [s2_sr_hm_image, l9_sr_image, modis_nbar_image]
+    scale_offset_ims = [im.scaleOffset() for im in src_ims]
+    min_max_tests = []
+    min_max_infos = []
+    for src_im, scale_offset_im in zip(src_ims, scale_offset_ims):
+        refl_bands = [
+            bp['name']
+            for bp in src_im.bandProps
+            if 'center_wavelength' in bp and 'gee:units' not in bp
+        ]
+        min_max = scale_offset_im.select(refl_bands).reduceRegion(
+            reducer=ee.Reducer.minMax(), geometry=region_100ha, bestEffort=True
+        )
+        min_max_tests.append(min_max)
+        min_max_infos.append(dict(image=src_im.id, refl_bands=refl_bands))
+
+    # combine getInfo() of min / max values & scaled / offset images into one
+    results = ee.Dictionary(
+        dict(min_max=ee.List(min_max_tests), image=ee.List(scale_offset_ims))
+    ).getInfo()
+
+    # test min / max values like 0-1 reflectance
+    for min_max_test, min_max_info in zip(results['min_max'], min_max_infos):
+        assert len(min_max_test) == len(2 * min_max_info['refl_bands'])
+        for bn in min_max_info['refl_bands']:
+            bmin, bmax = min_max_test[bn + '_min'], min_max_test[bn + '_max']
+            assert bmin >= -0.5, dict(image=min_max_info['image'], band=bn)
+            assert bmax <= 1.5, dict(image=min_max_info['image'], band=bn)
+
+    # test scaled and offset images have the same bands and properties as source images
+    for src_im, scaled_offset_info in zip(src_ims, results['image']):
+        image = ImageAccessor(ee.Image(0))
+        image.info = scaled_offset_info
+        assert image.bandNames == src_im.bandNames, src_im.id
+        assert image.properties == src_im.properties, src_im.id
+
+
+def test_region_coverage(const_image: ImageAccessor, region_100ha: dict):
+    """Test regionCoverage()."""
+    # Create a test image with bounds @ 'image_bounds', and mask bounds @ 'mask_bounds' (uses
+    # projected CRS for image and geometries to give exact coverages)
+    crs = 'EPSG:3857'
+    scale = 0.1
+    image_bounds = ee.Geometry.Rectangle((-0.2, -0.2, 1.2, 1.2), proj=crs)
+    mask_bounds = ee.Geometry.Rectangle((0.0, 0.0, 1.0, 1.0), proj=crs)
+    image = ee.Image([1, 1])
+    image = image.setDefaultProjection(crs, scale=scale).clip(image_bounds)
+    image = image.updateMask(image.mask().clip(mask_bounds))
+    mask = ImageAccessor(image.mask())
+
+    # find & test coverages for regions spanning image and mask bounds
+    regions = [
+        ee.Geometry.Rectangle((0.5, 0.5, 1.5, 1.5), proj=crs),
+        ee.Geometry.Rectangle((0.8, 0.8, 1.2, 1.2), proj=crs),
+        mask_bounds,
+    ]
+    exp_coverages = [25, 25, 100]
+    coverages = [mask.regionCoverage(region=region, scale=scale) for region in regions]
+    coverages = ee.List(coverages).getInfo()
+
+    for i, (coverage, exp_coverage) in enumerate(zip(coverages, exp_coverages)):
+        for k, v in coverage.items():
+            assert v == pytest.approx(exp_coverage, abs=0.01), (i, k)
 
 
 # TODO properties:
