@@ -16,55 +16,71 @@ limitations under the License.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
+from pathlib import Path
 
 import ee
+import fsspec
 import numpy as np
 import pytest
 import rasterio as rio
+from rasterio.enums import Compression
 from rasterio.features import bounds
 from rasterio.warp import transform_geom
 
+from geedim import utils
 from geedim.enums import ExportType
-from geedim.image import ImageAccessor, _nodata_vals
+from geedim.image import ImageAccessor, _nodata_vals, _open_raster
 
 
 @pytest.fixture(scope='session')
 def l9_sr_image(l9_image_id: str) -> ImageAccessor:
+    """Landsat-9 SR image with partial cloud/shadow in region_*ha."""
     return ImageAccessor(ee.Image(l9_image_id))
 
 
 @pytest.fixture(scope='session')
-def s2_toa_hm_image(s2_toa_image_id: str) -> ImageAccessor:
-    return ImageAccessor(ee.Image(s2_toa_image_id))
-
-
-@pytest.fixture(scope='session')
 def s2_sr_hm_image(s2_sr_hm_image_id: str) -> ImageAccessor:
+    """Harmonised Sentinel-2 SR image with partial cloud/shadow in region_*ha."""
     return ImageAccessor(ee.Image(s2_sr_hm_image_id))
 
 
 @pytest.fixture(scope='session')
-def landsat_ndvi_image(landsat_ndvi_image_id: str) -> ImageAccessor:
-    return ImageAccessor(ee.Image(landsat_ndvi_image_id))
-
-
-@pytest.fixture(scope='session')
 def modis_nbar_image(modis_nbar_image_id: str) -> ImageAccessor:
+    """MODIS NBAR image."""
     return ImageAccessor(ee.Image(modis_nbar_image_id))
 
 
 @pytest.fixture(scope='session')
-def gch_image(gch_image_id: str) -> ImageAccessor:
-    return ImageAccessor(ee.Image(gch_image_id))
+def landsat_ndvi_image(landsat_ndvi_image_id: str) -> ImageAccessor:
+    """Landsat 8-day NDVI composite image."""
+    return ImageAccessor(ee.Image(landsat_ndvi_image_id))
 
 
 @pytest.fixture(scope='session')
 def const_image() -> ImageAccessor:
+    """Constant image."""
     return ImageAccessor(ee.Image([1, 2, 3]))
 
 
-def from_list(ee_images: list[ee.Image]) -> list[ImageAccessor]:
+@pytest.fixture(scope='session')
+def prepared_image(const_image) -> ImageAccessor:
+    """Synthetic image prepared for exporting."""
+    crs = 'EPSG:3857'
+    image_bounds = ee.Geometry.Rectangle((-1.0, -1.0, 1.0, 1.0), proj=crs)
+    mask_bounds = ee.Geometry.Rectangle((-0.5, -0.5, 0.5, 0.5), proj=crs)
+
+    image = const_image._ee_image.toUint8()
+    image = image.setDefaultProjection(crs, scale=0.1).clip(image_bounds)
+    # mask outside of mask_bounds
+    image = image.updateMask(image.clip(mask_bounds).mask())
+    # set an ID with a known collection so that stac property is populated
+    image = image.set('system:id', 'COPERNICUS/S2_SR_HARMONIZED/prepared_image')
+    return ImageAccessor(image)
+
+
+def accessors_from_images(ee_images: list[ee.Image]) -> list[ImageAccessor]:
     """Return a list of ImageAccessor objects, with cached info properties, for the given list of
     ee.Image objects, combining all getInfo() calls into one.
     """
@@ -95,26 +111,6 @@ def transform_bounds(geometry: dict, crs: str = 'EPSG:4326') -> tuple[float, ...
     src_crs = geometry['crs']['properties']['name'] if 'crs' in geometry else 'EPSG:4326'
     geometry = geometry if crs == src_crs else transform_geom(src_crs, crs, geometry)
     return bounds(geometry)
-
-
-def validate_prepared_image(image: ImageAccessor, **prep_kwargs):
-    """Validate an image against prep_kwargs arguments to prepareForExport()."""
-    arg_to_attr_names = dict(
-        crs='crs',
-        crs_transform='transform',
-        shape='shape',
-        scale='scale',
-        dtype='dtype',
-        bands='bandNames',
-    )
-    for arg_name, attr_name in arg_to_attr_names.items():
-        if attr_name in prep_kwargs:
-            assert getattr(image, attr_name) == prep_kwargs[arg_name], (image.id, attr_name)
-
-    if 'region' in prep_kwargs:
-        region_bounds = transform_bounds(ee.Geometry(prep_kwargs['region']).toGeoJSON())
-        image_bounds = transform_bounds(image.geometry)
-        assert image_bounds == pytest.approx(region_bounds, abs=1e-3)
 
 
 def test_ee_props(l9_sr_image: ImageAccessor, modis_nbar_image: ImageAccessor):
@@ -173,6 +169,16 @@ def test_dtype(ee_dtypes: list, exp_dtype: str):
     assert image.dtype == exp_dtype
 
 
+def test_profile(modis_nbar_image: ImageAccessor):
+    """Test the profile property."""
+    # tests the workaround for the MODIS CRS bug
+    assert modis_nbar_image.profile['crs'] == utils.rio_crs(modis_nbar_image.crs)
+    assert modis_nbar_image.profile['width'] == modis_nbar_image.shape[1]
+    assert modis_nbar_image.profile['height'] == modis_nbar_image.shape[0]
+    for attr in ['transform', 'count', 'dtype']:
+        assert modis_nbar_image.profile[attr] == getattr(modis_nbar_image, attr)
+
+
 @pytest.mark.parametrize(
     'image, exp_scale',
     [
@@ -194,6 +200,7 @@ def test_scale(image: str, exp_scale: float, request: pytest.FixtureRequest):
         ('s2_sr_hm_image', True),
         ('modis_nbar_image', False),
         ('landsat_ndvi_image', False),
+        ('const_image', False),
     ],
 )
 def test_bounded(image: str, exp_bounded: bool, request: pytest.FixtureRequest):
@@ -235,7 +242,7 @@ def test_cs_support(image: str, exp_support: bool, request: pytest.FixtureReques
 
 
 def test_projection(s2_sr_hm_image: ImageAccessor):
-    """Test projection() on image with different band scales."""
+    """Test projection() on an image with different band projections."""
     projs = ee.List(
         [s2_sr_hm_image.projection(min_scale=True), s2_sr_hm_image.projection(min_scale=False)]
     )
@@ -246,11 +253,13 @@ def test_projection(s2_sr_hm_image: ImageAccessor):
     assert projs[1]['transform'] == [1, 0, 0, 0, 1, 0]
 
 
-def test_fixed(s2_sr_hm_image: ImageAccessor, landsat_ndvi_image: ImageAccessor):
+def test_fixed(
+    s2_sr_hm_image: ImageAccessor, landsat_ndvi_image: ImageAccessor, const_image: ImageAccessor
+):
     """Test fixed()."""
-    # s2_sr_hm_image has a combination of fixed and non-fixed bands, and landsat_ndvi_image has
-    # one non-fixed band
-    fixeds = ee.List([s2_sr_hm_image.fixed(), landsat_ndvi_image.fixed()])
+    # s2_sr_hm_image has a combination of fixed and non-fixed bands, landsat_ndvi_image has
+    # one non-fixed band, and const_image has all non-fixed bands
+    fixeds = ee.List([s2_sr_hm_image.fixed(), landsat_ndvi_image.fixed(), const_image.fixed()])
     fixeds = fixeds.getInfo()
     assert fixeds == [True, False]
 
@@ -286,9 +295,9 @@ def test_resample(
     # test standard deviations are reduced by resampling when the image has a fixed projection
     for std_test, std_info in zip(std_tests, std_infos):
         if std_info['fixed']:
-            assert std_test[0] > std_test[1], std_info
+            assert std_test[0] > std_test[1]
         else:
-            assert std_test[0] == std_test[1], std_info
+            assert std_test[0] == std_test[1]
 
 
 def test_to_dtype(landsat_ndvi_image):
@@ -297,7 +306,7 @@ def test_to_dtype(landsat_ndvi_image):
     dtypes = list(_nodata_vals.keys())
     converted_images = [landsat_ndvi_image.toDType(dtype) for dtype in dtypes]
     # combine getInfo() of converted images into one
-    converted_images = from_list(converted_images)
+    converted_images = accessors_from_images(converted_images)
 
     # test dtype of converted images
     for converted_image, dtype in zip(converted_images, dtypes):
@@ -305,7 +314,6 @@ def test_to_dtype(landsat_ndvi_image):
         assert converted_image.dtype == dtype, dtype
 
 
-# TODO: put these ims in a fixture list if they are used repeatedly
 def test_scale_offset(
     s2_sr_hm_image: ImageAccessor,
     l9_sr_image: ImageAccessor,
@@ -319,6 +327,7 @@ def test_scale_offset(
     min_max_tests = []
     min_max_infos = []
     for src_im, scale_offset_im in zip(src_ims, scale_offset_ims):
+        # spectral bands without units (i.e. reflectance and not temperature)
         refl_bands = [
             bp['name']
             for bp in src_im.bandProps
@@ -335,54 +344,47 @@ def test_scale_offset(
         dict(min_max=ee.List(min_max_tests), image=ee.List(scale_offset_ims))
     ).getInfo()
 
-    # test min / max values like 0-1 reflectance
+    # test min / max values are ~0-1 reflectance
     for min_max_test, min_max_info in zip(results['min_max'], min_max_infos):
         assert len(min_max_test) == len(2 * min_max_info['refl_bands'])
         for bn in min_max_info['refl_bands']:
             bmin, bmax = min_max_test[bn + '_min'], min_max_test[bn + '_max']
-            assert bmin >= -0.5, dict(image=min_max_info['image'], band=bn)
-            assert bmax <= 1.5, dict(image=min_max_info['image'], band=bn)
+            assert bmin >= -0.5
+            assert bmax <= 1.5
 
     # test scaled and offset images have the same bands and properties as source images
     for src_im, scaled_offset_info in zip(src_ims, results['image']):
         band_names = [bp['id'] for bp in scaled_offset_info['bands']]
-        assert band_names == src_im.bandNames, src_im.id
-        assert scaled_offset_info['properties'] == src_im.properties, src_im.id
+        assert band_names == src_im.bandNames
+        assert scaled_offset_info['properties'] == src_im.properties
 
 
-def test_region_coverage():
+def test_region_coverage(prepared_image: ImageAccessor):
     """Test regionCoverage()."""
-    # Create a test image with bounds @ 'image_bounds', and mask bounds @ 'mask_bounds' (uses
-    # projected CRS for image and geometries to give exact coverages)
-    crs = 'EPSG:3857'
-    scale = 0.1
-    image_bounds = ee.Geometry.Rectangle((-0.2, -0.2, 1.2, 1.2), proj=crs)
-    mask_bounds = ee.Geometry.Rectangle((0.0, 0.0, 1.0, 1.0), proj=crs)
-    image = ee.Image([1, 1])
-    image = image.setDefaultProjection(crs, scale=scale).clip(image_bounds)
-    image = image.updateMask(image.mask().clip(mask_bounds))
-    mask = ImageAccessor(image.mask())
-
     # find & test coverages for regions spanning image and mask bounds, combining all getInfo()'s
-    # into one
+    # into one (see prepared_image() to understand regions & exp_coverages)
+    mask = ImageAccessor(prepared_image._ee_image.mask())
     regions = [
-        ee.Geometry.Rectangle((0.5, 0.5, 1.5, 1.5), proj=crs),
-        ee.Geometry.Rectangle((0.8, 0.8, 1.2, 1.2), proj=crs),
-        mask_bounds,
+        ee.Geometry.Rectangle((0.0, 0.0, 2.0, 2.0), proj=prepared_image.crs),
+        ee.Geometry.Rectangle((0.0, 0.0, 1.0, 1.0), proj=prepared_image.crs),
+        ee.Geometry.Rectangle((-0.5, -0.5, 0.5, 0.5), proj=prepared_image.crs),
     ]
-    exp_coverages = [25, 25, 100]
-    coverages = [mask.regionCoverage(region=region, scale=scale) for region in regions]
+    exp_coverages = [6.25, 25, 100]
+    coverages = [
+        mask.regionCoverage(region=region, scale=prepared_image.scale) for region in regions
+    ]
     coverages = ee.List(coverages).getInfo()
 
-    for i, (coverage, exp_coverage) in enumerate(zip(coverages, exp_coverages)):
-        for k, v in coverage.items():
-            assert v == pytest.approx(exp_coverage, abs=0.01), (i, k)
+    for coverage, exp_coverage in zip(coverages, exp_coverages):
+        for v in coverage.values():
+            assert v == pytest.approx(exp_coverage, abs=0.01)
 
 
 def test_add_mask_bands(s2_sr_hm_image: ImageAccessor):
     """Test addMaskBands()"""
     # This just tests bands exist and kwargs were passed. Detailed mask testing is done in
     # test_mask.py.
+    # TODO: seeing as cloud-prob is deprecated, can we do this with landsat?
     cs_image = s2_sr_hm_image.addMaskBands(mask_method='cloud-prob', mask_shadows=False)
     cs_image = ImageAccessor(cs_image)
     for bn in ['CLOUDLESS_MASK', 'CLOUD_DIST', 'FILL_MASK']:
@@ -392,7 +394,7 @@ def test_add_mask_bands(s2_sr_hm_image: ImageAccessor):
 
 def test_mask_clouds(s2_sr_hm_image: ImageAccessor, region_100ha: dict):
     """Test maskClouds()."""
-    # This just tests masked area increases. Detailed mask testing is done in test_mask.py.
+    # This just tests the masked area increases. Detailed mask testing is done in test_mask.py.
     masked_image = ImageAccessor(s2_sr_hm_image.addMaskBands()).maskClouds()
     sums = [
         im.mask().reduceRegion('sum', geometry=region_100ha, scale=30).values().reduce('mean')
@@ -402,66 +404,50 @@ def test_mask_clouds(s2_sr_hm_image: ImageAccessor, region_100ha: dict):
     assert sums[0] > sums[1]
 
 
-def test_prepare_for_export_params(s2_sr_hm_image: ImageAccessor, region_100ha: dict):
-    """Test prepareForExport() with different parameter combinations (excluding resampling and
-    scale_offset).
-    """
+def test_prepare_for_export(s2_sr_hm_image: ImageAccessor, region_100ha: dict):
+    """Test prepareForExport()."""
     crs = 'EPSG:3857'
-    prep_kwargs = [
+    prep_kwargs_list = [
         dict(crs=crs, region=region_100ha, scale=60),
         dict(crs=crs, region=region_100ha, shape=(300, 400)),
         dict(crs=crs, crs_transform=(60.0, 0.0, 500000.0, 0.0, -30.0, 6400000.0), shape=(600, 400)),
         dict(region=region_100ha),
         dict(crs=crs, region=region_100ha, scale=60, dtype='int16', bands=['B4', 'B3', 'B2']),
+        # maintain pixel grid
+        dict(region=region_100ha, scale=10),
+        dict(region=region_100ha),
+        dict(),
     ]
-    prep_ims = [s2_sr_hm_image.prepareForExport(**prep_kwargs_) for prep_kwargs_ in prep_kwargs]
-    prep_ims = from_list(prep_ims)
-    for prep_im, prep_kwargs_ in zip(prep_ims, prep_kwargs):
-        validate_prepared_image(prep_im, **prep_kwargs_)
+    prep_ims = [s2_sr_hm_image.prepareForExport(**prep_kwargs) for prep_kwargs in prep_kwargs_list]
+    prep_ims = accessors_from_images(prep_ims)
 
+    # test prepared image properties
+    arg_to_attr_names = dict(
+        crs='crs',
+        crs_transform='transform',
+        shape='shape',
+        scale='scale',
+        dtype='dtype',
+        bands='bandNames',
+    )
+    for prep_im, prep_kwargs in zip(prep_ims, prep_kwargs_list):
+        for arg_name, attr_name in arg_to_attr_names.items():
+            if attr_name in prep_kwargs:
+                assert getattr(prep_im, attr_name) == prep_kwargs[arg_name]
 
-def test_prepare_for_export_grid(s2_sr_hm_image: ImageAccessor, region_100ha: dict):
-    """Test prepareForExport() maintains the pixel grid when arguments allow."""
-    prep_kwargs = [dict(region=region_100ha, scale=10), dict(region=region_100ha), dict()]
-    prep_ims = [s2_sr_hm_image.prepareForExport(**prep_kwargs_) for prep_kwargs_ in prep_kwargs]
-    prep_ims = from_list(prep_ims)
+        # region is a special case that is approximate & needs transformation between CRSs
+        if 'region' in prep_kwargs:
+            region_bounds = transform_bounds(ee.Geometry(prep_kwargs['region']).toGeoJSON())
+            image_bounds = transform_bounds(prep_im.geometry)
+            assert image_bounds == pytest.approx(region_bounds, abs=1e-3)
 
+    # test pixel grid is maintained when arguments allow
     src_transform = rio.Affine(*s2_sr_hm_image.transform)
-    for prep_im in prep_ims:
+    for prep_im in prep_ims[-3:]:
         prep_transform = rio.Affine(*prep_im.transform)
         assert (prep_transform[0], prep_transform[4]) == (src_transform[0], src_transform[4])
         pixel_offset = ~src_transform * (prep_transform[2], prep_transform[5])
         assert pixel_offset == (int(pixel_offset[0]), int(pixel_offset[1]))
-
-
-def test_prepare_for_export_contents(s2_sr_hm_image: ImageAccessor, region_100ha: dict):
-    """Test prepareForExport() with resampling and scale_offset parameters."""
-    # just test params change the prepared image, detailed testing done in test_resample() and
-    # test_scale_offset()
-    src_im = s2_sr_hm_image._ee_image
-    resampled_im = s2_sr_hm_image.prepareForExport(resampling='bilinear')
-    scaled_offset_im = s2_sr_hm_image.prepareForExport(scale_offset=True)
-
-    # standard deviations of reprojected src_im and resampled_im
-    stds = [
-        image.reproject(crs='EPSG:3857', scale=10)
-        .reduceRegion('stdDev', geometry=region_100ha)
-        .values()
-        .reduce('mean')
-        for image in [src_im, resampled_im]
-    ]
-    # means of src_im and scaled_offset_im
-    means = [
-        image.reduceRegion('mean', geometry=region_100ha).values().reduce('mean')
-        for image in [src_im, scaled_offset_im]
-    ]
-    # combine all getInfo() calls into one
-    stats = ee.Dictionary(dict(std=ee.List(stds), mean=ee.List(means))).getInfo()
-
-    # test resampling reduces the standard deviation
-    assert stats['std'][0] > stats['std'][1]
-    # test scale & offset reduces the mean
-    assert stats['mean'][0] > stats['mean'][1]
 
 
 def test_prepare_for_export_errors(
@@ -473,7 +459,7 @@ def test_prepare_for_export_errors(
         landsat_ndvi_image.prepareForExport()
     assert 'fixed projection' in str(ex.value)
 
-    # scale and shape params together
+    # scale and shape together
     with pytest.raises(ValueError) as ex:
         s2_sr_hm_image.prepareForExport(scale=10, shape=(400, 300))
     assert 'shape' in str(ex.value) and 'scale' in str(ex.value)
@@ -489,6 +475,129 @@ def test_to_google_cloud(s2_sr_hm_image: ImageAccessor, region_25ha: dict, type:
     prep_im.toGoogleCloud('test_export', type=type, folder='geedim', wait=False)
 
 
-# TODO properties:
-#  - profile
-#  - MODIS crs
+def test_open_raster(tmp_path: Path):
+    """Test _open_raster() with local and 'remote' files."""
+    file = tmp_path.joinpath('test.tif')
+    shape = (1, 1, 1)
+    array = np.ones(shape, dtype='uint8')
+    profile = dict(
+        driver='gtiff', width=shape[2], height=shape[1], count=shape[0], dtype=array.dtype
+    )
+    # simulate a remote file with memory://
+    ofiles = [fsspec.open(file, 'wb'), fsspec.open('memory://test.tif', 'wb')]
+    try:
+        for ofile in ofiles:
+            with _open_raster(ofile, **profile) as ds:
+                ds.write(array)
+            assert ofile.fs.exists(ofile.path)
+    finally:
+        [ofile.fs.rm(ofile.path) for ofile in ofiles]
+
+
+@pytest.mark.parametrize(
+    'kwargs', [dict(driver='gtiff'), dict(driver='cog', nodata=False), dict(nodata=1)]
+)
+def test_to_geotiff(prepared_image: ImageAccessor, tmp_path: Path, kwargs: dict):
+    """Test toGeoTIFF() with different driver / nodata parameters."""
+    file = tmp_path.joinpath('test.tif')
+    image = prepared_image
+    prepared_image.toGeoTIFF(file, **kwargs)
+
+    assert file.exists()
+    nodata = kwargs.get('nodata', True)
+    with rio.open(file) as ds:
+        # format
+        assert ds.crs == image.crs
+        assert ds.transform[:6] == image.transform
+        assert ds.shape == image.shape
+        assert ds.count == image.count
+        assert ds.dtypes[0] == image.dtype
+        assert ds.compression == Compression.deflate
+        if nodata is True:
+            assert ds.nodata == _nodata_vals[image.dtype]
+        elif nodata is False:
+            assert ds.nodata is None
+        else:
+            assert ds.nodata == nodata
+
+        # contents
+        array = ds.read()
+        # masked pixels will always == _nodata_vals[image.dtype], irrespective of the nodata value
+        mask = array != _nodata_vals[image.dtype]
+        assert not np.all(mask)
+        assert np.all((array.T == range(1, image.count + 1)) == mask.T)
+
+
+def test_to_geotiff_overwrite(prepared_image: ImageAccessor, tmp_path: Path):
+    """Test toGeoTIFF() overwrite behaviour."""
+    file = tmp_path.joinpath('overwrite.tif')
+    file.touch()
+    with pytest.raises(FileExistsError):
+        prepared_image.toGeoTIFF(file)
+    prepared_image.toGeoTIFF(file, overwrite=True)
+    # test file is a valid geotiff
+    with rio.open(file) as ds:
+        ds.read()
+
+
+@pytest.mark.parametrize('masked', [False, True])
+def test_to_xarray(prepared_image: ImageAccessor, masked: bool):
+    """Test toXarray()."""
+    image = prepared_image
+    array = image.toXarray(masked=masked)
+
+    # coordinates
+    assert all(array.coords['band'] == image.bandNames)
+    y = np.arange(0.5, image.shape[1] + 0.5) * image.transform[4] + image.transform[5]
+    x = np.arange(0.5, image.shape[0] + 0.5) * image.transform[0] + image.transform[2]
+    assert all(array.coords['x'] == x)
+    assert all(array.coords['y'] == y)
+
+    # dtype & nodata
+    if masked:
+        assert array.dtype == np.promote_types(image.dtype, 'float32')
+        assert np.isnan(array.attrs['nodata'])
+    else:
+        assert array.dtype == image.dtype
+        assert array.attrs['nodata'] == image.nodata
+
+    # attributes
+    for attr in ['id', 'crs', 'transform']:
+        assert array.attrs[attr] == getattr(image, attr), attr
+    assert array.attrs.get('ee') == json.dumps(image.properties)
+    assert array.attrs.get('stac') == json.dumps(image.stac)
+
+    # contents
+    mask = ~array.isnull() if masked else array != image.nodata
+    assert not mask.all()
+    assert ((array == range(1, image.count + 1)) == mask).all()
+
+
+@pytest.mark.parametrize('masked, structured', [(False, False), (True, False), (True, True)])
+def test_to_numpy(prepared_image: ImageAccessor, masked: bool, structured: bool):
+    """Test toNumpy()."""
+    image = prepared_image
+    array = image.toNumPy(masked=masked, structured=structured)
+
+    # dimensions and dtype
+    if structured:
+        assert array.shape == image.shape
+        assert len(array.dtype) == image.count
+        dtype = np.dtype(dict(names=image.bandNames, formats=[image.dtype] * len(image.bandNames)))
+        assert array.dtype == dtype
+    else:
+        assert array.shape == (*image.shape, image.count)
+        assert array.dtype == image.dtype
+
+    # masking
+    if masked:
+        assert isinstance(array, np.ma.MaskedArray)
+        assert array.fill_value == np.array(image.nodata, array.dtype)
+    else:
+        assert not isinstance(array, np.ma.MaskedArray)
+
+    # contents
+    array_ = array.view(image.dtype).reshape(*image.shape, image.count) if structured else array
+    mask = ~array_.mask if masked else array_ != image.nodata
+    assert not np.all(mask)
+    assert np.all((array_ == range(1, image.count + 1)) == mask)
