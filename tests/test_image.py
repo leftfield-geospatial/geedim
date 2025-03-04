@@ -380,15 +380,14 @@ def test_region_coverage(prepared_image: ImageAccessor):
             assert v == pytest.approx(exp_coverage, abs=0.01)
 
 
-def test_add_mask_bands(s2_sr_hm_image: ImageAccessor):
+def test_add_mask_bands(l9_sr_image: ImageAccessor):
     """Test addMaskBands()"""
     # This just tests bands exist and kwargs were passed. Detailed mask testing is done in
     # test_mask.py.
-    # TODO: seeing as cloud-prob is deprecated, can we do this with landsat?
-    cs_image = s2_sr_hm_image.addMaskBands(mask_method='cloud-prob', mask_shadows=False)
+    cs_image = l9_sr_image.addMaskBands(mask_shadows=False)
     cs_image = ImageAccessor(cs_image)
     for bn in ['CLOUDLESS_MASK', 'CLOUD_DIST', 'FILL_MASK']:
-        assert bn in cs_image.bandNames, bn
+        assert bn in cs_image.bandNames
     assert 'SHADOW_MASK' not in cs_image.bandNames
 
 
