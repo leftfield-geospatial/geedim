@@ -66,8 +66,8 @@ _nodata_vals = dict(
 """Nodata values for supported download / export dtypes."""
 # Note:
 # - There are a some problems with *int64: While gdal >= 3.5 supports it, rasterio casts the
-# nodata value to float64 which cannot represent the int64 range.  Also, EE provides int64
-# ee.Image's (via ee.Image.getDownloadUrl() or ee.data.computePixels()) as float64 with nodata
+# nodata value to float64 which cannot represent the int64 range.  Also, EE provides an int64
+# ee.Image (via ee.Image.getDownloadUrl() or ee.data.computePixels()) as float64 with nodata
 # advertised as -inf but actually zero.  So no geedim *int64 support for now...
 # - See also https://issuetracker.google.com/issues/350528377, although EE provides uint32 images
 # correctly now.
@@ -286,7 +286,7 @@ class ImageAccessor:
             return None
         return dict(
             crs=utils.rio_crs(self.crs),
-            transform=rio.Affine(*self.transform),
+            transform=self.transform,
             width=self.shape[1],
             height=self.shape[0],
             count=self.count,
