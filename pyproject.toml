@@ -31,7 +31,7 @@ geedim = 'geedim.cli:cli'
 xarray = ['xarray']
 
 [dependency-groups]
-tests = ['pytest', 'pytest-xdist']
+tests = ['pytest', 'pytest-xdist', 'xarray']
 docs = ['sphinx', 'sphinx-click', 'sphinx-rtd-theme', 'nbsphinx', 'ipykernel', 'jupyter-sphinx']
 
 [project.urls]
