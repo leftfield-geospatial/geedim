@@ -97,6 +97,9 @@ class _CloudlessImage(_MaskedImage):
     ) -> ee.Image:
         # TODO: is this maxPixels value ok? it results in bestEffort using lower scales for the
         #  test region_10000ha
+        # TODO: for landsat, fill portions are often just off 0 or 100%.
+        #  E.g. geedim search -c LANDSAT/LC08/C02/T1_L2 --cloudless-portion --bbox 23 -34.1 23.1 -34 -s 2024-01-01 -e 2025-01-01
+        #  Is this legit?
         portions = ImageAccessor(ee_image.select(['FILL_MASK', 'CLOUDLESS_MASK'])).regionCoverage(
             region=region, scale=scale, maxPixels=1e6, bestEffort=True
         )
@@ -138,13 +141,17 @@ class _LandsatImage(_CloudlessImage):
         cloud_dist = ee_image.select('ST_CDIST').multiply(10).rename('CLOUD_DIST')
         cloud_dist = cloud_dist.clamp(0, max_cloud_dist).toUint16()
 
-        return dict(
+        aux_bands = dict(
             fill=fill_mask,
             cloud=cloud_mask,
             shadow=shadow_mask,
             cloudless=cloudless_mask,
             dist=cloud_dist,
         )
+        if not mask_shadows:
+            aux_bands.pop('shadow', None)
+
+        return aux_bands
 
 
 class _Sentinel2Image(_CloudlessImage):
