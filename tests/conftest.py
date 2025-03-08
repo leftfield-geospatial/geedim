@@ -1,27 +1,29 @@
 """
-    Copyright 2021 Dugal Harris - dugalh@gmail.com
+Copyright 2021 Dugal Harris - dugalh@gmail.com
 
-    Licensed under the Apache License, Version 2.0 (the "License");
-    you may not use this file except in compliance with the License.
-    You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-       http://www.apache.org/licenses/LICENSE-2.0
+   http://www.apache.org/licenses/LICENSE-2.0
 
-    Unless required by applicable law or agreed to in writing, software
-    distributed under the License is distributed on an "AS IS" BASIS,
-    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-    See the License for the specific language governing permissions and
-    limitations under the License.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
+from __future__ import annotations
+
 import pathlib
-from typing import Dict, List
 
 import ee
 import pytest
 from click.testing import CliRunner
 
 from geedim import Initialize, MaskedImage
+from geedim.image import ImageAccessor
 from geedim.utils import root_path
 
 
@@ -32,7 +34,7 @@ def ee_init():
 
 
 @pytest.fixture(scope='session')
-def region_25ha() -> Dict:
+def region_25ha() -> dict:
     """A geojson polygon defining a 500x500m region."""
     return {
         "type": "Polygon",
@@ -49,7 +51,7 @@ def region_25ha() -> Dict:
 
 
 @pytest.fixture(scope='session')
-def region_100ha() -> Dict:
+def region_100ha() -> dict:
     """A geojson polygon defining a 1x1km region."""
     return {
         "type": "Polygon",
@@ -66,7 +68,7 @@ def region_100ha() -> Dict:
 
 
 @pytest.fixture(scope='session')
-def region_10000ha() -> Dict:
+def region_10000ha() -> dict:
     """A geojson polygon defining a 10x10km region."""
     return {
         "type": "Polygon",
@@ -118,7 +120,7 @@ def l9_image_id() -> str:
 
 
 @pytest.fixture(scope='session')
-def landsat_image_ids(l4_image_id, l5_image_id, l7_image_id, l8_image_id, l9_image_id) -> List[str]:
+def landsat_image_ids(l4_image_id, l5_image_id, l7_image_id, l8_image_id, l9_image_id) -> list[str]:
     """Landsat4-9 EE IDs for images covering `region_*ha` with partial cloud/shadow."""
     return [l4_image_id, l5_image_id, l7_image_id, l8_image_id, l9_image_id]
 
@@ -198,7 +200,7 @@ def google_dyn_world_image_id(s2_sr_hm_image_id) -> str:
 
 
 @pytest.fixture()
-def s2_sr_hm_image_ids(s2_sr_image_id: str, s2_toa_image_id: str) -> List[str]:
+def s2_sr_hm_image_ids(s2_sr_image_id: str, s2_toa_image_id: str) -> list[str]:
     """A list of harmonised Sentinel-2 SR image IDs, covering `region_*ha` with partial cloud/shadow.."""
     return [
         'COPERNICUS/S2_SR_HARMONIZED/' + s2_sr_image_id.split('/')[-1],
@@ -215,7 +217,7 @@ def generic_image_ids(
     gedi_agb_image_id,
     gedi_cth_image_id,
     landsat_ndvi_image_id,
-) -> List[str]:
+) -> list[str]:
     """A list of various EE image IDs for non-cloud/shadow masked images."""
     return [
         modis_nbar_image_id,
@@ -225,6 +227,52 @@ def generic_image_ids(
         gedi_cth_image_id,
         landsat_ndvi_image_id,
     ]
+
+
+@pytest.fixture(scope='session')
+def l9_sr_image(l9_image_id: str) -> ImageAccessor:
+    """Landsat-9 SR image with partial cloud/shadow in region_*ha."""
+    return ImageAccessor(ee.Image(l9_image_id))
+
+
+@pytest.fixture(scope='session')
+def s2_sr_hm_image(s2_sr_hm_image_id: str) -> ImageAccessor:
+    """Harmonised Sentinel-2 SR image with partial cloud/shadow in region_*ha."""
+    return ImageAccessor(ee.Image(s2_sr_hm_image_id))
+
+
+@pytest.fixture(scope='session')
+def modis_nbar_image(modis_nbar_image_id: str) -> ImageAccessor:
+    """MODIS NBAR image."""
+    return ImageAccessor(ee.Image(modis_nbar_image_id))
+
+
+@pytest.fixture(scope='session')
+def landsat_ndvi_image(landsat_ndvi_image_id: str) -> ImageAccessor:
+    """Landsat 8-day NDVI composite image."""
+    return ImageAccessor(ee.Image(landsat_ndvi_image_id))
+
+
+@pytest.fixture(scope='session')
+def const_image() -> ImageAccessor:
+    """Constant image."""
+    return ImageAccessor(ee.Image([1, 2, 3]))
+
+
+@pytest.fixture(scope='session')
+def prepared_image(const_image) -> ImageAccessor:
+    """Synthetic image prepared for exporting."""
+    crs = 'EPSG:3857'
+    image_bounds = ee.Geometry.Rectangle((-1.0, -1.0, 1.0, 1.0), proj=crs)
+    mask_bounds = ee.Geometry.Rectangle((-0.5, -0.5, 0.5, 0.5), proj=crs)
+
+    image = const_image._ee_image.toUint8()
+    image = image.setDefaultProjection(crs, scale=0.1).clip(image_bounds)
+    # mask outside of mask_bounds
+    image = image.updateMask(image.clip(mask_bounds).mask())
+    # set an ID with a known collection so that stac property is populated
+    image = image.set('system:id', 'COPERNICUS/S2_SR_HARMONIZED/prepared_image')
+    return ImageAccessor(image)
 
 
 @pytest.fixture(scope='session')

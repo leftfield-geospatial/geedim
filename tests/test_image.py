@@ -33,51 +33,7 @@ from geedim import utils
 from geedim.enums import ExportType
 from geedim.image import ImageAccessor, _nodata_vals, _open_raster
 
-
-@pytest.fixture(scope='session')
-def l9_sr_image(l9_image_id: str) -> ImageAccessor:
-    """Landsat-9 SR image with partial cloud/shadow in region_*ha."""
-    return ImageAccessor(ee.Image(l9_image_id))
-
-
-@pytest.fixture(scope='session')
-def s2_sr_hm_image(s2_sr_hm_image_id: str) -> ImageAccessor:
-    """Harmonised Sentinel-2 SR image with partial cloud/shadow in region_*ha."""
-    return ImageAccessor(ee.Image(s2_sr_hm_image_id))
-
-
-@pytest.fixture(scope='session')
-def modis_nbar_image(modis_nbar_image_id: str) -> ImageAccessor:
-    """MODIS NBAR image."""
-    return ImageAccessor(ee.Image(modis_nbar_image_id))
-
-
-@pytest.fixture(scope='session')
-def landsat_ndvi_image(landsat_ndvi_image_id: str) -> ImageAccessor:
-    """Landsat 8-day NDVI composite image."""
-    return ImageAccessor(ee.Image(landsat_ndvi_image_id))
-
-
-@pytest.fixture(scope='session')
-def const_image() -> ImageAccessor:
-    """Constant image."""
-    return ImageAccessor(ee.Image([1, 2, 3]))
-
-
-@pytest.fixture(scope='session')
-def prepared_image(const_image) -> ImageAccessor:
-    """Synthetic image prepared for exporting."""
-    crs = 'EPSG:3857'
-    image_bounds = ee.Geometry.Rectangle((-1.0, -1.0, 1.0, 1.0), proj=crs)
-    mask_bounds = ee.Geometry.Rectangle((-0.5, -0.5, 0.5, 0.5), proj=crs)
-
-    image = const_image._ee_image.toUint8()
-    image = image.setDefaultProjection(crs, scale=0.1).clip(image_bounds)
-    # mask outside of mask_bounds
-    image = image.updateMask(image.clip(mask_bounds).mask())
-    # set an ID with a known collection so that stac property is populated
-    image = image.set('system:id', 'COPERNICUS/S2_SR_HARMONIZED/prepared_image')
-    return ImageAccessor(image)
+# TODO: probably move these fixtures to conftest to replace *_masked_image
 
 
 def accessors_from_images(ee_images: list[ee.Image]) -> list[ImageAccessor]:
