@@ -113,8 +113,6 @@ class Tile:
 # TODO: standardise on public / non-public naming.  in mask.py, there are _Class named classes,
 #  here I have assumed tile.py will not be included in the documentation.
 class Tiler:
-    # TODO: if there's little speed cost, default max_tile_size to << 32 to avoid memory limit (
-    #  could actually speed up downloads with few tiles by increasing concurrency)
     _ee_max_tile_size = 32
     _default_max_tile_size = 4
     _ee_max_tile_dim = 10000
@@ -167,7 +165,7 @@ class Tiler:
             requests quota <https://developers.google.com/earth-engine/guides/usage
             #adjustable_quota_limits>`__.
         :param max_cpus:
-            Maximum number of tiles to decompress concurrently.  Defaults to two less than the
+            Maximum number of tiles to decompress concurrently.  Defaults to one less than the
             number of CPUs, or one, whichever is greater.  Values larger than the default can
             stall the asynchronous event loop and are not recommended.
         """
@@ -179,15 +177,15 @@ class Tiler:
             max_tile_size=max_tile_size, max_tile_dim=max_tile_dim, max_tile_bands=max_tile_bands
         )
 
-        # default max_cpus to two less than the number of CPUs (leaves capacity for one cpu to
-        # run the map_tiles() function, and another to run the event loop)
-        max_cpus = max_cpus or max((os.cpu_count() or 0) - 2, 1)
+        # default max_cpus to one less than the number of CPUs (leaves capacity for one cpu to
+        # run the map_tiles() function)
+        max_cpus = max_cpus or max((os.cpu_count() or 0) - 1, 1)
         self._limit_requests = asyncio.Semaphore(max_requests)
         self._limit_cpus = asyncio.Semaphore(max_cpus)
 
-        # create thread pool with capacity for all synchronous tasks (+2 is for the map_tiles()
-        # map function, and async event loop)
-        self._executor = ThreadPoolExecutor(max_workers=max_requests + max_cpus + 2)
+        # create thread pool with capacity for all synchronous tasks (+1 is for the map_tiles()
+        # map function)
+        self._executor = ThreadPoolExecutor(max_workers=max_requests + max_cpus + 1)
         # use one thread per tile for reading GeoTIFF buffers so that CPU loading can be
         # controlled with max_cpus
         self._env = rio.Env(GDAL_NUM_THREAHDS=1)
@@ -229,7 +227,7 @@ class Tiler:
                 f"'max_tile_size' must be less than or equal to the Earth Engine limit of "
                 f"{Tiler._ee_max_tile_size} MB."
             )
-        max_tile_size = int(max_tile_size) << 20  # convert MB to bytes
+        max_tile_size = max_tile_size * 2**20  # convert MB to bytes
         if max_tile_dim > Tiler._ee_max_tile_dim:
             raise ValueError(
                 f"'max_tile_dim' must be less than or equal to the Earth Engine limit of "
@@ -375,7 +373,6 @@ class Tiler:
             :class:`~numpy.ndarray` (``False``).  If  ``False``, masked pixels are set to the image
             :attr:`nodata` value.
         """
-        # with logging_redirect_tqdm([logging.getLogger(__package__)], tqdm_class=tqdm):
         # set up progress bar kwargs
         desc = self._im.index or self._im.id
         tqdm_kwargs = utils.get_tqdm_kwargs(desc=desc, unit='tiles')
