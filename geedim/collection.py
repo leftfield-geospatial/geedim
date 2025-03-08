@@ -150,6 +150,8 @@ class ImageCollectionAccessor:
         ee_coll = ee.ImageCollection(images)
 
         # check the images are from compatible collections
+        # TODO: get all the info and set the collection property so it doesn't have to call
+        #  getInfo() again.
         info = ee_coll.select(None).getInfo()
         ids = [split_id(im_props.get('id', None))[0] for im_props in info.get('features', [])]
         if not _compatible_collections(ids):
@@ -906,7 +908,7 @@ class ImageCollectionAccessor:
             requests quota <https://developers.google.com/earth-engine/guides/usage
             #adjustable_quota_limits>`__.
         :param max_cpus:
-            Maximum number of tiles to decompress concurrently.  Defaults to two less than the
+            Maximum number of tiles to decompress concurrently.  Defaults to one less than the
             number of CPUs, or one, whichever is greater.  Values larger than the default can
             stall the asynchronous event loop and are not recommended.
         """
@@ -994,7 +996,7 @@ class ImageCollectionAccessor:
             requests quota <https://developers.google.com/earth-engine/guides/usage
             #adjustable_quota_limits>`__.
         :param max_cpus:
-            Maximum number of tiles to decompress concurrently.  Defaults to two less than the
+            Maximum number of tiles to decompress concurrently.  Defaults to one less than the
             number of CPUs, or one, whichever is greater.  Values larger than the default can
             stall the asynchronous event loop and are not recommended.
 
@@ -1113,7 +1115,7 @@ class ImageCollectionAccessor:
             requests quota <https://developers.google.com/earth-engine/guides/usage
             #adjustable_quota_limits>`__.
         :param max_cpus:
-            Maximum number of tiles to decompress concurrently.  Defaults to two less than the
+            Maximum number of tiles to decompress concurrently.  Defaults to one less than the
             number of CPUs, or one, whichever is greater.  Values larger than the default can
             stall the asynchronous event loop and are not recommended.
 

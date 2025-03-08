@@ -274,6 +274,7 @@ class ImageAccessor:
     @property
     def size(self) -> int | None:
         """Image export size (bytes).  ``None`` if the image has no fixed projection."""
+        # TODO: make this MB to match max_tile_size
         if not self.shape:
             return None
         dtype_size = np.dtype(self.dtype).itemsize
@@ -936,7 +937,7 @@ class ImageAccessor:
             requests quota <https://developers.google.com/earth-engine/guides/usage
             #adjustable_quota_limits>`__.
         :param max_cpus:
-            Maximum number of tiles to decompress concurrently.  Defaults to two less than the
+            Maximum number of tiles to decompress concurrently.  Defaults to one less than the
             number of CPUs, or one, whichever is greater.  Values larger than the default can
             stall the asynchronous event loop and are not recommended.
         """
@@ -1042,7 +1043,7 @@ class ImageAccessor:
             requests quota <https://developers.google.com/earth-engine/guides/usage
             #adjustable_quota_limits>`__.
         :param max_cpus:
-            Maximum number of tiles to decompress concurrently.  Defaults to two less than the
+            Maximum number of tiles to decompress concurrently.  Defaults to one less than the
             number of CPUs, or one, whichever is greater.  Values larger than the default can
             stall the asynchronous event loop and are not recommended.
 
@@ -1127,7 +1128,7 @@ class ImageAccessor:
             requests quota <https://developers.google.com/earth-engine/guides/usage
             #adjustable_quota_limits>`__.
         :param max_cpus:
-            Maximum number of tiles to decompress concurrently.  Defaults to two less than the
+            Maximum number of tiles to decompress concurrently.  Defaults to one less than the
             number of CPUs, or one, whichever is greater.  Values larger than the default can
             stall the asynchronous event loop and are not recommended.
 

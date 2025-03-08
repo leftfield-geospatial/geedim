@@ -187,7 +187,7 @@ class BaseImage(ImageAccessor):
             requests quota <https://developers.google.com/earth-engine/guides/usage
             #adjustable_quota_limits>`__.
         :param max_cpus:
-            Maximum number of tile GeoTIFFs to read concurrently.  Defaults to two less than the
+            Maximum number of tiles to decompress concurrently.  Defaults to one less than the
             number of CPUs, or one, whichever is greater.  Values larger than the default can
             stall the asynchronous event loop and are not recommended.
         :param export_kwargs:
