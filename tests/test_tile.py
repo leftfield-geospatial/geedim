@@ -16,14 +16,12 @@ limitations under the License.
 
 from __future__ import annotations
 
-import asyncio
 import itertools
+import logging
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-import aiohttp
-import ee
 import numpy as np
 import pytest
 import rasterio as rio
@@ -33,34 +31,21 @@ from rasterio.windows import Window
 
 from geedim.image import ImageAccessor
 from geedim.tile import Tile, Tiler
+from geedim.utils import AsyncRunner
 
 
 @dataclass
 class MockImageAccessor:
-    """Mock of ImageAccessor that provides the attributes & properties used by Tiler."""
+    """Mock of ImageAccessor that provides image properties used by Tiler.__init__() and
+    Tiler._tiles().
+    """
 
-    _ee_image: ee.Image = None
-    id: str | None = None
-    index: str | None = None
     crs: str = 'EPSG:3857'
     transform: tuple[float, ...] = (1, 0, 0, 0, -1, 0)
     shape: tuple[int, int] = (1, 1)
     count: int = 1
     dtype: str = 'uint8'
-
-    def __post_init__(self):
-        if not self._ee_image and self.crs and self.transform and self.shape:
-            self._ee_image = (
-                ee.Image([*range(1, self.count + 1)])
-                .setDefaultProjection(crs=self.crs, crsTransform=self.transform)
-                .clipToBoundsAndScale(width=self.shape[1], height=self.shape[0])
-            )
-
-        self.size = (
-            self.count * np.prod(self.shape) * np.dtype(self.dtype).itemsize
-            if self.shape and self.count and self.dtype
-            else None
-        )
+    size: int = 1
 
 
 def test_tile():
@@ -81,7 +66,7 @@ def test_tile():
 
 def test_tiler_init():
     """Test Tiler.__init__() parameters have the expected effects."""
-    image = MockImageAccessor(shape=(1000, 1000), count=10, dtype='float64')
+    image = MockImageAccessor(shape=(1000, 1000), count=10, dtype='uint16')
 
     # max_tile_size
     max_tile_size = 1
@@ -109,16 +94,19 @@ def test_tiler_init():
 
 
 def test_tiler_init_error():
-    """Test Tiler.__init__() raises an error when passed a non-fixed projection image."""
-    image = MockImageAccessor()
-    image.shape = None
-    with pytest.raises(ValueError) as ex:
-        _ = Tiler(image)
-    assert 'fixed' in str(ex.value)
+    """Test Tiler.__init__() raises an error when the image has a non-fixed projection."""
+    with pytest.raises(ValueError, match='fixed') as ex:
+        _ = Tiler(MockImageAccessor(shape=None))
+
+
+def test_tiler_init_warning():
+    """Test Tiler.__init__() issues a warning when the image is large."""
+    with pytest.warns(RuntimeWarning, match='export size'):
+        _ = Tiler(MockImageAccessor(size=11e9))
 
 
 def test_tiler_context():
-    """Test Tiler context manager."""
+    """Test Tiler context manager shuts down the executor on exit."""
     with Tiler(MockImageAccessor()) as tiler:
         assert tiler._executor._shutdown is False
     assert tiler._executor._shutdown is True
@@ -200,13 +188,20 @@ def test_tiler_tiles():
     assert (accum_tile.band_stop, accum_tile.row_stop, accum_tile.col_stop) == im_shape
 
 
+def test_tiler_tiles_debug_log(caplog: pytest.LogCaptureFixture):
+    """Test Tiler._tiles() logging in debug mode."""
+    tiler = Tiler(MockImageAccessor())
+    with caplog.at_level(logging.DEBUG):
+        [*tiler._tiles()]
+    assert 'image shape' in caplog.text.lower()
+
+
 def test_tile_map_tile_retries(prepared_image: ImageAccessor, monkeypatch: pytest.MonkeyPatch):
     """Test Tiler._map_tile() retry behaviour."""
-    # TODO: rather mock prepared_image - using ImageAccessor should be avoided for encapsulation
 
     class MockDatasetReader(rio.DatasetReader):
         """Mocked Rasterio DatasetReader that raises exceptions on the first max_exceptions
-        reads, then reads as normal (simulates corrupted tiles).
+        reads, then reads as normal.
         """
 
         exceptions = 0
@@ -218,38 +213,46 @@ def test_tile_map_tile_retries(prepared_image: ImageAccessor, monkeypatch: pytes
             else:
                 return super().read(*args, **kwargs)
 
-    # patch DatasetReader with MockDatasetReader
     monkeypatch.setattr(rasterio.io, 'DatasetReader', MockDatasetReader)
 
-    async def test_map_tile(max_retries: int):
-        """Call _map_tile() for a single tile."""
+    def tile_func(tile: Tile, tile_array: np.ndarray):
+        """Write tile to array."""
+        array[tile.slices.band, tile.slices.row, tile.slices.col] = tile_array
 
-        def tile_func(tile: Tile, tile_array: np.ndarray):
-            """Write tile to array."""
-            array[tile.slices.band, tile.slices.row, tile.slices.col] = tile_array
-
-        async with aiohttp.ClientSession() as session:
-            await tiler._map_tile(
-                tile_func, tile, False, session=session, max_retries=max_retries, backoff_factor=0
-            )
-
-    max_exceptions = 1
-    array = np.ones((prepared_image.count, *prepared_image.shape), dtype=prepared_image.dtype)
     with Tiler(prepared_image) as tiler:
+        # test a tile is downloaded correctly after max_exceptions retries
+        max_exceptions = 1
+        array = np.ones((prepared_image.count, *prepared_image.shape), dtype=prepared_image.dtype)
         tile = next(tiler._tiles())
-
-        # test the tile is downloaded correctly after max_exceptions retries
-        asyncio.run(test_map_tile(max_retries=max_exceptions))
+        AsyncRunner().run(
+            tiler._map_tile(
+                tile_func,
+                tile,
+                False,
+                AsyncRunner().session,
+                max_retries=max_exceptions,
+                backoff_factor=0,
+            )
+        )
         assert MockDatasetReader.exceptions == max_exceptions
         mask = array != prepared_image.nodata
         assert not np.all(mask)
         assert np.all((array.T == range(1, prepared_image.count + 1)) == mask.T)
 
-        # test an error is raised when the tile is not downloaded correctly within max_retries
+        # test an error is raised when a tile is not downloaded correctly within max_retries
         # retries
         MockDatasetReader.exceptions = 0
         with pytest.raises(RasterioIOError) as ex:
-            asyncio.run(test_map_tile(max_retries=max_exceptions - 1))
+            AsyncRunner().run(
+                tiler._map_tile(
+                    tile_func,
+                    tile,
+                    False,
+                    AsyncRunner().session,
+                    max_retries=max_exceptions - 1,
+                    backoff_factor=0,
+                )
+            )
         assert 'Mock error' in str(ex.value)
 
 
