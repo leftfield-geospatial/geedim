@@ -255,13 +255,13 @@ def landsat_ndvi_image(landsat_ndvi_image_id: str) -> ImageAccessor:
 
 @pytest.fixture(scope='session')
 def const_image() -> ImageAccessor:
-    """Constant image."""
+    """Constant image with no fixed projection."""
     return ImageAccessor(ee.Image([1, 2, 3]))
 
 
 @pytest.fixture(scope='session')
 def prepared_image(const_image) -> ImageAccessor:
-    """Synthetic image prepared for exporting."""
+    """Constant image with a masked border, prepared for exporting."""
     crs = 'EPSG:3857'
     image_bounds = ee.Geometry.Rectangle((-1.0, -1.0, 1.0, 1.0), proj=crs)
     mask_bounds = ee.Geometry.Rectangle((-0.5, -0.5, 0.5, 0.5), proj=crs)
@@ -270,8 +270,9 @@ def prepared_image(const_image) -> ImageAccessor:
     image = image.setDefaultProjection(crs, scale=0.1).clip(image_bounds)
     # mask outside of mask_bounds
     image = image.updateMask(image.clip(mask_bounds).mask())
-    # set an ID with a known collection so that stac property is populated
+    # set ID and band names to those of a known collection so that STAC properties are populated
     image = image.set('system:id', 'COPERNICUS/S2_SR_HARMONIZED/prepared_image')
+    image = image.rename(['B2', 'B3', 'B4'])
     return ImageAccessor(image)
 
 
