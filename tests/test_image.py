@@ -67,13 +67,19 @@ def transform_bounds(geometry: dict, crs: str = 'EPSG:4326') -> tuple[float, ...
     return bounds(geometry)
 
 
-def test_properties(l9_sr_image: ImageAccessor, modis_nbar_image: ImageAccessor):
+def test_properties(
+    s2_sr_hm_image: ImageAccessor, l9_sr_image: ImageAccessor, modis_nbar_image: ImageAccessor
+):
     """Test properties excluding dtype, stac, stac-related properties & cloudShadowSupport."""
-    images = [l9_sr_image, modis_nbar_image]
+    images = [s2_sr_hm_image, l9_sr_image, modis_nbar_image]
     # combine getInfo() calls into one
-    infos = ee.List([ee.Image(l9_sr_image.id), ee.Image(modis_nbar_image.id)]).getInfo()
+    infos = ee.List(
+        [ee.Image(s2_sr_hm_image.id), ee.Image(l9_sr_image.id), ee.Image(modis_nbar_image.id)]
+    ).getInfo()
+    # min scale band indexes
+    indexes = [1, 0, 0]
 
-    for image, info in zip(images, infos):
+    for image, info, index in zip(images, infos, indexes):
         props = info['properties']
         bands = info['bands']
 
@@ -84,9 +90,9 @@ def test_properties(l9_sr_image: ImageAccessor, modis_nbar_image: ImageAccessor)
         )
         assert image.properties == props
 
-        assert image.crs == bands[0]['crs']
-        assert image.transform == tuple(bands[0]['crs_transform'])
-        assert image.shape == tuple(bands[0]['dimensions'][::-1])
+        assert image.crs == bands[index]['crs']
+        assert image.transform == tuple(bands[index]['crs_transform'])
+        assert image.shape == tuple(bands[index]['dimensions'][::-1])
         assert image.count == len(bands)
         assert image.nodata == _nodata_vals[image.dtype]
         assert image.size == np.dtype(image.dtype).itemsize * np.prod(image.shape) * image.count
@@ -201,8 +207,9 @@ def test_projection(s2_sr_hm_image: ImageAccessor):
         [s2_sr_hm_image.projection(min_scale=True), s2_sr_hm_image.projection(min_scale=False)]
     )
     projs = projs.getInfo()
-    assert projs[0]['crs'] == s2_sr_hm_image.crs
-    assert tuple(projs[0]['transform']) == s2_sr_hm_image.transform
+    min_scale_band = s2_sr_hm_image.info['bands'][1]
+    assert projs[0]['crs'] == min_scale_band['crs']
+    assert projs[0]['transform'] == min_scale_band['crs_transform']
     assert projs[1]['crs'] == 'EPSG:4326'
     assert projs[1]['transform'] == [1, 0, 0, 0, 1, 0]
 
@@ -233,7 +240,7 @@ def test_resample(
     up_kwargs = dict(crs=l9_sr_image.crs, scale=15)
     down_kwargs = dict(crs=l9_sr_image.crs, scale=60)
     std_tests = []
-    std_infos = []
+    fixeds = []
     for src_im, method, reproj_kwargs in zip(
         [l9_sr_image, l9_sr_image, l9_sr_image, landsat_ndvi_image],
         ['bilinear', 'bicubic', 'average', 'average'],
@@ -242,13 +249,13 @@ def test_resample(
         resample_im = src_im.resample(method)
         stds = [get_reproj_std(im, **reproj_kwargs) for im in [src_im._ee_image, resample_im]]
         std_tests.append(ee.List(stds))
-        std_infos.append(dict(image=src_im.id, method=method, fixed=src_im.shape is not None))
+        fixeds.append(src_im.shape is not None)
 
     std_tests = ee.List(std_tests).getInfo()
 
     # test standard deviations are reduced by resampling when the image has a fixed projection
-    for std_test, std_info in zip(std_tests, std_infos):
-        if std_info['fixed']:
+    for std_test, fixed in zip(std_tests, fixeds):
+        if fixed:
             assert std_test[0] > std_test[1]
         else:
             assert std_test[0] == std_test[1]
@@ -268,6 +275,12 @@ def test_to_dtype(landsat_ndvi_image):
         assert converted_image.dtype == dtype, dtype
 
 
+def test_to_dtype_error(landsat_ndvi_image):
+    """Test toDType() raises an error with an unsupported dtype."""
+    with pytest.raises(ValueError, match='Unsupported dtype'):
+        landsat_ndvi_image.toDType('int64')
+
+
 def test_scale_offset(
     s2_sr_hm_image: ImageAccessor,
     l9_sr_image: ImageAccessor,
@@ -279,7 +292,7 @@ def test_scale_offset(
     src_ims = [s2_sr_hm_image, l9_sr_image, modis_nbar_image]
     scale_offset_ims = [im.scaleOffset() for im in src_ims]
     min_max_tests = []
-    min_max_infos = []
+    refl_bands_list = []
     for src_im, scale_offset_im in zip(src_ims, scale_offset_ims):
         # spectral bands without units (i.e. reflectance and not temperature)
         refl_bands = [
@@ -291,7 +304,7 @@ def test_scale_offset(
             reducer=ee.Reducer.minMax(), geometry=region_100ha, bestEffort=True
         )
         min_max_tests.append(min_max)
-        min_max_infos.append(dict(image=src_im.id, refl_bands=refl_bands))
+        refl_bands_list.append(refl_bands)
 
     # combine getInfo() of min / max values & scaled / offset images into one
     results = ee.Dictionary(
@@ -299,9 +312,9 @@ def test_scale_offset(
     ).getInfo()
 
     # test min / max values are ~0-1 reflectance
-    for min_max_test, min_max_info in zip(results['min_max'], min_max_infos):
-        assert len(min_max_test) == len(2 * min_max_info['refl_bands'])
-        for bn in min_max_info['refl_bands']:
+    for min_max_test, refl_bands in zip(results['min_max'], refl_bands_list):
+        assert len(min_max_test) == len(2 * refl_bands)
+        for bn in refl_bands:
             bmin, bmax = min_max_test[bn + '_min'], min_max_test[bn + '_max']
             assert bmin >= -0.5
             assert bmax <= 1.5
@@ -367,7 +380,8 @@ def test_prepare_for_export(s2_sr_hm_image: ImageAccessor, region_100ha: dict):
         dict(region=region_100ha),
         dict(crs=crs, region=region_100ha, scale=60, dtype='int16', bands=['B4', 'B3', 'B2']),
         # maintain pixel grid
-        dict(region=region_100ha, scale=10),
+        dict(crs=s2_sr_hm_image.crs, region=region_100ha),
+        dict(region=region_100ha, scale=s2_sr_hm_image.scale),
         dict(region=region_100ha),
         dict(),
     ]
@@ -375,18 +389,16 @@ def test_prepare_for_export(s2_sr_hm_image: ImageAccessor, region_100ha: dict):
     prep_ims = accessors_from_images(prep_ims)
 
     # test prepared image properties
-    arg_to_attr_names = dict(
-        crs='crs',
-        crs_transform='transform',
-        shape='shape',
-        scale='scale',
-        dtype='dtype',
-        bands='bandNames',
-    )
     for prep_im, prep_kwargs in zip(prep_ims, prep_kwargs_list):
-        for arg_name, attr_name in arg_to_attr_names.items():
-            if attr_name in prep_kwargs:
-                assert getattr(prep_im, attr_name) == prep_kwargs[arg_name]
+        assert prep_im.crs == prep_kwargs.get('crs', s2_sr_hm_image.crs)
+        assert prep_im.dtype == prep_kwargs.get('dtype', s2_sr_hm_image.dtype)
+        assert prep_im.bandNames == prep_kwargs.get('bands', s2_sr_hm_image.bandNames)
+        if 'shape' in prep_kwargs:
+            assert prep_im.shape == prep_kwargs['shape']
+        if 'scale' in prep_kwargs:
+            assert prep_im.scale == prep_kwargs['scale']
+        if 'crs_transform' in prep_kwargs:
+            assert prep_im.transform == prep_kwargs['crs_transform']
 
         # region is a special case that is approximate & needs transformation between CRSs
         if 'region' in prep_kwargs:
@@ -396,7 +408,7 @@ def test_prepare_for_export(s2_sr_hm_image: ImageAccessor, region_100ha: dict):
 
     # test pixel grid is maintained when arguments allow
     src_transform = rio.Affine(*s2_sr_hm_image.transform)
-    for prep_im in prep_ims[-3:]:
+    for prep_im in prep_ims[-4:]:
         prep_transform = rio.Affine(*prep_im.transform)
         assert (prep_transform[0], prep_transform[4]) == (src_transform[0], src_transform[4])
         pixel_offset = ~src_transform * (prep_transform[2], prep_transform[5])
@@ -407,9 +419,11 @@ def test_prepare_for_export_errors(
     s2_sr_hm_image: ImageAccessor, landsat_ndvi_image: ImageAccessor
 ):
     """Test prepareForExport() error conditions."""
-    # composite image without spatial params
+    # composite image without sufficient patial params
     with pytest.raises(ValueError, match='fixed projection'):
         landsat_ndvi_image.prepareForExport()
+    with pytest.raises(ValueError, match='fixed projection'):
+        landsat_ndvi_image.prepareForExport(crs='EPSG:3857', scale=500)
 
     # scale and shape together
     with pytest.raises(ValueError, match="'scale' or 'shape'"):
