@@ -33,8 +33,6 @@ from geedim import utils
 from geedim.enums import ExportType
 from geedim.image import ImageAccessor, _nodata_vals, _open_raster
 
-# TODO: probably move these fixtures to conftest to replace *_masked_image
-
 
 def accessors_from_images(ee_images: list[ee.Image]) -> list[ImageAccessor]:
     """Return a list of ImageAccessor objects, with cached info properties, for the given list of
@@ -69,8 +67,8 @@ def transform_bounds(geometry: dict, crs: str = 'EPSG:4326') -> tuple[float, ...
     return bounds(geometry)
 
 
-def test_ee_props(l9_sr_image: ImageAccessor, modis_nbar_image: ImageAccessor):
-    """Test all properties excluding dtype, stac, stac-related properties & cloudShadowSupport."""
+def test_properties(l9_sr_image: ImageAccessor, modis_nbar_image: ImageAccessor):
+    """Test properties excluding dtype, stac, stac-related properties & cloudShadowSupport."""
     images = [l9_sr_image, modis_nbar_image]
     # combine getInfo() calls into one
     infos = ee.List([ee.Image(l9_sr_image.id), ee.Image(modis_nbar_image.id)]).getInfo()
@@ -217,7 +215,7 @@ def test_fixed(
     # one non-fixed band, and const_image has all non-fixed bands
     fixeds = ee.List([s2_sr_hm_image.fixed(), landsat_ndvi_image.fixed(), const_image.fixed()])
     fixeds = fixeds.getInfo()
-    assert fixeds == [True, False]
+    assert fixeds == [True, False, False]
 
 
 def test_resample(
@@ -410,14 +408,12 @@ def test_prepare_for_export_errors(
 ):
     """Test prepareForExport() error conditions."""
     # composite image without spatial params
-    with pytest.raises(ValueError) as ex:
+    with pytest.raises(ValueError, match='fixed projection'):
         landsat_ndvi_image.prepareForExport()
-    assert 'fixed projection' in str(ex.value)
 
     # scale and shape together
-    with pytest.raises(ValueError) as ex:
+    with pytest.raises(ValueError, match="'scale' or 'shape'"):
         s2_sr_hm_image.prepareForExport(scale=10, shape=(400, 300))
-    assert 'shape' in str(ex.value) and 'scale' in str(ex.value)
 
 
 @pytest.mark.parametrize('type', ExportType)
@@ -481,6 +477,16 @@ def test_to_geotiff(prepared_image: ImageAccessor, tmp_path: Path, kwargs: dict)
         mask = array != _nodata_vals[image.dtype]
         assert not np.all(mask)
         assert np.all((array.T == range(1, image.count + 1)) == mask.T)
+
+        # metadata
+        metadata = ds.tags()
+        props = {k.replace(':', '-'): str(v) for k, v in image.properties.items()}
+        assert all([metadata.get(k) == v for k, v in props.items()])
+        assert metadata.get('LICENSE') is not None
+        assert ds.descriptions == tuple([bp['name'] for bp in image.bandProps])
+        for bi in range(image.count):
+            band_props = {k.replace(':', '-'): str(v) for k, v in image.bandProps[bi].items()}
+            assert ds.tags(bi + 1) == band_props
 
 
 def test_to_geotiff_overwrite(prepared_image: ImageAccessor, tmp_path: Path):
@@ -556,3 +562,17 @@ def test_to_numpy(prepared_image: ImageAccessor, masked: bool, structured: bool)
     mask = ~array_.mask if masked else array_ != image.nodata
     assert not np.all(mask)
     assert np.all((array_ == range(1, image.count + 1)) == mask)
+
+
+def test_to_non_fixed_error(landsat_ndvi_image: ImageAccessor, tmp_path: Path):
+    """Test to*() raise errors with a non-fixed projection image."""
+    # just in case, prevent this test running large exports if landsat_ndvi_image does have a
+    # fixed projection
+    assert landsat_ndvi_image.shape is None
+
+    with pytest.raises(ValueError, match='fixed projection'):
+        landsat_ndvi_image.toGeoTIFF(tmp_path.joinpath('test.tif'))
+    with pytest.raises(ValueError, match='fixed projection'):
+        landsat_ndvi_image.toXarray()
+    with pytest.raises(ValueError, match='fixed projection'):
+        landsat_ndvi_image.toNumPy()
