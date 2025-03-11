@@ -320,7 +320,7 @@ class ImageAccessor:
         bands = self.info.get('bands', [])
         return [bd['id'] for bd in bands]
 
-    @cached_property
+    @property
     def bandProps(self) -> list[dict[str, Any]]:
         """STAC band properties."""
         band_props = self.stac.get('summaries', {}).get('eo:bands', []) if self.stac else []
@@ -354,7 +354,7 @@ class ImageAccessor:
 
     def _write_metadata(self, ds: DatasetWriter):
         """Write Earth Engine and STAC metadata to an open rasterio dataset."""
-        # TODO: Xee with rioxarray writes an html description - can we do the same?
+        # populate the GEEDIM namespace with EE & STAC metadata JSON strings
         # populate dataset tags with Earth Engine properties and license
         properties = {k.replace(':', '-'): v for k, v in self.properties.items()}
         ds.update_tags(**properties)
@@ -363,13 +363,13 @@ class ImageAccessor:
         if license_link:
             ds.update_tags(LICENSE=license_link[0])
 
-        # populate band tags with STAC properties
         def clean(value: Any) -> Any:
             """Strip and remove newlines from ``value`` if it is a string."""
             if isinstance(value, str):
                 value = ' '.join(value.strip().splitlines())
             return value
 
+        # populate band tags with STAC properties
         for bi, bp in enumerate(self.bandProps):
             clean_bp = {k.replace(':', '-'): clean(v) for k, v in bp.items()}
             ds.set_band_description(bi + 1, clean_bp.get('name', str(bi)))
@@ -1075,7 +1075,6 @@ class ImageAccessor:
             tiler.map_tiles(write_tile, masked=masked)
 
         if structured:
-            # TODO: return crs & transform or otherwise include them with the array?
             dtype = np.dtype(dict(names=self.bandNames, formats=[self.dtype] * len(self.bandNames)))
             array = array.view(dtype=dtype).squeeze()
             if isinstance(array, np.ma.MaskedArray):
