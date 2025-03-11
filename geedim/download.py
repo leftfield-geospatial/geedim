@@ -22,8 +22,9 @@ import warnings
 
 import ee
 import rasterio as rio
+from fsspec.core import OpenFile
 
-from geedim.enums import ExportType
+from geedim.enums import Driver, ExportType
 from geedim.image import ImageAccessor
 from geedim.tile import Tiler
 
@@ -62,7 +63,7 @@ class BaseImage(ImageAccessor):
 
     @ee_image.setter
     def ee_image(self, value: ee.Image):
-        for attr in ['info', '_min_projection', 'stac', 'dtype']:
+        for attr in ['_mi', '_min_projection', 'info', 'dtype']:
             try:
                 delattr(self, attr)
             except AttributeError:
@@ -147,9 +148,11 @@ class BaseImage(ImageAccessor):
 
     def download(
         self,
-        filename: os.PathLike | str,
+        filename: os.PathLike | str | OpenFile,
         overwrite: bool = False,
         num_threads: int | None = None,
+        nodata: bool | int | float = True,
+        driver: str | Driver = Driver.gtiff,
         max_tile_size: float = Tiler._default_max_tile_size,
         max_tile_dim: int = Tiler._ee_max_tile_dim,
         max_tile_bands: int = Tiler._ee_max_tile_bands,
@@ -168,12 +171,20 @@ class BaseImage(ImageAccessor):
         The GeoTIFF nodata tag is set to the :attr:`nodata` value.
 
         :param filename:
-            Destination file name.
+            Destination file.  Can be a path or URI string, or an :class:`~fsspec.core.OpenFile`
+            object in binary mode (``'wb'``).
         :param overwrite:
             Whether to overwrite the destination file if it exists.
         :param num_threads:
             Deprecated and has no effect. ``max_requests`` and ``max_cpus`` can be used to
             limit concurrency.
+        :param nodata:
+            Set the GeoTIFF nodata tag to :attr:`nodata` (``True``), or leave the nodata tag
+            unset (``False``).  If a custom integer or floating point value is supplied,
+            the nodata tag is set to this value.  Usually, a custom value would be supplied when
+            the image has been unmasked with ``ee.Image.unmask(nodata)``.
+        :param driver:
+            File format driver.
         :param max_tile_size:
             Maximum tile size (MB).  Should be less than the `Earth Engine size limit
             <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (32 MB).
@@ -193,7 +204,7 @@ class BaseImage(ImageAccessor):
         :param export_kwargs:
             Arguments to :meth:`ImageAccessor.prepareForExport`.
         """
-        if num_threads:
+        if num_threads is not None:
             warnings.warn(
                 "'num_threads' is deprecated and has no effect.  'max_requests' and 'max_cpus' "
                 "can be used to limit concurrency.",
@@ -204,7 +215,9 @@ class BaseImage(ImageAccessor):
         export_image = ImageAccessor(self.prepareForExport(**export_kwargs))
         export_image.toGeoTIFF(
             filename,
-            overwrite,
+            overwrite=overwrite,
+            nodata=nodata,
+            driver=driver,
             max_tile_size=max_tile_size,
             max_tile_dim=max_tile_dim,
             max_tile_bands=max_tile_bands,
