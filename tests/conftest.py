@@ -156,6 +156,14 @@ def s2_toa_hm_image_id(s2_toa_image_id: str) -> str:
 
 
 @pytest.fixture(scope='session')
+def s2_image_ids(
+    s2_sr_image_id, s2_toa_image_id, s2_sr_hm_image_id, s2_toa_hm_image_id
+) -> list[str]:
+    """Sentinel-2 EE IDs for images covering `region_*ha` with partial cloud/shadow."""
+    return [s2_sr_image_id, s2_toa_image_id, s2_sr_hm_image_id, s2_toa_hm_image_id]
+
+
+@pytest.fixture(scope='session')
 def modis_nbar_image_id() -> str:
     """Global MODIS NBAR image ID."""
     return 'MODIS/061/MCD43A4/2022_01_01'
