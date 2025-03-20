@@ -95,11 +95,7 @@ class _CloudlessImage(_MaskedImage):
     def set_mask_portions(
         ee_image: ee.Image, region: dict | ee.Geometry = None, scale: float | ee.Number = None
     ) -> ee.Image:
-        # TODO: is this maxPixels value ok? it results in bestEffort using lower scales for the
-        #  test region_10000ha
-        # TODO: for landsat, fill portions are often just off 0 or 100%.
-        #  E.g. geedim search -c LANDSAT/LC08/C02/T1_L2 --cloudless-portion --bbox 23 -34.1 23.1 -34 -s 2024-01-01 -e 2025-01-01
-        #  Is this legit?
+        # use maxPixels=1e6 to speed up computations for large regions
         portions = ImageAccessor(ee_image.select(['FILL_MASK', 'CLOUDLESS_MASK'])).regionCoverage(
             region=region, scale=scale, maxPixels=1e6, bestEffort=True
         )
@@ -119,6 +115,8 @@ class _LandsatImage(_CloudlessImage):
         max_cloud_dist: float = 5000,
     ) -> dict[str, ee.Image]:
         # TODO: add support for landsat TOA images
+        # TODO: add per Landsat classes to include SR_QA_AEROSOL in fill / cloud mask? - see
+        #  ttps://www.usgs.gov/landsat-missions/landsat-collection-2-known-issues
         qa_pixel = ee_image.select('QA_PIXEL')
 
         # construct fill mask from Earth Engine mask and QA_PIXEL
@@ -128,9 +126,9 @@ class _LandsatImage(_CloudlessImage):
         # find cloud & shadow masks from QA_PIXEL band
         shadow_mask = qa_pixel.bitwiseAnd(0b10000).neq(0).rename('SHADOW_MASK')
         if mask_cirrus:
-            cloud_mask = qa_pixel.bitwiseAnd(0b1100).neq(0).rename('CLOUD_MASK')
+            cloud_mask = qa_pixel.bitwiseAnd(0b1110).neq(0).rename('CLOUD_MASK')
         else:
-            cloud_mask = qa_pixel.bitwiseAnd(0b1000).neq(0).rename('CLOUD_MASK')
+            cloud_mask = qa_pixel.bitwiseAnd(0b1010).neq(0).rename('CLOUD_MASK')
 
         # combine cloud, shadow and fill masks into cloudless mask
         cloud_shadow_mask = (cloud_mask.Or(shadow_mask)) if mask_shadows else cloud_mask
@@ -156,6 +154,9 @@ class _LandsatImage(_CloudlessImage):
 
 class _Sentinel2Image(_CloudlessImage):
     """Abstract masking method container for Sentinel-2 TOA / SR images."""
+
+    _cloud_score_coll_id = 'GOOGLE/CLOUD_SCORE_PLUS/V1/S2_HARMONIZED'
+    _cloud_prob_coll_id = 'COPERNICUS/S2_CLOUD_PROBABILITY'
 
     @staticmethod
     def _get_cloud_dist(
@@ -302,7 +303,7 @@ class _Sentinel2Image(_CloudlessImage):
             """Return the cloud probability thresholded cloud mask, and cloud probability image for
             ``ee_image``.
             """
-            cloud_prob = match_image(ee_image, 'COPERNICUS/S2_CLOUD_PROBABILITY', 'probability')
+            cloud_prob = match_image(ee_image, _Sentinel2Image._cloud_prob_coll_id, 'probability')
             cloud_mask = cloud_prob.gte(prob)
             return cloud_mask.rename('CLOUD_MASK'), cloud_prob.rename('CLOUD_PROB')
 
@@ -310,9 +311,7 @@ class _Sentinel2Image(_CloudlessImage):
             """Return the cloud score thresholded cloud mask, and cloud score image for
             ``ee_image``.
             """
-            cloud_score = match_image(
-                ee_image, 'GOOGLE/CLOUD_SCORE_PLUS/V1/S2_HARMONIZED', cs_band.name
-            )
+            cloud_score = match_image(ee_image, _Sentinel2Image._cloud_score_coll_id, cs_band.name)
             cloud_shadow_mask = cloud_score.lte(score)
             cloud_score = cloud_score.toFloat()
             return cloud_shadow_mask.rename('CLOUD_SHADOW_MASK'), cloud_score.rename('CLOUD_SCORE')
@@ -449,18 +448,13 @@ class MaskedImage(BaseImage):
             Cloud/shadow masking parameters - see :meth:`ImageAccessor.addMaskBands` for details.
         """
         super().__init__(ee_image)
-        self._cloud_kwargs = kwargs
-        self.ee_image = self.addMaskBands(**kwargs)
+        # copy the _MaskedImage class to avoid another getInfo() if region is supplied
+        mi = self._mi
+        self.ee_image = mi.add_mask_bands(self._ee_image, **kwargs)
         if region:
-            self._set_region_stats(region)
+            self.ee_image = mi.set_mask_portions(self._ee_image, region=region)
         if mask:
             self.mask_clouds()
-
-    @property
-    def _ee_proj(self) -> ee.Projection:
-        """Projection to use for mask calculations and statistics."""
-        # TODO: remove when tests updated + any other internal APIs
-        return self._ee_image.select(0).projection()
 
     @staticmethod
     def from_id(image_id: str, **kwargs) -> MaskedImage:
@@ -477,13 +471,6 @@ class MaskedImage(BaseImage):
         """
         return MaskedImage(ee.Image(image_id), **kwargs)
 
-    def _set_region_stats(self, region: dict | ee.Geometry = None, scale: float | None = None):
-        """Set FILL_PORTION and CLOUDLESS_PORTION on the encapsulated image for the specified
-        region.
-        """
-        # TODO: remove when tests updated
-        self.ee_image = self._mi.set_mask_portions(self._ee_image, region=region, scale=scale)
-
     def mask_clouds(self):
         """Apply the cloud/shadow mask if supported, otherwise apply the fill mask."""
-        self.ee_image = self.maskClouds()
+        self._ee_image = self.maskClouds()
