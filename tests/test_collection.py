@@ -16,19 +16,73 @@ limitations under the License.
 
 from __future__ import annotations
 
+import functools
 from datetime import datetime, timezone
 
 import ee
 import numpy as np
 import pytest
+from pandas import to_datetime
+from rasterio.features import bounds
 
 from geedim import schema
-from geedim.collection import MaskedCollection
+from geedim.collection import (
+    ImageCollectionAccessor,
+    MaskedCollection,
+    _compatible_collections,
+)
 from geedim.download import BaseImage
 from geedim.enums import CompositeMethod, ResamplingMethod
 from geedim.errors import InputImageError
 from geedim.mask import MaskedImage
+from geedim.stac import STACClient
 from geedim.utils import split_id
+
+# TODO: ImageCollectionAccessor testing
+#  - fromImages()
+#    - Works with e.g. s2 ims or landsat ims.  Collection gets correct ID and images keep their
+#    indexes.
+#    - Raises error on incompatible ims or ids=None.
+#  - schemaPropertyNames:
+#    - test it updates the schema correctly with stac schema, geedim schema or unknown property
+#    names
+#    - test errors and empty behaviour
+#  - schemaTable
+#    - contains schemaPropertyNames, and works with unknown properties which have none vals
+#    - empty schemaPropertyNames behaviour
+#  - propertiesTable
+#    - contains schemaPropertyNames abbreviations & >= num rows as images in collection.
+#    - behaviour when schemaPropertyNames contains names not present in image properties
+#    - empty schemaPropertyNames and empty collection behaviour
+#    - conversion of datetime
+#    - images with different properties?
+#  - filter
+#    - start_date and no end_date (or revert to EE default?)
+#    - start_date, end_date & region
+#    - start_date, end_date & region, fill_portion & cloudless_portion
+#    - custom_filter
+# TODO: MaskedCollection
+
+
+@pytest.fixture(scope='session')
+def s2_sr_hm_coll(region_100ha: dict) -> ImageCollectionAccessor:
+    coll = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+    coll = coll.filterDate('2024-01-01', '2024-03-01').filterBounds(region_100ha)
+    return ImageCollectionAccessor(coll.limit(3))
+
+
+@pytest.fixture(scope='session')
+def l9_sr_coll(region_100ha: dict) -> ImageCollectionAccessor:
+    coll = ee.ImageCollection('LANDSAT/LC09/C02/T1_L2')
+    coll = coll.filterDate('2024-01-01', '2024-03-01').filterBounds(region_100ha)
+    return ImageCollectionAccessor(coll.limit(3))
+
+
+@pytest.fixture(scope='session')
+def modis_nbar_coll() -> ImageCollectionAccessor:
+    coll = ee.ImageCollection('MODIS/061/MCD43A4')
+    coll = coll.filterDate('2024-01-01', '2024-03-01')
+    return ImageCollectionAccessor(coll.limit(3))
 
 
 @pytest.fixture()
@@ -66,6 +120,332 @@ def gedi_image_list() -> list[str | MaskedImage]:
     ]
 
 
+def test_compatible_collections(
+    l4_image_id: str,
+    l5_image_id: str,
+    l7_image_id: str,
+    l8_image_id: str,
+    l9_image_id: str,
+    s2_sr_hm_image_ids: list[str],
+):
+    """Test _compatible_collections()."""
+
+    def compatible_images(*im_ids) -> list[str]:
+        """Extract collection IDs and return the result of _compatible_collections()."""
+        coll_ids = [split_id(im_id)[0] for im_id in im_ids]
+        return _compatible_collections(coll_ids)
+
+    assert compatible_images(l4_image_id, l5_image_id) is True
+    assert compatible_images(l8_image_id, l9_image_id) is True
+    assert compatible_images(*s2_sr_hm_image_ids) is True
+    assert compatible_images(l4_image_id, l5_image_id, l7_image_id) is False
+    assert compatible_images(l4_image_id, l5_image_id, l8_image_id) is False
+    assert compatible_images(l7_image_id, l8_image_id, l9_image_id) is False
+    assert compatible_images(*s2_sr_hm_image_ids, l9_image_id) is False
+
+
+def test_from_images(s2_sr_hm_image_ids: list[str]):
+    """Test ImageCollectionAccessor.fromImages()."""
+    # TODO: test the ID when passed composite image(s)
+    coll = ImageCollectionAccessor.fromImages(s2_sr_hm_image_ids)
+    info = coll.getInfo()
+    assert info['id'] == 'COPERNICUS/S2_SR_HARMONIZED'
+    assert set([im_props['id'] for im_props in info['features']]) == set(s2_sr_hm_image_ids)
+
+
+def test_from_images_error(l7_image_id: str, l8_image_id: str):
+    """Test ImageCollectionAccessor.fromImages() raises an error with incompatible images."""
+    with pytest.raises(ValueError, match='spectrally compatible'):
+        ImageCollectionAccessor.fromImages([l7_image_id, l8_image_id])
+
+
+@pytest.mark.parametrize(
+    'stac, exp_val',
+    [
+        ({'summaries': {'gsd': [10, 40], 'eo:bands': [{}]}}, 20),
+        ({'summaries': {'gsd': [10], 'eo:bands': [{}]}}, 10),
+        ({'summaries': {'eo:bands': [{'gsd': 10}, {'gsd': 40}]}}, 40),
+        ({'summaries': {'eo:bands': [{'gsd': 10}, {'gsd': 400}]}}, 10),
+    ],
+)
+def test_portion_scale(stac: dict, exp_val: float, monkeypatch: pytest.MonkeyPatch):
+    """Test the _portion_scale property with different STAC dictionaries."""
+    coll = ImageCollectionAccessor(None)
+    # patch coll and STACClient so that coll's stac property returns the mock stac
+    coll.id = None
+    monkeypatch.setitem(STACClient()._cache, coll.id, stac)
+
+    assert coll._portion_scale == exp_val
+
+
+def test_properties(s2_sr_hm_coll: ImageCollectionAccessor):
+    """Test properties that don't have their own specific tests."""
+    # TODO: symmetry with test_image.py
+    info = s2_sr_hm_coll._ee_coll.getInfo()
+    props = {ip['properties']['system:index']: ip['properties'] for ip in info['features']}
+
+    assert s2_sr_hm_coll.id == info['id']
+    assert s2_sr_hm_coll.info == info
+    assert s2_sr_hm_coll.properties == props
+
+    assert s2_sr_hm_coll.stac is not None
+    band_props = s2_sr_hm_coll.stac['summaries']['eo:bands']
+    spec_bands = [bp['name'] for bp in band_props if 'center_wavelength' in bp]
+    assert len(s2_sr_hm_coll.specBands) > 0
+    assert s2_sr_hm_coll.specBands == spec_bands
+
+    assert s2_sr_hm_coll.schema == schema.collection_schema[info['id']]['prop_schema']
+
+
+@pytest.mark.parametrize('coll_id', ['COPERNICUS/S2_SR_HARMONIZED', 'LANDSAT/LC09/C02/T1_L2', None])
+def test_schema_property_names_default(coll_id: str):
+    """Test the schemaPropertyNames and schema property defaults for different collections."""
+    # patch collection ID to avoid getInfo()
+    coll = ImageCollectionAccessor(None)
+    coll.id = coll_id
+
+    schema_ = (
+        schema.collection_schema[coll_id]['prop_schema']
+        if (coll_id in schema.collection_schema)
+        else schema.default_prop_schema
+    )
+    assert coll.schemaPropertyNames == list(schema_.keys())
+    assert coll.schema == schema_
+
+
+def test_schema_property_names_set():
+    """Test setting the schemaPropertyNames property."""
+    # patch collection ID to avoid getInfo()
+    coll = ImageCollectionAccessor(None)
+    coll.id = 'COPERNICUS/S2_SR_HARMONIZED'
+
+    # set schemaPropertyNames
+    schema_prop_names = ['CLOUDLESS_PORTION', 'CLOUD_COVERAGE_ASSESSMENT', 'unknownPropertyName']
+    coll.schemaPropertyNames = schema_prop_names
+
+    # test duplicate property names are removed
+    coll.schemaPropertyNames += schema_prop_names
+    assert coll.schemaPropertyNames == schema_prop_names
+
+    # test the schema property contains the correct new items
+    assert list(coll.schema.keys()) == schema_prop_names
+    for prop, abbrev, has_descr in zip(
+        schema_prop_names, ['CLOUDLESS', 'CCA', 'UPN'], [True, True, False]
+    ):
+        assert coll.schema[prop]['abbrev'] == abbrev
+        descr = coll.schema[prop]['description']
+        if has_descr:
+            assert len(descr) > 0
+            assert '.' not in descr and '\n' not in descr
+        else:
+            assert descr is None
+
+
+def test_schema_set_error():
+    """Test setting the schemaPropertyNames property with a value that is not a list of strings
+    raises an error.
+    """
+    # patch collection ID to avoid getInfo()
+    coll = ImageCollectionAccessor(None)
+    coll.id = None
+
+    with pytest.raises(ValueError, match='list of strings'):
+        coll.schemaPropertyNames = [123]
+    with pytest.raises(ValueError, match='list of strings'):
+        coll.schemaPropertyNames = ('abc',)
+
+
+def test_schema_table():
+    """Test the schemaTable property."""
+    coll = ImageCollectionAccessor(None)
+    # patch collection ID to a known collection
+    coll.id = 'COPERNICUS/S2_SR_HARMONIZED'
+    # add a property without a stac description
+    coll.schemaPropertyNames += ['unknownPropertyName']
+    assert len(coll.schemaTable.splitlines()) >= len(coll.schema) + 2
+    assert all(pn in coll.schemaTable for pn in coll.schemaPropertyNames)
+
+    # test empty schema
+    coll.schemaPropertyNames = []
+    assert coll.schemaTable == ''
+
+
+def test_properties_table():
+    """Test the propertiesTable property."""
+    # mock a collection
+    coll = ImageCollectionAccessor(None)
+    coll.id = None
+    # mock properties where property names vary between images & some property values are None
+    coll._properties = {
+        '1': {'system:index': '1', 'system:time_start': 0, 'propName': 'value'},
+        '2': {'system:index': '2', 'system:time_start': 1e9, 'propName': 1.23},
+        '3': {'system:index': '3', 'system:time_start': 1e9, 'propName': None},
+        '4': {'system:index': '4', 'system:time_start': 2e9, 'anotherPropName': 'value'},
+    }
+    # mock a schema with properties that exist in all images, properties that exist in some
+    # images, and properties that exist in none
+    coll.schemaPropertyNames = [
+        'system:index',
+        'system:time_start',
+        'FILL_PORTION',
+        'propName',
+        'unknownPropertyName',
+    ]
+    assert len(coll.propertiesTable.splitlines()) == len(coll.properties) + 2
+
+    # test schema properties that exist in one or more images are included in the table
+    incl_props = ['system:index', 'system:time_start', 'propName']
+    incl_abbrevs = [coll.schema[ip]['abbrev'] for ip in incl_props]
+    assert all(ia in coll.propertiesTable for ia in incl_abbrevs)
+
+    # test schema properties that don't exist in any image are not included in the table
+    excl_props = set(coll.schemaPropertyNames).difference(incl_props)
+    excl_abbrevs = [coll.schema[ep]['abbrev'] for ep in excl_props]
+    assert all(ea not in coll.propertiesTable for ea in excl_abbrevs)
+
+    # test conversion of timestamps to date strings
+    first_time_start = datetime.fromtimestamp(
+        coll.properties['1']['system:time_start'] / 1000, tz=timezone.utc
+    )
+    first_time_start = datetime.strftime(first_time_start, '%Y-%m-%d %H:%M')
+    assert first_time_start in coll.propertiesTable
+
+    # test empty collection
+    coll = ImageCollectionAccessor(None)
+    coll.id = None
+    coll._properties = {}
+    assert coll.propertiesTable == ''
+
+    # test empty schema
+    coll = ImageCollectionAccessor(None)
+    coll.id = None
+    coll._properties = {'1': {'system:index': '1'}, '2': {'system:index': '2'}}
+    coll._schema = {}
+    assert coll.propertiesTable == ''
+
+
+@pytest.mark.parametrize(
+    'coll, exp_support',
+    [('l9_sr_coll', True), ('s2_sr_hm_coll', True), ('modis_nbar_coll', False)],
+)
+def test_cs_support(coll: str, exp_support: bool, request: pytest.FixtureRequest):
+    """Test the cloudShadowSupport property."""
+    coll: ImageCollectionAccessor = request.getfixturevalue(coll)
+    assert coll.cloudShadowSupport == exp_support
+
+
+def test_filter(region_10000ha: dict):
+    """Test filter() with different parameters."""
+
+    def aggr_props(image: ee.Image, res: ee.List, add_props: list[str] | None = None):
+        """Aggregate image properties."""
+        prop_names = ['system:time_start', 'system:footprint', 'FILL_PORTION', 'CLOUDLESS_PORTION']
+        prop_names += add_props if add_props else []
+        props = image.toDictionary(prop_names)
+        return ee.List(res).add(props)
+
+    coll = ImageCollectionAccessor(ee.ImageCollection('LANDSAT/LC09/C02/T1_L2'))
+
+    # create filtered collection image property lists for different parameters (use
+    # ee.ImageCollection.iterate() to aggregate properties - image collections cannot be nested
+    # in an ee.List or ee.Dictionary getInfo() call)
+    # reference
+    props = {}
+    ref_kwargs = dict(start_date='2023-07-01', end_date='2024-12-01', region=region_10000ha)
+    filt_coll = coll.filter(**ref_kwargs)
+    props['ref'] = filt_coll.iterate(aggr_props, ee.List([]))
+
+    # start_date without end_date
+    filt_coll = coll.filter(start_date=ref_kwargs['start_date'])
+    props['start_date'] = filt_coll.iterate(aggr_props, ee.List([]))
+
+    # fill_portion
+    fill_portion = 99.95
+    filt_coll = coll.filter(**ref_kwargs, fill_portion=fill_portion)
+    props['fill_portion'] = filt_coll.iterate(aggr_props, ee.List([]))
+
+    # cloudless_portion
+    cloudless_portion = 90
+    filt_coll = coll.filter(**ref_kwargs, cloudless_portion=cloudless_portion)
+    props['cloudless_portion'] = filt_coll.iterate(aggr_props, ee.List([]))
+
+    # custom_filter
+    cloud_cover = 50
+    filt_coll = coll.filter(**ref_kwargs, custom_filter=f'CLOUD_COVER<{cloud_cover}')
+    props['custom_filter'] = filt_coll.iterate(
+        functools.partial(aggr_props, add_props=['CLOUD_COVER']), ee.List([])
+    )
+
+    # cloud / shadow kwargs
+    filt_coll = coll.filter(**ref_kwargs, fill_portion=fill_portion, mask_shadows=False)
+    props['cs_kwargs'] = filt_coll.iterate(aggr_props, ee.List([]))
+
+    # combine getInfo() calls into one
+    props = ee.Dictionary(props).getInfo()
+
+    def props_list_to_dict(props_list: list[dict]) -> dict[str, list]:
+        """Convert a list of property dictionaries to a dictionary of converted property
+        value lists.
+        """
+        if not props_list:
+            return {}
+        props_dict = {k: [d[k] for d in props_list] for k in props_list[0]}
+        # convert timestamp to NumPy datetime
+        props_dict['system:time_start'] = to_datetime(props_dict['system:time_start'], unit='ms')
+        # convert GeoJSON polygon to bounds
+        props_dict['system:footprint'] = [bounds(fp) for fp in props_dict['system:footprint']]
+        return props_dict
+
+    # convert props items to dictionaries of lists
+    props = {k: props_list_to_dict(v) for k, v in props.items()}
+
+    def bounds_intersect(bounds1: tuple, bounds2: tuple) -> bool:
+        """Return whether bounds1 & bounds2 intersect."""
+        br = np.maximum(bounds1[:2], bounds2[:2])
+        ul = np.minimum(bounds1[2:], bounds2[2:])
+        return np.all(ul > br)
+
+    # test reference
+    assert all(props['ref']['system:time_start'] >= to_datetime(ref_kwargs['start_date']))
+    assert all(props['ref']['system:time_start'] <= to_datetime(ref_kwargs['end_date']))
+    assert all(sorted(props['ref']['system:time_start']) == props['ref']['system:time_start'])
+    region_bounds = bounds(ref_kwargs['region'])
+    assert all(bounds_intersect(region_bounds, b) for b in props['ref']['system:footprint'])
+
+    # test start_date without end_date
+    assert len(props['start_date']) == 0
+
+    # test fill_portion
+    assert all(fp >= fill_portion for fp in props['fill_portion']['FILL_PORTION'])
+
+    # test cloudless_portion
+    assert all(cp >= cloudless_portion for cp in props['cloudless_portion']['CLOUDLESS_PORTION'])
+
+    # test custom_filter
+    assert all(cc < cloud_cover for cc in props['custom_filter']['CLOUD_COVER'])
+
+    # cloud / shadow kwargs
+    assert all(
+        props['cs_kwargs']['system:time_start'] == props['fill_portion']['system:time_start']
+    )
+    cloudless_portions = zip(
+        props['cs_kwargs']['CLOUDLESS_PORTION'], props['fill_portion']['CLOUDLESS_PORTION']
+    )
+    assert any(cc_ms > cc_ref for cc_ms, cc_ref in cloudless_portions)
+
+
+def test_filter_error(region_10000ha: dict):
+    """Test filter() raises an error when fill_portion or cloudless_portion are supplied without
+    region.
+    """
+    coll = ImageCollectionAccessor(ee.ImageCollection('LANDSAT/LC09/C02/T1_L2'))
+    with pytest.raises(ValueError, match="'region' is required"):
+        coll.filter(start_date='2023-07-01', fill_portion=50)
+    with pytest.raises(ValueError, match="'region' is required"):
+        coll.filter(start_date='2023-07-01', cloudless_portion=50)
+
+
+# old tests
 def test_split_id():
     """Test split_id()."""
     coll_name, im_id = split_id('A/B/C')
