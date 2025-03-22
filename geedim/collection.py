@@ -38,7 +38,6 @@ from tqdm.auto import tqdm
 from geedim import schema, utils
 from geedim.download import BaseImage
 from geedim.enums import CompositeMethod, Driver, ExportType, ResamplingMethod, SplitType
-from geedim.errors import InputImageError
 from geedim.image import ImageAccessor
 from geedim.mask import MaskedImage, _CloudlessImage, _get_class_for_id, _MaskedImage
 from geedim.medoid import medoid
@@ -156,7 +155,7 @@ class ImageCollectionAccessor:
         ids = [split_id(im_props.get('id', None))[0] for im_props in info.get('features', [])]
         if not _compatible_collections(ids):
             # TODO: test raises an error if any/all names are None
-            raise InputImageError(
+            raise ValueError(
                 'All images must belong to the same, or spectrally compatible, collections.'
             )
 
@@ -198,9 +197,9 @@ class ImageCollectionAccessor:
     @cached_property
     def id(self) -> str | None:
         """Earth Engine ID."""
-        # Get the ID from self.properties if it has been cached.  Otherwise get the ID
-        # directly rather than retrieving self.properties, which can be time-consuming.
-        if self._info:
+        # Get the ID from self._info if it has been cached.  Otherwise get the ID directly rather
+        # than retrieving self._info, which can be time-consuming.
+        if self._info is not None:
             return self._info.get('id', None)
         else:
             return self._ee_coll.get('system:id').getInfo()
@@ -215,14 +214,14 @@ class ImageCollectionAccessor:
         """Earth Engine information as returned by :meth:`ee.ImageCollection.getInfo`,
         but limited to the first 5000 images.
         """
-        if not self._info:
+        if self._info is None:
             self._info = self._ee_coll.limit(self._max_export_images).getInfo()
         return self._info
 
     @property
     def schemaPropertyNames(self) -> list[str]:
         """:attr:`schema` property names."""
-        if not self._schema_prop_names:
+        if self._schema_prop_names is None:
             if self.id in schema.collection_schema:
                 self._schema_prop_names = schema.collection_schema[self.id]['prop_schema'].keys()
             else:
@@ -233,17 +232,19 @@ class ImageCollectionAccessor:
     @schemaPropertyNames.setter
     def schemaPropertyNames(self, value: list[str]):
         if value != self.schemaPropertyNames:
-            self._schema_prop_names = value
-            # reset the schema and properties
+            if not isinstance(value, list) or not all(isinstance(n, str) for n in value):
+                raise ValueError("'schemaPropertyNames' should be a list of strings.")
+            # remove duplicates, keeping order (https://stackoverflow.com/a/17016257)
+            self._schema_prop_names = list(dict.fromkeys(value))
+            # reset the schema
             self._schema = None
-            self._properties = None
 
     @property
     def schema(self) -> dict[str, dict]:
         """Dictionary of property abbreviations and descriptions used to form
         :attr:`propertiesTable`.
         """
-        if not self._schema:
+        if self._schema is None:
             if self.id in schema.collection_schema:
                 coll_schema = schema.collection_schema[self.id]['prop_schema']
             else:
@@ -252,6 +253,8 @@ class ImageCollectionAccessor:
             self._schema = {}
 
             # get STAC property descriptions (if any)
+            # TODO: this gets STAC even if its not needed.  can we get it only when all
+            #  schemaPropertyNames are not in schema module
             summaries = self.stac.get('summaries', {}) if self.stac else {}
             gee_schema = summaries.get('gee:schema', {})
             gee_descriptions = {item['name']: item['description'] for item in gee_schema}
@@ -273,9 +276,13 @@ class ImageCollectionAccessor:
     @property
     def schemaTable(self) -> str:
         """:attr:`schema` formatted as a printable table string."""
+        if not self.schema:
+            return ''
+        # cast description to str to work around
+        # https://github.com/astanin/python-tabulate/issues/312
         table_list = [
-            dict(ABBREV=prop_dict['abbrev'], NAME=prop_name, DESCRIPTION=prop_dict['description'])
-            for prop_name, prop_dict in self.schema.items()
+            dict(ABBREV=pd['abbrev'], NAME=pn, DESCRIPTION=str(pd['description']))
+            for pn, pd in self.schema.items()
         ]
         return tabulate.tabulate(
             table_list,
@@ -283,6 +290,7 @@ class ImageCollectionAccessor:
             floatfmt='.2f',
             tablefmt='simple',
             maxcolwidths=50,
+            missingval='-',
         )
 
     @property
@@ -290,7 +298,7 @@ class ImageCollectionAccessor:
         """Dictionary of image properties.  Keys are the image indexes and values the image
         property dictionaries.
         """
-        if not self._properties:
+        if self._properties is None:
             self._properties = {}
             for i, im_info in enumerate(self.info.get('features', [])):
                 im_props = im_info.get('properties', {})
@@ -543,7 +551,7 @@ class ImageCollectionAccessor:
         :param start_date:
             Start date, in ISO format if a string.
         :param end_date:
-            End date, in ISO format if a string.  Defaults to a day after ``start_date`` if
+            End date, in ISO format if a string.  Defaults to a millisecond after ``start_date`` if
             ``start_date`` is supplied.  Ignored if ``start_date`` is not supplied.
         :param region:
             Region that images should intersect as a GeoJSON dictionary or ``ee.Geometry``.
@@ -571,8 +579,6 @@ class ImageCollectionAccessor:
         # filter the image collection, finding cloud/shadow masks and region stats
         ee_coll = self._ee_coll
         if start_date:
-            # default end_date a day later than start_date
-            end_date = end_date or ee.Date(start_date).advance(1, unit='day')
             ee_coll = ee_coll.filterDate(start_date, end_date)
 
         if region:
@@ -658,6 +664,7 @@ class ImageCollectionAccessor:
         :return:
             Composite image.
         """
+        # TODO: allow S2 cloud score to be used as quality band
         if method is None:
             method = (
                 CompositeMethod.q_mosaic
