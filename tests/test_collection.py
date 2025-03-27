@@ -16,7 +16,6 @@ limitations under the License.
 
 from __future__ import annotations
 
-import functools
 from datetime import datetime, timezone
 
 import ee
@@ -34,7 +33,7 @@ from geedim.collection import (
 from geedim.download import BaseImage
 from geedim.enums import CompositeMethod, ResamplingMethod
 from geedim.errors import InputImageError
-from geedim.mask import MaskedImage
+from geedim.mask import MaskedImage, _MaskedImage
 from geedim.stac import STACClient
 from geedim.utils import split_id
 
@@ -61,21 +60,59 @@ from geedim.utils import split_id
 #    - start_date, end_date & region
 #    - start_date, end_date & region, fill_portion & cloudless_portion
 #    - custom_filter
+#  - prepare_for_composite
+#    - mask bands present
+#    - image ordering based on region / date
+#    - masking based on mask
+#    - errors
+#  - composite
+#    - test id, index & time properties
+#    - test mask bands always present
+#    - test when an S2 component image is has missing cloud data, the q-mosaic composite image is
+#    fully masked with mask=True/False
+#    - test mask param changes masked portion of the composite
 # TODO: MaskedCollection
 
 
-@pytest.fixture(scope='session')
-def s2_sr_hm_coll(region_100ha: dict) -> ImageCollectionAccessor:
-    coll = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
-    coll = coll.filterDate('2024-01-01', '2024-03-01').filterBounds(region_100ha)
-    return ImageCollectionAccessor(coll.limit(3))
+def accessors_from_collections(ee_colls: list[ee.ImageCollection]) -> list[ImageCollectionAccessor]:
+    """Return a list of ImageCollectionAccessor objects, with cached info properties,
+    for the given list of ee.ImageCollection objects, using a single getInfo() call.
+    """
+
+    def aggregate_images(image: ee.Image, images: ee.List) -> ee.List:
+        return ee.List(images).add(image)
+
+    coll_images = [ee_coll.iterate(aggregate_images, ee.List([])) for ee_coll in ee_colls]
+    infos = ee.List([ee_colls, coll_images]).getInfo()
+
+    colls = []
+    for ee_coll, coll_info, images_info in zip(ee_colls, infos[0], infos[1]):
+        coll = ImageCollectionAccessor(ee_coll)
+        info = dict(**coll_info, features=images_info)
+        coll._info = info
+        colls.append(coll)
+
+    return colls
 
 
 @pytest.fixture(scope='session')
-def l9_sr_coll(region_100ha: dict) -> ImageCollectionAccessor:
-    coll = ee.ImageCollection('LANDSAT/LC09/C02/T1_L2')
-    coll = coll.filterDate('2024-01-01', '2024-03-01').filterBounds(region_100ha)
-    return ImageCollectionAccessor(coll.limit(3))
+def s2_sr_hm_coll(s2_sr_hm_image_ids: list[str]) -> ImageCollectionAccessor:
+    coll = ee.ImageCollection(s2_sr_hm_image_ids)
+    coll = coll.set('system:id', 'COPERNICUS/S2_SR_HARMONIZED')
+    return ImageCollectionAccessor(coll)
+
+
+@pytest.fixture(scope='session')
+def l9_sr_coll() -> ImageCollectionAccessor:
+    # LC09_173083_20220308, LC09_173083_20221205, LC09_173083_20230106, LC09_173083_20240414
+    image_ids = [
+        'LANDSAT/LC09/C02/T1_L2/LC09_173083_20220308',
+        'LANDSAT/LC09/C02/T1_L2/LC09_173083_20221205',
+        'LANDSAT/LC09/C02/T1_L2/LC09_173083_20230106',
+    ]  # TODO: make these a fixture like s2_sr_hm_image_ids?
+    coll = ee.ImageCollection(image_ids)
+    coll = coll.set('system:id', 'LANDSAT/LC09/C02/T1_L2')
+    return ImageCollectionAccessor(coll)
 
 
 @pytest.fixture(scope='session')
@@ -83,6 +120,18 @@ def modis_nbar_coll() -> ImageCollectionAccessor:
     coll = ee.ImageCollection('MODIS/061/MCD43A4')
     coll = coll.filterDate('2024-01-01', '2024-03-01')
     return ImageCollectionAccessor(coll.limit(3))
+
+
+@pytest.fixture()
+def gedi_cth_coll() -> ImageCollectionAccessor:
+    image_ids = [
+        'LARSE/GEDI/GEDI02_A_002_MONTHLY/202005_018E_036S',
+        'LARSE/GEDI/GEDI02_A_002_MONTHLY/202008_018E_036S',
+        'LARSE/GEDI/GEDI02_A_002_MONTHLY/202009_018E_036S',
+    ]
+    coll = ee.ImageCollection(image_ids)
+    coll = coll.set('system:id', 'LARSE/GEDI/GEDI02_A_002_MONTHLY')
+    return ImageCollectionAccessor(coll)
 
 
 @pytest.fixture()
@@ -220,15 +269,16 @@ def test_schema_property_names_set():
     coll.id = 'COPERNICUS/S2_SR_HARMONIZED'
 
     # set schemaPropertyNames
-    schema_prop_names = ['CLOUDLESS_PORTION', 'CLOUD_COVERAGE_ASSESSMENT', 'unknownPropertyName']
+    schema_prop_names = ('CLOUDLESS_PORTION', 'CLOUD_COVERAGE_ASSESSMENT', 'unknownPropertyName')
     coll.schemaPropertyNames = schema_prop_names
+    assert coll.schemaPropertyNames == schema_prop_names
 
     # test duplicate property names are removed
-    coll.schemaPropertyNames += schema_prop_names
+    coll.schemaPropertyNames += ('CLOUDLESS_PORTION', 'CLOUD_COVERAGE_ASSESSMENT')
     assert coll.schemaPropertyNames == schema_prop_names
 
     # test the schema property contains the correct new items
-    assert list(coll.schema.keys()) == schema_prop_names
+    assert tuple(coll.schema.keys()) == schema_prop_names
     for prop, abbrev, has_descr in zip(
         schema_prop_names, ['CLOUDLESS', 'CCA', 'UPN'], [True, True, False]
     ):
@@ -249,10 +299,8 @@ def test_schema_set_error():
     coll = ImageCollectionAccessor(None)
     coll.id = None
 
-    with pytest.raises(ValueError, match='list of strings'):
+    with pytest.raises(ValueError, match='iterable of strings'):
         coll.schemaPropertyNames = [123]
-    with pytest.raises(ValueError, match='list of strings'):
-        coll.schemaPropertyNames = ('abc',)
 
 
 def test_schema_table():
@@ -275,7 +323,7 @@ def test_properties_table():
     # mock a collection
     coll = ImageCollectionAccessor(None)
     coll.id = None
-    # mock properties where property names vary between images & some property values are None
+    # mock properties with names that vary between images & some values that are None
     coll._properties = {
         '1': {'system:index': '1', 'system:time_start': 0, 'propName': 'value'},
         '2': {'system:index': '2', 'system:time_start': 1e9, 'propName': 1.23},
@@ -334,115 +382,323 @@ def test_cs_support(coll: str, exp_support: bool, request: pytest.FixtureRequest
     assert coll.cloudShadowSupport == exp_support
 
 
+def test_add_mask_bands(l9_sr_coll: ImageCollectionAccessor):
+    """Test addMaskBands()."""
+    # This just tests bands exist and kwargs were passed. Detailed mask testing is done in
+    # test_mask.py.
+    cs_coll = l9_sr_coll.addMaskBands(mask_shadows=False)
+    info = cs_coll.getInfo()
+    assert len(info['features']) == len(l9_sr_coll.properties)
+    for im_info in info['features']:
+        band_names = [bi['id'] for bi in im_info['bands']]
+        assert all(bn in band_names for bn in ['CLOUDLESS_MASK', 'CLOUD_DIST', 'FILL_MASK'])
+        assert 'SHADOW_MASK' not in band_names
+
+
+def test_mask_clouds(l9_sr_coll: ImageCollectionAccessor, region_100ha: dict):
+    """Test maskClouds()."""
+    # This just tests the masked area increases. Detailed mask testing is done in test_mask.py.
+
+    def aggregate_mask_sum(image: ee.Image, sums: ee.List) -> ee.List:
+        """Add the sum of the image masks to the sums list."""
+        sum_ = image.mask().reduceRegion('sum', geometry=region_100ha).values().reduce('mean')
+        return ee.List(sums).add(sum_)
+
+    # find & compare image mask sums before and after masking
+    masked_coll = ImageCollectionAccessor(l9_sr_coll.addMaskBands()).maskClouds()
+    unmasked_sums = l9_sr_coll._ee_coll.iterate(aggregate_mask_sum, ee.List([]))
+    masked_sums = masked_coll.iterate(aggregate_mask_sum, ee.List([]))
+    # combine getInfo() calls into one
+    sums = ee.Dictionary(dict(unmasked=unmasked_sums, masked=masked_sums)).getInfo()
+
+    assert len(sums['unmasked']) == len(l9_sr_coll.properties)
+    for masked_sum, unmasked_sum in zip(sums['masked'], sums['unmasked']):
+        assert masked_sum < unmasked_sum
+
+
+def test_medoid(l9_sr_coll: ImageCollectionAccessor, region_100ha: dict):
+    """Test medoid()."""
+    # relative difference of median and medoid (without bands arg)
+    median_im = l9_sr_coll._ee_coll.median()
+    medoid_im = l9_sr_coll.medoid()
+    median_diff_im = medoid_im.subtract(median_im).divide(median_im)
+    # relative difference of medoid without and with bands arg
+    medoid_bands_im = l9_sr_coll.medoid(bands=l9_sr_coll.specBands[2:-2])
+    bands_diff_im = medoid_bands_im.subtract(medoid_im).divide(medoid_im)
+
+    # find means of differences, combining all getInfo() calls into one
+    diffs = [
+        im.reduceRegion('mean', geometry=region_100ha, scale=30)
+        for im in [median_diff_im, bands_diff_im]
+    ]
+    diffs = ee.List(diffs).getInfo()
+
+    # test medoid is similar to median
+    assert all(abs(diffs[0][bn]) < 0.05 for bn in l9_sr_coll.specBands)
+    # test bands argument changes medoid
+    assert all(diffs[1][bn] != 0 for bn in l9_sr_coll.specBands)
+
+
 def test_filter(region_10000ha: dict):
     """Test filter() with different parameters."""
 
-    def aggr_props(image: ee.Image, res: ee.List, add_props: list[str] | None = None):
-        """Aggregate image properties."""
-        prop_names = ['system:time_start', 'system:footprint', 'FILL_PORTION', 'CLOUDLESS_PORTION']
-        prop_names += add_props if add_props else []
-        props = image.toDictionary(prop_names)
-        return ee.List(res).add(props)
+    def get_coll_props(coll: ee.ImageCollection) -> ee.Dictionary:
+        """Return a dictionary of image property lists."""
+        return ee.Dictionary(
+            dict(
+                time_start=coll.aggregate_array('system:time_start'),
+                footprint=coll.aggregate_array('system:footprint'),
+                fill_portion=coll.aggregate_array('FILL_PORTION'),
+                cloudless_portion=coll.aggregate_array('CLOUDLESS_PORTION'),
+            )
+        )
 
-    coll = ImageCollectionAccessor(ee.ImageCollection('LANDSAT/LC09/C02/T1_L2'))
+    def bounds_intersect(geom1: dict, geom2: dict) -> bool:
+        """Return whether the bounds of the GeoJSON geometries intersect."""
+        bounds1, bounds2 = bounds(geom1), bounds(geom2)
+        br, ul = np.maximum(bounds1[:2], bounds2[:2]), np.minimum(bounds1[2:], bounds2[2:])
+        return np.all(ul > br)
 
-    # create filtered collection image property lists for different parameters (use
-    # ee.ImageCollection.iterate() to aggregate properties - image collections cannot be nested
-    # in an ee.List or ee.Dictionary getInfo() call)
+    # get image properties for testing filter parameters (note that image collections
+    # cannot be nested in an ee.List or ee.Dictionary getInfo() call)
     # reference
+    coll = ImageCollectionAccessor(ee.ImageCollection('LANDSAT/LC09/C02/T1_L2'))
     props = {}
-    ref_kwargs = dict(start_date='2023-07-01', end_date='2024-12-01', region=region_10000ha)
+    ref_kwargs = dict(start_date='2023-01-01', end_date='2024-01-01', region=region_10000ha)
     filt_coll = coll.filter(**ref_kwargs)
-    props['ref'] = filt_coll.iterate(aggr_props, ee.List([]))
+    props['ref'] = get_coll_props(filt_coll)
 
     # start_date without end_date
     filt_coll = coll.filter(start_date=ref_kwargs['start_date'])
-    props['start_date'] = filt_coll.iterate(aggr_props, ee.List([]))
+    props['start_date'] = filt_coll.aggregate_array('system:time_start')
 
     # fill_portion
     fill_portion = 99.95
     filt_coll = coll.filter(**ref_kwargs, fill_portion=fill_portion)
-    props['fill_portion'] = filt_coll.iterate(aggr_props, ee.List([]))
+    props['fill_portion'] = [
+        coll.filter(**ref_kwargs, fill_portion=fill_portion).aggregate_array('FILL_PORTION')
+        for fill_portion in [0, 99.95]
+    ]
 
     # cloudless_portion
     cloudless_portion = 90
     filt_coll = coll.filter(**ref_kwargs, cloudless_portion=cloudless_portion)
-    props['cloudless_portion'] = filt_coll.iterate(aggr_props, ee.List([]))
+    props['cloudless_portion'] = filt_coll.aggregate_array('CLOUDLESS_PORTION')
 
-    # custom_filter
+    # custom_filter (without FILL_PORTION or CLOUDLESS_PORTION)
     cloud_cover = 50
     filt_coll = coll.filter(**ref_kwargs, custom_filter=f'CLOUD_COVER<{cloud_cover}')
-    props['custom_filter'] = filt_coll.iterate(
-        functools.partial(aggr_props, add_props=['CLOUD_COVER']), ee.List([])
-    )
+    props['custom_filter_nop'] = filt_coll.aggregate_array('CLOUD_COVER')
+
+    # custom_filter (with FILL_PORTION or CLOUDLESS_PORTION)
+    filt_coll = coll.filter(**ref_kwargs, custom_filter=f'CLOUDLESS_PORTION<{cloudless_portion}')
+    props['custom_filter_p'] = filt_coll.aggregate_array('CLOUDLESS_PORTION')
 
     # cloud / shadow kwargs
     filt_coll = coll.filter(**ref_kwargs, fill_portion=fill_portion, mask_shadows=False)
-    props['cs_kwargs'] = filt_coll.iterate(aggr_props, ee.List([]))
+    props['cs_kwargs'] = get_coll_props(filt_coll)
 
     # combine getInfo() calls into one
     props = ee.Dictionary(props).getInfo()
 
-    def props_list_to_dict(props_list: list[dict]) -> dict[str, list]:
-        """Convert a list of property dictionaries to a dictionary of converted property
-        value lists.
-        """
-        if not props_list:
-            return {}
-        props_dict = {k: [d[k] for d in props_list] for k in props_list[0]}
-        # convert timestamp to NumPy datetime
-        props_dict['system:time_start'] = to_datetime(props_dict['system:time_start'], unit='ms')
-        # convert GeoJSON polygon to bounds
-        props_dict['system:footprint'] = [bounds(fp) for fp in props_dict['system:footprint']]
-        return props_dict
-
-    # convert props items to dictionaries of lists
-    props = {k: props_list_to_dict(v) for k, v in props.items()}
-
-    def bounds_intersect(bounds1: tuple, bounds2: tuple) -> bool:
-        """Return whether bounds1 & bounds2 intersect."""
-        br = np.maximum(bounds1[:2], bounds2[:2])
-        ul = np.minimum(bounds1[2:], bounds2[2:])
-        return np.all(ul > br)
-
-    # test reference
-    assert all(props['ref']['system:time_start'] >= to_datetime(ref_kwargs['start_date']))
-    assert all(props['ref']['system:time_start'] <= to_datetime(ref_kwargs['end_date']))
-    assert all(sorted(props['ref']['system:time_start']) == props['ref']['system:time_start'])
-    region_bounds = bounds(ref_kwargs['region'])
-    assert all(bounds_intersect(region_bounds, b) for b in props['ref']['system:footprint'])
+    # test reference (start_date, end_date & region filtering)
+    ref_dates = to_datetime(props['ref']['time_start'], unit='ms')
+    assert all(ref_dates >= to_datetime(ref_kwargs['start_date']))
+    assert all(ref_dates <= to_datetime(ref_kwargs['end_date']))
+    assert all(sorted(ref_dates) == ref_dates)
+    assert all(bounds_intersect(ref_kwargs['region'], b) for b in props['ref']['footprint'])
+    # test images have no FILL_PORTION or CLOUDLESS_PORTION properties when fill_portion and
+    # cloudless_portion are not supplied (indirectly tests mask bands were not added)
+    assert not props['ref']['fill_portion'] and not props['ref']['cloudless_portion']
 
     # test start_date without end_date
     assert len(props['start_date']) == 0
 
     # test fill_portion
-    assert all(fp >= fill_portion for fp in props['fill_portion']['FILL_PORTION'])
+    assert all(fp >= fill_portion for fp in props['fill_portion']['fill_portion'])
 
     # test cloudless_portion
-    assert all(cp >= cloudless_portion for cp in props['cloudless_portion']['CLOUDLESS_PORTION'])
+    assert all(cp >= cloudless_portion for cp in props['cloudless_portion'])
 
-    # test custom_filter
-    assert all(cc < cloud_cover for cc in props['custom_filter']['CLOUD_COVER'])
+    # test custom_filter without FILL_PORTION / CLOUDLESS_PORTION
+    assert all(cc < cloud_cover for cc in props['custom_filter_nop'])
 
-    # cloud / shadow kwargs
-    assert all(
-        props['cs_kwargs']['system:time_start'] == props['fill_portion']['system:time_start']
-    )
+    # test custom_filter with FILL_PORTION / CLOUDLESS_PORTION
+    assert all(cp < cloudless_portion for cp in props['custom_filter_p'])
+
+    # cloud / shadow kwargs (cloudless portion is increased with mask_shadows=False)
+    assert props['cs_kwargs']['time_start'] == props['fill_portion']['time_start']
     cloudless_portions = zip(
-        props['cs_kwargs']['CLOUDLESS_PORTION'], props['fill_portion']['CLOUDLESS_PORTION']
+        props['cs_kwargs']['cloudless_portion'], props['fill_portion']['cloudless_portion']
     )
     assert any(cc_ms > cc_ref for cc_ms, cc_ref in cloudless_portions)
 
 
-def test_filter_error(region_10000ha: dict):
+def test_filter_error(l9_sr_coll: ImageCollectionAccessor, region_10000ha: dict):
     """Test filter() raises an error when fill_portion or cloudless_portion are supplied without
     region.
     """
-    coll = ImageCollectionAccessor(ee.ImageCollection('LANDSAT/LC09/C02/T1_L2'))
     with pytest.raises(ValueError, match="'region' is required"):
-        coll.filter(start_date='2023-07-01', fill_portion=50)
+        l9_sr_coll.filter(start_date='2023-07-01', fill_portion=50)
     with pytest.raises(ValueError, match="'region' is required"):
-        coll.filter(start_date='2023-07-01', cloudless_portion=50)
+        l9_sr_coll.filter(start_date='2023-07-01', cloudless_portion=50)
+
+
+def test_prepare_for_composite_date_region(
+    l9_sr_coll: ImageCollectionAccessor, gedi_cth_coll: ImageCollectionAccessor, region_100ha: dict
+):
+    """Test sorting of the _prepare_for_composite() collection with date and region parameters."""
+
+    def set_mask_portions(image: ee.Image, mi: _MaskedImage) -> ee.Image:
+        """Set FILL_PORTION and CLOUDLESS_PORTION image properties."""
+        image = mi.add_mask_bands(image)
+        return mi.set_mask_portions(image, region=region_100ha)
+
+    # create property lists for testing the prepared collections
+    # date:
+    infos = {}
+    date = '2022-12-05'
+    comp_coll = l9_sr_coll._prepare_for_composite('q-mosaic', date=date)
+    infos['date'] = [
+        coll.aggregate_array('system:time_start') for coll in [l9_sr_coll._ee_coll, comp_coll]
+    ]
+
+    # region with cloud/shadow supported collection:
+    # create a source collection whose image ordering is opposite to the expected prepared
+    # collection ordering
+    src_coll = l9_sr_coll._ee_coll.map(lambda im: set_mask_portions(im, l9_sr_coll._mi))
+    src_coll = src_coll.sort('CLOUDLESS_PORTION', ascending=False)
+    src_coll = ImageCollectionAccessor(src_coll)
+    src_coll.id = l9_sr_coll.id  # patch id to avoid getInfo()
+    # prepare the source collection with region=
+    comp_coll = src_coll._prepare_for_composite('q-mosaic', region=region_100ha)
+    # get the CLOUDLESS_PORTIONs of the source and prepared collection images
+    infos['region_cp'] = [
+        coll.aggregate_array('CLOUDLESS_PORTION') for coll in [src_coll._ee_coll, comp_coll]
+    ]
+
+    # region with non-cloud/shadow supported collection:
+    # create a source collection whose image ordering is opposite to the expected prepared
+    # collection ordering
+    src_coll = gedi_cth_coll._ee_coll.map(lambda im: set_mask_portions(im, gedi_cth_coll._mi))
+    src_coll = src_coll.sort('FILL_PORTION', ascending=False)
+    src_coll = ImageCollectionAccessor(src_coll)
+    src_coll.id = gedi_cth_coll.id  # patch id to avoid getInfo()
+    # prepare the source collection with region=
+    comp_coll = src_coll._prepare_for_composite('mosaic', region=region_100ha)
+    # get the FILL_PORTIONs of the source and prepared collection images
+    infos['region_fp'] = [
+        coll.aggregate_array('FILL_PORTION') for coll in [src_coll._ee_coll, comp_coll]
+    ]
+
+    # combine getInfo() calls into one
+    infos = ee.Dictionary(infos).getInfo()
+
+    # test date:
+    # test prepared and source collection ordering is different
+    assert infos['date'][1] != infos['date'][0]
+    # test prepared collection is sorted by distance to date
+    date = to_datetime(date)
+    date_dist = [abs(date - d) for d in to_datetime(infos['date'][1], unit='ms')]
+    sorted_dates = [d for _, d in sorted(zip(date_dist, infos['date'][1]), reverse=True)]
+    assert infos['date'][1] == sorted_dates
+
+    # test region:
+    for key in ['region_cp', 'region_fp']:
+        # test prepared and source collection ordering is different
+        assert infos[key][1] != infos[key][0]
+        # test prepared collection is sorted correctly
+        assert sorted(infos[key][1]) == infos[key][1]
+
+
+def test_prepare_for_composite_errors(gedi_cth_coll: ImageCollectionAccessor, region_100ha: dict):
+    """Test _prepare_for_composite() error and warning conditions."""
+    with pytest.raises(ValueError, match='cloud / shadow masking support'):
+        gedi_cth_coll._prepare_for_composite('q-mosaic')
+    with pytest.raises(ValueError, match="'date' or 'region'"):
+        gedi_cth_coll._prepare_for_composite('mosaic', date='2020-01-01', region=region_100ha)
+
+    with pytest.warns(UserWarning, match="'date' is valid"):
+        gedi_cth_coll._prepare_for_composite('mean', date='2020-01-01')
+    with pytest.warns(UserWarning, match="'region' is valid"):
+        gedi_cth_coll._prepare_for_composite('mean', region=region_100ha)
+
+
+def test_composite_params(l9_sr_coll: ImageCollectionAccessor, region_100ha: dict):
+    """Test composite() parameters."""
+
+    def get_refl_stat(image: ee.Image, stat: str = 'mean') -> ee.Number:
+        """Return the mean of stat over the reflectance bands."""
+        image = image.select('SR_B.*')
+        return image.reduceRegion(stat, geometry=region_100ha, scale=30).values().reduce('mean')
+
+    # create stats for testing each parameter
+    infos = {}
+    infos['method'] = [
+        get_refl_stat(l9_sr_coll.composite(method), stat='mean') for method in CompositeMethod
+    ]
+    infos['mask'] = [
+        get_refl_stat(l9_sr_coll.composite(mask=mask), stat='sum') for mask in [False, True]
+    ]
+    infos['resampling'] = {
+        resampling.value: get_refl_stat(l9_sr_coll.composite(resampling=resampling), stat='stdDev')
+        for resampling in ResamplingMethod
+    }
+    infos['date'] = [
+        get_refl_stat(l9_sr_coll.composite('mosaic', date=date), stat='mean')
+        for date in [None, '2022-12-05']
+    ]
+    infos['region'] = [
+        get_refl_stat(l9_sr_coll.composite('mosaic', region=region), stat='mean')
+        for region in [None, region_100ha]
+    ]
+    # cloud / shadow kwargs
+    infos['cs_kwargs'] = [
+        get_refl_stat(l9_sr_coll.composite(mask_shadows=mask_shadows), stat='sum')
+        for mask_shadows in [False, True]
+    ]
+
+    # combine getInfo() calls into one
+    infos = ee.Dictionary(infos).getInfo()
+
+    # test each method gives a unique mean reflectance
+    assert len(infos['method']) == len(set(infos['method'])) > 0
+    # test mask=True reduces the mask=False masked reflectance
+    assert infos['mask'][0] > infos['mask'][1]
+    # test each resampling method gives a unique reflectance std dev
+    assert len(infos['resampling'].values()) == len(set(infos['resampling'].values())) > 0
+    # test nearest resampling gives a larger std dev than the other methods
+    assert all(
+        infos['resampling']['near'] > infos['resampling'][k]
+        for k in infos['resampling']
+        if k != 'near'
+    )
+    # test date ordering affects the mean reflectance
+    assert infos['date'][0] != infos['date'][1]
+    # test region (CLOUDLESS_PORTION) ordering affects the mean reflectance
+    assert infos['region'][0] != infos['region'][1]
+    # test cloud / shadow kwargs have an effect (i.e. mask_shadows=True reduces the
+    # mask_shadows=False masked reflectance)
+    assert infos['cs_kwargs'][0] > infos['cs_kwargs'][1]
+
+
+def test_composite_properties(l9_sr_coll: ImageCollectionAccessor):
+    """Test composite() image properties and bands."""
+    method = 'mosaic'
+    comp_image = l9_sr_coll.composite(method)
+    info = comp_image.getInfo()
+
+    exp_index = f'{method.upper()}-COMP'
+    assert info['properties']['system:index'] == exp_index
+    assert info['id'] == l9_sr_coll.id + '/' + exp_index
+    coll_time_starts = [prop['system:time_start'] for prop in l9_sr_coll.properties.values()]
+    assert info['properties']['system:time_start'] == min(coll_time_starts)
+    assert info['properties']['system:time_end'] == max(coll_time_starts)
+
+    band_names = [b['id'] for b in info['bands']]
+    assert set(band_names).issuperset(
+        ['CLOUD_MASK', 'SHADOW_MASK', 'CLOUD_DIST', 'CLOUDLESS_MASK', 'FILL_MASK']
+    )
 
 
 # old tests
@@ -1034,7 +1290,7 @@ def test_composite_landsat_cloud_mask_params(l8_9_images, region_10000ha):
         ('gedi_image_list', CompositeMethod.medoid, True, None, None, {}),
     ],
 )
-def test_composite(
+def _test_composite(
     image_list: str,
     method: CompositeMethod,
     mask: bool,
