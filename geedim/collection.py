@@ -22,7 +22,7 @@ import os
 import posixpath
 import re
 import warnings
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from datetime import datetime, timezone
 from functools import cached_property
 from typing import Any
@@ -219,25 +219,25 @@ class ImageCollectionAccessor:
         return self._info
 
     @property
-    def schemaPropertyNames(self) -> list[str]:
+    def schemaPropertyNames(self) -> tuple[str]:
         """:attr:`schema` property names."""
         if self._schema_prop_names is None:
             if self.id in schema.collection_schema:
                 self._schema_prop_names = schema.collection_schema[self.id]['prop_schema'].keys()
             else:
                 self._schema_prop_names = schema.default_prop_schema.keys()
-            self._schema_prop_names = list(self._schema_prop_names)
+            # use tuple to prevent in-place mutations that don't go through the setter
+            self._schema_prop_names = tuple(self._schema_prop_names)
         return self._schema_prop_names
 
     @schemaPropertyNames.setter
-    def schemaPropertyNames(self, value: list[str]):
-        if value != self.schemaPropertyNames:
-            if not isinstance(value, list) or not all(isinstance(n, str) for n in value):
-                raise ValueError("'schemaPropertyNames' should be a list of strings.")
-            # remove duplicates, keeping order (https://stackoverflow.com/a/17016257)
-            self._schema_prop_names = list(dict.fromkeys(value))
-            # reset the schema
-            self._schema = None
+    def schemaPropertyNames(self, value: tuple[str]):
+        if not isinstance(value, Iterable) or not all(isinstance(n, str) for n in value):
+            raise ValueError("'schemaPropertyNames' should be an iterable of strings.")
+        # remove duplicates, keeping order (https://stackoverflow.com/a/17016257)
+        self._schema_prop_names = tuple(dict.fromkeys(value))
+        # reset the schema
+        self._schema = None
 
     @property
     def schema(self) -> dict[str, dict]:
@@ -361,10 +361,10 @@ class ImageCollectionAccessor:
         resampling = ResamplingMethod(resampling)
         sort_methods = [CompositeMethod.mosaic, CompositeMethod.q_mosaic, CompositeMethod.medoid]
 
-        if (method is CompositeMethod.q_mosaic) and (self.id not in schema.cloud_coll_names):
+        if (method is CompositeMethod.q_mosaic) and (not self.cloudShadowSupport):
             raise ValueError(
-                f"The 'q-mosaic' method is not supported for this collection: '{self.id}'.  It is"
-                f"supported for the {schema.cloud_coll_names} collections only."
+                "The 'q-mosaic' method requires cloud / shadow masking support, which this "
+                "collection does not have."
             )
 
         if date and region:
@@ -394,11 +394,7 @@ class ImageCollectionAccessor:
             if date:
                 ee_coll = ee_coll.sort('DATE_DIST', ascending=False)
             elif region:
-                sort_key = (
-                    'CLOUDLESS_PORTION'
-                    if 'CLOUDLESS_PORTION' in self.schema.keys()
-                    else 'FILL_PORTION'
-                )
+                sort_key = 'CLOUDLESS_PORTION' if self.cloudShadowSupport else 'FILL_PORTION'
                 ee_coll = ee_coll.sort(sort_key)
             else:
                 ee_coll = ee_coll.sort('system:time_start')
@@ -569,7 +565,6 @@ class ImageCollectionAccessor:
         :return:
             Filtered image collection containing search result image(s).
         """
-        # TODO: no error is raised if kwargs contains unsupported args
         # TODO: refactor error classes and what gets raised where & test for these errors
         if (fill_portion is not None or cloudless_portion is not None) and not region:
             raise ValueError(
