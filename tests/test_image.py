@@ -67,10 +67,12 @@ def transform_bounds(geometry: dict, crs: str = 'EPSG:4326') -> tuple[float, ...
     return bounds(geometry)
 
 
-def test_properties(
+def test_ee_props(
     s2_sr_hm_image: ImageAccessor, l9_sr_image: ImageAccessor, modis_nbar_image: ImageAccessor
 ):
-    """Test properties excluding dtype, stac, stac-related properties & cloudShadowSupport."""
+    """Test EE info derived properties (excludes dtype, stac, stac-derived properties &
+    cloudShadowSupport).
+    """
     images = [s2_sr_hm_image, l9_sr_image, modis_nbar_image]
     # combine getInfo() calls into one
     infos = ee.List(
@@ -102,7 +104,7 @@ def test_properties(
             np.sqrt(abs(image.transform[0]) * abs(image.transform[4]))
         )
         assert image.geometry == ee.Geometry(props['system:footprint']).toGeoJSON()
-        assert image.bandNames == [bi['id'] for bi in bands]
+        assert image.bandNames == [b['id'] for b in bands]
 
 
 @pytest.mark.parametrize(
@@ -182,7 +184,7 @@ def test_non_fixed_props(image: str, request: pytest.FixtureRequest):
 
 
 def test_stac_props(s2_sr_hm_image: ImageAccessor):
-    """Test the stac and stac-related properties."""
+    """Test the stac and stac-derived properties."""
     assert s2_sr_hm_image.stac is not None
     assert len(s2_sr_hm_image.bandProps) == len(s2_sr_hm_image.bandNames)
     assert all(['name' in bp for bp in s2_sr_hm_image.bandProps])
@@ -358,13 +360,13 @@ def test_add_mask_bands(l9_sr_image: ImageAccessor):
     assert 'SHADOW_MASK' not in cs_image.bandNames
 
 
-def test_mask_clouds(s2_sr_hm_image: ImageAccessor, region_100ha: dict):
+def test_mask_clouds(l9_sr_image: ImageAccessor, region_100ha: dict):
     """Test maskClouds()."""
     # This just tests the masked area increases. Detailed mask testing is done in test_mask.py.
-    masked_image = ImageAccessor(s2_sr_hm_image.addMaskBands()).maskClouds()
+    masked_image = ImageAccessor(l9_sr_image.addMaskBands()).maskClouds()
     sums = [
         im.mask().reduceRegion('sum', geometry=region_100ha, scale=30).values().reduce('mean')
-        for im in [s2_sr_hm_image._ee_image, masked_image]
+        for im in [l9_sr_image._ee_image, masked_image]
     ]
     sums = ee.List(sums).getInfo()
     assert sums[0] > sums[1]

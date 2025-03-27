@@ -207,7 +207,7 @@ def google_dyn_world_image_id(s2_sr_hm_image_id) -> str:
     return 'GOOGLE/DYNAMICWORLD/V1/' + s2_sr_hm_image_id.split('/')[-1]
 
 
-@pytest.fixture()
+@pytest.fixture(scope='session')
 def s2_sr_hm_image_ids(s2_sr_image_id: str, s2_toa_image_id: str) -> list[str]:
     """A list of harmonised Sentinel-2 SR image IDs, covering `region_*ha` with partial cloud/shadow.."""
     return [
