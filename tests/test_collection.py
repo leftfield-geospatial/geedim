@@ -124,9 +124,9 @@ def modis_nbar_coll() -> ImageCollectionAccessor:
 @pytest.fixture()
 def gedi_cth_coll() -> ImageCollectionAccessor:
     image_ids = [
-        'LARSE/GEDI/GEDI02_A_002_MONTHLY/202005_018E_036S',
-        'LARSE/GEDI/GEDI02_A_002_MONTHLY/202008_018E_036S',
-        'LARSE/GEDI/GEDI02_A_002_MONTHLY/202009_018E_036S',
+        'LARSE/GEDI/GEDI02_A_002_MONTHLY/202112_018E_036S',
+        'LARSE/GEDI/GEDI02_A_002_MONTHLY/202205_018E_036S',
+        'LARSE/GEDI/GEDI02_A_002_MONTHLY/202207_018E_036S',
     ]
     coll = ee.ImageCollection(image_ids)
     coll = coll.set('system:id', 'LARSE/GEDI/GEDI02_A_002_MONTHLY')
@@ -552,7 +552,7 @@ def test_prepare_for_composite_date_region(
         image = mi.add_mask_bands(image)
         return mi.set_mask_portions(image, region=region_100ha)
 
-    # create property lists for testing the prepared collections
+    # create property lists for testing prepared collections
     # date:
     infos = {}
     date = '2022-12-05'
@@ -562,29 +562,19 @@ def test_prepare_for_composite_date_region(
     ]
 
     # region with cloud/shadow supported collection:
-    # create a source collection whose image ordering is opposite to the expected prepared
-    # collection ordering
     src_coll = l9_sr_coll._ee_coll.map(lambda im: set_mask_portions(im, l9_sr_coll._mi))
-    src_coll = src_coll.sort('CLOUDLESS_PORTION', ascending=False)
     src_coll = ImageCollectionAccessor(src_coll)
     src_coll.id = l9_sr_coll.id  # patch id to avoid getInfo()
-    # prepare the source collection with region=
     comp_coll = src_coll._prepare_for_composite('q-mosaic', region=region_100ha)
-    # get the CLOUDLESS_PORTIONs of the source and prepared collection images
     infos['region_cp'] = [
         coll.aggregate_array('CLOUDLESS_PORTION') for coll in [src_coll._ee_coll, comp_coll]
     ]
 
     # region with non-cloud/shadow supported collection:
-    # create a source collection whose image ordering is opposite to the expected prepared
-    # collection ordering
     src_coll = gedi_cth_coll._ee_coll.map(lambda im: set_mask_portions(im, gedi_cth_coll._mi))
-    src_coll = src_coll.sort('FILL_PORTION', ascending=False)
     src_coll = ImageCollectionAccessor(src_coll)
     src_coll.id = gedi_cth_coll.id  # patch id to avoid getInfo()
-    # prepare the source collection with region=
     comp_coll = src_coll._prepare_for_composite('mosaic', region=region_100ha)
-    # get the FILL_PORTIONs of the source and prepared collection images
     infos['region_fp'] = [
         coll.aggregate_array('FILL_PORTION') for coll in [src_coll._ee_coll, comp_coll]
     ]
@@ -593,20 +583,19 @@ def test_prepare_for_composite_date_region(
     infos = ee.Dictionary(infos).getInfo()
 
     # test date:
-    # test prepared and source collection ordering is different
     assert infos['date'][1] != infos['date'][0]
-    # test prepared collection is sorted by distance to date
     date = to_datetime(date)
     date_dist = [abs(date - d) for d in to_datetime(infos['date'][1], unit='ms')]
     sorted_dates = [d for _, d in sorted(zip(date_dist, infos['date'][1]), reverse=True)]
     assert infos['date'][1] == sorted_dates
 
-    # test region:
-    for key in ['region_cp', 'region_fp']:
-        # test prepared and source collection ordering is different
-        assert infos[key][1] != infos[key][0]
-        # test prepared collection is sorted correctly
-        assert sorted(infos[key][1]) == infos[key][1]
+    # test region with cloud/shadow supported collection:
+    assert infos['region_cp'][1] != infos['region_cp'][0]
+    assert sorted(infos['region_cp'][1]) == infos['region_cp'][1]
+
+    # test region with non-cloud/shadow supported collection:
+    assert infos['region_fp'][1] != infos['region_fp'][0]
+    assert sorted(infos['region_fp'][1]) == infos['region_fp'][1]
 
 
 def test_prepare_for_composite_errors(gedi_cth_coll: ImageCollectionAccessor, region_100ha: dict):
@@ -636,7 +625,7 @@ def test_composite_params(l9_sr_coll: ImageCollectionAccessor, region_100ha: dic
         get_refl_stat(l9_sr_coll.composite(method), stat='mean') for method in CompositeMethod
     ]
     infos['mask'] = [
-        get_refl_stat(l9_sr_coll.composite(mask=mask), stat='sum') for mask in [False, True]
+        get_refl_stat(l9_sr_coll.composite(mask=mask).mask(), stat='sum') for mask in [False, True]
     ]
     infos['resampling'] = {
         resampling.value: get_refl_stat(l9_sr_coll.composite(resampling=resampling), stat='stdDev')
@@ -652,7 +641,7 @@ def test_composite_params(l9_sr_coll: ImageCollectionAccessor, region_100ha: dic
     ]
     # cloud / shadow kwargs
     infos['cs_kwargs'] = [
-        get_refl_stat(l9_sr_coll.composite(mask_shadows=mask_shadows), stat='sum')
+        get_refl_stat(l9_sr_coll.composite(mask_shadows=mask_shadows).mask(), stat='sum')
         for mask_shadows in [False, True]
     ]
 
@@ -661,7 +650,7 @@ def test_composite_params(l9_sr_coll: ImageCollectionAccessor, region_100ha: dic
 
     # test each method gives a unique mean reflectance
     assert len(infos['method']) == len(set(infos['method'])) > 0
-    # test mask=True reduces the mask=False masked reflectance
+    # test mask=True reduces the mask=False masked area
     assert infos['mask'][0] > infos['mask'][1]
     # test each resampling method gives a unique reflectance std dev
     assert len(infos['resampling'].values()) == len(set(infos['resampling'].values())) > 0
@@ -676,7 +665,7 @@ def test_composite_params(l9_sr_coll: ImageCollectionAccessor, region_100ha: dic
     # test region (CLOUDLESS_PORTION) ordering affects the mean reflectance
     assert infos['region'][0] != infos['region'][1]
     # test cloud / shadow kwargs have an effect (i.e. mask_shadows=True reduces the
-    # mask_shadows=False masked reflectance)
+    # mask_shadows=False masked area)
     assert infos['cs_kwargs'][0] > infos['cs_kwargs'][1]
 
 
