@@ -22,7 +22,6 @@ import ee
 import numpy as np
 import pytest
 from pandas import to_datetime
-from rasterio.features import bounds
 
 from geedim import schema
 from geedim.collection import (
@@ -441,97 +440,96 @@ def test_medoid(l9_sr_coll: ImageCollectionAccessor, region_100ha: dict):
 
 def test_filter(region_10000ha: dict):
     """Test filter() with different parameters."""
-
-    def get_coll_props(coll: ee.ImageCollection) -> ee.Dictionary:
-        """Return a dictionary of image property lists."""
-        return ee.Dictionary(
-            dict(
-                time_start=coll.aggregate_array('system:time_start'),
-                footprint=coll.aggregate_array('system:footprint'),
-                fill_portion=coll.aggregate_array('FILL_PORTION'),
-                cloudless_portion=coll.aggregate_array('CLOUDLESS_PORTION'),
-            )
-        )
-
-    def bounds_intersect(geom1: dict, geom2: dict) -> bool:
-        """Return whether the bounds of the GeoJSON geometries intersect."""
-        bounds1, bounds2 = bounds(geom1), bounds(geom2)
-        br, ul = np.maximum(bounds1[:2], bounds2[:2]), np.minimum(bounds1[2:], bounds2[2:])
-        return np.all(ul > br)
-
-    # get image properties for testing filter parameters (note that image collections
-    # cannot be nested in an ee.List or ee.Dictionary getInfo() call)
-    # reference
+    # get image properties for testing filter parameters (note that an ee.List or ee.Dictionary
+    # containing nested image collections doesn't return collection image info on getInfo(), so
+    # image properties are retrieved by other means):
+    # start_date, end_date & region
     coll = ImageCollectionAccessor(ee.ImageCollection('LANDSAT/LC09/C02/T1_L2'))
     props = {}
     ref_kwargs = dict(start_date='2023-01-01', end_date='2024-01-01', region=region_10000ha)
     filt_coll = coll.filter(**ref_kwargs)
-    props['ref'] = get_coll_props(filt_coll)
+    props['date_region'] = dict(
+        time_start=filt_coll.aggregate_array('system:time_start'),
+        intersections=filt_coll.iterate(
+            lambda im, inters: ee.List(inters).add(im.geometry().intersects(region_10000ha)),
+            ee.List([]),
+        ),
+    )
 
     # start_date without end_date
-    filt_coll = coll.filter(start_date=ref_kwargs['start_date'])
+    filt_coll = coll.filter(start_date=filt_coll.first().date().advance(-0.001, 'second'))
     props['start_date'] = filt_coll.aggregate_array('system:time_start')
 
     # fill_portion
     fill_portion = 99.95
     filt_coll = coll.filter(**ref_kwargs, fill_portion=fill_portion)
     props['fill_portion'] = [
-        coll.filter(**ref_kwargs, fill_portion=fill_portion).aggregate_array('FILL_PORTION')
-        for fill_portion in [0, 99.95]
+        coll.filter(**ref_kwargs, fill_portion=fp).aggregate_array('FILL_PORTION')
+        for fp in [0, fill_portion]
     ]
 
     # cloudless_portion
     cloudless_portion = 90
     filt_coll = coll.filter(**ref_kwargs, cloudless_portion=cloudless_portion)
-    props['cloudless_portion'] = filt_coll.aggregate_array('CLOUDLESS_PORTION')
+    props['cloudless_portion'] = [
+        coll.filter(**ref_kwargs, cloudless_portion=cp).aggregate_array('CLOUDLESS_PORTION')
+        for cp in [0, cloudless_portion]
+    ]
 
     # custom_filter (without FILL_PORTION or CLOUDLESS_PORTION)
     cloud_cover = 50
-    filt_coll = coll.filter(**ref_kwargs, custom_filter=f'CLOUD_COVER<{cloud_cover}')
-    props['custom_filter_nop'] = filt_coll.aggregate_array('CLOUD_COVER')
+    props['custom_filter_nop'] = [
+        coll.filter(**ref_kwargs, custom_filter=f'CLOUD_COVER<={cc}').aggregate_array('CLOUD_COVER')
+        for cc in [100, cloud_cover]
+    ]
 
     # custom_filter (with FILL_PORTION or CLOUDLESS_PORTION)
-    filt_coll = coll.filter(**ref_kwargs, custom_filter=f'CLOUDLESS_PORTION<{cloudless_portion}')
-    props['custom_filter_p'] = filt_coll.aggregate_array('CLOUDLESS_PORTION')
+    props['custom_filter_p'] = [
+        coll.filter(**ref_kwargs, custom_filter=f'CLOUDLESS_PORTION<{cp}').aggregate_array(
+            'CLOUDLESS_PORTION'
+        )
+        for cp in [100, cloudless_portion]
+    ]
 
     # cloud / shadow kwargs
-    filt_coll = coll.filter(**ref_kwargs, fill_portion=fill_portion, mask_shadows=False)
-    props['cs_kwargs'] = get_coll_props(filt_coll)
+    props['cs_kwargs'] = [
+        coll.filter(**ref_kwargs, fill_portion=0, mask_shadows=ms).aggregate_array(
+            'CLOUDLESS_PORTION'
+        )
+        for ms in [False, True]
+    ]
 
     # combine getInfo() calls into one
     props = ee.Dictionary(props).getInfo()
 
-    # test reference (start_date, end_date & region filtering)
-    ref_dates = to_datetime(props['ref']['time_start'], unit='ms')
+    # test start_date, end_date & region filtering
+    ref_dates = to_datetime(props['date_region']['time_start'], unit='ms')
     assert all(ref_dates >= to_datetime(ref_kwargs['start_date']))
     assert all(ref_dates <= to_datetime(ref_kwargs['end_date']))
     assert all(sorted(ref_dates) == ref_dates)
-    assert all(bounds_intersect(ref_kwargs['region'], b) for b in props['ref']['footprint'])
-    # test images have no FILL_PORTION or CLOUDLESS_PORTION properties when fill_portion and
-    # cloudless_portion are not supplied (indirectly tests mask bands were not added)
-    assert not props['ref']['fill_portion'] and not props['ref']['cloudless_portion']
+    assert all(props['date_region']['intersections'])
 
-    # test start_date without end_date
+    # test start_date without end_date (end_date should default to a millisecond after start_date)
     assert len(props['start_date']) == 0
 
     # test fill_portion
-    assert all(fp >= fill_portion for fp in props['fill_portion']['fill_portion'])
+    assert any(fp < fill_portion for fp in props['fill_portion'][0])
+    assert all(fp >= fill_portion for fp in props['fill_portion'][1])
 
     # test cloudless_portion
-    assert all(cp >= cloudless_portion for cp in props['cloudless_portion'])
+    assert any(cp < cloudless_portion for cp in props['cloudless_portion'][0])
+    assert all(cp >= cloudless_portion for cp in props['cloudless_portion'][1])
 
     # test custom_filter without FILL_PORTION / CLOUDLESS_PORTION
-    assert all(cc < cloud_cover for cc in props['custom_filter_nop'])
+    assert any(cc >= cloud_cover for cc in props['custom_filter_nop'][0])
+    assert all(cc < cloud_cover for cc in props['custom_filter_nop'][1])
 
     # test custom_filter with FILL_PORTION / CLOUDLESS_PORTION
-    assert all(cp < cloudless_portion for cp in props['custom_filter_p'])
+    assert any(cp >= cloudless_portion for cp in props['custom_filter_p'][0])
+    assert all(cp < cloudless_portion for cp in props['custom_filter_p'][1])
 
-    # cloud / shadow kwargs (cloudless portion is increased with mask_shadows=False)
-    assert props['cs_kwargs']['time_start'] == props['fill_portion']['time_start']
-    cloudless_portions = zip(
-        props['cs_kwargs']['cloudless_portion'], props['fill_portion']['cloudless_portion']
-    )
-    assert any(cc_ms > cc_ref for cc_ms, cc_ref in cloudless_portions)
+    # cloud / shadow kwargs (changing mask_shadows from False to True reduces the cloudless_portion)
+    assert any(cp_nms > cp_ms for cp_nms, cp_ms in zip(*props['cs_kwargs'], strict=True))
 
 
 def test_filter_error(l9_sr_coll: ImageCollectionAccessor, region_10000ha: dict):
