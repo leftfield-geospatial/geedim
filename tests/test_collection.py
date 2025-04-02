@@ -168,6 +168,16 @@ def gedi_image_list() -> list[str | MaskedImage]:
     ]
 
 
+_s2_b1_info = {
+    'id': 'B1',
+    'data_type': {'type': 'PixelType', 'precision': 'int', 'min': 0, 'max': 65535},
+    'dimensions': [1830, 1830],
+    'crs': 'EPSG:32734',
+    'crs_transform': [60, 0, 499980, 0, -60, 6400000],
+}
+"""Example EE band info dictionary for B1 of a Sentinel-2 image."""
+
+
 def test_compatible_collections(
     l4_image_id: str,
     l5_image_id: str,
@@ -379,63 +389,6 @@ def test_cs_support(coll: str, exp_support: bool, request: pytest.FixtureRequest
     """Test the cloudShadowSupport property."""
     coll: ImageCollectionAccessor = request.getfixturevalue(coll)
     assert coll.cloudShadowSupport == exp_support
-
-
-def test_add_mask_bands(l9_sr_coll: ImageCollectionAccessor):
-    """Test addMaskBands()."""
-    # This just tests bands exist and kwargs were passed. Detailed mask testing is done in
-    # test_mask.py.
-    cs_coll = l9_sr_coll.addMaskBands(mask_shadows=False)
-    info = cs_coll.getInfo()
-    assert len(info['features']) == len(l9_sr_coll.properties)
-    for im_info in info['features']:
-        band_names = [bi['id'] for bi in im_info['bands']]
-        assert all(bn in band_names for bn in ['CLOUDLESS_MASK', 'CLOUD_DIST', 'FILL_MASK'])
-        assert 'SHADOW_MASK' not in band_names
-
-
-def test_mask_clouds(l9_sr_coll: ImageCollectionAccessor, region_100ha: dict):
-    """Test maskClouds()."""
-    # This just tests the masked area increases. Detailed mask testing is done in test_mask.py.
-
-    def aggregate_mask_sum(image: ee.Image, sums: ee.List) -> ee.List:
-        """Add the sum of the image masks to the sums list."""
-        sum_ = image.mask().reduceRegion('sum', geometry=region_100ha).values().reduce('mean')
-        return ee.List(sums).add(sum_)
-
-    # find & compare image mask sums before and after masking
-    masked_coll = ImageCollectionAccessor(l9_sr_coll.addMaskBands()).maskClouds()
-    unmasked_sums = l9_sr_coll._ee_coll.iterate(aggregate_mask_sum, ee.List([]))
-    masked_sums = masked_coll.iterate(aggregate_mask_sum, ee.List([]))
-    # combine getInfo() calls into one
-    sums = ee.Dictionary(dict(unmasked=unmasked_sums, masked=masked_sums)).getInfo()
-
-    assert len(sums['unmasked']) == len(l9_sr_coll.properties)
-    for masked_sum, unmasked_sum in zip(sums['masked'], sums['unmasked']):
-        assert masked_sum < unmasked_sum
-
-
-def test_medoid(l9_sr_coll: ImageCollectionAccessor, region_100ha: dict):
-    """Test medoid()."""
-    # relative difference of median and medoid (without bands arg)
-    median_im = l9_sr_coll._ee_coll.median()
-    medoid_im = l9_sr_coll.medoid()
-    median_diff_im = medoid_im.subtract(median_im).divide(median_im)
-    # relative difference of medoid without and with bands arg
-    medoid_bands_im = l9_sr_coll.medoid(bands=l9_sr_coll.specBands[2:-2])
-    bands_diff_im = medoid_bands_im.subtract(medoid_im).divide(medoid_im)
-
-    # find means of differences, combining all getInfo() calls into one
-    diffs = [
-        im.reduceRegion('mean', geometry=region_100ha, scale=30)
-        for im in [median_diff_im, bands_diff_im]
-    ]
-    diffs = ee.List(diffs).getInfo()
-
-    # test medoid is similar to median
-    assert all(abs(diffs[0][bn]) < 0.05 for bn in l9_sr_coll.specBands)
-    # test bands argument changes medoid
-    assert all(diffs[1][bn] != 0 for bn in l9_sr_coll.specBands)
 
 
 def test_filter(region_10000ha: dict):
@@ -686,6 +639,139 @@ def test_composite_properties(l9_sr_coll: ImageCollectionAccessor):
     assert set(band_names).issuperset(
         ['CLOUD_MASK', 'SHADOW_MASK', 'CLOUD_DIST', 'CLOUDLESS_MASK', 'FILL_MASK']
     )
+
+
+def test_add_mask_bands(l9_sr_coll: ImageCollectionAccessor):
+    """Test addMaskBands()."""
+    # This just tests bands exist and kwargs were passed. Detailed mask testing is done in
+    # test_mask.py.
+    cs_coll = l9_sr_coll.addMaskBands(mask_shadows=False)
+    info = cs_coll.getInfo()
+    assert len(info['features']) == len(l9_sr_coll.properties)
+    for im_info in info['features']:
+        band_names = [bi['id'] for bi in im_info['bands']]
+        assert all(bn in band_names for bn in ['CLOUDLESS_MASK', 'CLOUD_DIST', 'FILL_MASK'])
+        assert 'SHADOW_MASK' not in band_names
+
+
+def test_mask_clouds(l9_sr_coll: ImageCollectionAccessor, region_100ha: dict):
+    """Test maskClouds()."""
+    # This just tests the masked area increases. Detailed mask testing is done in test_mask.py.
+
+    def aggregate_mask_sum(image: ee.Image, sums: ee.List) -> ee.List:
+        """Add the sum of the image masks to the sums list."""
+        sum_ = image.mask().reduceRegion('sum', geometry=region_100ha).values().reduce('mean')
+        return ee.List(sums).add(sum_)
+
+    # find & compare image mask sums before and after masking
+    masked_coll = ImageCollectionAccessor(l9_sr_coll.addMaskBands()).maskClouds()
+    unmasked_sums = l9_sr_coll._ee_coll.iterate(aggregate_mask_sum, ee.List([]))
+    masked_sums = masked_coll.iterate(aggregate_mask_sum, ee.List([]))
+    # combine getInfo() calls into one
+    sums = ee.Dictionary(dict(unmasked=unmasked_sums, masked=masked_sums)).getInfo()
+
+    assert len(sums['unmasked']) == len(l9_sr_coll.properties)
+    for masked_sum, unmasked_sum in zip(sums['masked'], sums['unmasked']):
+        assert masked_sum < unmasked_sum
+
+
+def test_medoid(l9_sr_coll: ImageCollectionAccessor, region_100ha: dict):
+    """Test medoid()."""
+    # relative difference of median and medoid (without bands arg)
+    median_im = l9_sr_coll._ee_coll.median()
+    medoid_im = l9_sr_coll.medoid()
+    median_diff_im = medoid_im.subtract(median_im).divide(median_im)
+    # relative difference of medoid without and with bands arg
+    medoid_bands_im = l9_sr_coll.medoid(bands=l9_sr_coll.specBands[2:-2])
+    bands_diff_im = medoid_bands_im.subtract(medoid_im).divide(medoid_im)
+
+    # find means of differences, combining all getInfo() calls into one
+    diffs = [
+        im.reduceRegion('mean', geometry=region_100ha, scale=30)
+        for im in [median_diff_im, bands_diff_im]
+    ]
+    diffs = ee.List(diffs).getInfo()
+
+    # test medoid is similar to median
+    assert all(abs(diffs[0][bn]) < 0.05 for bn in l9_sr_coll.specBands)
+    # test bands argument changes medoid
+    assert all(diffs[1][bn] != 0 for bn in l9_sr_coll.specBands)
+
+
+@pytest.mark.parametrize('features', [([{'bands': [_s2_b1_info, dict(_s2_b1_info, id='B2')]}] * 2)])
+def test_raise_image_consistency(features: list):
+    """Test _raise_image_consistency() with a consistent collection."""
+    coll = ImageCollectionAccessor(None)
+    # patch with mock EE collection info
+    coll._info = dict(features=features)
+    coll._raise_image_consistency()
+
+
+@pytest.mark.parametrize(
+    'features, match',
+    [
+        # inconsistent number of bands
+        (
+            [{'bands': [_s2_b1_info, dict(_s2_b1_info, id='B2')]}, {'bands': [_s2_b1_info]}],
+            'number of bands or band names',
+        ),
+        # inconsistent band names
+        (
+            [{'bands': [_s2_b1_info]}, {'bands': [dict(_s2_b1_info, id='B2')]}],
+            'number of bands or band names',
+        ),
+        # non fixed projection band
+        (
+            [{'bands': [{k: v for k, v in _s2_b1_info.items() if k != 'dimensions'}]}],
+            'fixed projection',
+        ),
+        # inconsistent band dimensions
+        (
+            [{'bands': [_s2_b1_info, dict(_s2_b1_info, id='B2', dimensions=[1, 1])]}],
+            'band projections, bounds or data types',
+        ),
+        # inconsistent band data type
+        (
+            [
+                {
+                    'bands': [
+                        _s2_b1_info,
+                        dict(
+                            _s2_b1_info,
+                            id='B2',
+                            data_type={'type': 'PixelType', 'precision': 'float'},
+                        ),
+                    ]
+                }
+            ],
+            'band projections, bounds or data types',
+        ),
+        # inconsistent band crs
+        (
+            [{'bands': [_s2_b1_info, dict(_s2_b1_info, id='B2', crs='EPSG:3857')]}],
+            'band projections, bounds or data types',
+        ),
+        # inconsistent band crs_transform
+        (
+            [
+                {
+                    'bands': [
+                        _s2_b1_info,
+                        dict(_s2_b1_info, id='B2', crs_transform=[1, 0, 0, 0, 1, 0]),
+                    ]
+                }
+            ],
+            'band projections, bounds or data types',
+        ),
+    ],
+)
+def test_raise_image_consistency_error(features: list, match: str):
+    """Test _raise_image_consistency() error conditions."""
+    coll = ImageCollectionAccessor(None)
+    # patch with mock EE collection info
+    coll._info = dict(features=features)
+    with pytest.raises(ValueError, match=match):
+        coll._raise_image_consistency()
 
 
 # old tests
