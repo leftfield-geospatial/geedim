@@ -344,11 +344,13 @@ class ImageAccessor:
         """Whether this image has cloud/shadow support."""
         return issubclass(self._mi, mask._CloudlessImage)
 
-    def _raise_not_fixed(self):
-        """Raise an error if the image cannot be exported as it has no fixed projection."""
+    def _raise_cannot_export(self):
+        """Raise an error if the image cannot be exported."""
+        if not self.bandNames:
+            raise ValueError("The image cannot be exported as it has no bands.")
         if not self.shape:
             raise ValueError(
-                "This image cannot be exported as it doesn't have a fixed projection.  "
+                "The image cannot be exported as it doesn't have a fixed projection.  "
                 "'prepareForExport()' can be called to define one."
             )
 
@@ -749,7 +751,7 @@ class ImageAccessor:
             and not exp_image.shape
         ):
             raise ValueError(
-                "This image does not have a fixed projection, you need to provide 'crs', "
+                "The image does not have a fixed projection, you need to provide 'crs', "
                 "'region' & 'scale' / 'shape'; or 'crs', 'crs_transform' & 'shape'."
             )
 
@@ -941,11 +943,17 @@ class ImageAccessor:
             number of CPUs, or one, whichever is greater.  Values larger than the default can
             stall the asynchronous event loop and are not recommended.
         """
+        # TODO: test download of large image e.g. LANDSAT/LC09/C02/T1_L2/LC09_173083_20220308 and
+        #  understand the general rel. between cpu, network bw and tile size. and specifically why
+        #  cpu limits with wifi bw at 0 from about 50% of the download (i.e. cpu apparently has
+        #  many tiles to decompress and recompress, but no tiles are being downloaded).  are
+        #  tiles actually being streamed / chunked, or are they retrieved & cached in one shot?
+        #  another concern is small tiles may be more work to recompress (?).
         driver = Driver(driver)
         ofile = fsspec.open(os.fspath(file), 'wb') if not isinstance(file, OpenFile) else file
         if not overwrite and ofile.fs.exists(ofile.path):
             raise FileExistsError(f"File exists: '{ofile.path}'.")
-        self._raise_not_fixed()
+        self._raise_cannot_export()
 
         # create a rasterio profile for the destination file
         profile = self.profile
@@ -1050,7 +1058,7 @@ class ImageAccessor:
         :returns:
             NumPy array.
         """
-        self._raise_not_fixed()
+        self._raise_cannot_export()
         im_shape = (*self.shape, self.count)
         if masked:
             array = np.ma.zeros(im_shape, dtype=self.dtype, fill_value=self.nodata)
@@ -1137,7 +1145,7 @@ class ImageAccessor:
         if not xarray:
             raise ImportError("'toXarray()' requires the 'xarray' package to be installed.")
 
-        self._raise_not_fixed()
+        self._raise_cannot_export()
         if not self.transform[1] == self.transform[3] == 0:
             raise ValueError(
                 "'The image cannot be exported to Xarray as its 'transform' is not aligned with "

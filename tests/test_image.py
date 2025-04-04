@@ -263,7 +263,7 @@ def test_resample(
             assert std_test[0] == std_test[1]
 
 
-def test_to_dtype(landsat_ndvi_image):
+def test_to_dtype(landsat_ndvi_image: ImageAccessor):
     """Test toDType()."""
     # convert to all possible dtypes
     dtypes = list(_nodata_vals.keys())
@@ -277,7 +277,7 @@ def test_to_dtype(landsat_ndvi_image):
         assert converted_image.dtype == dtype, dtype
 
 
-def test_to_dtype_error(landsat_ndvi_image):
+def test_to_dtype_error(landsat_ndvi_image: ImageAccessor):
     """Test toDType() raises an error with an unsupported dtype."""
     with pytest.raises(ValueError, match='Unsupported dtype'):
         landsat_ndvi_image.toDType('int64')
@@ -404,9 +404,9 @@ def test_prepare_for_export(s2_sr_hm_image: ImageAccessor, region_100ha: dict):
 
         # region is a special case that is approximate & needs transformation between CRSs
         if 'region' in prep_kwargs:
-            region_bounds = transform_bounds(ee.Geometry(prep_kwargs['region']).toGeoJSON())
-            image_bounds = transform_bounds(prep_im.geometry)
-            assert image_bounds == pytest.approx(region_bounds, abs=1e-3)
+            region_bounds = transform_bounds(ee.Geometry(prep_kwargs['region']).toGeoJSON(), crs)
+            image_bounds = transform_bounds(prep_im.geometry, crs)
+            assert image_bounds == pytest.approx(region_bounds, abs=60)
 
     # test pixel grid is maintained when arguments allow
     src_transform = rio.Affine(*s2_sr_hm_image.transform)
@@ -421,7 +421,7 @@ def test_prepare_for_export_errors(
     s2_sr_hm_image: ImageAccessor, landsat_ndvi_image: ImageAccessor
 ):
     """Test prepareForExport() error conditions."""
-    # composite image without sufficient patial params
+    # composite image without sufficient spatial params
     with pytest.raises(ValueError, match='fixed projection'):
         landsat_ndvi_image.prepareForExport()
     with pytest.raises(ValueError, match='fixed projection'):
@@ -433,13 +433,12 @@ def test_prepare_for_export_errors(
 
 
 @pytest.mark.parametrize('type', ExportType)
-def test_to_google_cloud(s2_sr_hm_image: ImageAccessor, region_25ha: dict, type: ExportType):
+def test_to_google_cloud(prepared_image: ImageAccessor, type: ExportType):
     """Test toGoogleCloud() starts the task."""
     # Just test the export starts - completion is tested in integration.py.  Note that the asset
     # and cloud options should start but will ultimately fail (for asset, an existing asset
     # cannot overwritten, and for cloud, there is no 'geedim' bucket).
-    prep_im = ImageAccessor(s2_sr_hm_image.prepareForExport(region=region_25ha, scale=30))
-    prep_im.toGoogleCloud('test_export', type=type, folder='geedim', wait=False)
+    prepared_image.toGoogleCloud('test_export', type=type, folder='geedim', wait=False)
 
 
 def test_open_raster(tmp_path: Path):
@@ -580,8 +579,19 @@ def test_to_numpy(prepared_image: ImageAccessor, masked: bool, structured: bool)
     assert np.all((array_ == range(1, image.count + 1)) == mask)
 
 
-def test_to_non_fixed_error(landsat_ndvi_image: ImageAccessor, tmp_path: Path):
-    """Test to*() raise errors with a non-fixed projection image."""
+def test_export_error(landsat_ndvi_image: ImageAccessor, tmp_path: Path):
+    """Test to*() error conditions."""
+    # mock an image with no bands
+    image = ImageAccessor(None)
+    image.info = dict(bands=[])
+
+    with pytest.raises(ValueError, match='no bands'):
+        image.toGeoTIFF(tmp_path.joinpath('test.tif'))
+    with pytest.raises(ValueError, match='no bands'):
+        image.toXarray()
+    with pytest.raises(ValueError, match='no bands'):
+        image.toNumPy()
+
     # just in case, prevent this test running large exports if landsat_ndvi_image does have a
     # fixed projection
     assert landsat_ndvi_image.shape is None
