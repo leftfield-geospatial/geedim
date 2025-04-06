@@ -21,10 +21,46 @@ import pathlib
 import ee
 import pytest
 from click.testing import CliRunner
+from rasterio.features import bounds
+from rasterio.warp import transform_geom
 
 from geedim import Initialize, MaskedImage
+from geedim.collection import ImageCollectionAccessor
 from geedim.image import ImageAccessor
 from geedim.utils import root_path
+
+
+def accessors_from_images(ee_images: list[ee.Image]) -> list[ImageAccessor]:
+    """Return a list of ImageAccessor objects, with cached info properties, for the given list of
+    ee.Image objects, combining all getInfo() calls into one.
+    """
+
+    def band_scale(band_name: ee.ComputedObject, ee_image: ee.Image):
+        """Return scale in meters for band_name."""
+        return ee_image.select(ee.String(band_name)).projection().nominalScale()
+
+    infos = []
+    for ee_image in ee_images:
+        scales = ee_image.bandNames().map(lambda bn: band_scale(bn, ee_image))
+        infos.append(ee.List([scales, ee_image]))
+
+    infos = ee.List(infos).getInfo()
+    images = []
+    for ee_image, (scales, info) in zip(ee_images, infos):
+        for scale, bdict in zip(scales, info.get('bands', [])):
+            bdict['scale'] = scale
+        image = ImageAccessor(ee_image)
+        image.info = info
+        images.append(image)
+
+    return images
+
+
+def transform_bounds(geometry: dict, crs: str = 'EPSG:4326') -> tuple[float, ...]:
+    """Return the bounds of the given GeoJSON geometry in crs coordinates."""
+    src_crs = geometry['crs']['properties']['name'] if 'crs' in geometry else 'EPSG:4326'
+    geometry = geometry if crs == src_crs else transform_geom(src_crs, crs, geometry)
+    return bounds(geometry)
 
 
 @pytest.fixture(scope='session', autouse=True)
@@ -192,7 +228,7 @@ def gedi_agb_image_id() -> str:
 @pytest.fixture(scope='session')
 def gedi_cth_image_id() -> str:
     """GEDI canopy top height EE image ID.  25m."""
-    return 'LARSE/GEDI/GEDI02_A_002_MONTHLY/202009_018E_036S'
+    return 'LARSE/GEDI/GEDI02_A_002_MONTHLY/202112_018E_036S'
 
 
 @pytest.fixture(scope='session')
@@ -268,20 +304,62 @@ def const_image() -> ImageAccessor:
 
 
 @pytest.fixture(scope='session')
-def prepared_image(const_image) -> ImageAccessor:
+def prepared_image(const_image: ImageAccessor) -> ImageAccessor:
     """Constant image with a masked border, prepared for exporting."""
     crs = 'EPSG:3857'
     image_bounds = ee.Geometry.Rectangle((-1.0, -1.0, 1.0, 1.0), proj=crs)
     mask_bounds = ee.Geometry.Rectangle((-0.5, -0.5, 0.5, 0.5), proj=crs)
 
     image = const_image._ee_image.toUint8()
-    image = image.setDefaultProjection(crs, scale=0.1).clip(image_bounds)
+    image = image.setDefaultProjection(crs, scale=0.1).clipToBoundsAndScale(image_bounds)
     # mask outside of mask_bounds
     image = image.updateMask(image.clip(mask_bounds).mask())
     # set ID and band names to those of a known collection so that STAC properties are populated
     image = image.set('system:id', 'COPERNICUS/S2_SR_HARMONIZED/prepared_image')
     image = image.rename(['B2', 'B3', 'B4'])
     return ImageAccessor(image)
+
+
+@pytest.fixture(scope='session')
+def prepared_coll(prepared_image: ImageAccessor) -> ImageCollectionAccessor:
+    """Constant image with a masked border, prepared for exporting."""
+    # TODO: change masking of second image?  and make export tests check for exact band arrays (
+    #  e.g. have another fixture with exact band arrays to test against)?
+    image1 = prepared_image._ee_image
+    image1 = image1.set('system:index', 'prepared_image1')
+    image2 = image1.add(3).toUint8()
+    image2 = image2.set('system:index', 'prepared_image2')
+
+    coll = ee.ImageCollection([image1, image2])
+    # set ID to known collection so that STAC properties are populated
+    coll = coll.set('system:id', 'COPERNICUS/S2_SR_HARMONIZED')
+
+    return ImageCollectionAccessor(coll)
+
+
+@pytest.fixture()
+def patch_to_google_cloud(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
+    """Patches to the EE API for testing toGoogleCloud().  Returns a dictionary of the number of
+    times getOperation() is called per task name.
+    """
+    status_calls = {}
+    success_status = {
+        'metadata': {'state': 'SUCCEEDED', 'description': 'export', 'progress': 1},
+        'done': True,
+    }
+
+    def start(self: ee.batch.Task):
+        """Mock ee.batch.Task.start() method that just sets task name."""
+        self.name = ee.data.newTaskId()[0]
+
+    def getOperation(name: str):
+        """Mock ee.data.getOperation() method that returns a success status."""
+        status_calls[name] = status_calls.get(name, 0) + 1
+        return success_status
+
+    monkeypatch.setattr(ee.batch.Task, 'start', start)
+    monkeypatch.setattr(ee.data, 'getOperation', getOperation)
+    return status_calls
 
 
 @pytest.fixture(scope='session')
