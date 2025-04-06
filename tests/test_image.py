@@ -26,45 +26,11 @@ import numpy as np
 import pytest
 import rasterio as rio
 from rasterio.enums import Compression
-from rasterio.features import bounds
-from rasterio.warp import transform_geom
 
 from geedim import utils
 from geedim.enums import ExportType
 from geedim.image import ImageAccessor, _nodata_vals, _open_raster
-
-
-def accessors_from_images(ee_images: list[ee.Image]) -> list[ImageAccessor]:
-    """Return a list of ImageAccessor objects, with cached info properties, for the given list of
-    ee.Image objects, combining all getInfo() calls into one.
-    """
-
-    def band_scale(band_name: ee.ComputedObject, ee_image: ee.Image):
-        """Return scale in meters for band_name."""
-        return ee_image.select(ee.String(band_name)).projection().nominalScale()
-
-    infos = []
-    for ee_image in ee_images:
-        scales = ee_image.bandNames().map(lambda bn: band_scale(bn, ee_image))
-        infos.append(ee.List([scales, ee_image]))
-
-    infos = ee.List(infos).getInfo()
-    images = []
-    for ee_image, (scales, info) in zip(ee_images, infos):
-        for scale, bdict in zip(scales, info.get('bands', [])):
-            bdict['scale'] = scale
-        image = ImageAccessor(ee_image)
-        image.info = info
-        images.append(image)
-
-    return images
-
-
-def transform_bounds(geometry: dict, crs: str = 'EPSG:4326') -> tuple[float, ...]:
-    """Return the bounds of the given GeoJSON geometry in crs coordinates."""
-    src_crs = geometry['crs']['properties']['name'] if 'crs' in geometry else 'EPSG:4326'
-    geometry = geometry if crs == src_crs else transform_geom(src_crs, crs, geometry)
-    return bounds(geometry)
+from tests.conftest import accessors_from_images, transform_bounds
 
 
 def test_ee_props(
@@ -201,6 +167,51 @@ def test_cs_support(image: str, exp_support: bool, request: pytest.FixtureReques
     """Test the cloudShadowSupport property."""
     image: ImageAccessor = request.getfixturevalue(image)
     assert image.cloudShadowSupport == exp_support
+
+
+def test_monitor_task(monkeypatch: pytest.MonkeyPatch):
+    """Test monitorTask() success and error conditions."""
+
+    class Task:
+        """Mock ee.batch.Task class."""
+
+        name = 'task'
+
+    # typical status sequence for successful completion
+    statuses = [
+        {'metadata': {'state': 'PENDING', 'description': 'export'}},
+        {'metadata': {'state': 'RUNNING', 'description': 'export', 'progress': 0.5}},
+        {
+            'metadata': {'state': 'SUCCEEDED', 'description': 'export', 'progress': 1},
+            'done': True,
+        },
+    ]
+    statuses = iter(statuses)
+
+    def getOperation(name: str):
+        """Mock ee.data.getOperation() method that returns a sequence of statuses."""
+        return next(statuses)
+
+    monkeypatch.setattr(ee.data, 'getOperation', getOperation)
+
+    # test successful completion
+    ImageAccessor.monitorTask(Task())
+    # test getOperation() was called until done
+    with pytest.raises(StopIteration):
+        next(statuses)
+
+    # update status sequence to mock an error
+    message = 'error message'
+    error_status = {
+        'metadata': {'state': 'FAILED', 'description': 'export'},
+        'done': True,
+        'error': {'message': message},
+    }
+    statuses = iter([error_status])
+
+    # test error condition
+    with pytest.raises(OSError, match=message):
+        ImageAccessor.monitorTask(Task())
 
 
 def test_projection(s2_sr_hm_image: ImageAccessor):
@@ -432,13 +443,18 @@ def test_prepare_for_export_errors(
         s2_sr_hm_image.prepareForExport(scale=10, shape=(400, 300))
 
 
-@pytest.mark.parametrize('type', ExportType)
-def test_to_google_cloud(prepared_image: ImageAccessor, type: ExportType):
-    """Test toGoogleCloud() starts the task."""
-    # Just test the export starts - completion is tested in integration.py.  Note that the asset
-    # and cloud options should start but will ultimately fail (for asset, an existing asset
-    # cannot overwritten, and for cloud, there is no 'geedim' bucket).
-    prepared_image.toGoogleCloud('test_export', type=type, folder='geedim', wait=False)
+@pytest.mark.parametrize('etype', ExportType)
+def test_to_google_cloud(
+    prepared_image: ImageAccessor, etype: ExportType, patch_to_google_cloud: dict[str, int]
+):
+    """Test toGoogleCloud()."""
+    task = prepared_image.toGoogleCloud('test_export', type=etype, folder='geedim', wait=False)
+    # test monitorTask is not called with wait=False
+    assert task.name not in patch_to_google_cloud
+
+    task = prepared_image.toGoogleCloud('test_export', type=etype, folder='geedim', wait=True)
+    # test monitorTask is called with wait=True
+    assert patch_to_google_cloud[task.name] == 1
 
 
 def test_open_raster(tmp_path: Path):
