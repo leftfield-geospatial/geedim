@@ -195,6 +195,11 @@ class ImageCollectionAccessor:
         return min_scale if (max_scale > 10 * min_scale) and (min_scale > 0) else max_scale
 
     @cached_property
+    def _first(self) -> ImageAccessor:
+        """Accessor to the first image of the collection."""
+        return ImageAccessor(self._ee_coll.first())
+
+    @cached_property
     def id(self) -> str | None:
         """Earth Engine ID."""
         # Get the ID from self._info if it has been cached.  Otherwise get the ID directly rather
@@ -333,14 +338,14 @@ class ImageCollectionAccessor:
             missingval='-',
         )
 
-    @cached_property
+    @property
     def specBands(self) -> list[str] | None:
         """List of spectral band names.  ``None`` if there is no :attr:`stac` entry,
         or no spectral bands.
         """
         if not self.stac:
             return None
-        return ImageAccessor(self._ee_coll.first()).specBands
+        return self._first.specBands
 
     @property
     def cloudShadowSupport(self) -> bool:
@@ -459,7 +464,7 @@ class ImageCollectionAccessor:
         if split is SplitType.bands:
             # split collection into an image per band (i.e. the same band from every collection
             # image form the bands of a new 'band' image)
-            first_info = next(iter(self.info.get('features', [])))
+            first_info = self.info['features'][0] if self.info.get('features') else {}
             first_band_names = [bi['id'] for bi in first_info.get('bands', [])]
 
             def to_bands(band_name: ee.String) -> ee.Image:
@@ -749,7 +754,7 @@ class ImageCollectionAccessor:
             Prepared collection.
         """
         # apply the export args to the first image
-        first = ImageAccessor(self._ee_coll.first()).prepareForExport(
+        first = self._first.prepareForExport(
             crs=crs,
             crs_transform=crs_transform,
             shape=shape,
@@ -835,13 +840,13 @@ class ImageCollectionAccessor:
         for name, image in images.items():
             tasks[name] = image.toGoogleCloud(filename=name, folder=folder, wait=False, **kwargs)
 
-        if not wait:
-            return list(tasks.values())
+        if wait:
+            # wait for tasks to complete
+            tqdm_kwargs = utils.get_tqdm_kwargs(desc=self.id or 'Collection', unit=split.value)
+            for name, task in tqdm(tasks.items(), **tqdm_kwargs):
+                ImageAccessor.monitorTask(task, name)
 
-        # wait for tasks to complete
-        tqdm_kwargs = utils.get_tqdm_kwargs(desc=self.id or 'Collection', unit=split.value)
-        for name, task in tqdm(tasks.items(), **tqdm_kwargs):
-            ImageAccessor.monitorTask(task, name)
+        return list(tasks.values())
 
     def toGeoTIFF(
         self,
@@ -921,6 +926,8 @@ class ImageCollectionAccessor:
         driver = Driver(driver)
         self._raise_image_consistency()
         images = self._split_images(split)
+        # TODO: use something like accessors_from_images() to get infos for all the images at
+        #  once (here and in all export methods)?
 
         # download the split images sequentially, each into its own file
         tqdm_kwargs = utils.get_tqdm_kwargs(desc=self.id or 'Collection', unit=split.value)
