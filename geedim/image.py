@@ -400,21 +400,16 @@ class ImageAccessor:
 
         # poll EE until the export preparation is complete
         with utils.Spinner(desc=tqdm_kwargs['desc'] + ': ', leave=False):
-            while not status.get('done', False):
+            while not status.get('done', False) and 'progress' not in status['metadata']:
                 time.sleep(0.5)
                 status = ee.data.getOperation(task.name)
-                if 'progress' in status['metadata']:
-                    break
-                elif status['metadata']['state'] == 'FAILED':
-                    msg = status.get('error', {}).get('message', status)
-                    raise OSError(f'Export failed: {msg}')
 
         # wait for export to complete, displaying a progress bar
         with tqdm(total=1, **tqdm_kwargs) as bar:
             while not status.get('done', False):
+                bar.update(status['metadata']['progress'] - bar.n)
                 time.sleep(1)
                 status = ee.data.getOperation(task.name)
-                bar.update(status['metadata']['progress'] - bar.n)
 
             if status['metadata']['state'] == 'SUCCEEDED':
                 bar.update(bar.total - bar.n)
@@ -848,7 +843,7 @@ class ImageAccessor:
         if type == ExportType.drive:
             # move folders in 'filename' to sub-folders in 'folder' ('filename' should be the
             # filename only)
-            filepath = Path(folder, filename)
+            filepath = Path(folder or '', filename)
             folder, filename = '/'.join(filepath.parts[:-1]), filepath.parts[-1]
             task = ee.batch.Export.image.toDrive(
                 image=self._ee_image,
