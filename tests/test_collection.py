@@ -16,25 +16,29 @@ limitations under the License.
 
 from __future__ import annotations
 
+import itertools
 from datetime import datetime, timezone
 
 import ee
 import numpy as np
 import pytest
+import rasterio as rio
 from pandas import to_datetime
 
-from geedim import schema
+from geedim import ExportType, schema
 from geedim.collection import (
     ImageCollectionAccessor,
     MaskedCollection,
     _compatible_collections,
 )
 from geedim.download import BaseImage
-from geedim.enums import CompositeMethod, ResamplingMethod
+from geedim.enums import CompositeMethod, ResamplingMethod, SplitType
 from geedim.errors import InputImageError
+from geedim.image import ImageAccessor
 from geedim.mask import MaskedImage, _MaskedImage
 from geedim.stac import STACClient
 from geedim.utils import split_id
+from tests.conftest import accessors_from_images, transform_bounds
 
 # TODO: ImageCollectionAccessor testing
 #  - fromImages()
@@ -73,22 +77,42 @@ from geedim.utils import split_id
 # TODO: MaskedCollection
 
 
-def accessors_from_collections(ee_colls: list[ee.ImageCollection]) -> list[ImageCollectionAccessor]:
-    """Return a list of ImageCollectionAccessor objects, with cached info properties,
+def accessors_from_collections(
+    ee_colls: list[ee.ImageCollection],
+) -> list[ImageCollectionAccessor]:
+    """Return lists of ImageCollectionAccessor objects, with cached info and _first properties,
     for the given list of ee.ImageCollection objects, using a single getInfo() call.
     """
 
-    def aggregate_images(image: ee.Image, images: ee.List) -> ee.List:
-        return ee.List(images).add(image)
+    def band_scale(band_name: ee.ComputedObject, ee_image: ee.Image):
+        """Return scale in meters for band_name."""
+        return ee_image.select(ee.String(band_name)).projection().nominalScale()
 
-    coll_images = [ee_coll.iterate(aggregate_images, ee.List([])) for ee_coll in ee_colls]
-    infos = ee.List([ee_colls, coll_images]).getInfo()
+    coll_images = [
+        ee_coll.toList(ImageCollectionAccessor._max_export_images) for ee_coll in ee_colls
+    ]
+    first_scales = [
+        ee_coll.first().bandNames().map(lambda bn: band_scale(bn, ee_coll.first()))
+        for ee_coll in ee_colls
+    ]
+
+    infos = ee.List([ee_colls, coll_images, first_scales]).getInfo()
 
     colls = []
-    for ee_coll, coll_info, images_info in zip(ee_colls, infos[0], infos[1]):
+    for ee_coll, coll_info, image_infos, scales in zip(ee_colls, *infos):
+        # create accessor to first image of ee_coll with cached info
+        first = ImageAccessor(ee_coll.first())
+        first_info = image_infos[0]
+        for scale, bdict in zip(scales, first_info.get('bands', [])):
+            bdict['scale'] = scale
+        first.info = first_info
+
+        # create accessor to ee_coll with cached info and _first
         coll = ImageCollectionAccessor(ee_coll)
-        info = dict(**coll_info, features=images_info)
+        info = dict(**coll_info, features=image_infos)
         coll._info = info
+        coll._first = first
+
         colls.append(coll)
 
     return colls
@@ -772,6 +796,112 @@ def test_raise_image_consistency_error(features: list, match: str):
     coll._info = dict(features=features)
     with pytest.raises(ValueError, match=match):
         coll._raise_image_consistency()
+
+
+def test_prepare_for_export(
+    s2_sr_hm_coll: ImageCollectionAccessor, s2_sr_hm_image: ImageAccessor, region_100ha: dict
+):
+    """Test prepareForExport()."""
+    # adapted from test_image.test_prepare_for_export()
+    crs = 'EPSG:3857'
+    prep_kwargs_list = [
+        dict(crs=crs, region=region_100ha, scale=60),
+        dict(crs=crs, region=region_100ha, shape=(300, 400)),
+        dict(crs=crs, crs_transform=(60.0, 0.0, 500000.0, 0.0, -30.0, 6400000.0), shape=(600, 400)),
+        dict(region=region_100ha),
+        dict(crs=crs, region=region_100ha, scale=60, dtype='int16', bands=['B4', 'B3', 'B2']),
+        # maintain pixel grid
+        dict(crs=s2_sr_hm_image.crs, region=region_100ha),
+        dict(region=region_100ha, scale=s2_sr_hm_image.scale),
+        dict(region=region_100ha),
+        dict(),
+    ]
+    prep_colls = [s2_sr_hm_coll.prepareForExport(**prep_kwargs) for prep_kwargs in prep_kwargs_list]
+    prep_colls = accessors_from_collections(prep_colls)
+
+    # test prepared collection properties
+    for prep_coll, prep_kwargs in zip(prep_colls, prep_kwargs_list):
+        prep_coll._raise_image_consistency()
+
+        prep_first = prep_coll._first
+        assert prep_first.crs == prep_kwargs.get('crs', prep_first.crs)
+        assert prep_first.dtype == prep_kwargs.get('dtype', prep_first.dtype)
+        assert prep_first.bandNames == prep_kwargs.get('bands', prep_first.bandNames)
+        if 'shape' in prep_kwargs:
+            assert prep_first.shape == prep_kwargs['shape']
+        if 'scale' in prep_kwargs:
+            assert prep_first.scale == prep_kwargs['scale']
+        if 'crs_transform' in prep_kwargs:
+            assert prep_first.transform == prep_kwargs['crs_transform']
+
+        # region is a special case that is approximate & needs transformation between CRSs
+        if 'region' in prep_kwargs:
+            region_bounds = transform_bounds(ee.Geometry(prep_kwargs['region']).toGeoJSON(), crs)
+            image_bounds = transform_bounds(prep_first.geometry, crs)
+            assert image_bounds == pytest.approx(region_bounds, abs=60)
+
+    # test pixel grid is maintained when arguments allow
+    src_transform = rio.Affine(*s2_sr_hm_image.transform)
+    for prep_coll in prep_colls[-4:]:
+        prep_first = prep_coll._first
+        prep_transform = rio.Affine(*prep_first.transform)
+        assert (prep_transform[0], prep_transform[4]) == (src_transform[0], src_transform[4])
+        pixel_offset = ~src_transform * (prep_transform[2], prep_transform[5])
+        assert pixel_offset == (int(pixel_offset[0]), int(pixel_offset[1]))
+
+
+def test_split_images(prepared_coll: ImageCollectionAccessor, prepared_image: ImageAccessor):
+    """Test _split_images() with different split types."""
+    images_images = prepared_coll._split_images(SplitType.images)
+    bands_images = prepared_coll._split_images(SplitType.bands)
+
+    # populate image accessor info properties using a single getInfo() call
+    split_images = [im._ee_image for im in [*images_images.values(), *bands_images.values()]]
+    split_images = accessors_from_images(split_images)
+    images_images = dict(zip(images_images.keys(), split_images[: len(images_images)]))
+    bands_images = dict(zip(bands_images.keys(), split_images[-len(bands_images) :]))
+
+    # test images split
+    assert images_images.keys() == prepared_coll.properties.keys()
+    for key, image in images_images.items():
+        assert image.index == key
+        assert image.bandNames == prepared_image.bandNames
+
+    # test bands split
+    assert list(bands_images.keys()) == prepared_image.bandNames
+    for key, image in bands_images.items():
+        assert image.index == key
+        assert image.bandNames == list(prepared_coll.properties.keys())
+
+    # test georeferencing & dtype on all images
+    # TODO: duplication with to* tests?
+    for image in split_images:
+        assert image.crs == prepared_image.crs
+        assert image.transform == prepared_image.transform
+        assert image.shape == prepared_image.shape
+        assert image.dtype == prepared_image.dtype
+
+
+@pytest.mark.parametrize('etype, split', itertools.product(ExportType, SplitType))
+def test_to_google_cloud(
+    prepared_coll: ImageCollectionAccessor,
+    etype: ExportType,
+    split: SplitType,
+    patch_to_google_cloud: dict[str, int],
+):
+    """Test toGoogleCloud()."""
+    tasks = prepared_coll.toGoogleCloud(type=etype, folder='geedim', wait=False, split=split)
+    assert (
+        len(tasks) == len(prepared_coll.properties)
+        if split is SplitType.images
+        else (len(prepared_coll.info['features'][0]['bands']))
+    )
+    # test monitorTask is not called with wait=False
+    assert all(t.name not in patch_to_google_cloud for t in tasks)
+
+    tasks = prepared_coll.toGoogleCloud(type=etype, folder='geedim', wait=True, split=split)
+    # test monitorTask is called with wait=True
+    assert all(patch_to_google_cloud[t.name] == 1 for t in tasks)
 
 
 # old tests
