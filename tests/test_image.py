@@ -16,7 +16,9 @@ limitations under the License.
 
 from __future__ import annotations
 
+import itertools
 import json
+from dataclasses import make_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -169,49 +171,22 @@ def test_cs_support(image: str, exp_support: bool, request: pytest.FixtureReques
     assert image.cloudShadowSupport == exp_support
 
 
-def test_monitor_task(monkeypatch: pytest.MonkeyPatch):
-    """Test monitorTask() success and error conditions."""
+@pytest.mark.parametrize('patch_export_task', ['export_task_success_sequence'], indirect=True)
+def test_monitor_task(patch_export_task, capsys: pytest.CaptureFixture):
+    """Test monitorTask()."""
+    # mock ee.batch.Task object
+    task = make_dataclass('Task', [('name', str, 'task')])
+    ImageAccessor.monitorTask(task)
+    assert '100%' in capsys.readouterr().err
 
-    class Task:
-        """Mock ee.batch.Task class."""
 
-        name = 'task'
-
-    # typical status sequence for successful completion
-    statuses = [
-        {'metadata': {'state': 'PENDING', 'description': 'export'}},
-        {'metadata': {'state': 'RUNNING', 'description': 'export', 'progress': 0.5}},
-        {
-            'metadata': {'state': 'SUCCEEDED', 'description': 'export', 'progress': 1},
-            'done': True,
-        },
-    ]
-    statuses = iter(statuses)
-
-    def getOperation(name: str):
-        """Mock ee.data.getOperation() method that returns a sequence of statuses."""
-        return next(statuses)
-
-    monkeypatch.setattr(ee.data, 'getOperation', getOperation)
-
-    # test successful completion
-    ImageAccessor.monitorTask(Task())
-    # test getOperation() was called until done
-    with pytest.raises(StopIteration):
-        next(statuses)
-
-    # update status sequence to mock an error
-    message = 'error message'
-    error_status = {
-        'metadata': {'state': 'FAILED', 'description': 'export'},
-        'done': True,
-        'error': {'message': message},
-    }
-    statuses = iter([error_status])
-
-    # test error condition
-    with pytest.raises(OSError, match=message):
-        ImageAccessor.monitorTask(Task())
+@pytest.mark.parametrize('patch_export_task', ['export_task_fail'], indirect=True)
+def test_monitor_task_error(patch_export_task, export_task_fail, capsys: pytest.CaptureFixture):
+    """Test monitorTask() error condition."""
+    # mock ee.batch.Task object
+    task = make_dataclass('Task', [('name', str, 'task')])
+    with pytest.raises(OSError, match=export_task_fail[0]['error']['message']):
+        ImageAccessor.monitorTask(task)
 
 
 def test_projection(s2_sr_hm_image: ImageAccessor):
@@ -443,18 +418,26 @@ def test_prepare_for_export_errors(
         s2_sr_hm_image.prepareForExport(scale=10, shape=(400, 300))
 
 
-@pytest.mark.parametrize('etype', ExportType)
+@pytest.mark.parametrize(
+    'etype, patch_export_task',
+    itertools.product(ExportType, ['export_task_success']),
+    indirect=['patch_export_task'],
+)
 def test_to_google_cloud(
-    prepared_image: ImageAccessor, etype: ExportType, patch_to_google_cloud: dict[str, int]
+    prepared_image: ImageAccessor,
+    etype: ExportType,
+    patch_export_task,
+    capsys: pytest.CaptureFixture,
 ):
     """Test toGoogleCloud()."""
-    task = prepared_image.toGoogleCloud('test_export', type=etype, folder='geedim', wait=False)
+    filename = 'test_export'
+    _ = prepared_image.toGoogleCloud(filename, type=etype, folder='geedim', wait=False)
     # test monitorTask is not called with wait=False
-    assert task.name not in patch_to_google_cloud
+    assert capsys.readouterr().err == ''
 
-    task = prepared_image.toGoogleCloud('test_export', type=etype, folder='geedim', wait=True)
+    _ = prepared_image.toGoogleCloud(filename, type=etype, folder='geedim', wait=True)
     # test monitorTask is called with wait=True
-    assert patch_to_google_cloud[task.name] == 1
+    assert '100%' in capsys.readouterr().err
 
 
 def test_open_raster(tmp_path: Path):

@@ -16,6 +16,7 @@ limitations under the License.
 
 from __future__ import annotations
 
+import itertools
 import pathlib
 
 import ee
@@ -338,28 +339,57 @@ def prepared_coll(prepared_image: ImageAccessor) -> ImageCollectionAccessor:
 
 
 @pytest.fixture()
-def patch_to_google_cloud(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
-    """Patches to the EE API for testing toGoogleCloud().  Returns a dictionary of the number of
-    times getOperation() is called per task name.
-    """
-    status_calls = {}
-    success_status = {
-        'metadata': {'state': 'SUCCEEDED', 'description': 'export', 'progress': 1},
-        'done': True,
-    }
+def export_task_success() -> list[dict]:
+    """Mock ee.data.getOperation() success status."""
+    return [
+        {
+            'metadata': {'state': 'SUCCEEDED', 'description': 'export', 'progress': 1},
+            'done': True,
+        }
+    ]
+
+
+@pytest.fixture()
+def export_task_success_sequence() -> list[dict]:
+    """Mock ee.data.getOperation() status sequence ending in success."""
+    return [
+        {'metadata': {'state': 'PENDING', 'description': 'export'}},
+        {'metadata': {'state': 'RUNNING', 'description': 'export', 'progress': 0.5}},
+        {
+            'metadata': {'state': 'SUCCEEDED', 'description': 'export', 'progress': 1},
+            'done': True,
+        },
+    ]
+
+
+@pytest.fixture()
+def export_task_fail() -> list[dict]:
+    """Mock ee.data.getOperation() failure status."""
+    return [
+        {
+            'metadata': {'state': 'FAILED', 'description': 'export'},
+            'done': True,
+            'error': {'message': 'error message'},
+        }
+    ]
+
+
+@pytest.fixture()
+def patch_export_task(
+    monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+) -> dict[str, int]:
+    """Patches to the EE API for testing export tasks."""
+    # get list of ee.data.getOperation() statuses from test function indirect parameter (expects
+    # it to refer to an 'export_task_*' fixture)
+    statuses = request.getfixturevalue(request.param)
+    statuses = itertools.cycle(statuses)
 
     def start(self: ee.batch.Task):
-        """Mock ee.batch.Task.start() method that just sets task name."""
-        self.name = ee.data.newTaskId()[0]
-
-    def getOperation(name: str):
-        """Mock ee.data.getOperation() method that returns a success status."""
-        status_calls[name] = status_calls.get(name, 0) + 1
-        return success_status
+        """Mock ee.batch.Task.start() method that just sets task name without running the task."""
+        self.name = 'test-task'
 
     monkeypatch.setattr(ee.batch.Task, 'start', start)
-    monkeypatch.setattr(ee.data, 'getOperation', getOperation)
-    return status_calls
+    monkeypatch.setattr(ee.data, 'getOperation', lambda name: next(statuses))
 
 
 @pytest.fixture(scope='session')

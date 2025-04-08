@@ -882,26 +882,34 @@ def test_split_images(prepared_coll: ImageCollectionAccessor, prepared_image: Im
         assert image.dtype == prepared_image.dtype
 
 
-@pytest.mark.parametrize('etype, split', itertools.product(ExportType, SplitType))
+@pytest.mark.parametrize(
+    'etype, split, patch_export_task',
+    itertools.product(ExportType, SplitType, ['export_task_success']),
+    indirect=['patch_export_task'],
+)
 def test_to_google_cloud(
     prepared_coll: ImageCollectionAccessor,
     etype: ExportType,
     split: SplitType,
-    patch_to_google_cloud: dict[str, int],
+    patch_export_task,
+    capsys: pytest.CaptureFixture,
 ):
     """Test toGoogleCloud()."""
-    tasks = prepared_coll.toGoogleCloud(type=etype, folder='geedim', wait=False, split=split)
-    assert (
-        len(tasks) == len(prepared_coll.properties)
+    exp_num_tasks = (
+        len(prepared_coll.properties)
         if split is SplitType.images
-        else (len(prepared_coll.info['features'][0]['bands']))
+        else len(prepared_coll.info['features'][0]['bands'])
     )
+    tasks = prepared_coll.toGoogleCloud(type=etype, folder='geedim', wait=False, split=split)
+    assert len(tasks) == exp_num_tasks
     # test monitorTask is not called with wait=False
-    assert all(t.name not in patch_to_google_cloud for t in tasks)
+    assert capsys.readouterr().err == ''
 
     tasks = prepared_coll.toGoogleCloud(type=etype, folder='geedim', wait=True, split=split)
+    assert len(tasks) == exp_num_tasks
     # test monitorTask is called with wait=True
-    assert all(patch_to_google_cloud[t.name] == 1 for t in tasks)
+    captured = capsys.readouterr()
+    assert prepared_coll.id in captured.err and '100%' in captured.err
 
 
 # old tests
