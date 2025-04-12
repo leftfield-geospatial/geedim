@@ -35,44 +35,54 @@ from geedim.image import ImageAccessor, _nodata_vals, _open_raster
 from tests.conftest import accessors_from_images, transform_bounds
 
 
-def test_ee_props(
-    s2_sr_hm_image: ImageAccessor, l9_sr_image: ImageAccessor, modis_nbar_image: ImageAccessor
+@pytest.mark.parametrize(
+    'image, exp_min_band, exp_support',
+    [('s2_sr_hm_image', 1, True), ('l9_sr_image', 0, True), ('modis_nbar_image', 0, False)],
+)
+def test_properties(
+    image: str, exp_min_band: int, exp_support: bool, request: pytest.FixtureRequest
 ):
-    """Test EE info derived properties (excludes dtype, stac, stac-derived properties &
-    cloudShadowSupport).
-    """
-    images = [s2_sr_hm_image, l9_sr_image, modis_nbar_image]
-    # combine getInfo() calls into one
-    infos = ee.List(
-        [ee.Image(s2_sr_hm_image.id), ee.Image(l9_sr_image.id), ee.Image(modis_nbar_image.id)]
-    ).getInfo()
-    # min scale band indexes
-    indexes = [1, 0, 0]
+    """Test properties excluding dtype and bounded."""
+    image: ImageAccessor = request.getfixturevalue(image)
+    props = image.info['properties']
+    min_band = image.info['bands'][exp_min_band]
 
-    for image, info, index in zip(images, infos, indexes):
-        props = info['properties']
-        bands = info['bands']
+    # EE info dependent properties
+    assert image.id == image.info['id']
+    assert image.index == props['system:index']
+    assert image.date == datetime.fromtimestamp(props['system:time_start'] / 1000, tz=timezone.utc)
+    assert image.properties == props
+    assert image.scale == np.sqrt(abs(image.transform[0] * image.transform[4]))
+    assert image.geometry == ee.Geometry(props['system:footprint']).toGeoJSON()
+    assert image.bandNames == [bi['id'] for bi in image.info['bands']]
+    assert image.size == np.dtype(image.dtype).itemsize * np.prod(image.shape) * image.count
 
-        assert image.id == info['id']
-        assert image.index == info['id'].split('/')[-1]
-        assert image.date == datetime.fromtimestamp(
-            props['system:time_start'] / 1000, tz=timezone.utc
-        )
-        assert image.properties == props
+    # RasterIO-like properties
+    assert image.crs == min_band['crs']
+    assert image.transform == tuple(min_band['crs_transform'])
+    assert image.shape == (tuple(min_band['dimensions'][::-1]))
+    assert image.count == len(image.info['bands'])
+    assert image.nodata == _nodata_vals[image.dtype]
+    assert image.profile == dict(
+        crs=utils.rio_crs(image.crs),  # test conversion for MODIS CRS
+        transform=image.transform,
+        width=image.shape[1],
+        height=image.shape[0],
+        count=image.count,
+        dtype=image.dtype,
+    )
 
-        assert image.crs == bands[index]['crs']
-        assert image.transform == tuple(bands[index]['crs_transform'])
-        assert image.shape == tuple(bands[index]['dimensions'][::-1])
-        assert image.count == len(bands)
-        assert image.nodata == _nodata_vals[image.dtype]
-        assert image.size == np.dtype(image.dtype).itemsize * np.prod(image.shape) * image.count
-        assert image.profile is not None
+    # STAC dependent properties
+    assert image.stac is not None
+    assert len(image.bandProps) == len(image.bandNames)
+    assert all([{'name', 'description'}.issubset(bp) for bp in image.bandProps])
+    spec_bands = [bp['name'] for bp in image.bandProps if 'center_wavelength' in bp]
+    if exp_support:
+        assert len(spec_bands) > 0
+    assert image.specBands == spec_bands
 
-        assert image.scale == pytest.approx(
-            np.sqrt(abs(image.transform[0]) * abs(image.transform[4]))
-        )
-        assert image.geometry == ee.Geometry(props['system:footprint']).toGeoJSON()
-        assert image.bandNames == [b['id'] for b in bands]
+    # cloud/shadow support
+    assert image.cloudShadowSupport == exp_support
 
 
 @pytest.mark.parametrize(
@@ -99,30 +109,6 @@ def test_dtype(ee_dtypes: list, exp_dtype: str):
     assert image.dtype == exp_dtype
 
 
-def test_profile(modis_nbar_image: ImageAccessor):
-    """Test the profile property."""
-    # tests the workaround for the MODIS CRS bug
-    assert modis_nbar_image.profile['crs'] == utils.rio_crs(modis_nbar_image.crs)
-    assert modis_nbar_image.profile['width'] == modis_nbar_image.shape[1]
-    assert modis_nbar_image.profile['height'] == modis_nbar_image.shape[0]
-    for attr in ['transform', 'count', 'dtype']:
-        assert modis_nbar_image.profile[attr] == getattr(modis_nbar_image, attr)
-
-
-@pytest.mark.parametrize(
-    'image, exp_scale',
-    [
-        ('l9_sr_image', 30),
-        ('s2_sr_hm_image', 10),
-        ('landsat_ndvi_image', 111319.5),  # composite with 1deg scale
-    ],
-)
-def test_scale(image: str, exp_scale: float, request: pytest.FixtureRequest):
-    """Test the scale property matches the minimum scale in meters."""
-    image: ImageAccessor = request.getfixturevalue(image)
-    assert image.scale == pytest.approx(exp_scale, abs=0.1)
-
-
 @pytest.mark.parametrize(
     'image, exp_bounded',
     [
@@ -140,7 +126,7 @@ def test_bounded(image: str, exp_bounded: bool, request: pytest.FixtureRequest):
 
 
 @pytest.mark.parametrize('image', ['landsat_ndvi_image', 'const_image'])
-def test_non_fixed_props(image: str, request: pytest.FixtureRequest):
+def test_properties_non_fixed(image: str, request: pytest.FixtureRequest):
     """Test that composites / images without fixed projections have no geometry, shape,
     size or profile.
     """
@@ -149,26 +135,6 @@ def test_non_fixed_props(image: str, request: pytest.FixtureRequest):
     assert image.shape is None
     assert image.size is None
     assert image.profile is None
-
-
-def test_stac_props(s2_sr_hm_image: ImageAccessor):
-    """Test the stac and stac-derived properties."""
-    assert s2_sr_hm_image.stac is not None
-    assert len(s2_sr_hm_image.bandProps) == len(s2_sr_hm_image.bandNames)
-    assert all(['name' in bp for bp in s2_sr_hm_image.bandProps])
-    assert len(s2_sr_hm_image.specBands) > 0
-    spec_bands = [bp['name'] for bp in s2_sr_hm_image.bandProps if 'center_wavelength' in bp]
-    assert s2_sr_hm_image.specBands == spec_bands
-
-
-@pytest.mark.parametrize(
-    'image, exp_support',
-    [('l9_sr_image', True), ('s2_sr_hm_image', True), ('modis_nbar_image', False)],
-)
-def test_cs_support(image: str, exp_support: bool, request: pytest.FixtureRequest):
-    """Test the cloudShadowSupport property."""
-    image: ImageAccessor = request.getfixturevalue(image)
-    assert image.cloudShadowSupport == exp_support
 
 
 @pytest.mark.parametrize('patch_export_task', ['export_task_success_sequence'], indirect=True)
@@ -462,7 +428,9 @@ def test_open_raster(tmp_path: Path):
 @pytest.mark.parametrize(
     'kwargs', [dict(driver='gtiff'), dict(driver='cog', nodata=False), dict(nodata=1)]
 )
-def test_to_geotiff(prepared_image: ImageAccessor, tmp_path: Path, kwargs: dict):
+def test_to_geotiff(
+    prepared_image: ImageAccessor, prepared_image_array: np.ndarray, tmp_path: Path, kwargs: dict
+):
     """Test toGeoTIFF() with different driver / nodata parameters."""
     file = tmp_path.joinpath('test.tif')
     image = prepared_image
@@ -487,10 +455,13 @@ def test_to_geotiff(prepared_image: ImageAccessor, tmp_path: Path, kwargs: dict)
 
         # contents
         array = ds.read()
+        array = np.moveaxis(array, 0, -1)
         # masked pixels will always == _nodata_vals[image.dtype], irrespective of the nodata value
         mask = array != _nodata_vals[image.dtype]
-        assert not np.all(mask)
-        assert np.all((array.T == range(1, image.count + 1)) == mask.T)
+        # assert not np.all(mask)
+        # assert np.all((array.T == range(1, image.count + 1)) == mask.T)
+        assert (mask == ~prepared_image_array.mask).all()
+        assert (array == prepared_image_array).all()
 
         # metadata
         metadata = ds.tags()
@@ -515,41 +486,10 @@ def test_to_geotiff_overwrite(prepared_image: ImageAccessor, tmp_path: Path):
         ds.read()
 
 
-@pytest.mark.parametrize('masked', [False, True])
-def test_to_xarray(prepared_image: ImageAccessor, masked: bool):
-    """Test toXarray()."""
-    image = prepared_image
-    array = image.toXarray(masked=masked)
-
-    # coordinates
-    assert all(array.coords['band'] == image.bandNames)
-    y = np.arange(0.5, image.shape[1] + 0.5) * image.transform[4] + image.transform[5]
-    x = np.arange(0.5, image.shape[0] + 0.5) * image.transform[0] + image.transform[2]
-    assert all(array.coords['x'] == x)
-    assert all(array.coords['y'] == y)
-
-    # dtype & nodata
-    if masked:
-        assert array.dtype == np.promote_types(image.dtype, 'float32')
-        assert np.isnan(array.attrs['nodata'])
-    else:
-        assert array.dtype == image.dtype
-        assert array.attrs['nodata'] == image.nodata
-
-    # attributes
-    for attr in ['id', 'crs', 'transform']:
-        assert array.attrs[attr] == getattr(image, attr), attr
-    assert array.attrs.get('ee') == json.dumps(image.properties)
-    assert array.attrs.get('stac') == json.dumps(image.stac)
-
-    # contents
-    mask = ~array.isnull() if masked else array != image.nodata
-    assert not mask.all()
-    assert ((array == range(1, image.count + 1)) == mask).all()
-
-
 @pytest.mark.parametrize('masked, structured', [(False, False), (True, False), (True, True)])
-def test_to_numpy(prepared_image: ImageAccessor, masked: bool, structured: bool):
+def test_to_numpy(
+    prepared_image: ImageAccessor, prepared_image_array: np.ndarray, masked: bool, structured: bool
+):
     """Test toNumpy()."""
     image = prepared_image
     array = image.toNumPy(masked=masked, structured=structured)
@@ -574,8 +514,45 @@ def test_to_numpy(prepared_image: ImageAccessor, masked: bool, structured: bool)
     # contents
     array_ = array.view(image.dtype).reshape(*image.shape, image.count) if structured else array
     mask = ~array_.mask if masked else array_ != image.nodata
-    assert not np.all(mask)
-    assert np.all((array_ == range(1, image.count + 1)) == mask)
+    # assert not np.all(mask)
+    # assert np.all((array_ == range(1, image.count + 1)) == mask)
+    assert (mask == ~prepared_image_array.mask).all()
+    assert (array_ == prepared_image_array).all()
+
+
+@pytest.mark.parametrize('masked', [False, True])
+def test_to_xarray(prepared_image: ImageAccessor, prepared_image_array: np.ndarray, masked: bool):
+    """Test toXarray()."""
+    image = prepared_image
+    array = image.toXarray(masked=masked)
+
+    # coordinates
+    assert (array.coords['band'] == image.bandNames).all()
+    y = np.arange(0.5, image.shape[1] + 0.5) * image.transform[4] + image.transform[5]
+    x = np.arange(0.5, image.shape[0] + 0.5) * image.transform[0] + image.transform[2]
+    assert (array.coords['x'] == x).all()
+    assert (array.coords['y'] == y).all()
+
+    # dtype & nodata
+    if masked:
+        assert array.dtype == np.promote_types(image.dtype, 'float32')
+        assert np.isnan(array.attrs['nodata'])
+    else:
+        assert array.dtype == image.dtype
+        assert array.attrs['nodata'] == image.nodata
+
+    # attributes
+    for attr in ['id', 'crs', 'transform']:
+        assert array.attrs[attr] == getattr(image, attr), attr
+    assert array.attrs['ee'] == json.dumps(image.properties)
+    assert array.attrs['stac'] == json.dumps(image.stac)
+
+    # contents
+    mask = ~array.isnull() if masked else array != image.nodata
+    # assert not mask.all()
+    # assert ((array == range(1, image.count + 1)) == mask).all()
+    assert (mask == ~prepared_image_array.mask).all()
+    assert (array == prepared_image_array).all()
 
 
 def test_export_error(landsat_ndvi_image: ImageAccessor, tmp_path: Path):
