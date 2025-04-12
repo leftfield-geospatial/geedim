@@ -27,6 +27,7 @@ from collections.abc import Sequence
 from contextlib import ExitStack, contextmanager
 from datetime import datetime, timezone
 from functools import cached_property
+from math import sqrt
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -36,7 +37,7 @@ import numpy as np
 import rasterio as rio
 from fsspec.core import OpenFile
 from fsspec.implementations.local import LocalFileSystem
-from rasterio import features
+from rasterio import features, warp
 from rasterio.enums import Resampling as RioResampling
 from rasterio.io import DatasetWriter
 from tqdm.auto import tqdm
@@ -134,45 +135,52 @@ class ImageAccessor:
     @cached_property
     def _min_projection(self) -> dict[str, Any]:
         """Projection information of the minimum scale band."""
-        # TODO: some S2 images have 1x1 bands with meter scale of 1... e.g.
-        #  'COPERNICUS/S2_SR_HARMONIZED/20170328T083601_20170328T084228_T35RNK'.  that will be an
-        #  issue for ImageAccessor.projection() and its users too.
         proj_info = dict(crs=None, transform=None, shape=None, scale=None, id=None)
-        bands = self.info.get('bands', []).copy()
+        bands = self.info.get('bands', [])
         if len(bands) > 0:
-            bands.sort(key=operator.itemgetter('scale'))
-            band_info = bands[0]
+            crss = [bi['crs'] for bi in bands]
+            transforms = [
+                (rio.Affine(*bi['crs_transform']) * rio.Affine.translation(*bi['origin']))[:6]
+                if 'origin' in bi
+                else bi['crs_transform']
+                for bi in bands
+            ]
+            scales = [sqrt(abs(t[0] * t[4])) for t in transforms]
 
-            proj_info['id'] = band_info['id']
-            proj_info['crs'] = band_info['crs']
-            proj_info['transform'] = rio.Affine(*band_info['crs_transform'])
-            if ('origin' in band_info) and not any(np.isnan(band_info['origin'])):
-                proj_info['transform'] *= rio.Affine.translation(*band_info['origin'])
-            proj_info['transform'] = proj_info['transform'][:6]
-            if 'dimensions' in band_info:
-                proj_info['shape'] = tuple(band_info['dimensions'][::-1])
-            proj_info['scale'] = band_info['scale']
+            # find minimum scale band
+            if len(set(crss)) == 1:
+                min_band = np.argmin(scales)
+            else:
+                # find band scales in CRS of first band so they can be compared
+                scales_ = []
+                for crs, tform, scale in zip(crss, transforms, scales):
+                    if crs != crss[0]:
+                        xs, ys = warp.transform(
+                            utils.rio_crs(crs),
+                            utils.rio_crs(crss[0]),
+                            (tform[2], tform[2] + tform[0]),
+                            (tform[5], tform[5] + tform[4]),
+                        )
+                        scale_ = sqrt(abs((xs[1] - xs[0]) * (ys[1] - ys[0])))
+                    else:
+                        scale_ = scale
+                    scales_.append(scale_)
+                min_band = np.argmin(scales_)
+
+            # set proj_info with the properties of the minimum scale band
+            proj_info['id'] = bands[min_band]['id']
+            proj_info['crs'] = crss[min_band]
+            proj_info['transform'] = tuple(transforms[min_band])
+            if 'dimensions' in bands[min_band]:
+                proj_info['shape'] = tuple(bands[min_band]['dimensions'][::-1])
+            proj_info['scale'] = scales[min_band]
 
         return proj_info
 
     @cached_property
     def info(self) -> dict[str, Any]:
-        """Earth Engine information as returned by :meth:`ee.Image.getInfo`, with scales in
-        meters added to band dictionaries.
-        """
-
-        def band_scale(band_name):
-            """Return scale in meters for ``band_name``."""
-            return self._ee_image.select(ee.String(band_name)).projection().nominalScale()
-
-        # combine ee.Image.getInfo() and band scale .getInfo() calls into one
-        scales = self._ee_image.bandNames().map(band_scale)
-        scales, ee_info = ee.List([scales, self._ee_image]).getInfo()
-
-        # zip scales into ee_info band dictionaries
-        for scale, bdict in zip(scales, ee_info.get('bands', [])):
-            bdict['scale'] = scale
-        return ee_info
+        """Earth Engine information as returned by :meth:`ee.Image.getInfo`."""
+        return self._ee_image.getInfo()
 
     @property
     def stac(self) -> dict[str, Any] | None:
@@ -228,7 +236,7 @@ class ImageAccessor:
         return len(self.info.get('bands', []))
 
     @cached_property
-    def dtype(self) -> str:
+    def dtype(self) -> str | None:
         """Minimum size data type able to represent all image bands."""
 
         def get_min_int_dtype(data_types: list[dict]) -> str | None:
@@ -269,7 +277,7 @@ class ImageAccessor:
         For integer :attr:`dtype`, this is the minimum possible value, and for floating point
         :attr:`dtype`, it is ``float('-inf')``.
         """
-        return _nodata_vals[self.dtype]
+        return _nodata_vals[self.dtype] if self.dtype else None
 
     @property
     def size(self) -> int | None:
@@ -296,7 +304,7 @@ class ImageAccessor:
 
     @property
     def scale(self) -> float | None:
-        """Minimum scale of the image bands (meters)."""
+        """Scale of the minimum scale band in units of its CRS."""
         return self._min_projection['scale']
 
     @property
@@ -329,13 +337,9 @@ class ImageAccessor:
         return band_props
 
     @property
-    def specBands(self) -> list[str] | None:
-        """List of spectral band names.  ``None`` if there is no :attr:`stac` entry,
-        or no spectral bands.
-        """
-        if not self.stac:
-            return None
-        band_props = self.stac.get('summaries', {}).get('eo:bands', [])
+    def specBands(self) -> list[str]:
+        """List of spectral band names."""
+        band_props = self.stac.get('summaries', {}).get('eo:bands', []) if self.stac else []
         band_props = {bp['name']: bp for bp in band_props}
         return [bn for bn in self.bandNames if 'center_wavelength' in band_props.get(bn, {})]
 
@@ -428,6 +432,9 @@ class ImageAccessor:
         :return:
             Projection.
         """
+        # TODO: some S2 images have 1x1 bands with meter scale of 1... e.g.
+        #  'COPERNICUS/S2_SR_HARMONIZED/20170328T083601_20170328T084228_T35RNK'.  that will be an
+        #  issue users of this method.
         bands = self._ee_image.bandNames()
         scales = bands.map(
             lambda band: self._ee_image.select(ee.String(band)).projection().nominalScale()
