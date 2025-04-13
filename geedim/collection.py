@@ -1035,7 +1035,7 @@ class ImageCollectionAccessor:
         shape = (*first.shape, len(images), first.count)
         dtype = first.dtype
         if masked:
-            array = np.ma.zeros(shape, dtype=dtype)
+            array = np.ma.zeros(shape, dtype=dtype, fill_value=first.nodata)
         else:
             array = np.zeros(shape, dtype=dtype)
 
@@ -1054,10 +1054,10 @@ class ImageCollectionAccessor:
         if structured:
             # create a structured data dtype to describe the last 2 array dimensions
             band_names = first.bandNames
-            image_names = [*images.keys()]
+            image_names = list(images.keys())
 
             timestamps = [p.get('system:time_start', None) for p in self.properties.values()]
-            if all(timestamps):
+            if all([ts is not None for ts in timestamps]):
                 # zip date string 'title's with the corresponding system:index 'name's (allows
                 # the time dimension to be indexed by date string or system:index)
                 date_strings = [
@@ -1065,17 +1065,20 @@ class ImageCollectionAccessor:
                     for ts in timestamps
                 ]
                 if split is SplitType.bands:
-                    band_names = [*zip(date_strings, band_names)]
+                    band_names = list(zip(date_strings, band_names))
                 else:
-                    image_names = [*zip(date_strings, image_names)]
+                    image_names = list(zip(date_strings, image_names))
 
             # nest the structured data type for a split image's bands (last array dimension) in the
             # structured data type for the split images (second last array dimension)
-            band_dtype = np.dtype([*zip(band_names, [array.dtype] * len(band_names))])
-            exp_dtype = np.dtype([*zip(image_names, [band_dtype] * len(images))])
+            band_dtype = np.dtype(list(zip(band_names, [array.dtype] * len(band_names))))
+            exp_dtype = np.dtype(list(zip(image_names, [band_dtype] * len(images))))
 
             # create a view of the array with the last 2 dimensions as the structured dtype
             array = array.reshape(*array.shape[:2], -1).view(dtype=exp_dtype).squeeze()
+            if masked:
+                # re-set masked array fill_value which is not copied in view
+                array.fill_value = first.nodata
 
         return array
 
