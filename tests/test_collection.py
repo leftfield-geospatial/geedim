@@ -17,105 +17,45 @@ limitations under the License.
 from __future__ import annotations
 
 import itertools
+import json
 from datetime import datetime, timezone
+from pathlib import Path
 
 import ee
 import numpy as np
 import pytest
 import rasterio as rio
 from pandas import to_datetime
+from rasterio.enums import Compression
 
 from geedim import ExportType, schema
-from geedim.collection import (
-    ImageCollectionAccessor,
-    MaskedCollection,
-    _compatible_collections,
-)
+from geedim.collection import ImageCollectionAccessor, MaskedCollection, _compatible_collections
 from geedim.download import BaseImage
 from geedim.enums import CompositeMethod, ResamplingMethod, SplitType
 from geedim.errors import InputImageError
-from geedim.image import ImageAccessor
+from geedim.image import ImageAccessor, _nodata_vals
 from geedim.mask import MaskedImage, _MaskedImage
 from geedim.stac import STACClient
 from geedim.utils import split_id
-from tests.conftest import accessors_from_images, transform_bounds
+from tests.conftest import transform_bounds
 
-# TODO: ImageCollectionAccessor testing
-#  - fromImages()
-#    - Works with e.g. s2 ims or landsat ims.  Collection gets correct ID and images keep their
-#    indexes.
-#    - Raises error on incompatible ims or ids=None.
-#  - schemaPropertyNames:
-#    - test it updates the schema correctly with stac schema, geedim schema or unknown property
-#    names
-#    - test errors and empty behaviour
-#  - schemaTable
-#    - contains schemaPropertyNames, and works with unknown properties which have none vals
-#    - empty schemaPropertyNames behaviour
-#  - propertiesTable
-#    - contains schemaPropertyNames abbreviations & >= num rows as images in collection.
-#    - behaviour when schemaPropertyNames contains names not present in image properties
-#    - empty schemaPropertyNames and empty collection behaviour
-#    - conversion of datetime
-#    - images with different properties?
-#  - filter
-#    - start_date and no end_date (or revert to EE default?)
-#    - start_date, end_date & region
-#    - start_date, end_date & region, fill_portion & cloudless_portion
-#    - custom_filter
-#  - prepare_for_composite
-#    - mask bands present
-#    - image ordering based on region / date
-#    - masking based on mask
-#    - errors
-#  - composite
-#    - test id, index & time properties
-#    - test mask bands always present
-#    - test when an S2 component image is has missing cloud data, the q-mosaic composite image is
-#    fully masked with mask=True/False
-#    - test mask param changes masked portion of the composite
-# TODO: MaskedCollection
+# TODO: MaskedCollection tests
 
 
 def accessors_from_collections(
     ee_colls: list[ee.ImageCollection],
 ) -> list[ImageCollectionAccessor]:
-    """Return lists of ImageCollectionAccessor objects, with cached info and _first properties,
-    for the given list of ee.ImageCollection objects, using a single getInfo() call.
+    """Return a list of ImageCollectionAccessor objects, with cached info, for the given list of
+    ee.ImageCollection objects, using a single getInfo() call.
     """
-
-    def band_scale(band_name: ee.ComputedObject, ee_image: ee.Image):
-        """Return scale in meters for band_name."""
-        return ee_image.select(ee.String(band_name)).projection().nominalScale()
-
     coll_images = [
         ee_coll.toList(ImageCollectionAccessor._max_export_images) for ee_coll in ee_colls
     ]
-    first_scales = [
-        ee_coll.first().bandNames().map(lambda bn: band_scale(bn, ee_coll.first()))
-        for ee_coll in ee_colls
+    infos = ee.List([ee_colls, coll_images]).getInfo()
+    return [
+        ImageCollectionAccessor._with_info(ee_coll, dict(**coll_info, features=image_infos))
+        for ee_coll, coll_info, image_infos in zip(ee_colls, *infos)
     ]
-
-    infos = ee.List([ee_colls, coll_images, first_scales]).getInfo()
-
-    colls = []
-    for ee_coll, coll_info, image_infos, scales in zip(ee_colls, *infos):
-        # create accessor to first image of ee_coll with cached info
-        first = ImageAccessor(ee_coll.first())
-        first_info = image_infos[0]
-        for scale, bdict in zip(scales, first_info.get('bands', [])):
-            bdict['scale'] = scale
-        first.info = first_info
-
-        # create accessor to ee_coll with cached info and _first
-        coll = ImageCollectionAccessor(ee_coll)
-        info = dict(**coll_info, features=image_infos)
-        coll._info = info
-        coll._first = first
-
-        colls.append(coll)
-
-    return colls
 
 
 @pytest.fixture(scope='session')
@@ -260,23 +200,29 @@ def test_portion_scale(stac: dict, exp_val: float, monkeypatch: pytest.MonkeyPat
     assert coll._portion_scale == exp_val
 
 
-def test_properties(s2_sr_hm_coll: ImageCollectionAccessor):
+@pytest.mark.parametrize(
+    'coll, exp_support', [('s2_sr_hm_coll', True), ('l9_sr_coll', True), ('modis_nbar_coll', False)]
+)
+def test_properties(coll: str, exp_support: bool, request: pytest.FixtureRequest):
     """Test properties that don't have their own specific tests."""
-    # TODO: symmetry with test_image.py
-    info = s2_sr_hm_coll._ee_coll.getInfo()
-    props = {ip['properties']['system:index']: ip['properties'] for ip in info['features']}
+    coll: ImageCollectionAccessor = request.getfixturevalue(coll)
+    props = {ip['properties']['system:index']: ip['properties'] for ip in coll.info['features']}
 
-    assert s2_sr_hm_coll.id == info['id']
-    assert s2_sr_hm_coll.info == info
-    assert s2_sr_hm_coll.properties == props
+    # EE info dependent properties
+    assert coll.id == coll.info['id']
+    assert coll.properties == props
+    assert coll._first.id == coll.info['features'][0]['id']
 
-    assert s2_sr_hm_coll.stac is not None
-    band_props = s2_sr_hm_coll.stac['summaries']['eo:bands']
+    # STAC dependent properties
+    assert coll.stac is not None
+    band_props = coll.stac['summaries']['eo:bands']
     spec_bands = [bp['name'] for bp in band_props if 'center_wavelength' in bp]
-    assert len(s2_sr_hm_coll.specBands) > 0
-    assert s2_sr_hm_coll.specBands == spec_bands
+    if exp_support:
+        assert len(spec_bands) > 0
+    assert coll.specBands == spec_bands
 
-    assert s2_sr_hm_coll.schema == schema.collection_schema[info['id']]['prop_schema']
+    # cloud/shadow support
+    assert coll.cloudShadowSupport == exp_support
 
 
 @pytest.mark.parametrize('coll_id', ['COPERNICUS/S2_SR_HARMONIZED', 'LANDSAT/LC09/C02/T1_L2', None])
@@ -325,7 +271,7 @@ def test_schema_property_names_set():
 
 
 def test_schema_set_error():
-    """Test setting the schemaPropertyNames property with a value that is not a list of strings
+    """Test setting the schemaPropertyNames property with a value that is not an iterable of strings
     raises an error.
     """
     # patch collection ID to avoid getInfo()
@@ -347,7 +293,7 @@ def test_schema_table():
     assert all(pn in coll.schemaTable for pn in coll.schemaPropertyNames)
 
     # test empty schema
-    coll.schemaPropertyNames = []
+    coll.schemaPropertyNames = ()
     assert coll.schemaTable == ''
 
 
@@ -403,16 +349,6 @@ def test_properties_table():
     coll._properties = {'1': {'system:index': '1'}, '2': {'system:index': '2'}}
     coll._schema = {}
     assert coll.propertiesTable == ''
-
-
-@pytest.mark.parametrize(
-    'coll, exp_support',
-    [('l9_sr_coll', True), ('s2_sr_hm_coll', True), ('modis_nbar_coll', False)],
-)
-def test_cs_support(coll: str, exp_support: bool, request: pytest.FixtureRequest):
-    """Test the cloudShadowSupport property."""
-    coll: ImageCollectionAccessor = request.getfixturevalue(coll)
-    assert coll.cloudShadowSupport == exp_support
 
 
 def test_filter(region_10000ha: dict):
@@ -850,36 +786,29 @@ def test_prepare_for_export(
         assert pixel_offset == (int(pixel_offset[0]), int(pixel_offset[1]))
 
 
-def test_split_images(prepared_coll: ImageCollectionAccessor, prepared_image: ImageAccessor):
+@pytest.mark.parametrize('split', SplitType)
+def test_split_images(prepared_coll: ImageCollectionAccessor, split: SplitType):
     """Test _split_images() with different split types."""
-    images_images = prepared_coll._split_images(SplitType.images)
-    bands_images = prepared_coll._split_images(SplitType.bands)
+    images = prepared_coll._split_images(split)
 
-    # populate image accessor info properties using a single getInfo() call
-    split_images = [im._ee_image for im in [*images_images.values(), *bands_images.values()]]
-    split_images = accessors_from_images(split_images)
-    images_images = dict(zip(images_images.keys(), split_images[: len(images_images)]))
-    bands_images = dict(zip(bands_images.keys(), split_images[-len(bands_images) :]))
+    # test index & band names
+    if split is SplitType.images:
+        assert images.keys() == prepared_coll.properties.keys()
+        for key, image in images.items():
+            assert image.index == key
+            assert image.bandNames == prepared_coll._first.bandNames
+    else:
+        assert list(images.keys()) == prepared_coll._first.bandNames
+        for key, image in images.items():
+            assert image.index == key
+            assert image.bandNames == list(prepared_coll.properties.keys())
 
-    # test images split
-    assert images_images.keys() == prepared_coll.properties.keys()
-    for key, image in images_images.items():
-        assert image.index == key
-        assert image.bandNames == prepared_image.bandNames
-
-    # test bands split
-    assert list(bands_images.keys()) == prepared_image.bandNames
-    for key, image in bands_images.items():
-        assert image.index == key
-        assert image.bandNames == list(prepared_coll.properties.keys())
-
-    # test georeferencing & dtype on all images
-    # TODO: duplication with to* tests?
-    for image in split_images:
-        assert image.crs == prepared_image.crs
-        assert image.transform == prepared_image.transform
-        assert image.shape == prepared_image.shape
-        assert image.dtype == prepared_image.dtype
+    # test georeferencing & dtype
+    for image in images.values():
+        assert image.crs == prepared_coll._first.crs
+        assert image.transform == prepared_coll._first.transform
+        assert image.shape == prepared_coll._first.shape
+        assert image.dtype == prepared_coll._first.dtype
 
 
 @pytest.mark.parametrize(
@@ -896,9 +825,7 @@ def test_to_google_cloud(
 ):
     """Test toGoogleCloud()."""
     exp_num_tasks = (
-        len(prepared_coll.properties)
-        if split is SplitType.images
-        else len(prepared_coll.info['features'][0]['bands'])
+        len(prepared_coll.properties) if split is SplitType.images else prepared_coll._first.count
     )
     tasks = prepared_coll.toGoogleCloud(type=etype, folder='geedim', wait=False, split=split)
     assert len(tasks) == exp_num_tasks
@@ -910,6 +837,199 @@ def test_to_google_cloud(
     # test monitorTask is called with wait=True
     captured = capsys.readouterr()
     assert prepared_coll.id in captured.err and '100%' in captured.err
+
+
+@pytest.mark.parametrize(
+    'split, kwargs',
+    [(SplitType.bands, dict(driver='gtiff')), (SplitType.images, dict(driver='cog', nodata=False))],
+)
+def test_to_geotiff(
+    prepared_coll: ImageCollectionAccessor,
+    prepared_coll_array: np.ndarray,
+    tmp_path: Path,
+    split: SplitType,
+    kwargs: dict,
+):
+    """Test toGeoTIFF()"""
+    # adapted from test_image.test_to_geotiff()
+    prepared_coll.toGeoTIFF(tmp_path, split=split, **kwargs)
+
+    first = prepared_coll._first
+    exp_file_stems = (
+        list(prepared_coll.properties.keys()) if split is SplitType.images else first.bandNames
+    )
+    files = list(tmp_path.glob('*'))
+    assert set([f.stem for f in files]) == set(exp_file_stems)
+
+    nodata = kwargs.get('nodata', True)
+    for fi, file_stem in enumerate(exp_file_stems):
+        with rio.open(tmp_path.joinpath(file_stem + '.tif')) as ds:
+            # format
+            assert ds.crs == first.crs
+            assert ds.transform[:6] == first.transform
+            assert ds.shape == first.shape
+            assert ds.count == (
+                first.count if split is SplitType.images else len(prepared_coll.properties)
+            )
+            assert ds.dtypes[0] == first.dtype
+            assert ds.compression == Compression.deflate
+            if nodata is True:
+                assert ds.nodata == _nodata_vals[first.dtype]
+            elif nodata is False:
+                assert ds.nodata is None
+            else:
+                assert ds.nodata == nodata
+
+            # contents
+            array = ds.read()
+            array = np.moveaxis(array, 0, -1)
+            # masked pixels will always == _nodata_vals[image.dtype], irrespective of the nodata
+            # value
+            mask = array != _nodata_vals[first.dtype]
+            axis = 2 if split is SplitType.bands else 3
+            assert (mask == ~prepared_coll_array.mask.take(fi, axis=axis)).all()
+            assert (array == prepared_coll_array.take(fi, axis=axis)).all()
+
+            # metadata
+            metadata = ds.tags()
+            if split is SplitType.images:
+                props = {
+                    k.replace(':', '-'): str(v)
+                    for k, v in prepared_coll.properties[file_stem].items()
+                }
+                assert all([metadata.get(k) == v for k, v in props.items()])
+                assert metadata.get('LICENSE') is not None
+                assert ds.descriptions == tuple(prepared_coll._first.bandNames)
+                for bi in range(ds.count):
+                    band_props = {
+                        k.replace(':', '-'): str(v)
+                        for k, v in prepared_coll._first.bandProps[bi].items()
+                    }
+                    assert ds.tags(bi + 1) == band_props
+            else:
+                assert metadata['system-index'] == file_stem
+                assert ds.descriptions == tuple(prepared_coll.properties.keys())
+
+
+@pytest.mark.parametrize(
+    'masked, structured, split',
+    [
+        (False, False, SplitType.bands),
+        (True, False, SplitType.images),
+        (False, True, SplitType.bands),
+        (True, True, SplitType.images),
+    ],
+)
+def test_to_numpy(
+    prepared_coll: ImageCollectionAccessor,
+    prepared_coll_array: np.ndarray,
+    masked: bool,
+    structured: bool,
+    split: SplitType,
+):
+    """Test toNumpy()."""
+    # adapted from test_image.test_to_numpy()
+    array = prepared_coll.toNumPy(masked=masked, structured=structured, split=split)
+
+    # dimensions and dtype
+    first = prepared_coll._first
+    if structured:
+        indexes = list(prepared_coll.properties.keys())
+        assert array.shape == first.shape
+        assert len(array.dtype) == len(indexes) if split is SplitType.images else first.count
+
+        # construct reference structured dtype
+        date_strings = [
+            datetime.fromtimestamp(p['system:time_start'] / 1000).isoformat(timespec='seconds')
+            for p in prepared_coll.properties.values()
+        ]
+        # last dimension dtype
+        names = first.bandNames if split is SplitType.images else list(zip(date_strings, indexes))
+        dtype = np.dtype(list(zip(names, [first.dtype] * len(names))))
+        # nested (second last dimension) dtype
+        names = list(zip(date_strings, indexes)) if split is SplitType.images else first.bandNames
+        dtype = np.dtype(list(zip(names, [dtype] * len(names))))
+
+        assert array.dtype == dtype
+    else:
+        num_ims = len(prepared_coll.properties)
+        shape = (
+            (*first.shape, num_ims, first.count)
+            if split is SplitType.images
+            else (*first.shape, first.count, num_ims)
+        )
+        assert array.shape == shape
+        assert array.dtype == first.dtype
+
+    # masking
+    if masked:
+        assert isinstance(array, np.ma.MaskedArray)
+        assert array.fill_value == np.array(first.nodata, array.dtype)
+    else:
+        assert not isinstance(array, np.ma.MaskedArray)
+
+    # contents
+    ref_array = (
+        np.swapaxes(prepared_coll_array, 2, 3) if split is SplitType.images else prepared_coll_array
+    )
+    array_ = array.view(first.dtype).reshape(ref_array.shape) if structured else array
+    mask = ~array_.mask if masked else array_ != first.nodata
+    assert (mask == ~ref_array.mask).all()
+    assert (array_ == ref_array).all()
+
+
+@pytest.mark.parametrize('masked, split', [(False, SplitType.bands), (True, SplitType.images)])
+def test_to_xarray(
+    prepared_coll: ImageCollectionAccessor,
+    prepared_coll_array: np.ndarray,
+    masked: bool,
+    split: SplitType,
+):
+    """Test toXarray()."""
+    # adapted from test_image.test_to_xarray()
+    first = prepared_coll._first
+    ds = prepared_coll.toXarray(masked=masked, split=split)
+
+    # variables
+    if split is SplitType.bands:
+        assert list(ds.keys()) == first.bandNames
+    else:
+        assert ds.keys() == prepared_coll.properties.keys()
+
+    # coordinates
+    if split is SplitType.bands:
+        timestamps = [p['system:time_start'] for p in prepared_coll.properties.values()]
+        datetimes = to_datetime(timestamps, unit='ms')
+        assert (ds.coords['time'] == datetimes).all()
+    else:
+        assert all(ds.coords['band'] == first.bandNames)
+    y = np.arange(0.5, first.shape[1] + 0.5) * first.transform[4] + first.transform[5]
+    x = np.arange(0.5, first.shape[0] + 0.5) * first.transform[0] + first.transform[2]
+    assert (ds.coords['x'] == x).all()
+    assert (ds.coords['y'] == y).all()
+
+    # dtype & nodata
+    if masked:
+        dtype = np.promote_types(first.dtype, 'float32')
+        assert all([da.dtype == dtype for da in ds.values()])
+        assert np.isnan(ds.attrs['nodata'])
+    else:
+        assert all([da.dtype == first.dtype for da in ds.values()])
+        assert ds.attrs['nodata'] == first.nodata
+
+    # attributes
+    assert ds.attrs['id'] == prepared_coll.id
+    for attr in ['crs', 'transform']:
+        assert ds.attrs[attr] == getattr(first, attr), attr
+    assert ds.attrs['ee'] == json.dumps(prepared_coll.info['properties'])
+    assert ds.attrs['stac'] == json.dumps(prepared_coll.stac)
+
+    # contents
+    axis = 2 if split is SplitType.bands else 3
+    for vi, da in enumerate(ds.values()):
+        mask = ~da.isnull() if masked else da != first.nodata
+        assert (mask == ~prepared_coll_array.mask.take(vi, axis=axis)).all()
+        assert (da == prepared_coll_array.take(vi, axis=axis)).all()
 
 
 # old tests
