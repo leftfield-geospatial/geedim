@@ -127,6 +127,13 @@ class ImageAccessor:
         """
         self._ee_image = ee_image
 
+    @classmethod
+    def _with_info(cls, ee_image: ee.Image, info: dict) -> ImageAccessor:
+        """Create an accessor for ``ee_image`` with cached ``info``."""
+        image = cls(ee_image)
+        image.info = info
+        return image
+
     @cached_property
     def _mi(self) -> type[mask._MaskedImage]:
         """Masking method container."""
@@ -950,7 +957,8 @@ class ImageAccessor:
         #  cpu limits with wifi bw at 0 from about 50% of the download (i.e. cpu apparently has
         #  many tiles to decompress and recompress, but no tiles are being downloaded).  are
         #  tiles actually being streamed / chunked, or are they retrieved & cached in one shot?
-        #  another concern is small tiles may be more work to recompress (?).
+        #  another concern is small tiles may be more work to recompress (?).  this does not
+        #  happen with toNumPy / toXarray.
         driver = Driver(driver)
         ofile = fsspec.open(os.fspath(file), 'wb') if not isinstance(file, OpenFile) else file
         if not overwrite and ofile.fs.exists(ofile.path):
