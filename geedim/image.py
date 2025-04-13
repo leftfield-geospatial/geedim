@@ -1095,7 +1095,7 @@ class ImageAccessor:
         if structured:
             dtype = np.dtype(dict(names=self.bandNames, formats=[self.dtype] * len(self.bandNames)))
             array = array.view(dtype=dtype).squeeze()
-            if isinstance(array, np.ma.MaskedArray):
+            if masked:
                 # re-set masked array fill_value which is not copied in view
                 array.fill_value = self.nodata
 

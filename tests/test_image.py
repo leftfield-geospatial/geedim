@@ -74,7 +74,7 @@ def test_properties(
 
     # STAC dependent properties
     assert image.stac is not None
-    assert len(image.bandProps) == len(image.bandNames)
+    assert len(image.bandProps) == image.count
     assert all([{'name', 'description'}.issubset(bp) for bp in image.bandProps])
     spec_bands = [bp['name'] for bp in image.bandProps if 'center_wavelength' in bp]
     if exp_support:
@@ -458,8 +458,6 @@ def test_to_geotiff(
         array = np.moveaxis(array, 0, -1)
         # masked pixels will always == _nodata_vals[image.dtype], irrespective of the nodata value
         mask = array != _nodata_vals[image.dtype]
-        # assert not np.all(mask)
-        # assert np.all((array.T == range(1, image.count + 1)) == mask.T)
         assert (mask == ~prepared_image_array.mask).all()
         assert (array == prepared_image_array).all()
 
@@ -498,7 +496,7 @@ def test_to_numpy(
     if structured:
         assert array.shape == image.shape
         assert len(array.dtype) == image.count
-        dtype = np.dtype(dict(names=image.bandNames, formats=[image.dtype] * len(image.bandNames)))
+        dtype = np.dtype(dict(names=image.bandNames, formats=[image.dtype] * image.count))
         assert array.dtype == dtype
     else:
         assert array.shape == (*image.shape, image.count)
@@ -514,8 +512,6 @@ def test_to_numpy(
     # contents
     array_ = array.view(image.dtype).reshape(*image.shape, image.count) if structured else array
     mask = ~array_.mask if masked else array_ != image.nodata
-    # assert not np.all(mask)
-    # assert np.all((array_ == range(1, image.count + 1)) == mask)
     assert (mask == ~prepared_image_array.mask).all()
     assert (array_ == prepared_image_array).all()
 
@@ -549,8 +545,6 @@ def test_to_xarray(prepared_image: ImageAccessor, prepared_image_array: np.ndarr
 
     # contents
     mask = ~array.isnull() if masked else array != image.nodata
-    # assert not mask.all()
-    # assert ((array == range(1, image.count + 1)) == mask).all()
     assert (mask == ~prepared_image_array.mask).all()
     assert (array == prepared_image_array).all()
 
