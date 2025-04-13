@@ -20,6 +20,7 @@ import itertools
 import pathlib
 
 import ee
+import numpy as np
 import pytest
 from click.testing import CliRunner
 from rasterio.features import bounds
@@ -35,26 +36,8 @@ def accessors_from_images(ee_images: list[ee.Image]) -> list[ImageAccessor]:
     """Return a list of ImageAccessor objects, with cached info properties, for the given list of
     ee.Image objects, combining all getInfo() calls into one.
     """
-
-    def band_scale(band_name: ee.ComputedObject, ee_image: ee.Image):
-        """Return scale in meters for band_name."""
-        return ee_image.select(ee.String(band_name)).projection().nominalScale()
-
-    infos = []
-    for ee_image in ee_images:
-        scales = ee_image.bandNames().map(lambda bn: band_scale(bn, ee_image))
-        infos.append(ee.List([scales, ee_image]))
-
-    infos = ee.List(infos).getInfo()
-    images = []
-    for ee_image, (scales, info) in zip(ee_images, infos):
-        for scale, bdict in zip(scales, info.get('bands', [])):
-            bdict['scale'] = scale
-        image = ImageAccessor(ee_image)
-        image.info = info
-        images.append(image)
-
-    return images
+    infos = ee.List(ee_images).getInfo()
+    return [ImageAccessor._with_info(ee_image, info) for ee_image, info in zip(ee_images, infos)]
 
 
 def transform_bounds(geometry: dict, crs: str = 'EPSG:4326') -> tuple[float, ...]:
@@ -322,20 +305,53 @@ def prepared_image(const_image: ImageAccessor) -> ImageAccessor:
 
 
 @pytest.fixture(scope='session')
+def prepared_image_array(prepared_image: ImageAccessor) -> np.ndarray:
+    """NumPy array corresponding to the contents of prepared_image, with (row, column, band)
+    dimensions.
+    """
+    array = np.ma.ones((*prepared_image.shape, prepared_image.count), dtype=prepared_image.dtype)
+    array = array * np.arange(1, prepared_image.count + 1)
+    pad = 5
+    array[:pad] = array[-pad:] = array[:, :pad] = array[:, -pad:] = 0
+    array.mask = array == 0
+    return array
+
+
+@pytest.fixture(scope='session')
 def prepared_coll(prepared_image: ImageAccessor) -> ImageCollectionAccessor:
     """Constant image with a masked border, prepared for exporting."""
-    # TODO: change masking of second image?  and make export tests check for exact band arrays (
-    #  e.g. have another fixture with exact band arrays to test against)?
+    # TODO: change masking of second image?
     image1 = prepared_image._ee_image
-    image1 = image1.set('system:index', 'prepared_image1')
+    image1 = image1.set({'system:index': 'prepared_image1', 'system:time_start': 0})
     image2 = image1.add(3).toUint8()
-    image2 = image2.set('system:index', 'prepared_image2')
+    image2 = image2.set({'system:index': 'prepared_image2', 'system:time_start': 24 * 60 * 60e3})
 
     coll = ee.ImageCollection([image1, image2])
     # set ID to known collection so that STAC properties are populated
-    coll = coll.set('system:id', 'COPERNICUS/S2_SR_HARMONIZED')
+    coll = coll.set(
+        {'system:id': 'COPERNICUS/S2_SR_HARMONIZED', 'period': 0, 'type_name': 'ImageCollection'}
+    )
 
     return ImageCollectionAccessor(coll)
+
+
+@pytest.fixture(scope='session')
+def prepared_coll_array(
+    prepared_coll: ImageCollectionAccessor, prepared_image_array: np.ndarray
+) -> np.ndarray:
+    """NumPy array corresponding to the contents of prepared_coll, with (row, column, band, image)
+    dimensions.
+    """
+    array = np.ma.ones(
+        (*prepared_image_array.shape, len(prepared_coll.properties)),
+        dtype=prepared_image_array.dtype,
+    )
+    array[:, :, :, 0] = prepared_image_array
+    array[:, :, :, 1] = prepared_image_array + prepared_image_array.shape[2]
+    pad = 5
+    array[:pad] = array[-pad:] = array[:, :pad] = array[:, -pad:] = 0
+    array.mask = array == 0
+    return array
 
 
 @pytest.fixture()
