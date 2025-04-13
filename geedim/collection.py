@@ -122,6 +122,13 @@ class ImageCollectionAccessor:
         self._schema_prop_names = None
         self._properties = None
 
+    @classmethod
+    def _with_info(cls, ee_coll: ee.Image, info: dict) -> ImageAccessor:
+        """Create an accessor for ``ee_coll`` with cached ``info``."""
+        coll = cls(ee_coll)
+        coll._info = info
+        return coll
+
     @staticmethod
     def fromImages(images: Any) -> ee.ImageCollection:
         """
@@ -197,7 +204,14 @@ class ImageCollectionAccessor:
     @cached_property
     def _first(self) -> ImageAccessor:
         """Accessor to the first image of the collection."""
-        return ImageAccessor(self._ee_coll.first())
+        if self._info:
+            # use cached info to avoid a getInfo() on _first
+            first = ImageAccessor._with_info(
+                self._ee_coll.first(), self._info.get('features', [{}])[0]
+            )
+        else:
+            first = ImageAccessor(self._ee_coll.first())
+        return first
 
     @cached_property
     def id(self) -> str | None:
@@ -247,7 +261,7 @@ class ImageCollectionAccessor:
     @property
     def schema(self) -> dict[str, dict]:
         """Dictionary of property abbreviations and descriptions used to form
-        :attr:`propertiesTable`.
+        :attr:`schemaTable` and :attr:`propertiesTable`.
         """
         if self._schema is None:
             if self.id in schema.collection_schema:
@@ -373,7 +387,6 @@ class ImageCollectionAccessor:
             )
 
         if date and region:
-            # TODO: test for this error
             raise ValueError("One of 'date' or 'region' can be supplied, but not both.")
 
         def prepare_image(ee_image: ee.Image) -> ee.Image:
@@ -459,29 +472,34 @@ class ImageCollectionAccessor:
 
     def _split_images(self, split: SplitType) -> dict[str, ImageAccessor]:
         """Split the collection into images according to ``split``."""
-        indexes = [*self.properties.keys()]
+        # test for consistency before splitting to raise errors early
+        self._raise_image_consistency()
+        indexes = list(self.properties.keys())
 
         if split is SplitType.bands:
             # split collection into an image per band (i.e. the same band from every collection
             # image form the bands of a new 'band' image)
-            first_info = self.info['features'][0] if self.info.get('features') else {}
-            first_band_names = [bi['id'] for bi in first_info.get('bands', [])]
-
             def to_bands(band_name: ee.String) -> ee.Image:
                 ee_image = self._ee_coll.select(ee.String(band_name)).toBands()
                 # rename system:index to band name & band names to system indexes
                 ee_image = ee_image.set('system:index', band_name)
                 return ee_image.rename(indexes)
 
-            im_list = ee.List(first_band_names).map(to_bands)
-            im_names = first_band_names
+            im_list = ee.List(self._first.bandNames).map(to_bands)
+            im_infos = im_list.getInfo()
+            im_names = self._first.bandNames
         else:
             # split collection into its images
             im_list = self._ee_coll.toList(self._max_export_images)
+            im_infos = self.info['features']
             im_names = indexes
 
-        # return a dictionary of image name keys, and ImageAccessor values
-        return {k: ImageAccessor(ee.Image(im_list.get(i))) for i, k in enumerate(im_names)}
+        # return a dictionary of image name keys, and ImageAccessor values (where ImageAccessors
+        # have cached info to save on getInfo() calls in users of the dictionary)
+        return {
+            im_name: ImageAccessor._with_info(ee.Image(im_list.get(i)), im_info)
+            for i, (im_name, im_info) in enumerate(zip(im_names, im_infos))
+        }
 
     def addMaskBands(self, **kwargs) -> ee.ImageCollection:
         """
@@ -570,7 +588,6 @@ class ImageCollectionAccessor:
         :return:
             Filtered image collection containing search result image(s).
         """
-        # TODO: refactor error classes and what gets raised where & test for these errors
         if (fill_portion is not None or cloudless_portion is not None) and not region:
             raise ValueError(
                 "'region' is required when 'fill_portion' or 'cloudless_portion' are supplied."
@@ -832,7 +849,6 @@ class ImageCollectionAccessor:
             ``wait`` is ``True``.
         """
         split = SplitType(split)
-        self._raise_image_consistency()
         images = self._split_images(split)
 
         # start exporting the split images concurrently
@@ -924,10 +940,7 @@ class ImageCollectionAccessor:
         )
         split = SplitType(split)
         driver = Driver(driver)
-        self._raise_image_consistency()
         images = self._split_images(split)
-        # TODO: use something like accessors_from_images() to get infos for all the images at
-        #  once (here and in all export methods)?
 
         # download the split images sequentially, each into its own file
         tqdm_kwargs = utils.get_tqdm_kwargs(desc=self.id or 'Collection', unit=split.value)
@@ -1012,8 +1025,9 @@ class ImageCollectionAccessor:
         :returns:
             NumPy array.
         """
+        # TODO: is it faster / less memory limit prone to always export by image split,
+        #  then reshape arrays to make them band split if necessary
         split = SplitType(split)
-        self._raise_image_consistency()
         images = self._split_images(split)
 
         # initialise the destination array
@@ -1134,7 +1148,6 @@ class ImageCollectionAccessor:
         if not xarray:
             raise ImportError("'toXarray()' requires the 'xarray' package to be installed.")
         split = SplitType(split)
-        self._raise_image_consistency()
         images = self._split_images(split)
 
         # download the split image DataArrays sequentially, storing in a dict
