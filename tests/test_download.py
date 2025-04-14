@@ -77,14 +77,24 @@ def test_ee_image_setter(s2_sr_hm_image_id: str, s2_sr_hm_image: ImageAccessor):
         assert getattr(base_image, attr) == getattr(s2_sr_hm_image, attr)
 
 
-def test_export(s2_sr_hm_base_image: BaseImage, region_25ha: dict):
-    """Test export() starts the task."""
-    # Just test the export starts - completion is tested in integration.py.  Note that the asset
-    # and cloud options should start but will ultimately fail (for asset, an existing asset
-    # cannot overwritten, and for cloud, there is no 'geedim' bucket).
-    s2_sr_hm_base_image.export(
-        'test_export', type='drive', folder='geedim', wait=False, region=region_25ha, scale=30
+@pytest.mark.parametrize('patch_export_task', ['export_task_success'], indirect=True)
+def test_export(const_base_image: BaseImage, patch_export_task, capsys: pytest.CaptureFixture):
+    """Test export()."""
+    kwargs = dict(
+        type='drive',
+        folder='geedim',
+        crs='EPSG:3857',
+        crs_transform=(0.1, 0, -1.0, 0, 0.1, -1.0),
+        shape=(20, 20),
+        dtype='uint8',
     )
+    _ = const_base_image.export('test_export', wait=False, **kwargs)
+    # test monitorTask is not called with wait=False
+    assert capsys.readouterr().err == ''
+
+    _ = const_base_image.export('test_export', wait=True, **kwargs)
+    # test monitorTask is called with wait=True
+    assert '100%' in capsys.readouterr().err
 
 
 def test_download(const_base_image: BaseImage, tmp_path: pathlib.Path):
