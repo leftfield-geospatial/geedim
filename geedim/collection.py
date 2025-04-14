@@ -1213,11 +1213,12 @@ class MaskedCollection(ImageCollectionAccessor):
             raise TypeError('`ee_collection` must be an instance of ee.ImageCollection')
         super().__init__(ee_collection)
         if add_props:
-            self.schemaPropertyNames += add_props
+            self.schemaPropertyNames += tuple(add_props)
 
     @classmethod
     def from_name(cls, name: str, add_props: list[str] | None = None) -> MaskedCollection:
         """
+        Create a MaskedCollection instance from an Earth Engine image collection name.
 
         :param name:
             Name of the Earth Engine image collection to create.
@@ -1227,7 +1228,6 @@ class MaskedCollection(ImageCollectionAccessor):
         :return:
             MaskedCollection instance.
         """
-        # this is separate from __init__ for consistency with MaskedImage.from_id()
         ee_coll = ee.ImageCollection(name)
         gd_coll = cls(ee_coll, add_props=add_props)
         return gd_coll

@@ -132,6 +132,25 @@ def gedi_image_list() -> list[str | MaskedImage]:
     ]
 
 
+@pytest.fixture(scope='session')
+def s2_sr_hm_masked_coll(s2_sr_hm_image_ids: list[str]) -> MaskedCollection:
+    coll = ee.ImageCollection(s2_sr_hm_image_ids)
+    coll = coll.set('system:id', 'COPERNICUS/S2_SR_HARMONIZED')
+    return MaskedCollection(coll)
+
+
+@pytest.fixture(scope='session')
+def l9_sr_masked_coll() -> ImageCollectionAccessor:
+    image_ids = [
+        'LANDSAT/LC09/C02/T1_L2/LC09_173083_20220308',
+        'LANDSAT/LC09/C02/T1_L2/LC09_173083_20221205',
+        'LANDSAT/LC09/C02/T1_L2/LC09_173083_20230106',
+    ]
+    coll = ee.ImageCollection(image_ids)
+    coll = coll.set('system:id', 'LANDSAT/LC09/C02/T1_L2')
+    return MaskedCollection(coll)
+
+
 _s2_b1_info = {
     'id': 'B1',
     'data_type': {'type': 'PixelType', 'precision': 'int', 'min': 0, 'max': 65535},
@@ -1030,6 +1049,111 @@ def test_to_xarray(
         mask = ~da.isnull() if masked else da != first.nodata
         assert (mask == ~prepared_coll_array.mask.take(vi, axis=axis)).all()
         assert (da == prepared_coll_array.take(vi, axis=axis)).all()
+
+
+# MaskedCollection tests
+def test_init_deprecation():
+    """Test MaskedCollection.__init__() issues a deprecation warning."""
+    with pytest.warns(FutureWarning, match='deprecated'):
+        _ = MaskedCollection(ee.ImageCollection([]))
+
+
+def test_masked_init_add_props():
+    """Test MaskedCollection.__init__() with the add_props parameter."""
+    ee_coll = ee.ImageCollection([])
+    add_props = ('CLOUDLESS_PORTION', 'CLOUD_COVERAGE_ASSESSMENT', 'unknownPropertyName')
+    coll = MaskedCollection(ee_coll, add_props=add_props)
+    # patch to avoid getInfo()
+    coll.id = 'COPERNICUS/S2_SR_HARMONIZED'
+
+    assert coll.ee_collection == ee_coll
+    assert set(coll.schema.keys()).issuperset(add_props)
+
+
+def test_masked_from_name_add_props():
+    """Test MaskedCollection.from_name() with the add_props parameter."""
+    ee_id = 'COPERNICUS/S2_SR_HARMONIZED'
+    add_props = ('CLOUDLESS_PORTION', 'CLOUD_COVERAGE_ASSESSMENT', 'unknownPropertyName')
+    coll = MaskedCollection.from_name(ee_id, add_props=add_props)
+    # patch to avoid getInfo()
+    coll.id = ee_id
+
+    assert coll.ee_collection == ee.ImageCollection(ee_id)
+    assert set(coll.schema.keys()).issuperset(add_props)
+
+
+def test_masked_from_list(s2_sr_hm_image_ids: list[str]):
+    """Test MaskedCollection.from_list()."""
+    add_props = ('CLOUDLESS_PORTION', 'CLOUD_COVERAGE_ASSESSMENT', 'unknownPropertyName')
+    images = [
+        s2_sr_hm_image_ids[0],
+        ee.Image(s2_sr_hm_image_ids[1]),
+        BaseImage(ee.Image(s2_sr_hm_image_ids[2])),
+    ]
+    coll = MaskedCollection.from_list(images, add_props=add_props)
+
+    info = coll._ee_coll.select(None).getInfo()
+    assert info['id'] == 'COPERNICUS/S2_SR_HARMONIZED'
+    assert set([im_props['id'] for im_props in info['features']]) == set(
+        s2_sr_hm_image_ids[: len(images)]
+    )
+
+
+@pytest.mark.parametrize(
+    'masked_coll, accessor',
+    [('s2_sr_hm_masked_coll', 's2_sr_hm_coll'), ('l9_sr_masked_coll', 'l9_sr_coll')],
+)
+def test_masked_properties(masked_coll: str, accessor: str, request: pytest.FixtureRequest):
+    """Test MaskedCollection specific properties against a matching ImageCollectionAccessor."""
+    masked_coll: MaskedCollection = request.getfixturevalue(masked_coll)
+    accessor: ImageCollectionAccessor = request.getfixturevalue(accessor)
+    props = {
+        info['id']: {
+            k: info['properties'][k]
+            for k in accessor.schemaPropertyNames
+            if k in info['properties']
+        }
+        for info in accessor.info['features']
+    }
+
+    assert masked_coll.ee_collection == accessor._ee_coll
+    assert masked_coll.name == accessor.id
+    assert masked_coll.image_type == MaskedImage
+    assert masked_coll.stats_scale == accessor._portion_scale
+    assert masked_coll.schema_table == accessor.schemaTable
+    assert masked_coll.properties == props
+    assert masked_coll.properties_table == accessor.propertiesTable
+    assert masked_coll.refl_bands == accessor.specBands
+
+
+def test_masked_search(region_10000ha: dict):
+    """Test MaskedCollection.search()."""
+    # this just tests args are passed through and add_props are maintained, detailed testing is done
+    # in test_filter()
+    add_props = ('CLOUD_COVER',)
+    coll = MaskedCollection(ee.ImageCollection('LANDSAT/LC09/C02/T1_L2'), add_props=add_props)
+    kwargs = dict(start_date='2023-01-01', end_date='2024-01-01', region=region_10000ha)
+    filt_coll = coll.search(**kwargs)
+
+    assert isinstance(filt_coll, MaskedCollection)
+    dates = to_datetime([p['system:time_start'] for p in filt_coll.properties.values()], unit='ms')
+    # test add_props is maintained in filtered collection
+    assert set(filt_coll.schema.keys()).issuperset(add_props)
+    # test search kwargs are passed through
+    assert all(dates >= to_datetime(kwargs['start_date']))
+    assert all(dates <= to_datetime(kwargs['end_date']))
+
+
+def test_masked_composite(l9_sr_masked_coll: MaskedCollection):
+    """Test MaskedCollection.composite()"""
+    # this just tests args are passed through, detailed testing is done in
+    # test_prepare_for_composite_date_region() and test_composite_params()
+    method = 'mosaic'
+    comp_image = l9_sr_masked_coll.composite(method)
+
+    assert isinstance(comp_image, MaskedImage)
+    exp_index = f'{method.upper()}-COMP'
+    assert comp_image.properties['system:index'] == exp_index
 
 
 # old tests
