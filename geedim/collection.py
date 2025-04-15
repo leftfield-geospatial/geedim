@@ -353,12 +353,10 @@ class ImageCollectionAccessor:
         )
 
     @property
-    def specBands(self) -> list[str] | None:
-        """List of spectral band names.  ``None`` if there is no :attr:`stac` entry,
-        or no spectral bands.
-        """
+    def specBands(self) -> list[str]:
+        """List of spectral band names."""
         if not self.stac:
-            return None
+            return []
         return self._first.specBands
 
     @property
@@ -1195,13 +1193,14 @@ class ImageCollectionAccessor:
 class MaskedCollection(ImageCollectionAccessor):
     def __init__(self, ee_collection: ee.ImageCollection, add_props: list[str] | None = None):
         """
-        A class for describing, searching and compositing an Earth Engine image collection,
-        with support for cloud/shadow masking.
+        A class for describing, searching, compositing and cloud / shadow masking an image
+        collection.
 
         :param ee_collection:
             Earth Engine image collection to encapsulate.
         :param add_props:
-            Additional Earth Engine image properties to include in :attr:`properties`.
+            Additional Earth Engine image properties to include in :attr:`schema` and
+            :attr:`properties`.
         """
         warnings.warn(
             f"'{self.__class__.__name__}' is deprecated and will be removed in a future release. "
@@ -1218,48 +1217,45 @@ class MaskedCollection(ImageCollectionAccessor):
     @classmethod
     def from_name(cls, name: str, add_props: list[str] | None = None) -> MaskedCollection:
         """
-        Create a MaskedCollection instance from an Earth Engine image collection name.
+        Create a MaskedCollection from an Earth Engine image collection ID.
 
         :param name:
-            Name of the Earth Engine image collection to create.
+            Earth Engine image collection ID.
         :param add_props:
-            Additional Earth Engine image properties to include in :attr:`properties`.
+            Additional Earth Engine image properties to include in :attr:`schema` and
+            :attr:`properties`.
 
         :return:
             MaskedCollection instance.
         """
-        ee_coll = ee.ImageCollection(name)
-        gd_coll = cls(ee_coll, add_props=add_props)
-        return gd_coll
+        return cls(ee.ImageCollection(name), add_props=add_props)
 
     @classmethod
     def from_list(
         cls, image_list: list[str | MaskedImage | ee.Image], add_props: list[str] | None = None
     ) -> MaskedCollection:
         """
-        Create a MaskedCollection instance from a list of Earth Engine image ID strings,
-        ``ee.Image`` instances and/or :class:`~geedim.mask.MaskedImage` instances.  The list may
-        include composite images, as created with :meth:`composite`.
+        Create an MaskedCollection with support for cloud/shadow masking, that contains the given
+        images.
 
         Images from spectrally compatible Landsat collections can be combined i.e. Landsat-4 with
         Landsat-5, and Landsat-8 with Landsat-9.  Otherwise, images should all belong to the same
-        collection.
+        collection.  Images may include composites as created with :meth:`composite`.  Composites
+        are treated as belonging to the collection of their component images.
 
-        Any ``ee.Image`` instances in the list (including those encapsulated by
-        :class:`~geedim.mask.MaskedImage`) must have ``system:id`` and ``system:time_start``
-        properties.  This is always the case for images obtained from the Earth Engine catalog,
-        and images returned from :meth:`composite`.  Any other user-created images passed to
-        :meth:`from_list` should have these properties set.
+        Use this method (instead of :meth:`ee.ImageCollection` or
+        :meth:`ee.ImageCollection.fromImages`) to support cloud/shadow masking on a collection
+        built from a sequence of images.
 
-        :param image_list:
-            List of images to include in the collection (must all be from the same, or compatible
-            Earth Engine collections). List items can be ID strings, instances of
-            :class:`~geedim.mask.MaskedImage`, or instances of ``ee.Image``.
+        :param images:
+            Sequence of images, as Earth Engine image IDs, ``ee.Image`` instances or
+            :class:`~geedim.mask.BaseImage` instances.
         :param add_props:
-            Additional Earth Engine image properties to include in :attr:`properties`.
+            Additional Earth Engine image properties to include in :attr:`schema` and
+            :attr:`properties`.
 
         :return:
-            A MaskedCollection instance.
+            MaskedCollection instance.
         """
         if len(image_list) == 0:
             raise ValueError("'image_list' is empty.")
@@ -1278,7 +1274,7 @@ class MaskedCollection(ImageCollectionAccessor):
 
     @property
     def name(self) -> str:
-        """Name of the encapsulated Earth Engine image collection."""
+        """Earth Engine image collection ID."""
         return self.id
 
     @property
@@ -1292,12 +1288,22 @@ class MaskedCollection(ImageCollectionAccessor):
         return self._portion_scale
 
     @property
+    def schema(self) -> dict[str, dict]:
+        """Dictionary of property abbreviations and descriptions used to form
+        :attr:`schemaTable`, :attr:`properties` and :attr:`propertiesTable`.
+        """
+        return super().schema
+
+    @property
     def schema_table(self) -> str:
         """:attr:`schema` formatted as a printable table string."""
         return self.schemaTable
 
     @property
     def properties(self) -> dict[str, dict[str, Any]]:
+        """Dictionary of image properties.  Keys are the image IDs and values the image property
+        dictionaries.
+        """
         coll_schema_props = {}
         for i, im_info in enumerate(self.info.get('features', [])):
             im_id = im_info.get('id', str(i))
@@ -1317,9 +1323,7 @@ class MaskedCollection(ImageCollectionAccessor):
 
     @property
     def refl_bands(self) -> list[str] | None:
-        """List of the collection's spectral / reflectance band names.  ``None`` if there is no
-        :attr:`stac` entry, or no spectral / reflectance bands.
-        """
+        """List of spectral band names."""
         return self.specBands
 
     def search(self, *args, **kwargs) -> MaskedCollection:
