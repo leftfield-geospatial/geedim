@@ -22,7 +22,6 @@ import io
 import json
 import logging
 import os
-import pathlib
 import sys
 import threading
 import warnings
@@ -38,18 +37,10 @@ else:
 
 import aiohttp
 import ee
-import rasterio as rio
-from rasterio.env import GDALVersion
 from tqdm.std import tqdm
 
 logger = logging.getLogger(__name__)
 
-if '__file__' in globals():
-    root_path = pathlib.Path(__file__).absolute().parents[1]
-else:
-    root_path = pathlib.Path.cwd()
-
-_GDAL_AT_LEAST_35 = GDALVersion.runtime().at_least('3.5')
 T = TypeVar('T')
 
 
@@ -67,20 +58,18 @@ def Initialize(opt_url: str = 'https://earthengine-highvolume.googleapis.com', *
     :param kwargs:
         Optional arguments to pass to ``ee.Initialize``.
     """
-    # TODO: is the high vol endpoint still the right default value here?
-    if not ee.data._credentials:
-        # Adapted from https://gis.stackexchange.com/questions/380664/how-to-de-authenticate-from-earth-engine-api.
-        env_key = 'EE_SERVICE_ACC_PRIVATE_KEY'
+    # Adapted from https://gis.stackexchange.com/questions/380664/how-to-de-authenticate-from-earth-engine-api.
+    env_key = 'EE_SERVICE_ACC_PRIVATE_KEY'
 
-        if env_key in os.environ:
-            # authenticate with service account
-            key_dict = json.loads(os.environ[env_key])
-            credentials = ee.ServiceAccountCredentials(
-                key_dict['client_email'], key_data=key_dict['private_key']
-            )
-            ee.Initialize(credentials, opt_url=opt_url, project=key_dict['project_id'], **kwargs)
-        else:
-            ee.Initialize(opt_url=opt_url, **kwargs)
+    if env_key in os.environ:
+        # authenticate with service account
+        key_dict = json.loads(os.environ[env_key])
+        credentials = ee.ServiceAccountCredentials(
+            key_dict['client_email'], key_data=key_dict['private_key']
+        )
+        ee.Initialize(credentials, opt_url=opt_url, project=key_dict['project_id'], **kwargs)
+    else:
+        ee.Initialize(opt_url=opt_url, **kwargs)
 
 
 def singleton(cls: T, *args, **kwargs) -> T:
@@ -189,26 +178,6 @@ class Spinner(tqdm):
         super().close()
 
 
-def rio_crs(crs: str | rio.CRS) -> str | rio.CRS:
-    """Convert a GEE CRS string to a rasterio compatible CRS string."""
-    if crs == 'SR-ORG:6974':
-        # This is a workaround for https://issuetracker.google.com/issues/194561313,
-        # that replaces the alleged GEE SR-ORG:6974 with actual WKT for SR-ORG:6842 taken from
-        # https://github.com/OSGeo/spatialreference.org/blob/master/scripts/sr-org.json.
-        crs = """PROJCS["Sinusoidal",
-        GEOGCS["GCS_Undefined",
-            DATUM["Undefined",
-                SPHEROID["User_Defined_Spheroid",6371007.181,0.0]],
-            PRIMEM["Greenwich",0.0],
-            UNIT["Degree",0.0174532925199433]],
-        PROJECTION["Sinusoidal"],
-        PARAMETER["False_Easting",0.0],
-        PARAMETER["False_Northing",0.0],
-        PARAMETER["Central_Meridian",0.0],
-        UNIT["Meter",1.0]]"""
-    return crs
-
-
 def asset_id(filename: str, folder: str | None = None):
     """
     Convert a ``filename`` and ``folder`` into an Earth Engine asset ID.
@@ -314,8 +283,7 @@ class AsyncRunner:
         A singleton that manages the lifecycle of an :mod:`~python.asyncio` event loop and
         :mod:`aiohttp` client session.
 
-        The :meth:`close` method is executed on normal python exit.  This class can also be used
-        as a context manager.
+        The :meth:`_close` method is executed on normal python exit.
 
         :param kwargs:
             Optional keywords arguments to :class:`~python.asyncio.runners.Runner`.
@@ -324,14 +292,7 @@ class AsyncRunner:
         self._executor = None
         self._session = None
         self._closed = False
-        atexit.register(self.close)
-
-    def __enter__(self) -> AsyncRunner:
-        self._runner.__enter__()
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close()
+        atexit.register(self._close)
 
     def __del__(self):
         if not self._closed:
@@ -341,7 +302,7 @@ class AsyncRunner:
                 stacklevel=2,
             )
 
-    def close(self):
+    def _close(self):
         """Shutdown and close the client session and event loop."""
 
         async def close_session():
@@ -363,6 +324,7 @@ class AsyncRunner:
         if self._executor:
             logger.debug('Shutting down executor...')
             self._executor.shutdown(cancel_futures=True)
+        atexit.unregister(self._close)
         self._closed = True
         logger.debug('Close complete.')
 
@@ -379,7 +341,8 @@ class AsyncRunner:
             timeout = aiohttp.ClientTimeout(total=300, sock_connect=30, ceil_threshold=5)
             return aiohttp.ClientSession(raise_for_status=True, timeout=timeout)
 
-        # a client session is bound to an event loop, so a persistent session requires the
+        # a client session is bound to an event loop, so a persistent session requires a
+        # persistent event loop
         self._session = self._session or self.run(create_session())
         return self._session
 
@@ -397,14 +360,6 @@ class AsyncRunner:
         :return:
             Coroutine result.
         """
-        # TODO:
-        #  - test a sensible exception is raised if Runner is closed
-        #  - test runner & loop are re-usable after async error
-        #  - test session is re-usable after aiohttp error
-        #  - what happens if the user has created their own loop on the main thread before
-        #  AsyncRunner is called - will this use the executor?  also, think about if users can
-        #  use this loop (either via AsyncRunner, or directly via asyncio) for their own async code
-
         # Runner.run() cannot be called from a thread with an existing event loop, so test if
         # there is a loop running in this thread (see https://stackoverflow.com/a/75341431)
         try:
