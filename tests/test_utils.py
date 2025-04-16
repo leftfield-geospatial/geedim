@@ -14,44 +14,97 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-import time
+import asyncio
 
 import pytest
 
-from geedim.utils import Spinner, asset_id, split_id
+from geedim import utils
 
 
 @pytest.mark.parametrize(
     'id, exp_split', [('A/B/C', ('A/B', 'C')), ('ABC', ('', 'ABC')), (None, (None, None))]
 )
 def test_split_id(id, exp_split):
-    """Test split_id()."""
-    assert split_id(id) == exp_split
+    """Test utils.split_id()."""
+    assert utils.split_id(id) == exp_split
 
 
-def test_spinner():
-    """Test Spinner class."""
-    spinner = Spinner(label='test', interval=0.1)
-    assert not spinner.is_alive()
-    with spinner:
-        assert spinner._run
-        assert spinner.is_alive()
-        time.sleep(0.5)
-    assert not spinner._run
-    assert not spinner.is_alive()
+def test_spinner(capsys: pytest.CaptureFixture):
+    """Test utils.Spinner class."""
+    desc = 'test'
+    with utils.Spinner(desc=desc, leave=True) as spinner:
+        spinner.update()
+    cap = capsys.readouterr().err
+    assert desc in cap and '\n' in cap
+
+    leave = 'done'
+    with utils.Spinner(desc=desc, leave=leave) as spinner:
+        spinner.update()
+    cap = capsys.readouterr().err
+    assert desc in cap and leave in cap and '\n' in cap
+
+    with utils.Spinner(desc=desc, leave=False):
+        spinner.update()
+    assert '\n' not in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
     'filename, folder, exp_id',
-    [
-        ('file', 'folder', 'projects/folder/assets/file'),
-        ('fp1/fp2/fp3', 'folder', 'projects/folder/assets/fp1/fp2/fp3'),
-        ('file', 'folder/sub-folder', 'projects/folder/assets/sub-folder/file'),
-        ('file', None, 'file'),
-        ('projects/folder/assets/file', None, 'projects/folder/assets/file'),
-    ],
+    [('sub2/file', 'folder/sub1', 'projects/folder/assets/sub1/sub2/file'), ('file', None, 'file')],
 )
 def test_asset_id(filename: str, folder: str, exp_id: str):
-    """Test asset_id() works as expected."""
-    id = asset_id(filename, folder)
+    """Test utils.asset_id()."""
+    id = utils.asset_id(filename, folder)
     assert id == exp_id
+
+
+def test_register_accessor():
+    """Test utils.register_accessor()."""
+
+    class Obj:
+        pass
+
+    @utils.register_accessor('acc', Obj)
+    class Acc:
+        def __init__(self, obj):
+            self.obj = obj
+
+    obj = Obj()
+
+    # test accessor is created and cached
+    assert obj.acc.obj == obj
+    assert id(obj.acc) == id(obj.acc)
+
+
+@pytest.mark.parametrize('kwargs', [dict(desc='desc', unit='unit'), dict(desc='desc')])
+def test_get_tqdm_kwargs(kwargs: dict):
+    """Test utils.get_tqdm_kwargs()."""
+    tqdm_kwargs = utils.get_tqdm_kwargs(**kwargs)
+    assert tqdm_kwargs['desc'].lstrip() == kwargs['desc']
+    assert tqdm_kwargs['unit'] == kwargs['unit'] if 'unit' in kwargs else 'unit' not in tqdm_kwargs
+    assert tqdm_kwargs['dynamic_ncols'] is True
+    assert tqdm_kwargs['leave'] is None
+
+
+def test_async_runner(monkeypatch: pytest.MonkeyPatch):
+    """Test the utils.AsyncRunner() singleton class."""
+    runner = utils.AsyncRunner()
+
+    # test it is a singleton
+    assert id(runner) == id(utils.AsyncRunner())
+    # test creation of the event loop and session
+    assert runner.loop and runner.session
+
+    # test running a coroutine in this thread
+    async def coro(**kwargs) -> dict:
+        return kwargs
+
+    coro_kwargs = dict(a=1, b=2)
+    assert runner.run(coro(**coro_kwargs)) == coro_kwargs
+
+    # test running a coroutine when another event loop is already running in this thread (e.g.
+    # jupyter notebook)
+    async def existing_loop_run(**kwargs):
+        return runner.run(coro(**kwargs))
+
+    assert asyncio.run(existing_loop_run(**coro_kwargs)) == coro_kwargs
