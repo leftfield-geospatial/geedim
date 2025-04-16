@@ -110,6 +110,26 @@ def _build_overviews(ds: DatasetWriter, max_num_levels: int = 8, min_level_pixel
     ds.build_overviews(ovw_levels, resampling=RioResampling.average)
 
 
+def _rio_crs(crs: str | rio.CRS) -> str | rio.CRS:
+    """Convert a EE CRS string to a Rasterio compatible CRS string."""
+    if crs == 'SR-ORG:6974':
+        # This is a workaround for https://issuetracker.google.com/issues/194561313,
+        # that replaces the alleged GEE SR-ORG:6974 with actual WKT for SR-ORG:6842 taken from
+        # https://github.com/OSGeo/spatialreference.org/blob/master/scripts/sr-org.json.
+        crs = """PROJCS["Sinusoidal",
+        GEOGCS["GCS_Undefined",
+            DATUM["Undefined",
+                SPHEROID["User_Defined_Spheroid",6371007.181,0.0]],
+            PRIMEM["Greenwich",0.0],
+            UNIT["Degree",0.0174532925199433]],
+        PROJECTION["Sinusoidal"],
+        PARAMETER["False_Easting",0.0],
+        PARAMETER["False_Northing",0.0],
+        PARAMETER["Central_Meridian",0.0],
+        UNIT["Meter",1.0]]"""
+    return crs
+
+
 @utils.register_accessor('gd', ee.Image)
 class ImageAccessor:
     _default_resampling = ResamplingMethod.near
@@ -163,8 +183,8 @@ class ImageAccessor:
                 for crs, tform, scale in zip(crss, transforms, scales):
                     if crs != crss[0]:
                         xs, ys = warp.transform(
-                            utils.rio_crs(crs),
-                            utils.rio_crs(crss[0]),
+                            _rio_crs(crs),
+                            _rio_crs(crss[0]),
                             (tform[2], tform[2] + tform[0]),
                             (tform[5], tform[5] + tform[4]),
                         )
@@ -301,7 +321,7 @@ class ImageAccessor:
         if not self.shape:
             return None
         return dict(
-            crs=utils.rio_crs(self.crs),
+            crs=_rio_crs(self.crs),
             transform=self.transform,
             width=self.shape[1],
             height=self.shape[0],
