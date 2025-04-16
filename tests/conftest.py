@@ -29,7 +29,8 @@ from rasterio.warp import transform_geom
 from geedim import Initialize, MaskedImage
 from geedim.collection import ImageCollectionAccessor
 from geedim.image import ImageAccessor
-from geedim.utils import root_path
+
+tests_path = pathlib.Path(__file__).absolute().parents[0]
 
 
 def accessors_from_images(ee_images: list[ee.Image]) -> list[ImageAccessor]:
@@ -106,7 +107,7 @@ def region_10000ha() -> dict:
 
 @pytest.fixture
 def const_image_25ha_file() -> pathlib.Path:
-    return root_path.joinpath('tests/data/const_image_25ha.tif')
+    return tests_path.joinpath('data/const_image_25ha.tif')
 
 
 @pytest.fixture(scope='session')
@@ -299,7 +300,13 @@ def prepared_image(const_image: ImageAccessor) -> ImageAccessor:
     # mask outside of mask_bounds
     image = image.updateMask(image.clip(mask_bounds).mask())
     # set ID and band names to those of a known collection so that STAC properties are populated
-    image = image.set('system:id', 'COPERNICUS/S2_SR_HARMONIZED/prepared_image')
+    image = image.set(
+        {
+            'system:id': 'COPERNICUS/S2_SR_HARMONIZED/prepared_image1',
+            'system:index': 'prepared_image1',
+            'system:time_start': 0,
+        }
+    )
     image = image.rename(['B2', 'B3', 'B4'])
     return ImageAccessor(image)
 
@@ -319,19 +326,21 @@ def prepared_image_array(prepared_image: ImageAccessor) -> np.ndarray:
 
 @pytest.fixture(scope='session')
 def prepared_coll(prepared_image: ImageAccessor) -> ImageCollectionAccessor:
-    """Constant image with a masked border, prepared for exporting."""
-    # TODO: change masking of second image?
+    """Collection of two constant images with masked borders, prepared for exporting."""
     image1 = prepared_image._ee_image
-    image1 = image1.set({'system:index': 'prepared_image1', 'system:time_start': 0})
     image2 = image1.add(3).toUint8()
-    image2 = image2.set({'system:index': 'prepared_image2', 'system:time_start': 24 * 60 * 60e3})
-
+    image2 = image2.set(
+        {
+            'system:id': 'COPERNICUS/S2_SR_HARMONIZED/prepared_image2',
+            'system:index': 'prepared_image2',
+            'system:time_start': 24 * 60 * 60e3,
+        }
+    )
     coll = ee.ImageCollection([image1, image2])
     # set ID to known collection so that STAC properties are populated
     coll = coll.set(
         {'system:id': 'COPERNICUS/S2_SR_HARMONIZED', 'period': 0, 'type_name': 'ImageCollection'}
     )
-
     return ImageCollectionAccessor(coll)
 
 
@@ -342,15 +351,16 @@ def prepared_coll_array(
     """NumPy array corresponding to the contents of prepared_coll, with (row, column, band, image)
     dimensions.
     """
+    # create an image array matching the second collection image
+    im_array2 = prepared_image_array + prepared_image_array.shape[2]
+
+    # create collection array
     array = np.ma.ones(
         (*prepared_image_array.shape, len(prepared_coll.properties)),
         dtype=prepared_image_array.dtype,
     )
     array[:, :, :, 0] = prepared_image_array
-    array[:, :, :, 1] = prepared_image_array + prepared_image_array.shape[2]
-    pad = 5
-    array[:pad] = array[-pad:] = array[:, :pad] = array[:, -pad:] = 0
-    array.mask = array == 0
+    array[:, :, :, 1] = im_array2
     return array
 
 
@@ -541,16 +551,18 @@ def runner():
 @pytest.fixture
 def region_25ha_file() -> pathlib.Path:
     """Path to region_25ha geojson file."""
-    return root_path.joinpath('tests/data/region_25ha.geojson')
+    # TODO: remove these fixtures and the files they refer to. rather just create a tmp file from
+    #  one of the region_*ha fixtures if we need to test reading from a file
+    return tests_path.joinpath('data/region_25ha.geojson')
 
 
 @pytest.fixture
 def region_100ha_file() -> pathlib.Path:
     """Path to region_100ha geojson file."""
-    return root_path.joinpath('tests/data/region_100ha.geojson')
+    return tests_path.joinpath('data/region_100ha.geojson')
 
 
 @pytest.fixture
 def region_10000ha_file() -> pathlib.Path:
     """Path to region_10000ha geojson file."""
-    return root_path.joinpath('tests/data/region_10000ha.geojson')
+    return tests_path.joinpath('data/region_10000ha.geojson')
