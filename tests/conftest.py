@@ -229,8 +229,20 @@ def google_dyn_world_image_id(s2_sr_hm_image_id) -> str:
 
 
 @pytest.fixture(scope='session')
+def l9_sr_image_ids(l9_image_id: str) -> list[str]:
+    """A list of Landsat-9 C2 SR image IDs, covering `region_*ha` with partial cloud/shadow.."""
+    return [
+        l9_image_id,
+        'LANDSAT/LC09/C02/T1_L2/LC09_173083_20221205',
+        'LANDSAT/LC09/C02/T1_L2/LC09_173083_20230106',
+    ]
+
+
+@pytest.fixture(scope='session')
 def s2_sr_hm_image_ids(s2_sr_image_id: str, s2_toa_image_id: str) -> list[str]:
-    """A list of harmonised Sentinel-2 SR image IDs, covering `region_*ha` with partial cloud/shadow.."""
+    """A list of harmonised Sentinel-2 SR image IDs, covering `region_*ha` with partial
+    cloud/shadow.
+    """
     return [
         'COPERNICUS/S2_SR_HARMONIZED/' + s2_sr_image_id.split('/')[-1],
         'COPERNICUS/S2_SR_HARMONIZED/' + s2_toa_image_id.split('/')[-1],
