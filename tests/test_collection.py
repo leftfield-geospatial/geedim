@@ -57,35 +57,33 @@ def accessors_from_collections(
 
 @pytest.fixture(scope='session')
 def s2_sr_hm_coll(s2_sr_hm_image_ids: list[str]) -> ImageCollectionAccessor:
+    """Sentinel-2 harmonized surface reflectance collection with three images."""
     coll = ee.ImageCollection(s2_sr_hm_image_ids)
     coll = coll.set('system:id', 'COPERNICUS/S2_SR_HARMONIZED')
     return ImageCollectionAccessor(coll)
 
 
 @pytest.fixture(scope='session')
-def l9_sr_coll() -> ImageCollectionAccessor:
-    # LC09_173083_20220308, LC09_173083_20221205, LC09_173083_20230106, LC09_173083_20240414
-    image_ids = [
-        'LANDSAT/LC09/C02/T1_L2/LC09_173083_20220308',
-        'LANDSAT/LC09/C02/T1_L2/LC09_173083_20221205',
-        'LANDSAT/LC09/C02/T1_L2/LC09_173083_20230106',
-    ]  # TODO: make these a fixture like s2_sr_hm_image_ids?
-    coll = ee.ImageCollection(image_ids)
+def l9_sr_coll(l9_sr_image_ids: list[str]) -> ImageCollectionAccessor:
+    """Landsat-9 surface reflectance collection with three images."""
+    coll = ee.ImageCollection(l9_sr_image_ids)
     coll = coll.set('system:id', 'LANDSAT/LC09/C02/T1_L2')
     return ImageCollectionAccessor(coll)
 
 
 @pytest.fixture(scope='session')
 def modis_nbar_coll() -> ImageCollectionAccessor:
+    """MODIS NBAR collection with three images."""
     coll = ee.ImageCollection('MODIS/061/MCD43A4')
     coll = coll.filterDate('2024-01-01', '2024-03-01')
     return ImageCollectionAccessor(coll.limit(3))
 
 
-@pytest.fixture()
-def gedi_cth_coll() -> ImageCollectionAccessor:
+@pytest.fixture(scope='session')
+def gedi_cth_coll(gedi_cth_image_id: str) -> ImageCollectionAccessor:
+    """GEDI canopy top height collection with three images."""
     image_ids = [
-        'LARSE/GEDI/GEDI02_A_002_MONTHLY/202112_018E_036S',
+        gedi_cth_image_id,
         'LARSE/GEDI/GEDI02_A_002_MONTHLY/202205_018E_036S',
         'LARSE/GEDI/GEDI02_A_002_MONTHLY/202207_018E_036S',
     ]
@@ -96,19 +94,16 @@ def gedi_cth_coll() -> ImageCollectionAccessor:
 
 @pytest.fixture(scope='session')
 def s2_sr_hm_masked_coll(s2_sr_hm_image_ids: list[str]) -> MaskedCollection:
+    """Sentinel-2 harmonized surface reflectance MaskedCollection with three images."""
     coll = ee.ImageCollection(s2_sr_hm_image_ids)
     coll = coll.set('system:id', 'COPERNICUS/S2_SR_HARMONIZED')
     return MaskedCollection(coll)
 
 
 @pytest.fixture(scope='session')
-def l9_sr_masked_coll() -> ImageCollectionAccessor:
-    image_ids = [
-        'LANDSAT/LC09/C02/T1_L2/LC09_173083_20220308',
-        'LANDSAT/LC09/C02/T1_L2/LC09_173083_20221205',
-        'LANDSAT/LC09/C02/T1_L2/LC09_173083_20230106',
-    ]
-    coll = ee.ImageCollection(image_ids)
+def l9_sr_masked_coll(l9_sr_image_ids) -> ImageCollectionAccessor:
+    """Landsat-9 surface reflectance MaskedCollection with three images."""
+    coll = ee.ImageCollection(l9_sr_image_ids)
     coll = coll.set('system:id', 'LANDSAT/LC09/C02/T1_L2')
     return MaskedCollection(coll)
 
