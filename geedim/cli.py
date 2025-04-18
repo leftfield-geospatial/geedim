@@ -91,30 +91,36 @@ def _crs_cb(ctx: click.Context, param: click.Parameter, crs: str) -> str | None:
 
 def _bbox_cb(
     ctx: click.Context, param: click.Parameter, bounds: Sequence[float]
-) -> dict[str, Any] | None:
+) -> ee.Geometry | None:
     """click callback to convert --bbox to a GeoJSON polygon."""
-    if bounds:
-        bounds = _convert_bounds_to_geojson(bounds)
+    if bounds == '-':
+        if 'region' not in ctx.obj:
+            raise click.BadParameter("No piped bounds or region available.")
+        bounds = ctx.obj['region']
+    elif bounds:
+        bounds = ee.Geometry.Rectangle(*bounds)
         ctx.obj['region'] = bounds
     return bounds
 
 
-def _region_cb(ctx: click.Context, param: click.Parameter, region: str) -> dict[str, Any] | None:
+def _region_cb(ctx: click.Context, param: click.Parameter, region: str) -> ee.Geometry | None:
     """click callback to read --region and convert to an GeoJSON polygon."""
     if region == '-':
         if 'region' not in ctx.obj:
-            raise click.BadParameter('No piped region available.')
+            raise click.BadParameter("No piped bounds or region available.")
         region = ctx.obj['region']
     elif region:
         try:
             if region.lower().endswith('json'):
                 with fsspec.open(region, 'rt', encoding='utf-8') as f:
-                    region = json.load(f)
+                    region = ee.Geometry(json.load(f))
             else:
-                # TODO: add Env that prevents searching for sidecar files?
-                with rio.open(fsspec.open(region, 'rb'), 'r') as ds:
+                with (
+                    rio.Env(GDAL_DISABLE_READDIR_ON_OPEN='EMPTY_DIR'),
+                    rio.open(fsspec.open(region, 'rb'), 'r') as ds,
+                ):
                     bounds = transform_bounds(ds.crs, 'EPSG:4326', *ds.bounds)
-                    region = _convert_bounds_to_geojson(bounds)
+                    region = ee.Geometry.Rectangle(*bounds)
         except Exception as ex:
             raise click.BadParameter(str(ex)) from ex
         ctx.obj['region'] = region
@@ -232,7 +238,8 @@ bbox_option = click.option(
     show_default='source image bounds',
     callback=_bbox_cb,
     metavar='LEFT BOTTOM RIGHT TOP',
-    help='Bounds of the export image(s) in WGS84 geographic coordinates.',
+    help="Bounds of the export image(s) in WGS84 geographic coordinates.  Use'-' to read from "
+    "previous --bbox / --region options in the pipeline.",
 )
 region_option = click.option(
     '-r',
@@ -892,7 +899,8 @@ def export(
     callback=_bbox_cb,
     metavar='LEFT BOTTOM RIGHT TOP',
     help="Prioritise component images by their cloudless / filled portion inside these bounds.  "
-    "Valid for the 'mosaic' and 'q-mosaic' --method.",
+    "Valid for the 'mosaic' and 'q-mosaic' --method.  Use '-' to read from previous --bbox / "
+    "--region options in the pipeline.",
 )
 @click.option(
     '-r',
