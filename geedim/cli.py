@@ -102,6 +102,8 @@ def _bbox_cb(
 def _region_cb(ctx: click.Context, param: click.Parameter, region: str) -> dict[str, Any] | None:
     """click callback to read --region and convert to an GeoJSON polygon."""
     if region == '-':
+        if 'region' not in ctx.obj:
+            raise click.BadParameter('No piped region available.')
         region = ctx.obj['region']
     elif region:
         try:
@@ -194,7 +196,6 @@ def _prepare_obj_for_export(
     **kwargs,
 ) -> dict[str, Any]:
     """Updates the click context object with export-ready images and export region."""
-    utils.Initialize()
     # resolve and buffer region
     region = bbox or region
     if buffer is not None:
@@ -212,7 +213,9 @@ def _prepare_obj_for_export(
     obj['images'] = _get_images(obj, image_ids)
 
     for i, im in enumerate(obj['images']):
-        im = im.gd.addMaskBands(**obj.get('cloud_kwargs', {})).gd.maskClouds()
+        im = im.gd.addMaskBands(**obj.get('cloud_kwargs', {}))
+        if mask:
+            im = im.gd.maskClouds()
         im = im.gd.prepareForExport(region=region, **kwargs)
         obj['images'][i] = im
 
@@ -355,6 +358,7 @@ def cli(ctx: click.Context, verbose: int, quiet: int):
     """Search, composite and export Google Earth Engine imagery."""
     ctx.obj = {}
     _configure_logging(verbose - quiet)
+    utils.Initialize()
 
 
 # config command
@@ -499,7 +503,7 @@ def config(ctx: click.Context, **kwargs):
     type=click.DateTime(),
     required=False,
     default=None,
-    show_default='one day after --start-date',
+    show_default='one millisecond after --start-date',
     help='End date (UTC).',
 )
 @bbox_option
@@ -586,7 +590,6 @@ def search(
                 )
 
     # create collection and search
-    utils.Initialize()
     coll = ee.ImageCollection(coll_id)
     label = f'Searching for {coll_id} images: '
     with utils.Spinner(desc=label, leave=' '):
@@ -796,6 +799,7 @@ def export(
     wait: bool,
     **kwargs,
 ):
+    # TODO: make a note that asset exports are piped as asset images
     """
     Export image(s) to Google cloud platforms.
 
@@ -930,8 +934,6 @@ def composite(
     with --no-mask.  The 'q-mosaic' --method uses distance to the nearest cloud as the quality
     measure and requires cloud/shadow support.
     """
-    utils.Initialize()
-
     images = _get_images(obj, image_ids)
     coll = ee.ImageCollection.gd.fromImages(images)
     comp_im = coll.gd.composite(
