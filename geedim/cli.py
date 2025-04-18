@@ -115,10 +115,7 @@ def _region_cb(ctx: click.Context, param: click.Parameter, region: str) -> ee.Ge
                 with fsspec.open(region, 'rt', encoding='utf-8') as f:
                     region = ee.Geometry(json.load(f))
             else:
-                with (
-                    rio.Env(GDAL_DISABLE_READDIR_ON_OPEN='EMPTY_DIR'),
-                    rio.open(fsspec.open(region, 'rb'), 'r') as ds,
-                ):
+                with rio.open(fsspec.open(region, 'rb'), 'r') as ds:
                     bounds = transform_bounds(ds.crs, 'EPSG:4326', *ds.bounds)
                     region = ee.Geometry.Rectangle(*bounds)
         except Exception as ex:
@@ -142,7 +139,6 @@ def _dir_cb(ctx: click.Context, param: click.Parameter, uri_path: str) -> OpenFi
 
 def _like_cb(ctx: click.Context, param: click.Parameter, uri_path: str) -> dict[str, Any] | None:
     """Click callback to read --like."""
-    # TODO: test that only the metadata is read from e.g. a large remote file
     if uri_path:
         try:
             with rio.open(fsspec.open(uri_path, 'rb'), 'r') as ds:
@@ -366,6 +362,8 @@ def cli(ctx: click.Context, verbose: int, quiet: int):
     ctx.obj = {}
     _configure_logging(verbose - quiet)
     utils.Initialize()
+    # prevent GDAL from searching for sidecar files (speeds up reads of remote files)
+    ctx.with_resource(rio.Env(GDAL_DISABLE_READDIR_ON_OPEN='EMPTY_DIR'))
 
 
 # config command
