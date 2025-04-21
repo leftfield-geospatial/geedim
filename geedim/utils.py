@@ -242,6 +242,21 @@ def register_accessor(name: str, cls: type) -> Callable[[type[T]], type[T]]:
             cache[self._name] = accessor_obj
             return accessor_obj
 
+        def __set__(self, obj, value: T) -> None:
+            # TODO: test this if it stays
+            if obj is None:
+                # raise when the class attribute is set e.g. ee.Image.gd = ...
+                raise ValueError(f"Cannot set the {self._name!r} accessor on the class.")
+
+            # retrieve the cache, creating if it does not yet exist
+            try:
+                cache = obj._accessor_cache
+            except AttributeError:
+                cache = obj._accessor_cache = {}
+
+            # set and return
+            cache[self._name] = value
+
     def decorator(accessor: type[T]) -> type[T]:
         if hasattr(cls, name):
             warnings.warn(
@@ -295,6 +310,8 @@ class AsyncRunner:
         atexit.register(self._close)
 
     def __del__(self):
+        # TODO: this raises an error on 2x ctrl-c during download: 'NoneType' object has no
+        #  attribute 'warn'
         if not self._closed:
             warnings.warn(
                 f'{type(self).__name__} was never closed: {self!r}.',
