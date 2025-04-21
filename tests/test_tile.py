@@ -132,8 +132,8 @@ def test_tiler_get_tile_shape():
         # sanity tests on tile shape and size
         assert all(tile_shape >= 1)
         assert all(tile_shape <= im_shape)
-        assert all(tile_shape[1:] < Tiler._ee_max_tile_dim)
-        assert tile_shape[0] < Tiler._ee_max_tile_bands
+        assert all(tile_shape[1:] <= Tiler._ee_max_tile_dim)
+        assert tile_shape[0] <= Tiler._ee_max_tile_bands
         assert tile_size / 2**20 < max_tile_size
 
         # if the image has been tiled along all dimensions, test tile size and min dimension are

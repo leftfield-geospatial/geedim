@@ -80,6 +80,7 @@ def test_ee_image_setter(s2_sr_hm_image_id: str, s2_sr_hm_image: ImageAccessor):
 @pytest.mark.parametrize('patch_export_task', ['export_task_success'], indirect=True)
 def test_export(const_base_image: BaseImage, patch_export_task, capsys: pytest.CaptureFixture):
     """Test export()."""
+    # adapted from test_image.test_to_google_cloud()
     kwargs = dict(
         type='drive',
         folder='geedim',

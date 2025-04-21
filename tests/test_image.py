@@ -29,9 +29,8 @@ import pytest
 import rasterio as rio
 from rasterio.enums import Compression
 
-from geedim import utils
 from geedim.enums import ExportType
-from geedim.image import ImageAccessor, _nodata_vals, _open_raster
+from geedim.image import ImageAccessor, _nodata_vals, _open_raster, _rio_crs
 from tests.conftest import accessors_from_images, transform_bounds
 
 
@@ -64,7 +63,7 @@ def test_properties(
     assert image.count == len(image.info['bands'])
     assert image.nodata == _nodata_vals[image.dtype]
     assert image.profile == dict(
-        crs=utils.rio_crs(image.crs),  # test conversion for MODIS CRS
+        crs=_rio_crs(image.crs),  # test conversion for MODIS CRS
         transform=image.transform,
         width=image.shape[1],
         height=image.shape[0],
@@ -396,12 +395,12 @@ def test_to_google_cloud(
     capsys: pytest.CaptureFixture,
 ):
     """Test toGoogleCloud()."""
-    filename = 'test_export'
-    _ = prepared_image.toGoogleCloud(filename, type=etype, folder='geedim', wait=False)
+    kwargs = dict(type=etype, folder='geedim')
+    _ = prepared_image.toGoogleCloud('test_export', wait=False, **kwargs)
     # test monitorTask is not called with wait=False
     assert capsys.readouterr().err == ''
 
-    _ = prepared_image.toGoogleCloud(filename, type=etype, folder='geedim', wait=True)
+    _ = prepared_image.toGoogleCloud('test_export', wait=True, **kwargs)
     # test monitorTask is called with wait=True
     assert '100%' in capsys.readouterr().err
 

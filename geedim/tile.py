@@ -332,8 +332,10 @@ class Tiler:
         loop = asyncio.get_running_loop()
         for retry in range(max_retries + 1):
             try:
-                # TODO: download mem usage is high (>> _limit_requests * max_tile_size).  are there
-                #  copies happening in buffering / rasterio that we can avoid?
+                # TODO: download mem usage is high (>> _limit_requests * max_tile_size).  are
+                #  there copies happening in buffering / rasterio that we can avoid?  or is there
+                #  a bottleneck in read_gtiff_buf / func (esp with toGeoTIFF) that creates a
+                #  backlog of tiles?
                 # limit concurrent EE requests to avoid exceeding quota
                 async with self._limit_requests:
                     logger.debug(f'Getting URL for {tile!r}.')
