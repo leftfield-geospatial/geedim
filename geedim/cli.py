@@ -44,25 +44,10 @@ from geedim.enums import (
     ResamplingMethod,
 )
 from geedim.image import ImageAccessor, _nodata_vals
+from geedim.mask import _get_class_for_id
 from geedim.tile import Tiler
 
 logger = logging.getLogger(__name__)
-
-
-def _convert_bounds_to_geojson(bounds: Sequence[float]) -> dict[str, Any]:
-    """Convert WGS84 geographic coordinate bounds to a GeoJSON polygon."""
-    return dict(
-        type='Polygon',
-        coordinates=[
-            [
-                [bounds[0], bounds[1]],
-                [bounds[2], bounds[1]],
-                [bounds[2], bounds[3]],
-                [bounds[0], bounds[3]],
-                [bounds[0], bounds[1]],
-            ]
-        ],
-    )
 
 
 def _collection_cb(ctx: click.Context, param: click.Parameter, name: str) -> str:
@@ -187,17 +172,17 @@ def _get_images(obj: dict[str, Any], image_ids: tuple[str]) -> list[ee.Image]:
     return images
 
 
-def _prepare_obj_for_export(
-    obj: dict[str, Any],
-    image_ids: tuple[str] = (),
-    bbox: dict[str, Any] | None = None,
-    region: dict[str, Any] | None = None,
+def _prepare_images_for_export(
+    images: list[ee.Image],
+    cloud_kwargs: dict | None = None,
+    bbox: ee.Geometry | None = None,
+    region: ee.Geometry | None = None,
     like: dict[str, Any] | None = None,
     mask: bool = False,
     buffer: float | None = None,
     **kwargs,
-) -> dict[str, Any]:
-    """Updates the click context object with export-ready images and export region."""
+) -> list[ee.Image]:
+    """Prepare images for export."""
     # resolve and buffer region
     region = bbox or region
     if buffer is not None:
@@ -205,23 +190,39 @@ def _prepare_obj_for_export(
             raise click.UsageError(
                 "'-b' / '--bbox' or '-r' / '--region' is required with '-buf' / '--buffer'"
             )
-        region = ee.Geometry(region).buffer(buffer)
+        region = region.buffer(buffer)
 
     if like:
         # overwrite crs, crs_transform and shape from --like
         kwargs.update(**like)
 
-    # prepare and store images
-    obj['images'] = _get_images(obj, image_ids)
-
-    for i, im in enumerate(obj['images']):
-        im = im.gd.addMaskBands(**obj.get('cloud_kwargs', {}))
+    # cloud/shadow masking (uses one getInfo() call to get all image IDs, rather than requiring
+    # two calls per image if the 'gd' accessor was used)
+    # TODO: avoid getInfo() here and in ImageCollectionAccessor.fromImages()?
+    cs_images = []
+    im_ids = ee.List(images).map(lambda im: ee.Image(im).get('system:id')).getInfo()
+    for im, im_id in zip(images, im_ids):
+        cls = _get_class_for_id(im_id)
+        im = cls.add_mask_bands(im, **(cloud_kwargs or {}))
         if mask:
-            im = im.gd.maskClouds()
-        im = im.gd.prepareForExport(region=region, **kwargs)
-        obj['images'][i] = im
+            im = cls.mask_clouds(im)
+        cs_images.append(im)
 
-    return obj
+    # apply export params (with one getInfo() to cache all image infos)
+    cs_infos = ee.List(cs_images).getInfo()
+    prepared_images = [
+        ImageAccessor._with_info(im, info).prepareForExport(region=region, **kwargs)
+        for im, info in zip(cs_images, cs_infos)
+    ]
+
+    # cache accessors & infos (again... with one getInfo())
+    cached_images = []
+    prepared_infos = ee.List(prepared_images).getInfo()
+    for im, info in zip(prepared_images, prepared_infos):
+        im.gd = ImageAccessor._with_info(im, info)
+        cached_images.append(im)
+
+    return cached_images
 
 
 # Define click options that are common to more than one command
@@ -568,8 +569,8 @@ def config(ctx: click.Context, **kwargs):
 def search(
     ctx: click.Context,
     coll_id: str,
-    bbox: dict[str, Any] | None,
-    region: dict[str, Any] | None,
+    bbox: ee.Geometry | None,
+    region: ee.Geometry | None,
     output: str | None,
     add_props: tuple[str] | None,
     **kwargs,
@@ -580,7 +581,6 @@ def search(
     Search result images are added to images piped in from previous commands, and piped out for
     use by subsequent commands.
     """
-    # resolve region and store in context object for chained commands
     region = bbox or region
 
     # raise an error if --fill-portion / --cloudless-portion were supplied without --bbox / --region
@@ -605,10 +605,8 @@ def search(
         num_images = len(coll.gd.properties)
 
         # update context object images for chained commands
-        images = coll.toList(num_images)
-        ctx.obj['images'] = ctx.obj.get('images', []) + [
-            ee.Image(images.get(i)) for i in (range(num_images))
-        ]
+        images = [ee.Image(f'{coll_id}/{im_idx}') for im_idx in coll.gd.properties.keys()]
+        ctx.obj['images'] = ctx.obj.get('images', []) + images
 
     # print results
     if num_images == 0:
@@ -709,6 +707,7 @@ def search(
 @click.pass_obj
 def download(
     obj: dict[str, Any],
+    image_ids: tuple[str],
     download_dir: OpenFile,
     nodata: bool,
     driver: Driver,
@@ -723,7 +722,7 @@ def download(
     Export image(s) to GeoTIFF file(s).
 
     Images piped from previous commands will be exported, in addition to any images specified
-    with --id.  All exported images are piped out of this command for use by subsequent commands.
+    with --id.  All input images are piped out of this command for use by subsequent commands.
 
     Exported images include a fill (validity) mask band, and cloud/shadow related bands when
     supported.
@@ -734,12 +733,15 @@ def download(
 
     Filenames are derived from image Earth Engine IDs.
     """
-    obj = _prepare_obj_for_export(obj, **kwargs)
+    obj['images'] = _get_images(obj, image_ids=image_ids)
+    images = _prepare_images_for_export(
+        obj['images'], cloud_kwargs=obj.get('cloud_kwargs'), **kwargs
+    )
 
     tqdm.write('\nDownloading:\n')
     tqdm_kwargs = utils.get_tqdm_kwargs(desc='Total', unit='images')
-    for im in tqdm(obj['images'], **tqdm_kwargs):
-        joined_path = posixpath.join(download_dir.path, _get_im_name(im) + '.tif')
+    for im in tqdm(images, **tqdm_kwargs):
+        joined_path = posixpath.join(download_dir.path, im.gd.id.replace('/', '-') + '.tif')
         ofile = OpenFile(download_dir.fs, joined_path, mode='wb')
         try:
             im.gd.toGeoTIFF(
@@ -799,17 +801,17 @@ def download(
 @click.pass_obj
 def export(
     obj: dict[str, Any],
+    image_ids: tuple[str],
     type: ExportType,
     folder: str,
     wait: bool,
     **kwargs,
 ):
-    # TODO: make a note that asset exports are piped as asset images
     """
     Export image(s) to Google cloud platforms.
 
     Images piped from previous commands will be exported, in addition to any images specified
-    with --id.  All exported images are piped out of this command for use by subsequent commands.
+    with --id.  All input images are piped out of this command for use by subsequent commands.
 
     Exported images include a fill (validity) mask band, and cloud/shadow related bands when
     supported.
@@ -823,12 +825,15 @@ def export(
     if (type in [ExportType.asset, ExportType.cloud]) and not folder:
         raise click.MissingParameter(param_hint="'-f' / '--folder'", param_type='option')
 
-    obj = _prepare_obj_for_export(obj, **kwargs)
+    obj['images'] = _get_images(obj, image_ids=image_ids)
+    images = _prepare_images_for_export(
+        obj['images'], cloud_kwargs=obj.get('cloud_kwargs'), **kwargs
+    )
 
     tqdm.write('\nExporting:\n')
     export_tasks = []
-    for im in obj['images']:
-        name = _get_im_name(im)
+    for im in images:
+        name = im.gd.id.replace('/', '-')
         try:
             task = im.gd.toGoogleCloud(name, type=type, folder=folder, wait=False)
         except ee.EEException as ex:
@@ -844,13 +849,6 @@ def export(
                 ImageAccessor.monitorTask(task)
             except (ee.EEException, OSError) as ex:
                 raise click.ClickException(str(ex)) from ex
-
-        if type is ExportType.asset:
-            # replace context object images with asset images so they can be downloaded in a
-            # chained command
-            obj['images'] = [
-                ee.Image(utils.asset_id(_get_im_name(im), folder)) for im in obj['images']
-            ]
 
 
 # composite command
@@ -921,9 +919,9 @@ def export(
 @click.pass_obj
 def composite(
     obj: dict[str, Any],
-    image_ids: Sequence[str],
-    bbox: dict[str, Any] | None,
-    region: dict[str, Any] | None,
+    image_ids: tuple[str],
+    bbox: ee.Geometry | None,
+    region: ee.Geometry | None,
     **kwargs,
 ):
     """
