@@ -137,9 +137,9 @@ def test_compatible_collections(
     assert compatible_images(l8_image_id, l9_image_id) is True
     assert compatible_images(*s2_sr_hm_image_ids) is True
     assert compatible_images(l4_image_id, l5_image_id, l7_image_id) is False
-    assert compatible_images(l4_image_id, l5_image_id, l8_image_id) is False
     assert compatible_images(l7_image_id, l8_image_id, l9_image_id) is False
     assert compatible_images(*s2_sr_hm_image_ids, l9_image_id) is False
+    assert compatible_images(l9_image_id, None) is False
 
 
 def test_from_images(s2_sr_hm_image_ids: list[str]):
