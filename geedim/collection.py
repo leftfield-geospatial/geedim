@@ -43,7 +43,6 @@ from geedim.mask import MaskedImage, _CloudlessImage, _get_class_for_id, _Masked
 from geedim.medoid import medoid
 from geedim.stac import STACClient
 from geedim.tile import Tiler
-from geedim.utils import register_accessor, split_id
 
 try:
     import xarray
@@ -103,7 +102,7 @@ def _abbreviate(name: str) -> str:
     return abbrev if len(abbrev) >= 2 else name
 
 
-@register_accessor('gd', ee.ImageCollection)
+@utils.register_accessor('gd', ee.ImageCollection)
 class ImageCollectionAccessor:
     _max_export_images = 5000
 
@@ -136,9 +135,9 @@ class ImageCollectionAccessor:
         images.
 
         Images from spectrally compatible Landsat collections can be combined i.e. Landsat-4 with
-        Landsat-5, and Landsat-8 with Landsat-9.  Otherwise, images should all belong to the same
-        collection.  Images may include composites as created with :meth:`composite`.  Composites
-        are treated as belonging to the collection of their component images.
+        Landsat-5, and Landsat-8 with Landsat-9.  Otherwise, images should belong to the same
+        collection.  Images may include composites created :meth:`composite`, which are treated
+        as belonging to the collection of their component images.
 
         Use this method (instead of :meth:`ee.ImageCollection` or
         :meth:`ee.ImageCollection.fromImages`) to support cloud/shadow masking on a collection
@@ -150,20 +149,13 @@ class ImageCollectionAccessor:
         :return:
             Image collection.
         """
-        # TODO: previously there was error checking here to see if images all had IDs and dates.
-        #  Rather than check here, check/get search and composite to behave sensibly when this is
-        #  not the case.
         ee_coll = ee.ImageCollection(images)
 
         # check the images are from compatible collections
-        # TODO: get all the info and set the collection property so it doesn't have to call
-        #  getInfo() again.
-        info = ee_coll.select(None).getInfo()
-        ids = [split_id(im_props.get('id', None))[0] for im_props in info.get('features', [])]
+        ids = [utils.split_id(im_id)[0] for im_id in ee_coll.aggregate_array('system:id').getInfo()]
         if not _compatible_collections(ids):
-            # TODO: test raises an error if any/all names are None
             raise ValueError(
-                'All images must belong to the same, or spectrally compatible, collections.'
+                'Images must belong to the same, or spectrally compatible, collections.'
             )
 
         # set the collection ID to enable cloud/shadow masking if supported
@@ -183,9 +175,6 @@ class ImageCollectionAccessor:
         if not self.stac:
             return None
 
-        # TODO: test different global and per-band gsd cases (e.g. MODIS/MCD43A1,
-        #  COPERNICUS/S5P/OFFL/L3_O3_TCL, NASA/GSFC/MERRA/aer_nv/2, COPERNICUS/S2_SR_HARMONIZED,
-        #  LANDSAT/LC08/C02/T1_L2)
         # derive scale from the global GSD if it exists
         summaries = self.stac.get('summaries', {})
         global_gsd = summaries.get('gsd', None)
@@ -401,6 +390,8 @@ class ImageCollectionAccessor:
                     ee_image, region=region, scale=self._portion_scale
                 )
             if mask:
+                # TODO: mask_clouds() fails on any non-fixed images in the collection,
+                #  which don't have mask bands
                 ee_image = self._mi.mask_clouds(ee_image)
             return ImageAccessor(ee_image).resample(resampling)
 
@@ -709,7 +700,7 @@ class ImageCollectionAccessor:
         comp_id = ee.String(self.id + '/') if self.id else ee.String('')
         comp_id = comp_id.cat(comp_index)
         comp_image = comp_image.set('system:id', comp_id)
-        # # set composite start-end times
+        # set composite start-end times
         date_range = ee_coll.reduceColumns(ee.Reducer.minMax(), ['system:time_start'])
         comp_image = comp_image.set('system:time_start', ee.Number(date_range.get('min')))
         comp_image = comp_image.set('system:time_end', ee.Number(date_range.get('max')))
