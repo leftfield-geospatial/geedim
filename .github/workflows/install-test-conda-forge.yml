@@ -29,7 +29,7 @@ jobs:
     - name: Install package
       run: |
         conda info
-        conda install geedim>=1.9.0
+        conda install geedim>=1.9.1
         conda list
 
     - name: Run tests
