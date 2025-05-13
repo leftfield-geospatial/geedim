@@ -16,8 +16,22 @@
 
 from enum import Enum
 
+class _StrChoiceEnum(str, Enum):
+    """String value enumeration class that can be used with a ``click.Choice()`` parameter type."""
 
-class CompositeMethod(str, Enum):
+    def __repr__(self):
+        return self._value_
+
+    def __str__(self):
+        return self._value_
+
+    @property
+    def name(self):
+        # override for click>=8.2.0 Choice options which match passed values to Enum names
+        return self._value_
+
+
+class CompositeMethod(_StrChoiceEnum):
     """
     Enumeration for the compositing method, i.e. the method for finding a composite pixel from the stack of
     corresponding input image pixels.
@@ -55,7 +69,7 @@ class CompositeMethod(str, Enum):
         return self._name_
 
 
-class CloudMaskMethod(str, Enum):
+class CloudMaskMethod(_StrChoiceEnum):
     """Enumeration for the Sentinel-2 cloud masking method."""
 
     cloud_prob = 'cloud-prob'
@@ -74,7 +88,7 @@ class CloudMaskMethod(str, Enum):
         return self._name_
 
 
-class CloudScoreBand(str, Enum):
+class CloudScoreBand(_StrChoiceEnum):
     """Enumeration for the Sentinel-2 Cloud Score+ band used with the :attr:`~CloudMaskMethod.cloud_score` cloud
     masking method.
     """
@@ -92,7 +106,7 @@ class CloudScoreBand(str, Enum):
         return self._name_
 
 
-class ResamplingMethod(str, Enum):
+class ResamplingMethod(_StrChoiceEnum):
     """Enumeration for the resampling method."""
 
     near = 'near'
@@ -114,7 +128,7 @@ class ResamplingMethod(str, Enum):
         return self._name_
 
 
-class ExportType(str, Enum):
+class ExportType(_StrChoiceEnum):
     """Enumeration for the export type."""
 
     drive = 'drive'
@@ -133,7 +147,7 @@ class ExportType(str, Enum):
         return self._name_
 
 
-class SpectralDistanceMetric(str, Enum):
+class SpectralDistanceMetric(_StrChoiceEnum):
     """Enumeration for the spectral distance metric."""
 
     sam = 'sam'
