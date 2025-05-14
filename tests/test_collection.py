@@ -762,6 +762,29 @@ def test_prepare_for_export(
         assert pixel_offset == (int(pixel_offset[0]), int(pixel_offset[1]))
 
 
+def test_prepare_for_export_scale_offset(
+    s2_sr_hm_coll: ImageCollectionAccessor, region_100ha: dict
+):
+    """Test the prepareForExport() scale_offset parameter."""
+    # This just tests the scale_offset parameter was acted on. Detailed scale / offset testing is
+    # done in test_image.test_scale_offset(). (Adapted from
+    # test_image.test_prepare_for_export_scale_offset())
+    prep_colls = [
+        s2_sr_hm_coll.prepareForExport(region=region_100ha, scale_offset=scale_offset)
+        for scale_offset in [False, True]
+    ]
+    maxs = [
+        prep_coll.first()
+        .select('B.*')
+        .reduceRegion(reducer='max', geometry=region_100ha, bestEffort=True)
+        .values()
+        .reduce('max')
+        for prep_coll in prep_colls
+    ]
+    maxs = ee.List(maxs).getInfo()
+    assert maxs[1] < maxs[0]
+
+
 @pytest.mark.parametrize('split', SplitType)
 def test_split_images(prepared_coll: ImageCollectionAccessor, split: SplitType):
     """Test _split_images() with different split types."""

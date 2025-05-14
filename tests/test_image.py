@@ -368,6 +368,25 @@ def test_prepare_for_export(s2_sr_hm_image: ImageAccessor, region_100ha: dict):
         assert pixel_offset == (int(pixel_offset[0]), int(pixel_offset[1]))
 
 
+def test_prepare_for_export_scale_offset(s2_sr_hm_image: ImageAccessor, region_100ha: dict):
+    """Test the prepareForExport() scale_offset parameter."""
+    # This just tests the scale_offset parameter was acted on. Detailed scaleOffset() testing is
+    # done in test_scale_offset().
+    prep_ims = [
+        s2_sr_hm_image.prepareForExport(region=region_100ha, scale_offset=scale_offset)
+        for scale_offset in [False, True]
+    ]
+    maxs = [
+        prep_im.select('B.*')
+        .reduceRegion(reducer='max', geometry=region_100ha, bestEffort=True)
+        .values()
+        .reduce('max')
+        for prep_im in prep_ims
+    ]
+    maxs = ee.List(maxs).getInfo()
+    assert maxs[1] < maxs[0]
+
+
 def test_prepare_for_export_errors(
     s2_sr_hm_image: ImageAccessor, landsat_ndvi_image: ImageAccessor
 ):
