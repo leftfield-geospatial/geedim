@@ -22,7 +22,7 @@ from geedim.utils import split_id
 
 def test_singleton(landsat_ndvi_image_id: str):
     """Test STACClient() is a singleton."""
-    assert id(STACClient()) == id(STACClient())
+    assert STACClient() is STACClient()
 
 
 def test_get_valid(s2_sr_hm_image_id: str):
@@ -36,7 +36,7 @@ def test_get_valid(s2_sr_hm_image_id: str):
     # test passing the image ID to get()
     assert STACClient().get(s2_sr_hm_image_id) == stac
     # test repeat get() for same ID is retrieved from the cache
-    assert id(STACClient().get(coll_id)) == id(stac)
+    assert STACClient().get(coll_id) is stac
 
 
 def test_get_invalid():

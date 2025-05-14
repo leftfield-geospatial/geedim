@@ -73,7 +73,7 @@ def test_register_accessor():
 
     # test accessor is created and cached
     assert obj.acc.obj == obj
-    assert id(obj.acc) == id(obj.acc)
+    assert obj.acc is obj.acc
 
 
 @pytest.mark.parametrize('kwargs', [dict(desc='desc', unit='unit'), dict(desc='desc')])
@@ -91,7 +91,7 @@ def test_async_runner(monkeypatch: pytest.MonkeyPatch):
     runner = utils.AsyncRunner()
 
     # test it is a singleton
-    assert id(runner) == id(utils.AsyncRunner())
+    assert runner is utils.AsyncRunner()
     # test creation of the event loop and session
     assert runner.loop and runner.session
 
