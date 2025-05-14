@@ -38,7 +38,7 @@ from tqdm.auto import tqdm
 from geedim import schema, utils
 from geedim.download import BaseImage
 from geedim.enums import CompositeMethod, Driver, ExportType, ResamplingMethod, SplitType
-from geedim.image import ImageAccessor
+from geedim.image import ImageAccessor, _scale_offset_image
 from geedim.mask import MaskedImage, _CloudlessImage, _get_class_for_id, _MaskedImage
 from geedim.medoid import medoid
 from geedim.stac import STACClient
@@ -711,7 +711,7 @@ class ImageCollectionAccessor:
         crs: str | None = None,
         crs_transform: Sequence[float] | None = None,
         shape: tuple[int, int] | None = None,
-        region: dict | ee.Geometry | None = None,
+        region: dict[str, Any] | ee.Geometry | None = None,
         scale: float | None = None,
         resampling: str | ResamplingMethod = ImageAccessor._default_resampling,
         dtype: str | None = None,
@@ -773,17 +773,17 @@ class ImageCollectionAccessor:
         )
         first = ImageAccessor(first)
 
-        # prepare collection images to have the same grid and bounds as the first image
+        # prepare collection images to match the first (same CRS, grid, bounds etc)
         def prepare_image(ee_image: ee.Image) -> ee.Image:
-            return ImageAccessor(ee_image).prepareForExport(
-                crs=first.crs,
-                crs_transform=first.transform,
-                shape=first.shape,
-                resampling=resampling,
-                dtype=first.dtype,
-                scale_offset=scale_offset,
-                bands=first.bandNames,
+            # adapted from ImageAccessor.prepareForExport()
+            ee_image = ee_image.select(bands) if bands else ee_image
+            ee_image = _scale_offset_image(ee_image, first.stac) if scale_offset else ee_image
+            ee_image = ImageAccessor(ee_image).resample(resampling)
+            ee_image = ImageAccessor(ee_image).toDType(dtype=first.dtype)
+            ee_image, _ = ee_image.prepare_for_export(
+                dict(crs=first.crs, crs_transform=first.transform, dimensions=first.shape[::-1])
             )
+            return ee_image
 
         return self._ee_coll.map(prepare_image)
 
@@ -866,6 +866,7 @@ class ImageCollectionAccessor:
         max_requests: int = Tiler._max_requests,
         max_cpus: int | None = None,
     ) -> None:
+        # TODO: reorder parameters in related groups and in order of likely use
         """
         Export the collection to GeoTIFF files.
 
