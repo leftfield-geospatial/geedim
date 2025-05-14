@@ -130,6 +130,39 @@ def _rio_crs(crs: str | rio.CRS) -> str | rio.CRS:
     return crs
 
 
+def _scale_offset_image(ee_image: ee.Image, stac: dict[str, Any] | None) -> ee.Image:
+    """Scale and offset an image using STAC information."""
+    if stac is not None:
+        # create band scale and offset dicts
+        band_props = stac.get('summaries', {}).get('eo:bands', [])
+        scale_dict = {bp['name']: bp.get('gee:scale', 1.0) for bp in band_props}
+        offset_dict = {bp['name']: bp.get('gee:offset', 0.0) for bp in band_props}
+
+    if not stac or (set(scale_dict.values()) == {1} and set(offset_dict.values()) == {0}):
+        warnings.warn(
+            'Cannot scale and offset this image, there is no STAC scale and offset information.',
+            category=UserWarning,
+            stacklevel=2,
+        )
+        return ee_image
+
+    # apply the scales and offsets to bands which have them
+    adj_bands = ee_image.bandNames().filter(ee.Filter.inList('item', list(scale_dict.keys())))
+    non_adj_bands = ee_image.bandNames().removeAll(adj_bands)
+
+    scale_im = ee.Dictionary(scale_dict).toImage().select(adj_bands)
+    offset_im = ee.Dictionary(offset_dict).toImage().select(adj_bands)
+    adj_im = ee_image.select(adj_bands).multiply(scale_im).add(offset_im)
+
+    # add any unadjusted bands back to the adjusted image, and re-order bands to match
+    # the original
+    adj_im = adj_im.addBands(ee_image.select(non_adj_bands))
+    adj_im = adj_im.select(ee_image.bandNames())
+
+    # copy source image properties and return
+    return ee.Image(adj_im.copyProperties(ee_image, ee_image.propertyNames()))
+
+
 @utils.register_accessor('gd', ee.Image)
 class ImageAccessor:
     _default_resampling = ResamplingMethod.near
@@ -552,40 +585,7 @@ class ImageAccessor:
             Scaled and offset image if STAC scales and offsets are available, otherwise the
             source image.
         """
-        if self.stac is None:
-            warnings.warn(
-                'Cannot scale and offset this image, there is no STAC information.',
-                category=UserWarning,
-                stacklevel=2,
-            )
-            return self._ee_image
-
-        # create band scale and offset dicts
-        band_props = self.stac.get('summaries', {}).get('eo:bands', [])
-        scale_dict = {bp['name']: bp.get('gee:scale', 1.0) for bp in band_props}
-        offset_dict = {bp['name']: bp.get('gee:offset', 0.0) for bp in band_props}
-
-        # return if all scales are 1 and all offsets are 0
-        if set(scale_dict.values()) == {1} and set(offset_dict.values()) == {0}:
-            return self._ee_image
-
-        # apply the scales and offsets to bands which have them
-        adj_bands = self._ee_image.bandNames().filter(
-            ee.Filter.inList('item', list(scale_dict.keys()))
-        )
-        non_adj_bands = self._ee_image.bandNames().removeAll(adj_bands)
-
-        scale_im = ee.Dictionary(scale_dict).toImage().select(adj_bands)
-        offset_im = ee.Dictionary(offset_dict).toImage().select(adj_bands)
-        adj_im = self._ee_image.select(adj_bands).multiply(scale_im).add(offset_im)
-
-        # add any unadjusted bands back to the adjusted image, and re-order bands to match
-        # the original
-        adj_im = adj_im.addBands(self._ee_image.select(non_adj_bands))
-        adj_im = adj_im.select(self._ee_image.bandNames())
-
-        # copy source image properties and return
-        return ee.Image(adj_im.copyProperties(self._ee_image, self._ee_image.propertyNames()))
+        return _scale_offset_image(self._ee_image, self.stac)
 
     def regionCoverage(
         self,
@@ -718,7 +718,7 @@ class ImageAccessor:
         crs: str | None = None,
         crs_transform: Sequence[float] | None = None,
         shape: tuple[int, int] | None = None,
-        region: dict | ee.Geometry | None = None,
+        region: dict[str, Any] | ee.Geometry | None = None,
         scale: float | None = None,
         resampling: str | ResamplingMethod = _default_resampling,
         dtype: str | None = None,
