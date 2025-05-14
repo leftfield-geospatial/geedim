@@ -26,6 +26,11 @@ class _StrChoiceEnum(str, Enum):
     def __str__(self):
         return self._value_
 
+    @property
+    def name(self):
+        # override for click>=8.2.0 Choice options which match passed values to Enum names
+        return self._value_
+
 
 class CompositeMethod(_StrChoiceEnum):
     """Enumeration for the compositing method, i.e. the method for finding a composite pixel from
