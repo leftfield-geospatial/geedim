@@ -866,7 +866,6 @@ class ImageCollectionAccessor:
         max_requests: int = Tiler._max_requests,
         max_cpus: int | None = None,
     ) -> None:
-        # TODO: reorder parameters in related groups and in order of likely use
         """
         Export the collection to GeoTIFF files.
 
@@ -900,11 +899,12 @@ class ImageCollectionAccessor:
             descriptions are set to the image band names, when ``split`` is
             :attr:`SplitType.images`.
         :param nodata:
-            Set GeoTIFF nodata tags to the shared
-            :attr:`~geedim.image.ImageAccessor.nodata` value of the collection images
-            (``True``), or leave nodata tags unset (``False``).  If a custom integer or floating
-            point value is supplied, nodata tags are set to this value.  Usually, a custom value
-            would be supplied when the collection images have been unmasked with
+            How to set the GeoTIFF nodata tags.  If ``True`` (the default), the nodata tags are
+            set to :attr:`~geedim.image.ImageAccessor.nodata` value of the collection images (the
+            :attr:`dtype` dependent value provided by Earth Engine). Otherwise, if ``False``,
+            the nodata tags are not set.  An integer or floating point value can also be
+            provided, in which case the nodata tags are set to this value. Usually, a custom
+            value would be supplied when the collection images have been unmasked with
             ``ee.Image.unmask(nodata)``.
         :param driver:
             File format driver.

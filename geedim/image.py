@@ -939,20 +939,18 @@ class ImageAccessor:
         ``max_tile_bands``, and download / decompress concurrency with ``max_requests`` and
         ``max_cpus``.
 
-        The downloaded file is masked with the :attr:`dtype` dependent ``nodata`` value provided by
-        Earth Engine.  For integer types, this is the minimum value of the :attr:`dtype`,
-        and for floating point types, it is ``float('-inf')``.
-
         :param file:
             Destination file.  Can be a path or URI string, or an :class:`~fsspec.core.OpenFile`
             object in binary mode (``'wb'``).
         :param overwrite:
             Whether to overwrite the destination file if it exists.
         :param nodata:
-            Set the GeoTIFF nodata tag to :attr:`nodata` (``True``), or leave the nodata tag
-            unset (``False``).  If a custom integer or floating point value is supplied,
-            the nodata tag is set to this value.  Usually, a custom value would be supplied when
-            the image has been unmasked with ``ee.Image.unmask(nodata)``.
+            How to set the GeoTIFF nodata tag.  If ``True`` (the default), the nodata tag is set
+            to :attr:`nodata` (the :attr:`dtype` dependent value provided by Earth Engine).
+            Otherwise, if ``False``, the nodata tag is not set.  An integer or floating point
+            value can also be provided, in which case the nodata tag is set to this value.
+            Usually, a custom value would be supplied when the image has been unmasked with
+            ``ee.Image.unmask(nodata)``.
         :param driver:
             File format driver.
         :param max_tile_size:

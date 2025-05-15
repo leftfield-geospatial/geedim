@@ -168,8 +168,6 @@ class BaseImage(ImageAccessor):
         ``max_tile_bands``, and download / decompress concurrency with ``max_requests`` and
         ``max_cpus``.
 
-        The GeoTIFF nodata tag is set to the :attr:`nodata` value.
-
         :param filename:
             Destination file.  Can be a path or URI string, or an :class:`~fsspec.core.OpenFile`
             object in binary mode (``'wb'``).
@@ -179,10 +177,12 @@ class BaseImage(ImageAccessor):
             Deprecated and has no effect. ``max_requests`` and ``max_cpus`` can be used to
             limit concurrency.
         :param nodata:
-            Set the GeoTIFF nodata tag to :attr:`nodata` (``True``), or leave the nodata tag
-            unset (``False``).  If a custom integer or floating point value is supplied,
-            the nodata tag is set to this value.  Usually, a custom value would be supplied when
-            the image has been unmasked with ``ee.Image.unmask(nodata)``.
+            How to set the GeoTIFF nodata tag.  If ``True`` (the default), the nodata tag is set
+            to :attr:`nodata` (the :attr:`dtype` dependent value provided by Earth Engine).
+            Otherwise, if ``False``, the nodata tag is not set.  An integer or floating point
+            value can also be provided, in which case the nodata tag is set to this value.
+            Usually, a custom value would be supplied when the image has been unmasked with
+            ``ee.Image.unmask(nodata)``.
         :param driver:
             File format driver.
         :param max_tile_size:
