@@ -44,9 +44,14 @@ logger = logging.getLogger(__name__)
 class _EECommand(click.Command):
     """click Command sub-class for initialising Earth Engine."""
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._ee_init = False
+
     def invoke(self, ctx: click.Context) -> Any:
-        # initialise here rather than in cli() so that --help is not delayed
-        utils.Initialize()
+        if not self._ee_init:
+            utils.Initialize()
+            self._ee_init = True
         return super().invoke(ctx)
 
 
@@ -60,7 +65,7 @@ def _crs_cb(ctx: click.Context, param: click.Parameter, crs: str) -> str | None:
     if crs:
         crs_path = Path(crs)
         try:
-            if crs_path.suffix.lower() in ['.tif', '.tiff']:
+            if crs_path.suffix.lower() in ['.tif', '.tiff', '.gtiff']:
                 # read CRS from geotiff path / URI
                 with rio.open(fsspec.open(crs, 'rb'), 'r') as im:
                     crs = im.crs.to_wkt()
@@ -74,26 +79,29 @@ def _crs_cb(ctx: click.Context, param: click.Parameter, crs: str) -> str | None:
     return crs
 
 
-def _bbox_cb(
-    ctx: click.Context, param: click.Parameter, bounds: Sequence[float]
-) -> dict[str, Any] | None:
+def _bbox_cb(ctx: click.Context, param: click.Parameter, bounds: Sequence[float]) -> None:
     """click callback to convert --bbox to a GeoJSON polygon."""
+    # --bbox and --region are not exposed but combined into 'geometry' which is passed to the
+    # command
+    ctx.params.setdefault('geometry', None)
     if bounds == '-':
-        if 'region' not in ctx.obj:
+        if 'geometry' not in ctx.obj:
             raise click.BadParameter("No piped bounds or region available.")
-        bounds = ctx.obj['region']
+        ctx.params['geometry'] = ctx.obj['geometry']
     elif bounds:
         bounds = _bounds_to_geojson(*bounds)
-        ctx.obj['region'] = bounds
-    return bounds
+        ctx.params['geometry'] = ctx.obj['geometry'] = bounds
 
 
-def _region_cb(ctx: click.Context, param: click.Parameter, region: str) -> dict[str, Any] | None:
-    """click callback to read --region and convert to an GeoJSON polygon."""
+def _region_cb(ctx: click.Context, param: click.Parameter, region: str) -> None:
+    """click callback to read --region and convert to a GeoJSON polygon."""
+    # --bbox and --region are not exposed but combined into 'geometry' which is passed to the
+    # command
+    ctx.params.setdefault('geometry', None)
     if region == '-':
-        if 'region' not in ctx.obj:
+        if 'geometry' not in ctx.obj:
             raise click.BadParameter("No piped bounds or region available.")
-        region = ctx.obj['region']
+        ctx.params['geometry'] = ctx.obj['geometry']
     elif region:
         try:
             if region.lower().endswith('json'):
@@ -105,8 +113,7 @@ def _region_cb(ctx: click.Context, param: click.Parameter, region: str) -> dict[
                     region = _bounds_to_geojson(*bounds)
         except Exception as ex:
             raise click.BadParameter(str(ex)) from ex
-        ctx.obj['region'] = region
-    return region
+        ctx.params['geometry'] = ctx.obj['geometry'] = region
 
 
 def _dir_cb(ctx: click.Context, param: click.Parameter, uri_path: str) -> OpenFile:
@@ -174,8 +181,7 @@ def _get_images(obj: dict[str, Any], image_ids: tuple[str]) -> list[ee.Image]:
 def _prepare_export_collection(
     images: list[ee.Image],
     cloud_kwargs: dict | None = None,
-    bbox: dict[str, Any] | None = None,
-    region: dict[str, Any] | None = None,
+    geometry: dict[str, Any] | None = None,
     buffer: float | None = None,
     like: dict[str, Any] | None = None,
     mask: bool = False,
@@ -183,13 +189,12 @@ def _prepare_export_collection(
 ) -> ee.ImageCollection:
     """Create an image collection and prepare it for export."""
     # resolve and buffer region
-    region = bbox or region
     if buffer is not None:
-        if not region:
+        if not geometry:
             raise click.UsageError(
                 "'-b' / '--bbox' or '-r' / '--region' is required with '-buf' / '--buffer'"
             )
-        region = ee.Geometry(region).buffer(buffer)
+        geometry = ee.Geometry(geometry).buffer(buffer)
 
     if like:
         # overwrite crs, crs_transform and shape from --like
@@ -199,11 +204,11 @@ def _prepare_export_collection(
     coll = coll.gd.addMaskBands(**(cloud_kwargs or {}))
     if mask:
         coll = coll.gd.maskClouds()
-    coll = coll.gd.prepareForExport(region=region, **kwargs)
+    coll = coll.gd.prepareForExport(region=geometry, **kwargs)
     return coll
 
 
-# Define click options that are common to more than one command
+# Define click options that are common to more than one command.
 bbox_option = click.option(
     '-b',
     '--bbox',
@@ -212,9 +217,10 @@ bbox_option = click.option(
     default=None,
     show_default='source image bounds',
     callback=_bbox_cb,
+    expose_value=False,  # callback exposes 'geometry' to the command
     metavar='LEFT BOTTOM RIGHT TOP',
-    help="Bounds of the export image(s) in WGS84 geographic coordinates.  Use'-' to read from "
-    "previous --bbox / --region options in the pipeline.",
+    help="WGS84 geographic coordinates of the export bounds.  Use'-' to read from previous --bbox / "
+    "--region options in the pipeline.",
 )
 region_option = click.option(
     '-r',
@@ -223,6 +229,7 @@ region_option = click.option(
     default=None,
     show_default='source image bounds',
     callback=_region_cb,
+    expose_value=False,  # callback exposes 'geometry' to the command
     help="Path / URI of a GeoJSON or georeferenced image file defining the export bounds.  Use "
     "'-' to read from previous --bbox / --region options in the pipeline.",
 )
@@ -555,8 +562,7 @@ def config(ctx: click.Context, **kwargs):
 def search(
     ctx: click.Context,
     coll_id: str,
-    bbox: dict[str, Any] | None,
-    region: dict[str, Any] | None,
+    geometry: dict[str, Any] | None,
     output: str | None,
     add_props: tuple[str] | None,
     **kwargs,
@@ -567,10 +573,8 @@ def search(
     Search result images are added to images piped in from previous commands, and piped out for
     use by subsequent commands.
     """
-    region = bbox or region
-
     # raise an error if --fill-portion / --cloudless-portion were supplied without --bbox / --region
-    if not region:
+    if not geometry:
         for option, option_str in zip(
             ['fill_portion', 'cloudless_portion'],
             ["'-fp' / '--fill-portion'", "'-cp' / '--cloudless-portion'"],
@@ -584,7 +588,7 @@ def search(
     coll = ee.ImageCollection(coll_id)
     label = f'Searching for {coll_id} images: '
     with utils.Spinner(desc=label, leave=' '):
-        coll = coll.gd.filter(region=region, **kwargs, **ctx.obj.get('cloud_kwargs', {}))
+        coll = coll.gd.filter(region=geometry, **kwargs, **ctx.obj.get('cloud_kwargs', {}))
 
         # retrieve search result properties from EE
         coll.gd.schemaPropertyNames += add_props
@@ -631,8 +635,8 @@ def search(
     type=click.BOOL,
     default=True,
     show_default=True,
-    help='Set download file nodata tag(s) to the --dtype dependent value provided by Earth Engine '
-    '(--nodata), or leave them unset (--no-nodata).',
+    help='Set the nodata tag of downloaded file(s) to the --dtype dependent value provided by '
+    'Earth Engine (--nodata), or leave it unset (--no-nodata).',
 )
 @click.option(
     '-dv',
@@ -867,6 +871,7 @@ def export(
     nargs=4,
     default=None,
     callback=_bbox_cb,
+    expose_value=False,  # callback exposes 'geometry' parameter for the command
     metavar='LEFT BOTTOM RIGHT TOP',
     help="Prioritise component images by their cloudless / filled portion inside these bounds.  "
     "Valid for the 'mosaic' and 'q-mosaic' --method.  Use '-' to read from previous --bbox / "
@@ -878,6 +883,7 @@ def export(
     type=click.Path(dir_okay=False),
     default=None,
     callback=_region_cb,
+    expose_value=False,  # callback exposes 'geometry' parameter for the command
     help="Prioritise component images by their cloudless / filled portion inside the bounds "
     "defined by this GeoJSON / georeferenced image file.  Valid for the 'mosaic' and "
     "'q-mosaic' --method.  Use '-' to read from previous --bbox / --region options in the "
@@ -894,8 +900,7 @@ def export(
 def composite(
     obj: dict[str, Any],
     image_ids: tuple[str],
-    bbox: ee.Geometry | None,
-    region: ee.Geometry | None,
+    geometry: ee.Geometry | None,
     **kwargs,
 ):
     """
@@ -915,7 +920,7 @@ def composite(
     images = _get_images(obj, image_ids)
     coll = ee.ImageCollection.gd.fromImages(images)
     comp_im = coll.gd.composite(
-        region=bbox or region,
+        region=geometry,
         **kwargs,
         **obj.get('cloud_kwargs', {}),
     )
