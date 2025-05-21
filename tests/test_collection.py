@@ -36,23 +36,7 @@ from geedim.image import ImageAccessor, _nodata_vals
 from geedim.mask import MaskedImage, _MaskedImage
 from geedim.stac import STACClient
 from geedim.utils import split_id
-from tests.conftest import transform_bounds
-
-
-def accessors_from_collections(
-    ee_colls: list[ee.ImageCollection],
-) -> list[ImageCollectionAccessor]:
-    """Return a list of ImageCollectionAccessor objects, with cached info, for the given list of
-    ee.ImageCollection objects, using a single getInfo() call.
-    """
-    coll_images = [
-        ee_coll.toList(ImageCollectionAccessor._max_export_images) for ee_coll in ee_colls
-    ]
-    infos = ee.List([ee_colls, coll_images]).getInfo()
-    return [
-        ImageCollectionAccessor._with_info(ee_coll, dict(**coll_info, features=image_infos))
-        for ee_coll, coll_info, image_infos in zip(ee_colls, *infos)
-    ]
+from tests.conftest import accessors_from_collections, transform_bounds
 
 
 @pytest.fixture(scope='session')
