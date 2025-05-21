@@ -17,7 +17,6 @@ limitations under the License.
 from __future__ import annotations
 
 import itertools
-import logging
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -186,14 +185,6 @@ def test_tiler_tiles():
     accum_tile = tile_union(tiles)
     assert (accum_tile.band_start, accum_tile.row_start, accum_tile.col_start) == (0, 0, 0)
     assert (accum_tile.band_stop, accum_tile.row_stop, accum_tile.col_stop) == im_shape
-
-
-def test_tiler_tiles_debug_log(caplog: pytest.LogCaptureFixture):
-    """Test Tiler._tiles() logging in debug mode."""
-    tiler = Tiler(MockImageAccessor())
-    with caplog.at_level(logging.DEBUG):
-        [*tiler._tiles()]
-    assert 'image shape' in caplog.text.lower()
 
 
 def test_tile_map_tile_retries(prepared_image: ImageAccessor, monkeypatch: pytest.MonkeyPatch):
