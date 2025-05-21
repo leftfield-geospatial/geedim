@@ -28,7 +28,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install pytest pytest-xdist
-          python -m pip install earthengine-api click rasterio tqdm tabulate fsspec aiohttp
+          python -m pip install earthengine-api click rasterio tqdm tabulate fsspec aiohttp xarray
 
       - name: Run integration tests
         timeout-minutes: 10
