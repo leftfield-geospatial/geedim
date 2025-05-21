@@ -46,12 +46,9 @@ class _EECommand(click.Command):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._ee_init = False
 
     def invoke(self, ctx: click.Context) -> Any:
-        if not self._ee_init:
-            utils.Initialize()
-            self._ee_init = True
+        utils.Initialize()
         return super().invoke(ctx)
 
 
@@ -170,7 +167,7 @@ def _configure_logging(verbosity: int):
 
 def _get_images(obj: dict[str, Any], image_ids: tuple[str]) -> list[ee.Image]:
     """Combine piped images in the click context object with images created from --id image IDs."""
-    images = [ee.Image(ee_id) for ee_id in image_ids] + obj.get('images', [])
+    images = obj.get('images', []) + [ee.Image(ee_id) for ee_id in image_ids]
     if len(images) == 0:
         raise click.UsageError(
             "No images - either supply '--id' / '-i' or pipe images into this command."
@@ -771,6 +768,7 @@ def download(
 @crs_option
 @bbox_option
 @region_option
+@buffer_option
 @scale_option
 @crs_transform_option
 @shape_option
