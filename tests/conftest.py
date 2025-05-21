@@ -26,7 +26,7 @@ from click.testing import CliRunner
 from rasterio.features import bounds
 from rasterio.warp import transform_geom
 
-from geedim import Initialize, MaskedImage
+from geedim import MaskedImage, utils
 from geedim.collection import ImageCollectionAccessor
 from geedim.image import ImageAccessor
 
@@ -35,10 +35,26 @@ tests_path = pathlib.Path(__file__).absolute().parents[0]
 
 def accessors_from_images(ee_images: list[ee.Image]) -> list[ImageAccessor]:
     """Return a list of ImageAccessor objects, with cached info properties, for the given list of
-    ee.Image objects, combining all getInfo() calls into one.
+    ee.Image objects, using a single getInfo() call.
     """
     infos = ee.List(ee_images).getInfo()
     return [ImageAccessor._with_info(ee_image, info) for ee_image, info in zip(ee_images, infos)]
+
+
+def accessors_from_collections(
+    ee_colls: list[ee.ImageCollection],
+) -> list[ImageCollectionAccessor]:
+    """Return a list of ImageCollectionAccessor objects, with cached info, for the given list of
+    ee.ImageCollection objects, using a single getInfo() call.
+    """
+    coll_images = [
+        ee_coll.toList(ImageCollectionAccessor._max_export_images) for ee_coll in ee_colls
+    ]
+    infos = ee.List([ee_colls, coll_images]).getInfo()
+    return [
+        ImageCollectionAccessor._with_info(ee_coll, dict(**coll_info, features=image_infos))
+        for ee_coll, coll_info, image_infos in zip(ee_colls, *infos)
+    ]
 
 
 def transform_bounds(geometry: dict, crs: str = 'EPSG:4326') -> tuple[float, ...]:
@@ -49,42 +65,43 @@ def transform_bounds(geometry: dict, crs: str = 'EPSG:4326') -> tuple[float, ...
 
 
 @pytest.fixture(scope='session', autouse=True)
-def ee_init():
-    Initialize()
-    return
+def ee_initialize() -> None:
+    """Initialise EE and prevent it being initialised again."""
+    utils_initialize = utils.Initialize
+
+    def initialize(**kwargs):
+        if not ee.data._initialized:
+            utils_initialize(**kwargs)
+
+    with pytest.MonkeyPatch.context() as mp:
+        # patch utils.Initialize() so that EE is initialized once only (prevents delays when
+        # testing e.g. CLI commands that call utils.Initialize() in their invoke())
+        mp.setattr(utils, 'Initialize', initialize)
+        utils.Initialize()
+        yield
 
 
 @pytest.fixture(scope='session')
 def region_25ha() -> dict:
     """A geojson polygon defining a 500x500m region."""
     return {
-        "type": "Polygon",
-        "coordinates": [
-            [
-                [21.6389, -33.4520],
-                [21.6389, -33.4474],
-                [21.6442, -33.4474],
-                [21.6442, -33.4520],
-                [21.6389, -33.4520],
-            ]
+        'type': 'Polygon',
+        'coordinates': [
+            [[21.6389, -33.4474], [21.6389, -33.452], [21.6442, -33.452], [21.6442, -33.4474]]
         ],
+        'evenOdd': True,
     }
 
 
 @pytest.fixture(scope='session')
 def region_100ha() -> dict:
-    """A geojson polygon defining a 1x1km region."""
+    """A GeoJSON polygon defining a 1x1km region."""
     return {
-        "type": "Polygon",
-        "coordinates": [
-            [
-                [21.6374, -33.4547],
-                [21.6374, -33.4455],
-                [21.6480, -33.4455],
-                [21.6480, -33.4547],
-                [21.6374, -33.4547],
-            ]
+        'type': 'Polygon',
+        'coordinates': [
+            [[21.6374, -33.4455], [21.6374, -33.4547], [21.648, -33.4547], [21.648, -33.4455]]
         ],
+        'evenOdd': True,
     }
 
 
@@ -92,16 +109,11 @@ def region_100ha() -> dict:
 def region_10000ha() -> dict:
     """A geojson polygon defining a 10x10km region."""
     return {
-        "type": "Polygon",
-        "coordinates": [
-            [
-                [21.5893, -33.4964],
-                [21.5893, -33.4038],
-                [21.6960, -33.4038],
-                [21.6960, -33.4964],
-                [21.5893, -33.4964],
-            ]
+        'type': 'Polygon',
+        'coordinates': [
+            [[21.5893, -33.4038], [21.5893, -33.4964], [21.696, -33.4964], [21.696, -33.4038]]
         ],
+        'evenOdd': True,
     }
 
 
@@ -564,7 +576,8 @@ def runner():
 def region_25ha_file() -> pathlib.Path:
     """Path to region_25ha geojson file."""
     # TODO: remove these fixtures and the files they refer to. rather just create a tmp file from
-    #  one of the region_*ha fixtures if we need to test reading from a file
+    #  one of the region_*ha fixtures if we need to test reading from a file.  currently they are
+    #  duplicated in test_cli
     return tests_path.joinpath('data/region_25ha.geojson')
 
 
