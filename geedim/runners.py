@@ -18,10 +18,6 @@ class _State(enum.Enum):
     CLOSED = "closed"
 
 
-# Default timeout for joining the threads in the threadpool
-THREAD_JOIN_TIMEOUT = 300
-
-
 class Runner:
     """A context manager that controls event loop life cycle.
 
@@ -73,7 +69,7 @@ class Runner:
             loop = self._loop
             _cancel_all_tasks(loop)
             loop.run_until_complete(loop.shutdown_asyncgens())
-            loop.run_until_complete(loop.shutdown_default_executor(THREAD_JOIN_TIMEOUT))
+            loop.run_until_complete(loop.shutdown_default_executor())
         finally:
             if self._set_event_loop:
                 events.set_event_loop(None)
@@ -160,43 +156,6 @@ class Runner:
             self._loop.call_soon_threadsafe(lambda: None)
             return
         raise KeyboardInterrupt()
-
-
-def run(main, *, debug=None, loop_factory=None):
-    """Execute the coroutine and return the result.
-
-    This function runs the passed coroutine, taking care of
-    managing the asyncio event loop, finalizing asynchronous
-    generators and closing the default executor.
-
-    This function cannot be called when another asyncio event loop is
-    running in the same thread.
-
-    If debug is True, the event loop will be run in debug mode.
-    If loop_factory is passed, it is used for new event loop creation.
-
-    This function always creates a new event loop and closes it at the end.
-    It should be used as a main entry point for asyncio programs, and should
-    ideally only be called once.
-
-    The executor is given a timeout duration of 5 minutes to shutdown.
-    If the executor hasn't finished within that duration, a warning is
-    emitted and the executor is closed.
-
-    Example:
-
-        async def main():
-            await asyncio.sleep(1)
-            print('hello')
-
-        asyncio.run(main())
-    """
-    if events._get_running_loop() is not None:
-        # fail fast with short traceback
-        raise RuntimeError("asyncio.run() cannot be called from a running event loop")
-
-    with Runner(debug=debug, loop_factory=loop_factory) as runner:
-        return runner.run(main)
 
 
 def _cancel_all_tasks(loop):
