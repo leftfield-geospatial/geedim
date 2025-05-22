@@ -86,7 +86,7 @@ def test_get_tqdm_kwargs(kwargs: dict):
     assert tqdm_kwargs['leave'] is None
 
 
-def test_async_runner(monkeypatch: pytest.MonkeyPatch):
+def test_async_runner():
     """Test the utils.AsyncRunner() singleton class."""
     runner = utils.AsyncRunner()
 
