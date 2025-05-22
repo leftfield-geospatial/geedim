@@ -402,7 +402,7 @@ def test_filter(region_10000ha: dict):
     assert all(cp < cloudless_portion for cp in props['custom_filter_p'][1])
 
     # cloud / shadow kwargs (changing mask_shadows from False to True reduces the cloudless_portion)
-    assert any(cp_nms > cp_ms for cp_nms, cp_ms in zip(*props['cs_kwargs'], strict=True))
+    assert any(cp_nms > cp_ms for cp_nms, cp_ms in zip(*props['cs_kwargs']))
 
 
 def test_filter_error(l9_sr_coll: ImageCollectionAccessor, region_10000ha: dict):
