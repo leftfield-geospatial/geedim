@@ -2,7 +2,7 @@
 with minor adaptations to allow use of the Runner class in python < 3.11.
 """
 
-__all__ = ('Runner', 'run')
+__all__ = ('Runner',)
 
 import enum
 import functools
