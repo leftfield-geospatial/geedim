@@ -4,15 +4,12 @@ with minor adaptations to allow use of the Runner class in python < 3.11.
 
 __all__ = ('Runner', 'run')
 
-import contextvars
 import enum
 import functools
 import inspect
 import signal
 import threading
 from asyncio import coroutines, events, exceptions, tasks
-
-# TODO: test in python 3.9-10
 
 
 class _State(enum.Enum):
@@ -58,7 +55,6 @@ class Runner:
         self._debug = debug
         self._loop_factory = loop_factory
         self._loop = None
-        self._context = None
         self._interrupt_count = 0
         self._set_event_loop = False
 
@@ -90,9 +86,9 @@ class Runner:
         self._lazy_init()
         return self._loop
 
-    def run(self, coro, *, context=None):
+    def run(self, coro):
         """Run code in the embedded event loop."""
-        if events.get_running_loop() is not None:
+        if events._get_running_loop() is not None:
             # fail fast with short traceback
             raise RuntimeError("Runner.run() cannot be called from a running event loop")
 
@@ -106,12 +102,9 @@ class Runner:
 
                 coro = _wrap_awaitable(coro)
             else:
-                raise TypeError('An asyncio.Future, a coroutine or an ' 'awaitable is required')
+                raise TypeError('An asyncio.Future, a coroutine or an awaitable is required')
 
-        if context is None:
-            context = self._context
-
-        task = self._loop.create_task(coro, context=context)
+        task = self._loop.create_task(coro)
 
         if (
             threading.current_thread() is threading.main_thread()
@@ -157,7 +150,6 @@ class Runner:
             self._loop = self._loop_factory()
         if self._debug is not None:
             self._loop.set_debug(self._debug)
-        self._context = contextvars.copy_context()
         self._state = _State.INITIALIZED
 
     def _on_sigint(self, signum, frame, main_task):
@@ -199,7 +191,7 @@ def run(main, *, debug=None, loop_factory=None):
 
         asyncio.run(main())
     """
-    if events.get_running_loop() is not None:
+    if events._get_running_loop() is not None:
         # fail fast with short traceback
         raise RuntimeError("asyncio.run() cannot be called from a running event loop")
 
