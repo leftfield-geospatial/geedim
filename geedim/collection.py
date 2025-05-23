@@ -23,7 +23,7 @@ import posixpath
 import re
 import warnings
 from collections.abc import Iterable, Sequence
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import cached_property
 from typing import Any
 
@@ -260,12 +260,13 @@ class ImageCollectionAccessor:
 
             self._schema = {}
 
-            # get STAC property descriptions (if any)
-            # TODO: this gets STAC even if its not needed.  can we get it only when all
-            #  schemaPropertyNames are not in schema module
-            summaries = self.stac.get('summaries', {}) if self.stac else {}
-            gee_schema = summaries.get('gee:schema', {})
-            gee_descriptions = {item['name']: item['description'] for item in gee_schema}
+            if set(coll_schema.keys()).issuperset(self.schemaPropertyNames):
+                gee_descriptions = {}
+            else:
+                # get STAC property descriptions (if any)
+                summaries = self.stac.get('summaries', {}) if self.stac else {}
+                gee_schema = summaries.get('gee:schema', {})
+                gee_descriptions = {item['name']: item['description'] for item in gee_schema}
 
             for prop_name in self.schemaPropertyNames:
                 if prop_name in coll_schema:
@@ -326,7 +327,7 @@ class ImageCollectionAccessor:
                 if prop_val is not None:
                     if prop_name in ['system:time_start', 'system:time_end']:
                         # convert timestamp to date string
-                        dt = datetime.fromtimestamp(prop_val / 1000, tz=timezone.utc)
+                        dt = datetime.fromtimestamp(prop_val / 1000, tz=UTC)
                         im_schema_props[prop_schema['abbrev']] = datetime.strftime(
                             dt, '%Y-%m-%d %H:%M'
                         )
@@ -390,8 +391,6 @@ class ImageCollectionAccessor:
                     ee_image, region=region, scale=self._portion_scale
                 )
             if mask:
-                # TODO: mask_clouds() fails on any non-fixed images in the collection,
-                #  which don't have mask bands
                 ee_image = self._mi.mask_clouds(ee_image)
             return ImageAccessor(ee_image).resample(resampling)
 
@@ -428,10 +427,10 @@ class ImageCollectionAccessor:
         first_band_names = first_band = None
         band_compare_keys = ['crs', 'crs_transform', 'dimensions', 'data_type']
 
-        # TODO: this test is stricter than it needs to be.  for image splitting, only the min
-        #  scale band of each image should have a fixed projection and match all other min scale
-        #  band's projection & bounds.  for band splitting, only the first image should have
-        #  all bands with fixed projections, and matching projections and bounds.
+        # Note that for export, this test is stricter than it needs to be.  For image splitting,
+        # only the min. scale band of each image should have a fixed projection and match all other
+        # min. scale band's projection & bounds.  For band splitting, only the first image should
+        # have all bands with fixed projections, and matching projections and bounds.
         try:
             for im_info in self.info.get('features', []):
                 cmp_bands = {bp['id']: bp for bp in im_info.get('bands', [])}
@@ -487,7 +486,7 @@ class ImageCollectionAccessor:
         # have cached info to save on getInfo() calls in users of the dictionary)
         return {
             im_name: ImageAccessor._with_info(ee.Image(im_list.get(i)), im_info)
-            for i, (im_name, im_info) in enumerate(zip(im_names, im_infos))
+            for i, (im_name, im_info) in enumerate(zip(im_names, im_infos, strict=False))
         }
 
     def addMaskBands(self, **kwargs) -> ee.ImageCollection:
@@ -641,8 +640,8 @@ class ImageCollectionAccessor:
             used for cloud/shadow mask supported collections,
             and :attr:`~geedim.enums.CompositeMethod.mosaic` otherwise.
         :param mask:
-            Whether to apply the cloud/shadow mask; or fill (valid pixel) mask, in the case of
-            images without support for cloud/shadow masking.
+            Whether to mask collection images prior to compositing.  The cloud/shadow mask is
+            applied when supported, otherwise the fill (validity) mask is applied.
         :param resampling:
             Resampling method to use on collection images prior to compositing.
         :param date:
@@ -670,7 +669,6 @@ class ImageCollectionAccessor:
         :return:
             Composite image.
         """
-        # TODO: allow S2 cloud score to be used as quality band
         if method is None:
             method = (
                 CompositeMethod.q_mosaic
@@ -1015,8 +1013,6 @@ class ImageCollectionAccessor:
         :returns:
             NumPy array.
         """
-        # TODO: is it faster / less memory limit prone to always export by image split,
-        #  then reshape arrays to make them band split if necessary
         split = SplitType(split)
         images = self._split_images(split)
 
@@ -1055,14 +1051,16 @@ class ImageCollectionAccessor:
                     for ts in timestamps
                 ]
                 if split is SplitType.bands:
-                    band_names = list(zip(date_strings, band_names))
+                    band_names = list(zip(date_strings, band_names, strict=False))
                 else:
-                    image_names = list(zip(date_strings, image_names))
+                    image_names = list(zip(date_strings, image_names, strict=False))
 
             # nest the structured data type for a split image's bands (last array dimension) in the
             # structured data type for the split images (second last array dimension)
-            band_dtype = np.dtype(list(zip(band_names, [array.dtype] * len(band_names))))
-            exp_dtype = np.dtype(list(zip(image_names, [band_dtype] * len(images))))
+            band_dtype = np.dtype(
+                list(zip(band_names, [array.dtype] * len(band_names), strict=False))
+            )
+            exp_dtype = np.dtype(list(zip(image_names, [band_dtype] * len(images), strict=False)))
 
             # create a view of the array with the last 2 dimensions as the structured dtype
             array = array.reshape(*array.shape[:2], -1).view(dtype=exp_dtype).squeeze()
