@@ -161,8 +161,9 @@ def prepare_export_collection_kwargs(
     region_100ha: dict[str, Any], raster_file: Path
 ) -> dict[str, Any]:
     """Dictionary of kwargs for _prepare_export_collection()."""
-    # all _prepare_export_collection() kwargs are included for testing conversion & passing of
-    # the corresponding CLI options
+    # in normal use, some of _prepare_export_collection() kwargs are mutually exclusive or
+    # redundant, but here all kwargs are included for testing conversion & passing of the
+    # CLI options
     with rio.open(raster_file, 'r') as ds:
         like = dict(crs=ds.crs.to_wkt(), crs_transform=ds.transform[:6], shape=ds.shape)
     return dict(
@@ -285,6 +286,7 @@ def test_search(
     start_date = '2023-01-01'
     end_date = '2022-01-02'
     bounds_str = ' '.join(map(str, bounds(region_100ha)))
+    buffer = 500
     fill_portion = 90
     cloudless_portion = 50
     custom_filter = 'CLOUD_COVER<50'
@@ -292,8 +294,9 @@ def test_search(
     res_file = tmp_path.joinpath('results.json')
 
     cli_str = (
-        f'search -c MOCK-ID -s {start_date} -e {end_date} -b {bounds_str} -fp {fill_portion} '
-        f'-cp {cloudless_portion} -cf {custom_filter} -ap {add_props} -op {res_file}'
+        f'search -c MOCK-ID -s {start_date} -e {end_date} -b {bounds_str} -buf {buffer} '
+        f'-fp {fill_portion} -cp {cloudless_portion} -cf {custom_filter} -ap {add_props} '
+        f'-op {res_file}'
     )
     res = runner.invoke(cli.cli, cli_str.split())
     assert res.exit_code == 0, res.output
@@ -305,7 +308,7 @@ def test_search(
     filter_kwargs = patch_filter.pop(-1)
     assert filter_kwargs['start_date'] == datetime.fromisoformat(start_date)
     assert filter_kwargs['end_date'] == datetime.fromisoformat(end_date)
-    assert filter_kwargs['region'] == region_100ha
+    assert filter_kwargs['region'] == ee.Geometry(region_100ha).buffer(buffer)
     assert filter_kwargs['fill_portion'] == fill_portion
     assert filter_kwargs['cloudless_portion'] == cloudless_portion
     assert filter_kwargs['custom_filter'] == custom_filter
@@ -385,7 +388,7 @@ def test_prepare_export_collection_mask(l9_image_id: str, region_100ha: dict[str
     mask_sums = ee.List(mask_sums).getInfo()
 
     assert len(mask_sums[0]) == len(mask_sums[1]) == len(images)
-    for unmasked_sum, masked_sum in zip(*mask_sums):
+    for unmasked_sum, masked_sum in zip(*mask_sums, strict=False):
         assert unmasked_sum > masked_sum
 
 
