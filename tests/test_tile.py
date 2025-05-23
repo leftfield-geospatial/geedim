@@ -94,7 +94,7 @@ def test_tiler_init():
 
 def test_tiler_init_error():
     """Test Tiler.__init__() raises an error when the image has a non-fixed projection."""
-    with pytest.raises(ValueError, match='fixed') as ex:
+    with pytest.raises(ValueError, match='fixed'):
         _ = Tiler(MockImageAccessor(shape=None))
 
 
@@ -233,7 +233,7 @@ def test_tile_map_tile_retries(prepared_image: ImageAccessor, monkeypatch: pytes
         # test an error is raised when a tile is not downloaded correctly within max_retries
         # retries
         MockDatasetReader.exceptions = 0
-        with pytest.raises(RasterioIOError) as ex:
+        with pytest.raises(RasterioIOError, match='Mock error'):
             AsyncRunner().run(
                 tiler._map_tile(
                     tile_func,
@@ -244,26 +244,31 @@ def test_tile_map_tile_retries(prepared_image: ImageAccessor, monkeypatch: pytes
                     backoff_factor=0,
                 )
             )
-        assert 'Mock error' in str(ex.value)
 
 
 @pytest.mark.parametrize('masked', [False, True])
-def test_tiler_map_tiles(prepared_image: ImageAccessor, masked: bool):
+def test_tiler_map_tiles(
+    prepared_image: ImageAccessor, prepared_image_array: np.ndarray, masked: bool
+):
     """Test Tiler.map_tiles()."""
 
     def write_tile(tile: Tile, tile_array: np.ndarray):
         """Write tile_array into array."""
-        array[tile.slices.band, tile.slices.row, tile.slices.col] = tile_array
+        tile_array = np.moveaxis(tile_array, 0, -1)
+        array[tile.slices.row, tile.slices.col, tile.slices.band] = tile_array
 
-    # choose max_tile_dim and max_tile_bands to have 2 tiles along each dimension
-    with Tiler(prepared_image, max_tile_dim=11, max_tile_bands=2) as tiler:
+    # choose max_tile_dim and max_tile_bands to have 2 tiles along each dimension,
+    # and max_requests and max_cpus to reach their limits
+    with Tiler(
+        prepared_image, max_tile_dim=11, max_tile_bands=2, max_requests=4, max_cpus=4
+    ) as tiler:
         assert len([*tiler._tiles()]) == 8
         array_type = np.ma.ones if masked else np.ones
         array = array_type(
-            (prepared_image.count, *prepared_image.shape), dtype=prepared_image.dtype
+            (*prepared_image.shape, prepared_image.count), dtype=prepared_image.dtype
         )
         tiler.map_tiles(write_tile, masked=masked)
 
         mask = ~array.mask if masked else array != prepared_image.nodata
-        assert not np.all(mask)
-        assert np.all((array.T == range(1, prepared_image.count + 1)) == mask.T)
+        assert (mask == ~prepared_image_array.mask).all()
+        assert (array == prepared_image_array).all()
