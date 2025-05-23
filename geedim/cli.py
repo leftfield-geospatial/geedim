@@ -504,6 +504,7 @@ def config(ctx: click.Context, **kwargs):
 )
 @bbox_option
 @region_option
+@buffer_option
 @click.option(
     '-fp',
     '--fill-portion',
@@ -547,7 +548,6 @@ def config(ctx: click.Context, **kwargs):
     multiple=True,
     help='Additional image property name(s) to include in search results.',
 )
-# TODO: deprecate this?
 @click.option(
     '-op',
     '--output',
@@ -560,6 +560,7 @@ def search(
     ctx: click.Context,
     coll_id: str,
     geometry: dict[str, Any] | None,
+    buffer: float | None,
     output: str | None,
     add_props: tuple[str] | None,
     **kwargs,
@@ -575,11 +576,14 @@ def search(
         for option, option_str in zip(
             ['fill_portion', 'cloudless_portion'],
             ["'-fp' / '--fill-portion'", "'-cp' / '--cloudless-portion'"],
+            strict=True,
         ):
             if ctx.get_parameter_source(option) is ParameterSource.COMMANDLINE:
                 raise click.UsageError(
                     f"'-b' / '--bbox' or '-r' / '--region' is required with {option_str}"
                 )
+    elif buffer:
+        geometry = ee.Geometry(geometry).buffer(buffer)
 
     # create collection and search
     coll = ee.ImageCollection(coll_id)
