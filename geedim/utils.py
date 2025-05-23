@@ -22,18 +22,12 @@ import io
 import json
 import logging
 import os
-import sys
 import threading
 import warnings
-from collections.abc import Coroutine
+from asyncio.runners import Runner
+from collections.abc import Callable, Coroutine
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Callable, Generic, TypeVar
-
-if sys.version_info >= (3, 11):
-    from asyncio.runners import Runner
-else:
-    # TODO: remove when min supported python >= 3.11
-    from geedim.runners import Runner
+from typing import Any, Generic, TypeVar
 
 import aiohttp
 import ee
@@ -215,6 +209,9 @@ def register_accessor(name: str, cls: type) -> Callable[[type[T]], type[T]]:
             self._accessor = accessor
 
         def __get__(self, obj, cls) -> type[T] | T:
+            # TODO: strictly the caching happens in the lookup chain for data descriptions,
+            #  so is not necessary here if there is no __set__:
+            #  https://realpython.com/python-descriptors/#lazy-properties
             if obj is None:
                 # return accessor type when the class attribute is accessed e.g. ee.Image.gd
                 return self._accessor
@@ -309,11 +306,10 @@ class AsyncRunner:
         self._closed = False
         atexit.register(self._close)
 
-    def __del__(self):
-        # TODO: this raises an error on 2x ctrl-c during download: 'NoneType' object has no
-        #  attribute 'warn'
+    def __del__(self, _warnings: Any = warnings):
+        # _warnings kwarg keeps the warnings module available until after AsyncRunner() is deleted
         if not self._closed:
-            warnings.warn(
+            _warnings.warn(
                 f'{type(self).__name__} was never closed: {self!r}.',
                 category=ResourceWarning,
                 stacklevel=2,
