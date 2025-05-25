@@ -231,7 +231,8 @@ class _Sentinel2Image(_CloudlessImage):
             selected, or a fully masked image if no match is found.
             """
             # TODO: would it be possible (and faster) to use ee.ImageCollection.linkCollection,
-            #  for the ImageCollection accessor rather than linking per image?
+            #  for the ImageCollection accessor rather than linking per image?  I think
+            #  linkCollection is a shortcut for ee.Join.saveFirst
             # default fully masked image
             default = ee.Image().updateMask(0)
             default = default.rename(band)

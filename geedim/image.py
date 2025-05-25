@@ -25,7 +25,7 @@ import time
 import warnings
 from collections.abc import Sequence
 from contextlib import ExitStack, contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import cached_property
 from math import sqrt
 from pathlib import Path
@@ -213,7 +213,7 @@ class ImageAccessor:
             else:
                 # find band scales in CRS of first band so they can be compared
                 scales_ = []
-                for crs, tform, scale in zip(crss, transforms, scales):
+                for crs, tform, scale in zip(crss, transforms, scales, strict=True):
                     if crs != crss[0]:
                         xs, ys = warp.transform(
                             _rio_crs(crs),
@@ -264,7 +264,7 @@ class ImageAccessor:
         """
         if 'system:time_start' in self.properties:
             timestamp = self.properties['system:time_start']
-            return datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc)
+            return datetime.fromtimestamp(timestamp / 1000, tz=UTC)
         else:
             return None
 
@@ -342,7 +342,6 @@ class ImageAccessor:
     @property
     def size(self) -> int | None:
         """Image export size (bytes).  ``None`` if the image has no fixed projection."""
-        # TODO: make this MB to match max_tile_size
         if not self.shape:
             return None
         dtype_size = np.dtype(self.dtype).itemsize
@@ -442,7 +441,7 @@ class ImageAccessor:
             ds.update_tags(bi + 1, **clean_bp)
 
         # TODO: make writing scales/offsets an option and consistent with a similar xarray option
-        #  that includes units
+        #  for setting scale/offset/units in the encoding
         # populate band scales and offsets
         # if self.stac:
         #     ds.scales = [bp.get('gee:scale', 1.0) for bp in self.bandProps]
@@ -492,9 +491,10 @@ class ImageAccessor:
         :return:
             Projection.
         """
-        # TODO: some S2 images have 1x1 bands with meter scale of 1... e.g.
-        #  'COPERNICUS/S2_SR_HARMONIZED/20170328T083601_20170328T084228_T35RNK'.  that will be an
-        #  issue users of this method.
+        # TODO: Some S2 images have 1x1 bands & a 1 meter scale (e.g.
+        #  'COPERNICUS/S2_SR_HARMONIZED/20170328T083601_20170328T084228_T35RNK').  This method
+        #  will return the 1m projection for these images which is not really what users are
+        #  expecting.
         bands = self._ee_image.bandNames()
         scales = bands.map(
             lambda band: self._ee_image.select(ee.String(band)).projection().nominalScale()
@@ -541,12 +541,6 @@ class ImageAccessor:
             else:
                 return ee_image.resample(str(method.value))
 
-        # TODO: consider deprecating support for composites of composites and asset images i.e.
-        #  composite images don't get the ID of their component image collection. Then
-        #  composites can be made of composite components, or asset image components,
-        #  but not both together.  then we can do away with the If here and in addMaskBands(),
-        #  and generally simplify the design (e.g. maskClouds() can be done without addMaskBands()
-        #  ).
         return ee.Image(ee.Algorithms.If(self.fixed(), _resample(self._ee_image), self._ee_image))
 
     def toDType(self, dtype: str) -> ee.Image:
@@ -610,9 +604,6 @@ class ImageAccessor:
             Dictionary with band name keys, and band cover percentage values.
         """
         region = region or self._ee_image.geometry()
-        # TODO: the current test_mask.py tests are slow due to min_scale=True here, perhaps they
-        #  could pass scale=ImageAccessor.projection(min_scale=False).nominalScale() and/or use
-        #  smaller region...?
         proj = self.projection(min_scale=True)
         scale = scale or proj.nominalScale()
         kwargs = kwargs or dict(bestEffort=True)
