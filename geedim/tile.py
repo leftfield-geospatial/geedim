@@ -110,8 +110,6 @@ class Tile:
         )
 
 
-# TODO: standardise on public / non-public naming.  in mask.py, there are _Class named classes,
-#  here I have assumed tile.py will not be included in the documentation.
 class Tiler:
     _ee_max_tile_size = 32
     _default_max_tile_size = 4
@@ -171,8 +169,6 @@ class Tiler:
         """
         self._validate_image(image)
         self._im = image
-        # TODO: auto choose tile_shape and or max_tile_size to have ~ max_requests tiles.  should
-        #  speed up downloads.
         self._tile_shape = self._get_tile_shape(
             max_tile_size=max_tile_size, max_tile_dim=max_tile_dim, max_tile_bands=max_tile_bands
         )
@@ -239,23 +235,28 @@ class Tiler:
                 f"{Tiler._ee_max_tile_bands}."
             )
 
-        # initialise loop vars
         dtype_size = np.dtype(self._im.dtype).itemsize
         if self._im.dtype.endswith('int8'):
             # workaround for apparent GEE overestimate of *int8 dtype download sizes
             dtype_size *= 2
-        im_shape = np.array((self._im.count, *self._im.shape))
-        tile_shape = im_shape
-        tile_size = np.prod(tile_shape) * dtype_size
-        num_tiles = np.array([1, 1, 1], dtype=int)  # num tiles along each dimension
 
-        # increment the number of tiles the image is split into along the longest dimension of
-        # the tile, until the tile size satisfies max_tile_size (aims for the largest possible
-        # cube-ish shaped tiles that satisfy max_tile_size)
-        while tile_size >= max_tile_size:
-            num_tiles[np.argmax(tile_shape)] += 1
-            tile_shape = np.ceil(im_shape / num_tiles).astype(int)
+        # tile dimensions should be multiples of min_tile_shape dimensions
+        min_tile_shape = np.array([1, 512, 512])  # GeoTIFF block size
+        if max_tile_size < np.prod(min_tile_shape) * dtype_size:
+            min_tile_shape = np.array([1, 1, 1])
+
+        # starting with the tile shape equal to the image shape, greedily reduce tile dimensions
+        # to satisfy max_tile_size
+        im_shape = np.array((self._im.count, *self._im.shape))
+        tile_shape = im_shape.copy()
+        for ax in range(3):
             tile_size = np.prod(tile_shape) * dtype_size
+            tile_shape[ax] = min_tile_shape[ax] * np.floor(
+                (im_shape[ax] / min_tile_shape[ax]) * (max_tile_size / tile_size)
+            )
+            tile_shape[ax] = tile_shape[ax].clip(
+                np.min((im_shape[ax], min_tile_shape[ax])), im_shape[ax]
+            )
 
         # clip to max_tile_bands / max_tile_dim
         tile_shape = tile_shape.clip(None, [max_tile_bands, max_tile_dim, max_tile_dim])
@@ -270,9 +271,13 @@ class Tiler:
             dtype_size = np.dtype(self._im.dtype).itemsize
             raw_tile_size = np.prod(self._tile_shape) * dtype_size
             logger.debug(f'Image shape (bands, height, width): {im_shape}')
-            logger.debug(f"Raw image size: {tqdm.format_sizeof(self._im.size, suffix='B')}")
+            logger.debug(
+                f"Raw image size: {tqdm.format_sizeof(self._im.size, suffix='B', divisor=1024)}"
+            )
             logger.debug(f'Tile shape (bands, rows, cols): {self._tile_shape}')
-            logger.debug(f"Raw tile size: {tqdm.format_sizeof(raw_tile_size, suffix='B')}")
+            logger.debug(
+                f"Raw tile size: {tqdm.format_sizeof(raw_tile_size, suffix='B', divisor=1024)}"
+            )
             logger.debug(f'Number of tiles: {num_tiles}')
 
         # split the image into tiles, clipping tiles to image shape
@@ -332,10 +337,6 @@ class Tiler:
         loop = asyncio.get_running_loop()
         for retry in range(max_retries + 1):
             try:
-                # TODO: download mem usage is high (>> _limit_requests * max_tile_size).  are
-                #  there copies happening in buffering / rasterio that we can avoid?  or is there
-                #  a bottleneck in read_gtiff_buf / func (esp with toGeoTIFF) that creates a
-                #  backlog of tiles?
                 # limit concurrent EE requests to avoid exceeding quota
                 async with self._limit_requests:
                     logger.debug(f'Getting URL for {tile!r}.')
