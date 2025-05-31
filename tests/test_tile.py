@@ -114,18 +114,24 @@ def test_tiler_context():
 def test_tiler_get_tile_shape():
     """Test Tiler._get_tile_shape()."""
     # test tile size and shape with different image dimensions (that don't exceed max_tile_dim
-    # or max_tile_bands)
+    # or max_tile_bands), and with max_tile_size values that span the size of a GeoTIFF tile
+    dtype = 'float64'
+    dtype_size = np.dtype(dtype).itemsize
     tiler = Tiler(MockImageAccessor())
-    max_tile_size = 1
 
-    for count, height, width in itertools.product(
-        range(1, 1002, 500), range(1, 1002, 500), range(1, 1002, 500)
+    for mts, count, height, width in itertools.product(
+        [1, 3, 5], range(1, 1002, 500), range(1, 2002, 500), range(1, 2002, 500)
     ):
+        max_tile_size = mts * 2**20
+        min_tile_shape = np.array([1, 512, 512])  # size of GeoTIFF tile
+        if max_tile_size < min_tile_shape.prod() * dtype_size:
+            min_tile_shape = np.array([1, 1, 1])
+
         # patch the tiler _im attribute rather than creating a new Tiler on each iteration
-        image = MockImageAccessor(shape=(height, width), count=count, dtype='float64')
+        image = MockImageAccessor(shape=(height, width), count=count, dtype=dtype)
         tiler._im = image
-        tile_shape = np.array(tiler._get_tile_shape(max_tile_size=max_tile_size))
-        tile_size = tile_shape.prod() * np.dtype(image.dtype).itemsize
+        tile_shape = np.array(tiler._get_tile_shape(max_tile_size=mts))
+        tile_size = tile_shape.prod() * dtype_size
         im_shape = np.array((image.count, *image.shape))
 
         # sanity tests on tile shape and size
@@ -133,22 +139,27 @@ def test_tiler_get_tile_shape():
         assert all(tile_shape <= im_shape)
         assert all(tile_shape[1:] <= Tiler._ee_max_tile_dim)
         assert tile_shape[0] <= Tiler._ee_max_tile_bands
-        assert tile_size / 2**20 < max_tile_size
+        assert tile_size <= max_tile_size
 
-        # if the image has been tiled along all dimensions, test tile size and min dimension are
-        # bigger than worst case lower limits
-        if min(tile_shape) > 1:
+        # test tile dimensions lie either on the image bounds, or are multiples of min_tile_shape
+        # dimensions
+        assert all(
+            (tile_shape == im_shape)
+            | (np.round(tile_shape / min_tile_shape) == tile_shape / min_tile_shape)
+        )
+
+        # if the image consists of >1 tile, test the tile size against a rough lower bound
+        if any(tile_shape < im_shape):
             assert tile_size > max_tile_size / 2
-            assert min(tile_shape) >= max(tile_shape) / 2
 
-    # test tile size is halved for *int8 dtypes (this is a work around for apparent EE
-    # overestimation of *int8 image download sizes)
+    # test tile size is halved for *int8 dtypes
+    max_tile_size = 1
     for dtype in ['int8', 'uint8']:
-        image = MockImageAccessor(shape=(1000, 1000), count=1000, dtype=dtype)
+        image = MockImageAccessor(shape=(1024, 1024), count=1024, dtype=dtype)
         tiler._im = image
         tile_shape = np.array(tiler._get_tile_shape(max_tile_size=max_tile_size))
         tile_size = tile_shape.prod() * np.dtype(image.dtype).itemsize
-        assert tile_size / 2**20 < max_tile_size / 2
+        assert tile_size <= (max_tile_size * 2**20) / 2
 
 
 def test_tiler_tiles():
