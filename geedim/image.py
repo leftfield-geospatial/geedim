@@ -491,10 +491,6 @@ class ImageAccessor:
         :return:
             Projection.
         """
-        # TODO: Some S2 images have 1x1 bands & a 1 meter scale (e.g.
-        #  'COPERNICUS/S2_SR_HARMONIZED/20170328T083601_20170328T084228_T35RNK').  This method
-        #  will return the 1m projection for these images which is not really what users are
-        #  expecting.
         bands = self._ee_image.bandNames()
         scales = bands.map(
             lambda band: self._ee_image.select(ee.String(band)).projection().nominalScale()
@@ -951,13 +947,6 @@ class ImageAccessor:
             number of CPUs, or one, whichever is greater.  Values larger than the default can
             stall the asynchronous event loop and are not recommended.
         """
-        # TODO: test download of large image e.g. LANDSAT/LC09/C02/T1_L2/LC09_173083_20220308 and
-        #  understand the general rel. between cpu, network bw and tile size. and specifically why
-        #  cpu limits with wifi bw at 0 from about 50% of the download (i.e. cpu apparently has
-        #  many tiles to decompress and recompress, but no tiles are being downloaded).  are
-        #  tiles actually being streamed / chunked, or are they retrieved & cached in one shot?
-        #  another concern is small tiles may be more work to recompress (?).  this does not
-        #  happen with toNumPy / toXarray.
         driver = Driver(driver)
         ofile = fsspec.open(os.fspath(file), 'wb') if not isinstance(file, OpenFile) else file
         if not overwrite and ofile.fs.exists(ofile.path):
