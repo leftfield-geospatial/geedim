@@ -58,11 +58,11 @@ class _MaskedImage:
 
     @staticmethod
     def mask_clouds(ee_image: ee.Image) -> ee.Image:
-        """Return the given image with cloud/shadow masks applied when supported, otherwise with
-        fill (validity) mask applied.  Mask bands should be added with :meth:`add_mask_bands`
+        """Return the given image with cloud/shadow masks applied when supported, otherwise
+        return the given image unaltered.  Mask bands should be added with :meth:`add_mask_bands`
         before calling this method.
         """
-        return ee_image.updateMask(ee_image.select('FILL_MASK'))
+        return ee_image
 
     @staticmethod
     def set_mask_portions(
@@ -116,12 +116,13 @@ class _LandsatImage(_CloudlessImage):
     ) -> dict[str, ee.Image]:
         # TODO: add support for landsat TOA images
         # TODO: add per Landsat classes to include SR_QA_AEROSOL in fill / cloud mask? - see
-        #  ttps://www.usgs.gov/landsat-missions/landsat-collection-2-known-issues
+        #  https://www.usgs.gov/landsat-missions/landsat-collection-2-known-issues and
+        #  https://gis.stackexchange.com/a/473652
         qa_pixel = ee_image.select('QA_PIXEL')
 
-        # construct fill mask from Earth Engine mask and QA_PIXEL
-        ee_mask = ee_image.select('SR_B.*').mask().reduce(ee.Reducer.allNonZero())
-        fill_mask = qa_pixel.bitwiseAnd(1).eq(0).And(ee_mask).rename('FILL_MASK')
+        # construct fill mask from Earth Engine mask
+        fill_mask = ee_image.select('SR_B.*').mask().reduce(ee.Reducer.allNonZero())
+        fill_mask = fill_mask.rename('FILL_MASK')
 
         # find cloud & shadow masks from QA_PIXEL band
         shadow_mask = qa_pixel.bitwiseAnd(0b10000).neq(0).rename('SHADOW_MASK')

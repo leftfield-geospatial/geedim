@@ -684,24 +684,14 @@ class ImageAccessor:
 
     def maskClouds(self) -> ee.Image:
         """
-        Return this image with cloud/shadow masks applied when supported, otherwise with fill
-        (validity) mask applied.
+        Return this image with cloud/shadow masks applied when supported, otherwise return this
+        image unaltered.
 
         Mask bands should be added with :meth:`addMaskBands` before calling this method.
 
         :return:
             Masked image.
         """
-        # TODO: should we still mask with FILL_MASK when there is no CLOUDLESS_MASK,
-        #  and incorporate it into the CLOUDLESS_MASK when there is?  If any band FILL_MASK is
-        #  derived from is transparent, FILL_MASK will also be transparent.  Also, FILL_MASK will
-        #  have the projection of the first band in the stack it is derived from, which could be
-        #  e.g.  at a very different scale to other bands. As EE already has per-band validity
-        #  masks applied, applying FILL_MASK over this seems questionable.  FILL_MASK is needed for
-        #  FILL_PORTION when searching though.
-        # TODO: test masking when the image has a subset of bands selected (S2 should work, but
-        #  Landsat requires the QA band)
-        # TODO: if we really have to FILL_MASK, should this method be called maskClouds?
         return self._mi.mask_clouds(self._ee_image)
 
     def prepareForExport(
@@ -991,7 +981,7 @@ class ImageAccessor:
             profile.update(interleave='band', tiled=True, blockxsize=512, blockysize=512)
         else:
             # use existing overviews built with DatasetWriter.build_overviews()
-            profile.update(blocksize=512, overviews='force_use_existing')
+            profile.update(interleave='band', blocksize=512, overviews='force_use_existing')
 
         with ExitStack() as exit_stack:
             # Use GDAL_NUM_THREADS='ALL_CPUS' for building overviews once the download is
