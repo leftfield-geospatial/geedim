@@ -269,8 +269,8 @@ mask_option = click.option(
     '--mask/--no-mask',
     default=False,
     show_default=True,
-    help='Whether to mask the export image(s).  Cloud/shadow mask(s) are used when supported, '
-    'otherwise fill mask(s).',
+    help='Whether to mask cloud/shadow in the export image(s).  Has no effect if cloud/shadow '
+    'masking is not supported.',
 )
 resampling_option = click.option(
     '-rs',
@@ -855,8 +855,8 @@ def export(
     '--mask/--no-mask',
     default=True,
     show_default=True,
-    help='Whether to mask component images.  Cloud/shadow masks are used when supported, otherwise '
-    'fill masks.',
+    help='Whether to mask cloud/shadow in component images.  Has no effect if cloud/shadow '
+    'masking is not supported.',
 )
 @click.option(
     '-rs',

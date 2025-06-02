@@ -508,8 +508,8 @@ class ImageCollectionAccessor:
 
     def maskClouds(self) -> ee.ImageCollection:
         """
-        Return this collection with cloud/shadow masks applied when supported, otherwise with
-        fill (validity) masks applied.
+        Return this collection with cloud/shadow masks applied when supported, otherwise return
+        this collection unaltered.
 
         Mask bands should be added with :meth:`addMaskBands` before calling this method.
 
@@ -923,6 +923,7 @@ class ImageCollectionAccessor:
             number of CPUs, or one, whichever is greater.  Values larger than the default can
             stall the asynchronous event loop and are not recommended.
         """
+        # TODO: check progress bars in jupyter notebook including toGoogleCloud()
         odir = (
             fsspec.open(os.fspath(dirname), 'wb') if not isinstance(dirname, OpenFile) else dirname
         )
