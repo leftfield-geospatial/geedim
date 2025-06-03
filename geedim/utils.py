@@ -269,7 +269,7 @@ def register_accessor(name: str, cls: type) -> Callable[[type[T]], type[T]]:
 
 def get_tqdm_kwargs(desc: str | None = None, unit: str | None = None, **kwargs) -> dict[str, Any]:
     """Return a dictionary of kwargs for a tqdm progress bar."""
-    tqdm_kwargs: dict[str, Any] = dict(dynamic_ncols=True, leave=None)
+    tqdm_kwargs: dict[str, Any] = dict(dynamic_ncols=True, leave=None, smoothing=0)
     tqdm_kwargs.update(**kwargs)
     if desc:
         # clip the desc to max_width
