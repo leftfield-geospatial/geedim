@@ -459,18 +459,12 @@ class ImageAccessor:
         """
         status = ee.data.getOperation(task.name)
         label = label or status['metadata']['description']
-        tqdm_kwargs = utils.get_tqdm_kwargs(desc=label)
+        tqdm_kwargs = utils.get_tqdm_kwargs(desc=label, miniters=0)
 
-        # poll EE until the export preparation is complete
-        with utils.Spinner(desc=tqdm_kwargs['desc'] + ': ', leave=False):
-            while not status.get('done', False) and 'progress' not in status['metadata']:
-                time.sleep(0.5)
-                status = ee.data.getOperation(task.name)
-
-        # wait for export to complete, displaying a progress bar
+        # wait for export to complete
         with utils.auto_leave_tqdm(total=1, **tqdm_kwargs) as bar:
             while not status.get('done', False):
-                bar.update(status['metadata']['progress'] - bar.n)
+                bar.update(status['metadata'].get('progress', 0.0) - bar.n)
                 time.sleep(1)
                 status = ee.data.getOperation(task.name)
 
