@@ -81,11 +81,7 @@ def _bbox_cb(ctx: click.Context, param: click.Parameter, bounds: Sequence[float]
     # --bbox and --region are not exposed but combined into 'geometry' which is passed to the
     # command
     ctx.params.setdefault('geometry', None)
-    if bounds == '-':
-        if 'geometry' not in ctx.obj:
-            raise click.BadParameter("No piped bounds or region available.")
-        ctx.params['geometry'] = ctx.obj['geometry']
-    elif bounds:
+    if bounds:
         bounds = _bounds_to_geojson(*bounds)
         ctx.params['geometry'] = ctx.obj['geometry'] = bounds
 
@@ -216,8 +212,7 @@ bbox_option = click.option(
     callback=_bbox_cb,
     expose_value=False,  # callback exposes 'geometry' to the command
     metavar='LEFT BOTTOM RIGHT TOP',
-    help="WGS84 geographic coordinates of the export bounds.  Use'-' to read from previous --bbox / "
-    "--region options in the pipeline.",
+    help="WGS84 geographic coordinates of the export bounds.",
 )
 region_option = click.option(
     '-r',
@@ -876,8 +871,7 @@ def export(
     expose_value=False,  # callback exposes 'geometry' parameter for the command
     metavar='LEFT BOTTOM RIGHT TOP',
     help="Prioritise component images by their cloudless / filled portion inside these bounds.  "
-    "Valid for the 'mosaic' and 'q-mosaic' --method.  Use '-' to read from previous --bbox / "
-    "--region options in the pipeline.",
+    "Valid for the 'mosaic' and 'q-mosaic' --method.",
 )
 @click.option(
     '-r',

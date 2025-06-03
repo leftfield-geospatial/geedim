@@ -226,13 +226,6 @@ def test_bbox_cb(region_100ha: dict[str, Any]):
     cli._bbox_cb(ctx, None, bounds_)
     assert ctx.params['geometry'] == region_100ha
 
-    # piping
-    cli._bbox_cb(ctx, None, '-')
-    assert ctx.params['geometry'] == region_100ha
-    ctx.obj = {}
-    with pytest.raises(click.BadParameter, match='No piped bounds'):
-        cli._bbox_cb(ctx, None, '-')
-
     # None
     ctx = click.Context(cli.search)
     ctx.obj = {}
