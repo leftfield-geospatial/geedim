@@ -31,7 +31,7 @@ from typing import Any, Generic, TypeVar
 
 import aiohttp
 import ee
-from tqdm.std import tqdm
+from tqdm.auto import tqdm
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +135,6 @@ class Spinner(tqdm):
             file=file,
             disable=disable,
             position=position,
-            ascii=ascii,
             miniters=0,
             smoothing=0,
         )
@@ -162,8 +161,8 @@ class Spinner(tqdm):
         super().__exit__(exc_type, exc_val, exc_tb)
 
     @staticmethod
-    def format_meter(n: int, prefix: str = '', ascii: str = _ascii, **kwargs):
-        return prefix + ascii[n % len(ascii)]
+    def format_meter(n: int, prefix: str = '', **kwargs):
+        return prefix + Spinner._ascii[n % len(Spinner._ascii)]
 
     def close(self):
         if isinstance(self.leave, str):
@@ -273,10 +272,10 @@ def get_tqdm_kwargs(desc: str | None = None, unit: str | None = None, **kwargs) 
     tqdm_kwargs: dict[str, Any] = dict(dynamic_ncols=True, leave=None)
     tqdm_kwargs.update(**kwargs)
     if desc:
-        # clip / pad the desc to max_width so that nested bars are aligned
+        # clip the desc to max_width
         max_width = 40  # length of an S2 system:index
         desc_width = len(desc)
-        desc = '...' + desc[-max_width + 3 :] if desc_width > max_width else desc.rjust(max_width)
+        desc = '...' + desc[-max_width + 3 :] if desc_width > max_width else desc
         tqdm_kwargs.update(desc=desc)
 
     if unit:
@@ -406,3 +405,12 @@ class TqdmLoggingHandler(logging.StreamHandler):
             raise
         except:  # noqa: E722
             self.handleError(record)
+
+
+def auto_leave_tqdm(*args, leave: bool | None = None, **kwargs):
+    """tqdm wrapper that sets leave attribute based on the bar's position."""
+    bar = tqdm(*args, leave=leave, **kwargs)
+    if leave is None:
+        # work around leave is None logic not working in tqdm.notebook
+        bar.leave = False if bar.pos > 0 else True
+    return bar
