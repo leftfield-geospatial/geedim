@@ -110,12 +110,8 @@ def test_async_runner():
     assert asyncio.run(existing_loop_run(**coro_kwargs)) == coro_kwargs
 
 
-def test_auto_leave_tqdm(monkeypatch: pytest.MonkeyPatch):
+def test_auto_leave_tqdm():
     """Test utils.auto_leave_tqdm()."""
-    from tqdm.notebook import tqdm_notebook
-
-    # force use of tqdm_notebook which has the leave=None issue
-    monkeypatch.setattr(utils, 'tqdm', tqdm_notebook)
     with utils.auto_leave_tqdm() as outer_bar:
         assert outer_bar.leave is True
         with utils.auto_leave_tqdm() as inner_bar:
