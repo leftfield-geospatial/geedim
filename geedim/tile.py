@@ -389,9 +389,9 @@ class Tiler:
             }
             # update progress bar as tiles are completed
             try:
-                with tqdm(asyncio.as_completed(tasks), total=len(tasks), **tqdm_kwargs) as bar:
-                    # work around leave is None logic not working in tqdm.notebook
-                    bar.leave = False if bar.pos > 0 else True
+                with utils.auto_leave_tqdm(
+                    asyncio.as_completed(tasks), total=len(tasks), **tqdm_kwargs
+                ) as bar:
                     for task in bar:
                         await task
 

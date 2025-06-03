@@ -468,7 +468,7 @@ class ImageAccessor:
                 status = ee.data.getOperation(task.name)
 
         # wait for export to complete, displaying a progress bar
-        with tqdm(total=1, **tqdm_kwargs) as bar:
+        with utils.auto_leave_tqdm(total=1, **tqdm_kwargs) as bar:
             while not status.get('done', False):
                 bar.update(status['metadata']['progress'] - bar.n)
                 time.sleep(1)

@@ -33,7 +33,6 @@ import numpy as np
 import tabulate
 from fsspec.core import OpenFile
 from tabulate import DataRow, Line, TableFormat
-from tqdm.auto import tqdm
 
 from geedim import schema, utils
 from geedim.download import BaseImage
@@ -846,7 +845,7 @@ class ImageCollectionAccessor:
         if wait:
             # wait for tasks to complete
             tqdm_kwargs = utils.get_tqdm_kwargs(desc=self.id or 'Collection', unit=split.value)
-            for name, task in tqdm(tasks.items(), **tqdm_kwargs):
+            for name, task in utils.auto_leave_tqdm(tasks.items(), **tqdm_kwargs):
                 ImageAccessor.monitorTask(task, name)
 
         return list(tasks.values())
@@ -923,7 +922,6 @@ class ImageCollectionAccessor:
             number of CPUs, or one, whichever is greater.  Values larger than the default can
             stall the asynchronous event loop and are not recommended.
         """
-        # TODO: check progress bars in jupyter notebook including toGoogleCloud()
         odir = (
             fsspec.open(os.fspath(dirname), 'wb') if not isinstance(dirname, OpenFile) else dirname
         )
@@ -933,7 +931,7 @@ class ImageCollectionAccessor:
 
         # download the split images sequentially, each into its own file
         tqdm_kwargs = utils.get_tqdm_kwargs(desc=self.id or 'Collection', unit=split.value)
-        for name, image in tqdm(images.items(), **tqdm_kwargs):
+        for name, image in utils.auto_leave_tqdm(images.items(), **tqdm_kwargs):
             joined_path = posixpath.join(odir.path, name + '.tif')
             ofile = OpenFile(odir.fs, joined_path, mode='wb')
             image.toGeoTIFF(
@@ -1028,7 +1026,7 @@ class ImageCollectionAccessor:
 
         # download the split image arrays sequentially, copying into the destination array
         tqdm_kwargs = utils.get_tqdm_kwargs(desc=self.id or 'Collection', unit=split.value)
-        for i, image in enumerate(tqdm(images.values(), **tqdm_kwargs)):
+        for i, image in enumerate(utils.auto_leave_tqdm(images.values(), **tqdm_kwargs)):
             array[:, :, i, :] = image.toNumPy(
                 masked=masked,
                 max_tile_size=max_tile_size,
@@ -1145,7 +1143,7 @@ class ImageCollectionAccessor:
         # download the split image DataArrays sequentially, storing in a dict
         arrays = {}
         tqdm_kwargs = utils.get_tqdm_kwargs(desc=self.id or 'Collection', unit=split.value)
-        for name, image in tqdm(images.items(), **tqdm_kwargs):
+        for name, image in utils.auto_leave_tqdm(images.items(), **tqdm_kwargs):
             arrays[name] = image.toXarray(
                 masked=masked,
                 max_tile_size=max_tile_size,
