@@ -322,9 +322,9 @@ def test_config_search_pipe(patch_filter: list[dict], runner: CliRunner):
     assert passed_kwargs['mask_shadows'] is False
 
 
-def test_prepare_export_collection_buffer(l9_image_id: str, region_100ha: dict[str, Any]):
+def test_prepare_export_collection_buffer(l9_sr_image_id: str, region_100ha: dict[str, Any]):
     """Test _prepare_export_collection() buffer parameter."""
-    images = [ee.Image(l9_image_id)]
+    images = [ee.Image(l9_sr_image_id)]
     crs = 'EPSG:3857'
     buffer = 500
     buffer_bounds = ee.Geometry(region_100ha).buffer(buffer).bounds(maxError=1, proj=crs).getInfo()
@@ -335,9 +335,9 @@ def test_prepare_export_collection_buffer(l9_image_id: str, region_100ha: dict[s
     assert bounds(coll.gd._first.geometry) == pytest.approx(buffer_bounds, abs=100)
 
 
-def test_prepare_export_collection_like(l9_image_id: str, region_100ha: dict[str, Any]):
+def test_prepare_export_collection_like(l9_sr_image_id: str, region_100ha: dict[str, Any]):
     """Test _prepare_export_collection() like parameter."""
-    images = [ee.Image(l9_image_id)]
+    images = [ee.Image(l9_sr_image_id)]
     crs = 'EPSG:4326'
     shape = (300, 400)
     transform = from_bounds(*bounds(region_100ha), *shape[::-1])[:6]
@@ -351,20 +351,20 @@ def test_prepare_export_collection_like(l9_image_id: str, region_100ha: dict[str
     assert coll.gd._first.shape == shape
 
 
-def test_prepare_export_collection_cloud_kwargs(l9_image_id: str):
+def test_prepare_export_collection_cloud_kwargs(l9_sr_image_id: str):
     """Test _prepare_export_collection() cloud_kwargs parameter."""
     # adapted from test_collection.test_add_mask_bands()
-    images = [ee.Image(l9_image_id)]
+    images = [ee.Image(l9_sr_image_id)]
     coll = cli._prepare_export_collection(images, cloud_kwargs=dict(mask_shadows=False))
 
     assert set(coll.gd._first.bandNames).issuperset(['CLOUDLESS_MASK', 'CLOUD_DIST', 'FILL_MASK'])
     assert 'SHADOW_MASK' not in coll.gd._first.bandNames
 
 
-def test_prepare_export_collection_mask(l9_image_id: str, region_100ha: dict[str, Any]):
+def test_prepare_export_collection_mask(l9_sr_image_id: str, region_100ha: dict[str, Any]):
     """Test _prepare_export_collection() mask parameter."""
     # adapted from test_collection.test_mask_clouds()
-    images = [ee.Image(l9_image_id)]
+    images = [ee.Image(l9_sr_image_id)]
     colls = [cli._prepare_export_collection(images, mask=mask) for mask in [False, True]]
     colls = accessors_from_collections(colls)
 
@@ -385,9 +385,9 @@ def test_prepare_export_collection_mask(l9_image_id: str, region_100ha: dict[str
         assert unmasked_sum > masked_sum
 
 
-def test_prepare_export_collection_other(l9_image_id: str, region_100ha: dict[str, Any]):
+def test_prepare_export_collection_other(l9_sr_image_id: str, region_100ha: dict[str, Any]):
     """Test other _prepare_export_collection() kwargs not tested above."""
-    images = [ee.Image(l9_image_id)]
+    images = [ee.Image(l9_sr_image_id)]
     crs = 'EPSG:3857'
     scale = 60
     dtype = 'float32'

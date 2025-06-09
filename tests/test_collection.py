@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import itertools
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import ee
@@ -103,11 +103,11 @@ _s2_b1_info = {
 
 
 def test_compatible_collections(
-    l4_image_id: str,
-    l5_image_id: str,
-    l7_image_id: str,
-    l8_image_id: str,
-    l9_image_id: str,
+    l4_sr_image_id: str,
+    l5_sr_image_id: str,
+    l7_sr_image_id: str,
+    l8_sr_image_id: str,
+    l9_sr_image_id: str,
     s2_sr_hm_image_ids: list[str],
 ):
     """Test _compatible_collections()."""
@@ -117,28 +117,27 @@ def test_compatible_collections(
         coll_ids = [split_id(im_id)[0] for im_id in im_ids]
         return _compatible_collections(coll_ids)
 
-    assert compatible_images(l4_image_id, l5_image_id) is True
-    assert compatible_images(l8_image_id, l9_image_id) is True
+    assert compatible_images(l4_sr_image_id, l5_sr_image_id) is True
+    assert compatible_images(l8_sr_image_id, l9_sr_image_id) is True
     assert compatible_images(*s2_sr_hm_image_ids) is True
-    assert compatible_images(l4_image_id, l5_image_id, l7_image_id) is False
-    assert compatible_images(l7_image_id, l8_image_id, l9_image_id) is False
-    assert compatible_images(*s2_sr_hm_image_ids, l9_image_id) is False
-    assert compatible_images(l9_image_id, None) is False
+    assert compatible_images(l4_sr_image_id, l5_sr_image_id, l7_sr_image_id) is False
+    assert compatible_images(l7_sr_image_id, l8_sr_image_id, l9_sr_image_id) is False
+    assert compatible_images(*s2_sr_hm_image_ids, l9_sr_image_id) is False
+    assert compatible_images(l9_sr_image_id, None) is False
 
 
 def test_from_images(s2_sr_hm_image_ids: list[str]):
     """Test ImageCollectionAccessor.fromImages()."""
-    # TODO: test the ID when passed composite image(s)
     coll = ImageCollectionAccessor.fromImages(s2_sr_hm_image_ids)
     info = coll.getInfo()
     assert info['id'] == 'COPERNICUS/S2_SR_HARMONIZED'
     assert set([im_props['id'] for im_props in info['features']]) == set(s2_sr_hm_image_ids)
 
 
-def test_from_images_error(l7_image_id: str, l8_image_id: str):
+def test_from_images_error(l7_sr_image_id: str, l8_sr_image_id: str):
     """Test ImageCollectionAccessor.fromImages() raises an error with incompatible images."""
     with pytest.raises(ValueError, match='spectrally compatible'):
-        ImageCollectionAccessor.fromImages([l7_image_id, l8_image_id])
+        ImageCollectionAccessor.fromImages([l7_sr_image_id, l8_sr_image_id])
 
 
 @pytest.mark.parametrize(
@@ -219,7 +218,7 @@ def test_schema_property_names_set():
     # test the schema property contains the correct new items
     assert tuple(coll.schema.keys()) == schema_prop_names
     for prop, abbrev, has_descr in zip(
-        schema_prop_names, ['CLOUDLESS', 'CCA', 'UPN'], [True, True, False]
+        schema_prop_names, ['CLOUDLESS', 'CCA', 'UPN'], [True, True, False], strict=True
     ):
         assert coll.schema[prop]['abbrev'] == abbrev
         descr = coll.schema[prop]['description']
@@ -292,7 +291,7 @@ def test_properties_table():
 
     # test conversion of timestamps to date strings
     first_time_start = datetime.fromtimestamp(
-        coll.properties['1']['system:time_start'] / 1000, tz=timezone.utc
+        coll.properties['1']['system:time_start'] / 1000, tz=UTC
     )
     first_time_start = datetime.strftime(first_time_start, '%Y-%m-%d %H:%M')
     assert first_time_start in coll.propertiesTable
@@ -402,7 +401,7 @@ def test_filter(region_10000ha: dict):
     assert all(cp < cloudless_portion for cp in props['custom_filter_p'][1])
 
     # cloud / shadow kwargs (changing mask_shadows from False to True reduces the cloudless_portion)
-    assert any(cp_nms > cp_ms for cp_nms, cp_ms in zip(*props['cs_kwargs']))
+    assert any(cp_nms > cp_ms for cp_nms, cp_ms in zip(*props['cs_kwargs'], strict=True))
 
 
 def test_filter_error(l9_sr_coll: ImageCollectionAccessor, region_10000ha: dict):
@@ -459,7 +458,9 @@ def test_prepare_for_composite_date_region(
     assert infos['date'][1] != infos['date'][0]
     date = to_datetime(date)
     date_dist = [abs(date - d) for d in to_datetime(infos['date'][1], unit='ms')]
-    sorted_dates = [d for _, d in sorted(zip(date_dist, infos['date'][1]), reverse=True)]
+    sorted_dates = [
+        d for _, d in sorted(zip(date_dist, infos['date'][1], strict=True), reverse=True)
+    ]
     assert infos['date'][1] == sorted_dates
 
     # test region with cloud/shadow supported collection:
@@ -591,7 +592,7 @@ def test_mask_clouds(l9_sr_coll: ImageCollectionAccessor, region_100ha: dict):
     sums = ee.Dictionary(dict(unmasked=unmasked_sums, masked=masked_sums)).getInfo()
 
     assert len(sums['unmasked']) == len(l9_sr_coll.properties)
-    for masked_sum, unmasked_sum in zip(sums['masked'], sums['unmasked']):
+    for masked_sum, unmasked_sum in zip(sums['masked'], sums['unmasked'], strict=True):
         assert masked_sum < unmasked_sum
 
 
@@ -716,7 +717,7 @@ def test_prepare_for_export(
     prep_colls = accessors_from_collections(prep_colls)
 
     # test prepared collection properties
-    for prep_coll, prep_kwargs in zip(prep_colls, prep_kwargs_list):
+    for prep_coll, prep_kwargs in zip(prep_colls, prep_kwargs_list, strict=True):
         prep_coll._raise_image_consistency()
 
         prep_first = prep_coll._first
@@ -927,11 +928,19 @@ def test_to_numpy(
             for p in prepared_coll.properties.values()
         ]
         # last dimension dtype
-        names = first.bandNames if split is SplitType.images else list(zip(date_strings, indexes))
-        dtype = np.dtype(list(zip(names, [first.dtype] * len(names))))
+        names = (
+            first.bandNames
+            if split is SplitType.images
+            else list(zip(date_strings, indexes, strict=True))
+        )
+        dtype = np.dtype(list(zip(names, [first.dtype] * len(names), strict=True)))
         # nested (second last dimension) dtype
-        names = list(zip(date_strings, indexes)) if split is SplitType.images else first.bandNames
-        dtype = np.dtype(list(zip(names, [dtype] * len(names))))
+        names = (
+            list(zip(date_strings, indexes, strict=True))
+            if split is SplitType.images
+            else first.bandNames
+        )
+        dtype = np.dtype(list(zip(names, [dtype] * len(names), strict=True)))
 
         assert array.dtype == dtype
     else:
