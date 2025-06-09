@@ -56,13 +56,13 @@ def test_asset_export(prepared_image: ImageAccessor, prepared_image_array: np.nd
 @pytest.mark.parametrize(
     'dtype', ['float32', 'float64', 'uint8', 'int8', 'uint16', 'int16', 'uint32', 'int32']
 )
-def test_ee_geotiff_nodata(dtype: str, l9_image_id: str):
+def test_ee_geotiff_nodata(dtype: str, l9_sr_image_id: str):
     """Test the nodata value of the Earth Engine GeoTIFF returned by ``ee.data.computePixels()`` or
     ``ee.Image.getDownloadUrl()`` equals the geedim expected value (see
     https://issuetracker.google.com/issues/350528377 for context).
     """
     # prepare an image for downloading as dtype
-    image = ImageAccessor(ee.Image(l9_image_id))
+    image = ImageAccessor(ee.Image(l9_sr_image_id))
     shape = (10, 10)
     prep_image = image.prepareForExport(shape=shape, dtype=dtype)
 
