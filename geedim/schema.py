@@ -20,7 +20,6 @@ from tabulate import tabulate
 
 import geedim.mask
 
-# TODO: reuse default_prop_schema in others
 default_prop_schema = {
     'system:index': {'abbrev': 'INDEX', 'description': 'Earth Engine image index'},
     'system:time_start': {'abbrev': 'DATE', 'description': 'Image capture date/time (UTC)'},
@@ -31,12 +30,7 @@ default_prop_schema = {
 }
 
 landsat_prop_schema = {
-    'system:index': {'abbrev': 'INDEX', 'description': 'Earth Engine image index'},
-    'system:time_start': {'abbrev': 'DATE', 'description': 'Image capture date/time (UTC)'},
-    'FILL_PORTION': {
-        'abbrev': 'FILL',
-        'description': 'Portion of region pixels that are valid (%)',
-    },
+    **default_prop_schema,
     'CLOUDLESS_PORTION': {
         'abbrev': 'CLOUDLESS',
         'description': 'Portion of filled pixels that are cloud/shadow free (%)',
@@ -47,12 +41,7 @@ landsat_prop_schema = {
 }
 
 s2_prop_schema = {
-    'system:index': {'abbrev': 'INDEX', 'description': 'Earth Engine image index'},
-    'system:time_start': {'abbrev': 'DATE', 'description': 'Image capture date/time (UTC)'},
-    'FILL_PORTION': {
-        'abbrev': 'FILL',
-        'description': 'Portion of region pixels that are valid (%)',
-    },
+    **default_prop_schema,
     'CLOUDLESS_PORTION': {
         'abbrev': 'CLOUDLESS',
         'description': 'Portion of filled pixels that are cloud/shadow free (%)',
@@ -72,48 +61,115 @@ s2_prop_schema = {
 }
 
 collection_schema = {
+    # Landsat surface reflectance collections
     'LANDSAT/LT04/C02/T1_L2': {
         'gd_coll_name': 'l4-c2-l2',
         'prop_schema': landsat_prop_schema,
-        'image_type': geedim.mask._LandsatImage,
+        'image_type': geedim.mask._LandsatSrImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT04_C02_T1_L2',
         'description': 'Landsat 4, collection 2, tier 1, level 2 surface reflectance.',
     },
     'LANDSAT/LT05/C02/T1_L2': {
         'gd_coll_name': 'l5-c2-l2',
         'prop_schema': landsat_prop_schema,
-        'image_type': geedim.mask._LandsatImage,
+        'image_type': geedim.mask._LandsatSrImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT05_C02_T1_L2',
         'description': 'Landsat 5, collection 2, tier 1, level 2 surface reflectance.',
     },
     'LANDSAT/LE07/C02/T1_L2': {
         'gd_coll_name': 'l7-c2-l2',
         'prop_schema': landsat_prop_schema,
-        'image_type': geedim.mask._LandsatImage,
+        'image_type': geedim.mask._LandsatSrImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LE07_C02_T1_L2',
         'description': 'Landsat 7, collection 2, tier 1, level 2 surface reflectance.',
     },
     'LANDSAT/LC08/C02/T1_L2': {
         'gd_coll_name': 'l8-c2-l2',
         'prop_schema': landsat_prop_schema,
-        'image_type': geedim.mask._LandsatImage,
+        'image_type': geedim.mask._LandsatSrAerosolImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C02_T1_L2',
         'description': 'Landsat 8, collection 2, tier 1, level 2 surface reflectance.',
     },
     'LANDSAT/LC09/C02/T1_L2': {
         'gd_coll_name': 'l9-c2-l2',
         'prop_schema': landsat_prop_schema,
-        'image_type': geedim.mask._LandsatImage,
+        'image_type': geedim.mask._LandsatSrAerosolImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC09_C02_T1_L2',
         'description': 'Landsat 9, collection 2, tier 1, level 2 surface reflectance.',
     },
-    'COPERNICUS/S2': {
-        'gd_coll_name': 's2-toa',
-        'prop_schema': s2_prop_schema,
-        'image_type': geedim.mask._Sentinel2ToaImage,
-        'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2',
-        'description': 'Sentinel-2, level 1C, top of atmosphere reflectance.',
+    # Landsat TOA reflectance collections
+    'LANDSAT/LT04/C02/T1_TOA': {
+        'gd_coll_name': 'l4-c2-toa',
+        'prop_schema': landsat_prop_schema,
+        'image_type': geedim.mask._LandsatToaRawImage,
+        'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT04_C02_T1_TOA',
+        'description': 'Landsat 4, collection 2, tier 1, TOA reflectance.',
     },
+    'LANDSAT/LT05/C02/T1_TOA': {
+        'gd_coll_name': 'l5-c2-toa',
+        'prop_schema': landsat_prop_schema,
+        'image_type': geedim.mask._LandsatToaRawImage,
+        'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT05_C02_T1_TOA',
+        'description': 'Landsat 5, collection 2, tier 1, TOA reflectance.',
+    },
+    'LANDSAT/LE07/C02/T1_TOA': {
+        'gd_coll_name': 'l7-c2-toa',
+        'prop_schema': landsat_prop_schema,
+        'image_type': geedim.mask._LandsatToaRawImage,
+        'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LE07_C02_T1_TOA',
+        'description': 'Landsat 7, collection 2, tier 1, TOA reflectance.',
+    },
+    'LANDSAT/LC08/C02/T1_TOA': {
+        'gd_coll_name': 'l8-c2-toa',
+        'prop_schema': landsat_prop_schema,
+        'image_type': geedim.mask._LandsatToaRawImage,
+        'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C02_T1_TOA',
+        'description': 'Landsat 8, collection 2, tier 1, TOA reflectance.',
+    },
+    'LANDSAT/LC09/C02/T1_TOA': {
+        'gd_coll_name': 'l9-c2-toa',
+        'prop_schema': landsat_prop_schema,
+        'image_type': geedim.mask._LandsatToaRawImage,
+        'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC09_C02_T1_TOA',
+        'description': 'Landsat 9, collection 2, tier 1, TOA reflectance.',
+    },
+    # Landsat at sensor radiance collections
+    'LANDSAT/LT04/C02/T1': {
+        'gd_coll_name': 'l4-c2-raw',
+        'prop_schema': landsat_prop_schema,
+        'image_type': geedim.mask._LandsatToaRawImage,
+        'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT04_C02_T1',
+        'description': 'Landsat 4, collection 2, tier 1, at sensor radiance.',
+    },
+    'LANDSAT/LT05/C02/T1': {
+        'gd_coll_name': 'l5-c2-raw',
+        'prop_schema': landsat_prop_schema,
+        'image_type': geedim.mask._LandsatToaRawImage,
+        'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT05_C02_T1',
+        'description': 'Landsat 5, collection 2, tier 1, at sensor radiance.',
+    },
+    'LANDSAT/LE07/C02/T1': {
+        'gd_coll_name': 'l7-c2-raw',
+        'prop_schema': landsat_prop_schema,
+        'image_type': geedim.mask._LandsatToaRawImage,
+        'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LE07_C02_T1',
+        'description': 'Landsat 7, collection 2, tier 1, at sensor radiance.',
+    },
+    'LANDSAT/LC08/C02/T1': {
+        'gd_coll_name': 'l8-c2-raw',
+        'prop_schema': landsat_prop_schema,
+        'image_type': geedim.mask._LandsatToaRawImage,
+        'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C02_T1',
+        'description': 'Landsat 8, collection 2, tier 1, at sensor radiance.',
+    },
+    'LANDSAT/LC09/C02/T1': {
+        'gd_coll_name': 'l9-c2-raw',
+        'prop_schema': landsat_prop_schema,
+        'image_type': geedim.mask._LandsatToaRawImage,
+        'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC09_C02_T1',
+        'description': 'Landsat 9, collection 2, tier 1, at sensor radiance.',
+    },
+    # Sentinel-2 surface reflectance collections
     'COPERNICUS/S2_SR': {
         'gd_coll_name': 's2-sr',
         'prop_schema': s2_prop_schema,
@@ -121,19 +177,27 @@ collection_schema = {
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR',
         'description': 'Sentinel-2, level 2A, surface reflectance.',
     },
-    'COPERNICUS/S2_HARMONIZED': {
-        'gd_coll_name': 's2-toa-hm',
-        'prop_schema': s2_prop_schema,
-        'image_type': geedim.mask._Sentinel2ToaImage,
-        'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_HARMONIZED',
-        'description': 'Harmonised Sentinel-2, level 1C, top of atmosphere reflectance.',
-    },
     'COPERNICUS/S2_SR_HARMONIZED': {
         'gd_coll_name': 's2-sr-hm',
         'prop_schema': s2_prop_schema,
         'image_type': geedim.mask._Sentinel2SrImage,
         'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED',
         'description': 'Harmonised Sentinel-2, level 2A, surface reflectance.',
+    },
+    # Sentinel-2 TOA reflectance collections
+    'COPERNICUS/S2': {
+        'gd_coll_name': 's2-toa',
+        'prop_schema': s2_prop_schema,
+        'image_type': geedim.mask._Sentinel2ToaImage,
+        'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2',
+        'description': 'Sentinel-2, level 1C, top of atmosphere reflectance.',
+    },
+    'COPERNICUS/S2_HARMONIZED': {
+        'gd_coll_name': 's2-toa-hm',
+        'prop_schema': s2_prop_schema,
+        'image_type': geedim.mask._Sentinel2ToaImage,
+        'ee_url': 'https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_HARMONIZED',
+        'description': 'Harmonised Sentinel-2, level 1C, top of atmosphere reflectance.',
     },
     # 'MODIS/061/MCD43A4': {
     #     'gd_coll_name': 'modis-nbar',
@@ -143,7 +207,6 @@ collection_schema = {
     #     'description': 'MODIS nadir BRDF adjusted daily reflectance.',
     # },
 }
-
 
 # Dict to convert from geedim to Earth Engine collection names
 ee_to_gd = {k: v['gd_coll_name'] for k, v in collection_schema.items()}
