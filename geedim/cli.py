@@ -371,6 +371,20 @@ def cli(ctx: click.Context, verbose: int, quiet: int):
     "with the 'qa' or 'cloud-prob' --mask-method.",
 )
 @click.option(
+    '-mnp/-nmnp',
+    '--mask-nonphysical/--no-mask-nonphysical',
+    default=False,
+    show_default=True,
+    help="Whether to mask non-physical reflectance / radiance.  Valid for Landsat images.",
+)
+@click.option(
+    '-ma/-nma',
+    '--mask-aerosols/--no-mask-aerosols',
+    default=False,
+    show_default=True,
+    help="Whether to mask high aerosol levels.  Valid for Landsat 8-9 surface reflectance images. ",
+)
+@click.option(
     '-mm',
     '--mask-method',
     type=click.Choice(enums.CloudMaskMethod, case_sensitive=True),
