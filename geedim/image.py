@@ -630,11 +630,11 @@ class ImageAccessor:
             Whether to mask cloud shadows.  Valid for Landsat images, and for Sentinel-2 images
             with the :attr:`~geedim.enums.CloudMaskMethod.qa` or
             :attr:`~geedim.enums.CloudMaskMethod.cloud_prob` ``mask_method``.  Defaults to ``True``.
+        :param bool mask_saturation:
+            Whether to mask saturation.  Valid for Landsat images.  Defaults to ``False``.
         :param bool mask_nonphysical:
-            Whether to mask non-physical radiance / reflectance.  Valid for Landsat images.  For
-            TOA reflectance and at sensor radiance images, saturated pixels are masked. For
-            surface reflectance images, pixels outside the 0-1 reflectance range are masked.
-            Defaults to ``False``.
+            Whether to mask reflectance outside the 0-1 reflectance range.  Valid for Landsat
+            surface reflectance images.  Defaults to ``False``.
         :param bool mask_aerosols:
             Whether to mask high aerosol levels.  Valid for Landsat 8-9 surface reflectance images.
             Defaults to ``False``.
