@@ -371,11 +371,19 @@ def cli(ctx: click.Context, verbose: int, quiet: int):
     "with the 'qa' or 'cloud-prob' --mask-method.",
 )
 @click.option(
+    '-mst/-nmst',
+    '--mask-saturation/--no-mask-saturation',
+    default=False,
+    show_default=True,
+    help="Whether to mask saturation.  Valid for Landsat images.",
+)
+@click.option(
     '-mnp/-nmnp',
     '--mask-nonphysical/--no-mask-nonphysical',
     default=False,
     show_default=True,
-    help="Whether to mask non-physical reflectance / radiance.  Valid for Landsat images.",
+    help="Whether to mask reflectance outside the 0-1 range.  Valid for Landsat surface "
+    "reflectance images.",
 )
 @click.option(
     '-ma/-nma',
