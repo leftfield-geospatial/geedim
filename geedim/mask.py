@@ -83,83 +83,6 @@ class _CloudlessImage(_MaskedImage):
     """Abstract masking method container for images with cloud/shadow support."""
 
     @staticmethod
-    @abstractmethod
-    def _get_mask_bands(ee_image: ee.Image) -> dict[str, ee.Image]:
-        pass
-
-    @staticmethod
-    def mask_clouds(ee_image: ee.Image) -> ee.Image:
-        return ee_image.updateMask(ee_image.select('CLOUDLESS_MASK'))
-
-    @staticmethod
-    def set_mask_portions(
-        ee_image: ee.Image, region: dict | ee.Geometry = None, scale: float | ee.Number = None
-    ) -> ee.Image:
-        # use maxPixels=1e6 to speed up computations for large regions
-        portions = ImageAccessor(ee_image.select(['FILL_MASK', 'CLOUDLESS_MASK'])).regionCoverage(
-            region=region, scale=scale, maxPixels=1e6, bestEffort=True
-        )
-        fill_portion = ee.Number(portions.get('FILL_MASK'))
-        cl_portion = ee.Number(portions.get('CLOUDLESS_MASK')).divide(fill_portion).multiply(100)
-        return ee_image.set('FILL_PORTION', fill_portion, 'CLOUDLESS_PORTION', cl_portion)
-
-
-class _LandsatImage(_CloudlessImage):
-    """Masking method container for Landsat level 2 collection 2 images."""
-
-    @staticmethod
-    def _get_mask_bands(
-        ee_image: ee.Image,
-        mask_shadows: bool = True,
-        mask_cirrus: bool = True,
-        max_cloud_dist: float = 5000,
-    ) -> dict[str, ee.Image]:
-        # TODO: add support for landsat TOA images
-        # TODO: add per Landsat classes to include SR_QA_AEROSOL in fill / cloud mask? - see
-        #  https://www.usgs.gov/landsat-missions/landsat-collection-2-known-issues and
-        #  https://gis.stackexchange.com/a/473652
-        qa_pixel = ee_image.select('QA_PIXEL')
-
-        # construct fill mask from Earth Engine mask
-        fill_mask = ee_image.select('SR_B.*').mask().reduce(ee.Reducer.allNonZero())
-        fill_mask = fill_mask.rename('FILL_MASK')
-
-        # find cloud & shadow masks from QA_PIXEL band
-        shadow_mask = qa_pixel.bitwiseAnd(0b10000).neq(0).rename('SHADOW_MASK')
-        if mask_cirrus:
-            cloud_mask = qa_pixel.bitwiseAnd(0b1110).neq(0).rename('CLOUD_MASK')
-        else:
-            cloud_mask = qa_pixel.bitwiseAnd(0b1010).neq(0).rename('CLOUD_MASK')
-
-        # combine cloud, shadow and fill masks into cloudless mask
-        cloud_shadow_mask = (cloud_mask.Or(shadow_mask)) if mask_shadows else cloud_mask
-        cloudless_mask = cloud_shadow_mask.Not().And(fill_mask).rename('CLOUDLESS_MASK')
-
-        # convert cloud distance from existing ST_CDIST band (10m units) to meters, and clamp to
-        # max_cloud_dist
-        cloud_dist = ee_image.select('ST_CDIST').multiply(10).rename('CLOUD_DIST')
-        cloud_dist = cloud_dist.clamp(0, max_cloud_dist).toUint16()
-
-        aux_bands = dict(
-            fill=fill_mask,
-            cloud=cloud_mask,
-            shadow=shadow_mask,
-            cloudless=cloudless_mask,
-            dist=cloud_dist,
-        )
-        if not mask_shadows:
-            aux_bands.pop('shadow', None)
-
-        return aux_bands
-
-
-class _Sentinel2Image(_CloudlessImage):
-    """Abstract masking method container for Sentinel-2 TOA / SR images."""
-
-    _cloud_score_coll_id = 'GOOGLE/CLOUD_SCORE_PLUS/V1/S2_HARMONIZED'
-    _cloud_prob_coll_id = 'COPERNICUS/S2_CLOUD_PROBABILITY'
-
-    @staticmethod
     def _get_cloud_dist(
         cloudless_mask: ee.Image, proj: ee.Projection = None, max_cloud_dist: float = 5000
     ) -> ee.Image:
@@ -197,6 +120,135 @@ class _Sentinel2Image(_CloudlessImage):
 
     @staticmethod
     @abstractmethod
+    def _get_mask_bands(ee_image: ee.Image) -> dict[str, ee.Image]:
+        pass
+
+    @staticmethod
+    def mask_clouds(ee_image: ee.Image) -> ee.Image:
+        return ee_image.updateMask(ee_image.select('CLOUDLESS_MASK'))
+
+    @staticmethod
+    def set_mask_portions(
+        ee_image: ee.Image, region: dict | ee.Geometry = None, scale: float | ee.Number = None
+    ) -> ee.Image:
+        # use maxPixels=1e6 to speed up computations for large regions
+        portions = ImageAccessor(ee_image.select(['FILL_MASK', 'CLOUDLESS_MASK'])).regionCoverage(
+            region=region, scale=scale, maxPixels=1e6, bestEffort=True
+        )
+        fill_portion = ee.Number(portions.get('FILL_MASK'))
+        cl_portion = ee.Number(portions.get('CLOUDLESS_MASK')).divide(fill_portion).multiply(100)
+        return ee_image.set('FILL_PORTION', fill_portion, 'CLOUDLESS_PORTION', cl_portion)
+
+
+class _LandsatToaRawImage(_CloudlessImage):
+    """Masking method container for Landsat collection 2 TOA reflectance and at sensor radiance
+    images."""
+
+    @staticmethod
+    def _get_mask_bands(
+        ee_image: ee.Image,
+        mask_shadows: bool = True,
+        mask_cirrus: bool = True,
+        mask_saturation: bool = False,
+        mask_nonphysical: bool = False,
+        max_cloud_dist: float = 5000,
+    ) -> dict[str, ee.Image]:
+        # Adapted from https://gis.stackexchange.com/a/473652.  With mask_nonphysical=True and
+        # mask_aerosols=True in _LandsatSrAerosolImage, the cloudless mask will be the same as
+        # https://gis.stackexchange.com/a/473652, excepting for snow/ice, which is included.
+        aux_bands = {}
+
+        # construct fill mask from Earth Engine mask
+        refl_mask = ee_image.select('B.*|SR_B.*').mask()
+        aux_bands['fill'] = refl_mask.reduce(ee.Reducer.allNonZero()).rename('FILL_MASK')
+
+        # find cloud mask from QA_PIXEL band
+        qa_pixel = ee_image.select('QA_PIXEL')
+        mid_cloud_mask = qa_pixel.bitwiseAnd(1 << 9).eq(1 << 9)
+        dilated_cloud_mask = qa_pixel.bitwiseAnd(1 << 1).eq(1 << 1)
+        aux_bands['cloud'] = mid_cloud_mask.Or(dilated_cloud_mask).rename('CLOUD_MASK')
+        if mask_cirrus:
+            cirrus_mask = qa_pixel.bitwiseAnd(1 << 15).eq(1 << 15)
+            aux_bands['cloud'] = aux_bands['cloud'].Or(cirrus_mask)
+        combined_mask = aux_bands['cloud']
+
+        if mask_shadows:
+            # find & incorporate QA_PIXEL shadow mask
+            aux_bands['shadow'] = qa_pixel.bitwiseAnd(1 << 11).eq(1 << 11).rename('SHADOW_MASK')
+            combined_mask = combined_mask.Or(aux_bands['shadow'])
+
+        if mask_saturation:
+            # find & incorporate QA_RADSAT saturation mask
+            qa_radsat = ee_image.select('QA_RADSAT')
+            aux_bands['saturation'] = qa_radsat.neq(0).rename('SATURATION_MASK')
+            combined_mask = combined_mask.Or(aux_bands['saturation'])
+
+        # find cloudless mask
+        # TODO: the cloudless mask might include nonphysical and aerosol so CLOUDLESS is not
+        #  the best description.  call it CLEAR?  also docs refer to 'cloud/shadow' which has a
+        #  similar issue.
+        aux_bands['cloudless'] = combined_mask.Not().And(aux_bands['fill']).rename('CLOUDLESS_MASK')
+
+        # find cloud distance from cloudless mask
+        aux_bands['dist'] = _CloudlessImage._get_cloud_dist(
+            aux_bands['cloudless'],
+            # use 30m B1|SR_B1 projection for the cloud distance
+            proj=ee_image.select(0).projection(),
+            max_cloud_dist=max_cloud_dist,
+        )
+
+        return aux_bands
+
+
+class _LandsatSrImage(_LandsatToaRawImage):
+    """Masking method container for Landsat collection 2 surface reflectance images."""
+
+    @staticmethod
+    def _get_mask_bands(
+        ee_image: ee.Image, mask_nonphysical: bool = False, **kwargs
+    ) -> dict[str, ee.Image]:
+        aux_bands = _LandsatToaRawImage._get_mask_bands(ee_image, **kwargs)
+        if mask_nonphysical:
+            # find & incorporate non-physical reflectance mask
+            lims = [(v + 0.2) / 0.0000275 for v in [0.0, 1.0]]
+            refl_image = ee_image.select('SR_B.*')
+            aux_bands['nonphysical'] = (
+                (refl_image.reduce('min').lt(lims[0]))
+                .Or(refl_image.reduce('max').gt(lims[1]))
+                .rename('NONPHYSICAL_MASK')
+            )
+            aux_bands['cloudless'] = aux_bands['cloudless'].And(aux_bands['nonphysical'].Not())
+
+        return aux_bands
+
+
+class _LandsatSrAerosolImage(_LandsatSrImage):
+    """Masking method container for Landsat collection 2 surface reflectance images with the
+    SR_QA_AEROSOL band.
+    """
+
+    @staticmethod
+    def _get_mask_bands(
+        ee_image: ee.Image, mask_aerosols: bool = False, **kwargs
+    ) -> dict[str, ee.Image]:
+        aux_bands = _LandsatSrImage._get_mask_bands(ee_image, **kwargs)
+        if mask_aerosols:
+            # find & incorporate high aerosol level mask
+            sr_qa_aerosol = ee_image.select('SR_QA_AEROSOL')
+            aux_bands['aerosol'] = sr_qa_aerosol.bitwiseAnd(3 << 6).eq(3 << 6)
+            aux_bands['aerosol'] = aux_bands['aerosol'].rename('AEROSOL_MASK')
+            aux_bands['cloudless'] = aux_bands['cloudless'].And(aux_bands['aerosol'].Not())
+        return aux_bands
+
+
+class _Sentinel2Image(_CloudlessImage):
+    """Abstract masking method container for Sentinel-2 TOA / SR images."""
+
+    _cloud_score_coll_id = 'GOOGLE/CLOUD_SCORE_PLUS/V1/S2_HARMONIZED'
+    _cloud_prob_coll_id = 'COPERNICUS/S2_CLOUD_PROBABILITY'
+
+    @staticmethod
+    @abstractmethod
     def _get_mask_bands(
         ee_image: ee.Image,
         s2_toa: bool = False,
@@ -215,6 +267,7 @@ class _Sentinel2Image(_CloudlessImage):
         """Return a dictionary of mask bands and related images for the given Sentinel-2 image.
         Parts adapted from https://github.com/r-earthengine/ee_extra, under Apache 2.0 licence.
         """
+        # TODO: add nonphysical option like landsat?
         mask_method = CloudMaskMethod(mask_method)
         if mask_method is not CloudMaskMethod.cloud_score:
             warnings.warn(
@@ -377,11 +430,6 @@ class _Sentinel2Image(_CloudlessImage):
             ee_image.select('B.*').mask().reduce(ee.Reducer.allNonZero()).rename('FILL_MASK')
         )
 
-        # TODO: check if clipping is necessary - should be avoided if possible
-        # clip fill mask to the image footprint (without this step we get memory limit errors on
-        # export)
-        # aux_bands['fill'] = aux_bands['fill'].clip(ee_image.geometry()).rename('FILL_MASK')
-
         # combine masks into cloudless_mask
         aux_bands['cloudless'] = (
             (aux_bands['cloud_shadow'].Not()).And(aux_bands['fill']).rename('CLOUDLESS_MASK')
@@ -389,7 +437,7 @@ class _Sentinel2Image(_CloudlessImage):
         aux_bands.pop('cloud_shadow')
 
         # find cloud distance from cloudless mask
-        aux_bands['dist'] = _Sentinel2Image._get_cloud_dist(
+        aux_bands['dist'] = _CloudlessImage._get_cloud_dist(
             aux_bands['cloudless'],
             # use 60m B1 projection for the cloud distance to save some computation
             proj=ee_image.select('B1').projection(),
@@ -416,11 +464,11 @@ class _Sentinel2SrImage(_Sentinel2Image):
 
 def _get_class_for_id(image_id: str) -> type[_MaskedImage]:
     """Return the masking class for the given Earth Engine image/collection ID."""
-    ee_coll_name, _ = split_id(image_id)
+    coll_id, _ = split_id(image_id)
     if image_id in schema.collection_schema:
         return schema.collection_schema[image_id]['image_type']
-    elif ee_coll_name in schema.collection_schema:
-        return schema.collection_schema[ee_coll_name]['image_type']
+    elif coll_id in schema.collection_schema:
+        return schema.collection_schema[coll_id]['image_type']
     else:
         return _MaskedImage
 
