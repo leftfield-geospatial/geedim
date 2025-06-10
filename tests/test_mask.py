@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+from functools import partial
 from itertools import product
 
 import ee
@@ -57,45 +58,91 @@ def cloudless_ee_image(fill_ee_image: ee.Image) -> ee.Image:
 
 
 @pytest.fixture(scope='session')
-def mock_ls_ee_image() -> ee.Image:
-    """Mock Landsat image with known mask and QA_PIXEL band."""
-    # The image mask and QA_PIXEL give cloudless, cloud, shadow and non-filled portions of 0.4,
-    # 0.3, 0.2 & 0.1 resp..  The cloud portion is divided into dilated cloud, cloud and cirrus
-    # portions of 0.1 each.
+def mock_ls_toa_raw_ee_image() -> ee.Image:
+    """Mock Landsat TOA reflectance / at sensor radiance image with known mask, QA_PIXEL
+    and QA_RADSAT bands.
+    """
+    # The image mask and QA_PIXEL give cloud, shadow and non-filled portions of 0.4, 0.3,
+    # 0.2 & 0.1 resp..  The cloud portion is divided into dilated cloud, cloud and cirrus
+    # portions of 0.1 each.  QA_RADSAT gives a saturated portion of 0.1.
     crs = 'EPSG:3857'
+    # TODO: if proj= uses an ee.Projection() rather than a CRS, coordinates can be given in
+    #  pixels, which may be clearer while allowing a bigger scale to be used
     image_bounds = ee.Geometry.Rectangle((-1.0, -1.0, 1.0, 1.0), proj=crs)
     # initial cloudless image (no mask, and QA_PIXEL all valid)
     image = (
-        ee.Image([1, 2, 3, 50, 0])
-        .rename(['SR_B1', 'SR_B2', 'SR_B3', 'ST_CDIST', 'QA_PIXEL'])
+        ee.Image([10000, 20000, 30000, 40000, 0, 0])
+        .rename(['B1', 'B2', 'B3', 'B4', 'QA_PIXEL', 'QA_RADSAT'])
         .toUint16()
     )
     image = image.setDefaultProjection(crs, scale=0.1)
-    qa_pixel = image.select('QA_PIXEL')
 
-    # set non-filled portion (divided equally between SR_B1 and SR_B3 EE masks)
+    # EE mask:
+    # set masked portion (divided equally between SR_B1 and SR_B3 EE masks)
     b1_mask_bounds = ee.Geometry.Rectangle((-1.0, -1.0, -0.9, 1.0), proj=crs)
-    b1 = image.select('SR_B1')
+    b1 = image.select('B1')
     b1 = b1.updateMask(b1.mask().paint(b1_mask_bounds, 0))
     b3_mask_bounds = ee.Geometry.Rectangle((-0.9, -1.0, -0.8, 1.0), proj=crs)
-    b3 = image.select('SR_B3')
+    b3 = image.select('B3')
     b3 = b3.updateMask(b3.mask().paint(b3_mask_bounds, 0))
 
-    # set non-cirrus cloud portion (divided equally between dilated cloud and cloud)
-    cloud_bounds = ee.Geometry.Rectangle((0.0, -1.0, 0.2, 1.0), proj=crs)
+    # QA_PIXEL:
+    # set non-cirrus cloud portion (divided equally cloud and dilated cloud, with cloud divided
+    # equally between medium confidence and high confidence cloud)
+    qa_pixel = image.select('QA_PIXEL')
+    mid_cloud_bounds = ee.Geometry.Rectangle((0.0, -1.0, 0.1, 1.0), proj=crs)
+    high_cloud_bounds = ee.Geometry.Rectangle((0.1, -1.0, 0.2, 1.0), proj=crs)
     dilated_cloud_bounds = ee.Geometry.Rectangle((0.2, -1.0, 0.4, 1.0), proj=crs)
-    qa_pixel = qa_pixel.paint(cloud_bounds, 0b1000)
-    qa_pixel = qa_pixel.paint(dilated_cloud_bounds, 0b10)
+    qa_pixel = qa_pixel.paint(mid_cloud_bounds, 1 << 9 | 1 << 3)
+    qa_pixel = qa_pixel.paint(high_cloud_bounds, 3 << 8 | 1 << 3)
+    qa_pixel = qa_pixel.paint(dilated_cloud_bounds, 1 << 1)
 
     # set shadow portion
     shadow_bounds = ee.Geometry.Rectangle((0.4, -1.0, 0.8, 1.0), proj=crs)
-    qa_pixel = qa_pixel.paint(shadow_bounds, 0b10000)
+    qa_pixel = qa_pixel.paint(shadow_bounds, 3 << 10 | 1 << 4)
 
     # set cirrus portion
     cirrus_bounds = ee.Geometry.Rectangle((0.8, -1.0, 1.0, 1.0), proj=crs)
-    qa_pixel = qa_pixel.paint(cirrus_bounds, 0b100)
+    qa_pixel = qa_pixel.paint(cirrus_bounds, 3 << 14 | 1 << 2)
 
-    return image.addBands([b1, b3, qa_pixel], overwrite=True).clip(image_bounds)
+    # set saturated portion in QA_RADSAT
+    qa_radsat = image.select('QA_RADSAT')
+    sat_bounds = ee.Geometry.Rectangle((-0.8, -1.0, -0.6, 1.0), proj=crs)
+    qa_radsat = qa_radsat.paint(sat_bounds, 1)
+
+    image = image.addBands([b1, b3, qa_pixel, qa_radsat], overwrite=True)
+    return image.clipToBoundsAndScale(image_bounds)
+
+
+@pytest.fixture(scope='session')
+def mock_ls_sr_ee_image(mock_ls_toa_raw_ee_image: ee.Image) -> ee.Image:
+    """Mock Landsat surface reflectance image with known nonphysical reflectance portion"""
+    crs = 'EPSG:3857'
+    image = mock_ls_toa_raw_ee_image.rename(
+        ['SR_B1', 'SR_B2', 'SR_B3', 'ST_B4', 'QA_PIXEL', 'QA_RADSAT']
+    )
+
+    # set a 0.1 nonphysical portion split equally between SR_B1 and SR_B3
+    b1 = image.select('SR_B1')
+    nonphys_bounds1 = ee.Geometry.Rectangle((-0.6, -1.0, -0.5, 1.0), proj=crs)
+    b1 = b1.paint(nonphys_bounds1, 1000)
+    nonphys_bounds2 = ee.Geometry.Rectangle((-0.5, -1.0, -0.4, 1.0), proj=crs)
+    b3 = image.select('SR_B3')
+    b3 = b3.paint(nonphys_bounds2, 50000)
+
+    return image.addBands([b1, b3], overwrite=True).clipToBoundsAndScale(image.geometry())
+
+
+@pytest.fixture(scope='session')
+def mock_ls_sr_aerosol_ee_image(mock_ls_sr_ee_image: ee.Image) -> ee.Image:
+    """Mock Landsat surface reflectance image with known SR_QA_AEROSOL band."""
+    # create a mock SR_QA_AEROSOL band with a 0.1 portion of high aerosol
+    proj = mock_ls_sr_ee_image.projection()
+    sr_qa_aerosol = ee.Image(0).toUint8().setDefaultProjection(proj).rename('SR_QA_AEROSOL')
+    aerosol_bounds = ee.Geometry.Rectangle((-0.4, -1.0, -0.2, 1.0), proj=proj.crs())
+    sr_qa_aerosol = sr_qa_aerosol.paint(aerosol_bounds, 3 << 6 | 1 << 1)
+    image = mock_ls_sr_ee_image.addBands([sr_qa_aerosol])
+    return image.clipToBoundsAndScale(mock_ls_sr_ee_image.geometry())
 
 
 @pytest.fixture(scope='session')
@@ -142,7 +189,11 @@ def mock_s2_cloud_score_ee_image(mock_s2_ee_image: ee.Image) -> ee.Image:
 
 
 def test_get_class_for_id(
-    landsat_image_ids: list[str],
+    ls_raw_image_ids: list[str],
+    ls_toa_image_ids: list[str],
+    ls_sr_image_ids: list[str],
+    l9_sr_image_id: str,
+    l8_sr_image_id: str,
     s2_sr_image_id: str,
     s2_sr_hm_image_id: str,
     s2_toa_image_id: str,
@@ -151,14 +202,18 @@ def test_get_class_for_id(
     landsat_ndvi_image_id: str,
 ):
     """Test _get_class_for_id()."""
-    for im_id in landsat_image_ids:
-        assert mask._get_class_for_id(im_id) == mask._LandsatImage
+    for im_id in [*ls_toa_image_ids, *ls_raw_image_ids]:
+        assert mask._get_class_for_id(im_id) is mask._LandsatToaRawImage
+    for im_id in ls_sr_image_ids:
+        assert issubclass(mask._get_class_for_id(im_id), mask._LandsatSrImage)
+    for im_id in [l9_sr_image_id, l8_sr_image_id]:
+        assert mask._get_class_for_id(im_id) is mask._LandsatSrAerosolImage
     for im_id in [s2_sr_image_id, s2_sr_hm_image_id]:
-        assert mask._get_class_for_id(im_id) == mask._Sentinel2SrImage
+        assert mask._get_class_for_id(im_id) is mask._Sentinel2SrImage
     for im_id in [s2_toa_image_id, s2_toa_hm_image_id]:
-        assert mask._get_class_for_id(im_id) == mask._Sentinel2ToaImage
+        assert mask._get_class_for_id(im_id) is mask._Sentinel2ToaImage
     for im_id in [modis_nbar_image_id, landsat_ndvi_image_id, None, '']:
-        assert mask._get_class_for_id(im_id) == mask._MaskedImage
+        assert mask._get_class_for_id(im_id) is mask._MaskedImage
 
 
 def test_masked_image_get_mask_bands(constant_ee_image: ee.Image):
@@ -241,6 +296,36 @@ def test_masked_image_set_mask_portions(fill_ee_image: ee.Image):
     )
 
 
+def test_cloudless_image_get_cloud_dist():
+    """Test _CloudlessImage._get_cloud_dist()."""
+    # Create test cloudless mask. (Bottom left pixel is cloud & max distance to it is 50m. Image
+    # scale needs to be integer.)
+    crs = 'EPSG:3857'
+    cloudless_mask = ee.Image(1).setDefaultProjection(crs, scale=1).toUint8()
+    image_bounds = ee.Geometry.Rectangle((0, 0, 41, 31), proj=crs)
+    bl_pixel_bounds = ee.Geometry.Rectangle((0, 0, 1, 1), proj=crs)
+    cloudless_mask = cloudless_mask.paint(bl_pixel_bounds, 0).clip(image_bounds)
+
+    # find min & max of cloud distance for different max_cloud_dist vals, combining all getInfo()
+    # calls into one
+    max_cloud_dists = [100, 10]
+    min_maxs = [
+        mask._Sentinel2Image._get_cloud_dist(
+            cloudless_mask, proj=cloudless_mask.projection(), max_cloud_dist=max_cloud_dist
+        ).reduceRegion(ee.Reducer.minMax())
+        for max_cloud_dist in max_cloud_dists
+    ]
+    min_maxs = ee.List(min_maxs).getInfo()
+
+    # test first case where max distance < max_cloud_dist
+    assert min_maxs[0]['CLOUD_DIST_min'] == 0
+    assert min_maxs[0]['CLOUD_DIST_max'] == 50
+
+    # test second case where max distance is clamped to max_cloud_dist
+    assert min_maxs[1]['CLOUD_DIST_min'] == 0
+    assert min_maxs[1]['CLOUD_DIST_max'] == max_cloud_dists[1]
+
+
 def test_cloudless_image_mask_clouds(cloudless_ee_image: ee.Image):
     """Test _CloudlessImage.mask_clouds()."""
     image = mask._CloudlessImage.mask_clouds(cloudless_ee_image)
@@ -276,13 +361,24 @@ def test_cloudless_image_set_mask_portions(cloudless_ee_image: ee.Image):
         assert abs(portions['scale'][key] - val) > abs(portions['default'][key] - val)
 
 
-def test_landsat_image_get_mask_bands_support(landsat_image_ids: list[str], region_10000ha: dict):
-    """Test _LandsatImage._get_mask_bands() works on all supported Landsat collections."""
+def test_landsat_toa_raw_image_get_mask_bands_support(
+    ls_raw_image_ids: list[str],
+    ls_toa_image_ids: list[str],
+    ls_sr_image_ids: list[str],
+    region_10000ha: dict,
+):
+    """Test _LandsatToaRawImage._get_mask_bands() works on all supported Landsat collections."""
     # find mask bands for each landsat image
+    im_ids = [*ls_sr_image_ids, *ls_toa_image_ids, *ls_raw_image_ids]
     mask_bands_list = [
-        mask._LandsatImage._get_mask_bands(ee.Image(im_id)) for im_id in landsat_image_ids
+        mask._LandsatToaRawImage._get_mask_bands(
+            ee.Image(im_id), mask_shadows=True, mask_cirrus=True, mask_saturation=True
+        )
+        for im_id in im_ids
     ]
-    assert set(mask_bands_list[0].keys()) == {'shadow', 'cloud', 'cloudless', 'fill', 'dist'}
+    exp_keys = {'shadow', 'cloud', 'saturation', 'cloudless', 'fill', 'dist'}
+    for mb in mask_bands_list:
+        assert set(mb.keys()) == exp_keys
 
     # find means of mask bands over region_10000ha, combining all getInfo() calls into one
     means = [
@@ -296,32 +392,68 @@ def test_landsat_image_get_mask_bands_support(landsat_image_ids: list[str], regi
         assert all([0 < mean[bn] < 1 for bn in ['CLOUD_MASK', 'SHADOW_MASK', 'CLOUDLESS_MASK']])
         assert 0.5 < mean['FILL_MASK'] <= 1  # landsat7 has scanline error
         assert 0 < mean['CLOUD_DIST'] < 5000
+        assert 0 <= mean['SATURATION_MASK'] < 1
 
 
-def test_landsat_image_get_mask_bands(mock_ls_ee_image: ee.Image):
-    """Test _LandsatImage._get_mask_bands() masking and parameters."""
+def test_landsat_sr_image_get_mask_bands_support(ls_sr_image_ids: list[str], region_10000ha: dict):
+    """Test _LandsatSrImage._get_mask_bands() nonphysical masking works on supported Landsat
+    collections.
+    """
+    # find mask bands for each landsat image
+    nonphysical_masks = [
+        mask._LandsatSrImage._get_mask_bands(ee.Image(im_id), mask_nonphysical=True)['nonphysical']
+        for im_id in ls_sr_image_ids
+    ]
+
+    # find & test means of aerosol masks over region_10000ha, combining all getInfo() calls into one
+    means = [am.reduceRegion('mean', geometry=region_10000ha, scale=30) for am in nonphysical_masks]
+    means = ee.List(means).getInfo()
+    assert all(0 <= mean['NONPHYSICAL_MASK'] < 1 for mean in means)
+
+
+def test_landsat_sr_aerosol_image_get_mask_bands_support(
+    l9_sr_image_id: str, l8_sr_image_id: str, region_10000ha: dict
+):
+    """Test _LandsatSrAerosolImage._get_mask_bands() aerosol masking works on supported Landsat
+    collections.
+    """
+    # find mask bands for each landsat image
+    aerosol_masks = [
+        mask._LandsatSrAerosolImage._get_mask_bands(ee.Image(im_id), mask_aerosols=True)['aerosol']
+        for im_id in [l9_sr_image_id, l8_sr_image_id]
+    ]
+
+    # find & test means of aerosol masks over region_10000ha, combining all getInfo() calls into one
+    means = [am.reduceRegion('mean', geometry=region_10000ha, scale=30) for am in aerosol_masks]
+    means = ee.List(means).getInfo()
+    assert all(0 < mean['AEROSOL_MASK'] < 1 for mean in means)
+
+
+def test_landsat_toa_raw_image_get_mask_bands(mock_ls_toa_raw_ee_image: ee.Image):
+    """Test _LandsatToaRawImage._get_mask_bands() masking and parameters."""
+    get_mask_bands = partial(
+        mask._LandsatToaRawImage._get_mask_bands, mock_ls_toa_raw_ee_image, max_cloud_dist=2
+    )
     # create test stats for each parameter:
     # reference
     stats = {}
-    mask_bands = mask._LandsatImage._get_mask_bands(
-        mock_ls_ee_image, mask_shadows=True, mask_cirrus=True, max_cloud_dist=5000
-    )
+    mask_bands = get_mask_bands(mask_shadows=True, mask_cirrus=True)
     mask_image = ee.Image(list(mask_bands.values()))
     stats['ref'] = mask_image.reduceRegion('mean')
 
     # mask_shadows
-    mask_bands = mask._LandsatImage._get_mask_bands(mock_ls_ee_image, mask_shadows=False)
+    mask_bands = get_mask_bands(mask_shadows=False)
     assert 'shadow' not in mask_bands
     stats['mask_shadows'] = mask_bands['cloudless'].reduceRegion('mean')
 
     # mask_cirrus
-    mask_bands = mask._LandsatImage._get_mask_bands(mock_ls_ee_image, mask_cirrus=False)
+    mask_bands = get_mask_bands(mask_cirrus=False)
     stats['mask_cirrus'] = mask_bands['cloud'].reduceRegion('mean')
 
-    # max_cloud_dist
-    max_cloud_dist = 100
-    mask_bands = mask._LandsatImage._get_mask_bands(mock_ls_ee_image, max_cloud_dist=max_cloud_dist)
-    stats['max_cloud_dist'] = mask_bands['dist'].reduceRegion('max')
+    # mask_saturation
+    mask_bands = get_mask_bands(mask_saturation=True)
+    mask_image = ee.Image([mask_bands[k] for k in ['saturation', 'cloudless']])
+    stats['mask_saturation'] = mask_image.reduceRegion('mean')
 
     # fetch stats, combining all getInfo() calls into one
     stats = ee.Dictionary(stats).getInfo()
@@ -331,7 +463,6 @@ def test_landsat_image_get_mask_bands(mock_ls_ee_image: ee.Image):
     assert stats['ref']['CLOUDLESS_MASK'] == 0.4
     assert stats['ref']['CLOUD_MASK'] == 0.3
     assert stats['ref']['SHADOW_MASK'] == 0.2
-    assert stats['ref']['CLOUD_DIST'] == 500
 
     # test mask_shadows
     assert stats['mask_shadows']['CLOUDLESS_MASK'] == 0.6
@@ -339,38 +470,44 @@ def test_landsat_image_get_mask_bands(mock_ls_ee_image: ee.Image):
     # test mask_cirrus
     assert stats['mask_cirrus']['CLOUD_MASK'] == 0.2
 
-    # test max_cloud_dist
-    assert stats['max_cloud_dist']['CLOUD_DIST'] == max_cloud_dist
+    # test mask_saturation
+    assert stats['mask_saturation']['SATURATION_MASK'] == 0.1
+    assert stats['mask_saturation']['CLOUDLESS_MASK'] == 0.3
 
 
-def test_s2_image_get_cloud_dist():
-    """Test _Sentinel2Image._get_cloud_dist()."""
-    # Create test cloudless mask. (Bottom left pixel is cloud & max distance to it is 50m. Image
-    # scale needs to be integer.)
-    crs = 'EPSG:3857'
-    cloudless_mask = ee.Image(1).setDefaultProjection(crs, scale=1).toUint8()
-    image_bounds = ee.Geometry.Rectangle((0, 0, 41, 31), proj=crs)
-    bl_pixel_bounds = ee.Geometry.Rectangle((0, 0, 1, 1), proj=crs)
-    cloudless_mask = cloudless_mask.paint(bl_pixel_bounds, 0).clip(image_bounds)
+def test_landsat_sr_image_get_mask_bands(mock_ls_sr_ee_image: ee.Image):
+    """Test _LandsatSrImage._get_mask_bands() nonphysical masking."""
+    mask_bands = mask._LandsatSrAerosolImage._get_mask_bands(
+        mock_ls_sr_ee_image,
+        mask_shadows=True,
+        mask_cirrus=True,
+        mask_saturation=True,
+        mask_nonphysical=True,
+        max_cloud_dist=2,
+    )
+    mask_image = ee.Image([mask_bands[k] for k in ['nonphysical', 'cloudless']])
+    stats = mask_image.reduceRegion('mean', geometry=mock_ls_sr_ee_image.geometry()).getInfo()
 
-    # find min & max of cloud distance for different max_cloud_dist vals, combining all getInfo()
-    # calls into one
-    max_cloud_dists = [100, 10]
-    min_maxs = [
-        mask._Sentinel2Image._get_cloud_dist(
-            cloudless_mask, proj=cloudless_mask.projection(), max_cloud_dist=max_cloud_dist
-        ).reduceRegion(ee.Reducer.minMax())
-        for max_cloud_dist in max_cloud_dists
-    ]
-    min_maxs = ee.List(min_maxs).getInfo()
+    assert stats['NONPHYSICAL_MASK'] == 0.1
+    assert stats['CLOUDLESS_MASK'] == 0.2
 
-    # test first case where max distance < max_cloud_dist
-    assert min_maxs[0]['CLOUD_DIST_min'] == 0
-    assert min_maxs[0]['CLOUD_DIST_max'] == 50
 
-    # test second case where max distance is clamped to max_cloud_dist
-    assert min_maxs[1]['CLOUD_DIST_min'] == 0
-    assert min_maxs[1]['CLOUD_DIST_max'] == max_cloud_dists[1]
+def test_landsat_sr_aerosol_image_get_mask_bands(mock_ls_sr_aerosol_ee_image: ee.Image):
+    """Test _LandsatSrAerosolImage._get_mask_bands() aerosol masking."""
+    mask_bands = mask._LandsatSrAerosolImage._get_mask_bands(
+        mock_ls_sr_aerosol_ee_image,
+        mask_shadows=True,
+        mask_cirrus=True,
+        mask_saturation=True,
+        mask_nonphysical=True,
+        mask_aerosols=True,
+        max_cloud_dist=2,
+    )
+    mask_image = ee.Image([mask_bands[k] for k in ['aerosol', 'cloudless']])
+    stats = mask_image.reduceRegion('mean').getInfo()
+
+    assert stats['AEROSOL_MASK'] == 0.1
+    assert stats['CLOUDLESS_MASK'] == 0.1
 
 
 def test_s2_image_get_mask_bands_support(s2_image_ids: list[str], region_100ha: dict):
@@ -405,6 +542,7 @@ def test_s2_image_get_mask_bands(
     """Test _Sentinel2Image._get_mask_bands() masking and parameters with the 'cloud-score'
     method.
     """
+    get_mask_bands = partial(mask._Sentinel2Image._get_mask_bands, max_cloud_dist=2)
     # patch mask._Sentinel2Image so that it searches for a matching cloud score image in a
     # collection containing mock_s2_cloud_score_ee_image
     monkeypatch.setattr(
@@ -414,21 +552,21 @@ def test_s2_image_get_mask_bands(
     # create test stats for each parameter:
     # reference
     stats = {}
-    mask_bands = mask._Sentinel2Image._get_mask_bands(
-        mock_s2_ee_image, mask_method='cloud-score', score=0.6, cs_band='cs', max_cloud_dist=2
+    mask_bands = get_mask_bands(
+        mock_s2_ee_image, mask_method='cloud-score', score=0.6, cs_band='cs'
     )
     mask_image = ee.Image(list(mask_bands.values()))
     stats['ref'] = mask_image.reduceRegion('mean')
 
     # score
-    mask_bands = mask._Sentinel2Image._get_mask_bands(
-        mock_s2_ee_image, mask_method='cloud-score', score=0.8, cs_band='cs', max_cloud_dist=2
+    mask_bands = get_mask_bands(
+        mock_s2_ee_image, mask_method='cloud-score', score=0.8, cs_band='cs'
     )
     stats['score'] = mask_bands['cloudless'].reduceRegion('mean')
 
     # cs_band
-    mask_bands = mask._Sentinel2Image._get_mask_bands(
-        mock_s2_ee_image, mask_method='cloud-score', score=0.6, cs_band='cs_cdf', max_cloud_dist=2
+    mask_bands = get_mask_bands(
+        mock_s2_ee_image, mask_method='cloud-score', score=0.6, cs_band='cs_cdf'
     )
     stats['cs_band'] = mask_bands['cloudless'].reduceRegion('mean')
 
@@ -471,15 +609,15 @@ def test_s2_image_get_mask_bands_no_cloud_score(mock_s2_ee_image: ee.Image):
     assert stats['fill']['FILL_MASK'] == 0.9
 
 
-def test_masked_image_init_from_id(l9_image_id: str, region_100ha: dict):
+def test_masked_image_init_from_id(l9_sr_image_id: str, region_100ha: dict):
     """Test MaskedImage.__init__() and MaskedImage.from_id() without and with parameters."""
     # create images and get their info dicts
     kwargs_list = [dict(), dict(region=region_100ha, mask_shadows=False)]
     init_images = [
-        mask.MaskedImage(ee.Image(l9_image_id), **kwargs)._ee_image for kwargs in kwargs_list
+        mask.MaskedImage(ee.Image(l9_sr_image_id), **kwargs)._ee_image for kwargs in kwargs_list
     ]
     from_id_images = [
-        mask.MaskedImage.from_id(l9_image_id, **kwargs)._ee_image for kwargs in kwargs_list
+        mask.MaskedImage.from_id(l9_sr_image_id, **kwargs)._ee_image for kwargs in kwargs_list
     ]
     infos_list = ee.List([ee.List(init_images), ee.List(from_id_images)]).getInfo()
 
@@ -502,9 +640,9 @@ def test_masked_image_init_from_id(l9_image_id: str, region_100ha: dict):
         assert 'FILL_PORTION' in props and 'CLOUDLESS_PORTION' in props
 
 
-def test_masked_image_mask_clouds_(l9_image_id: str, region_100ha: dict):
+def test_masked_image_mask_clouds_(l9_sr_image_id: str, region_100ha: dict):
     """Test MaskedImage.mask_clouds()."""
-    image = mask.MaskedImage(ee.Image(l9_image_id))
+    image = mask.MaskedImage(ee.Image(l9_sr_image_id))
     image.mask_clouds()
     coverages = image._ee_image.mask().reduceRegion('mean', geometry=region_100ha, scale=30)
     coverages = coverages.getInfo()
