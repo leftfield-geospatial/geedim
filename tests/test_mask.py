@@ -147,8 +147,8 @@ def mock_ls_sr_aerosol_ee_image(mock_ls_sr_ee_image: ee.Image) -> ee.Image:
 
 @pytest.fixture(scope='session')
 def mock_s2_ee_image() -> ee.Image:
-    """Mock Sentinel-2 image with known mask."""
-    # mask covers 0.9 of the B3 band
+    """Mock Sentinel-2 image with known mask and nonphysical reflectance portion."""
+    # set masked portion of 0.1 in the B3 band
     crs = 'EPSG:3857'
     image_bounds = ee.Geometry.Rectangle((-1.0, -1.0, 1.0, 1.0), proj=crs)
     image = ee.Image([1, 2, 3, 0]).rename(['B1', 'B2', 'B3', 'QA60'])
@@ -158,6 +158,11 @@ def mock_s2_ee_image() -> ee.Image:
     mask_bounds = ee.Geometry.Rectangle((-1.0, -1.0, -0.8, 1.0), proj=crs)
     b3 = image.select('B3')
     b3 = b3.updateMask(b3.mask().paint(mask_bounds, 0))
+
+    # set nonphysical portion of 0.1 in the B3 band
+    nonphys_bounds = ee.Geometry.Rectangle((-0.8, -1.0, -0.6, 1.0), proj=crs)
+    b3 = b3.paint(nonphys_bounds, 11000)
+
     return image.addBands([b3], overwrite=True).clip(image_bounds)
 
 
@@ -542,7 +547,12 @@ def test_s2_image_get_mask_bands(
     """Test _Sentinel2Image._get_mask_bands() masking and parameters with the 'cloud-score'
     method.
     """
-    get_mask_bands = partial(mask._Sentinel2Image._get_mask_bands, max_cloud_dist=2)
+    get_mask_bands = partial(
+        mask._Sentinel2Image._get_mask_bands,
+        mock_s2_ee_image,
+        mask_method='cloud-score',
+        max_cloud_dist=2,
+    )
     # patch mask._Sentinel2Image so that it searches for a matching cloud score image in a
     # collection containing mock_s2_cloud_score_ee_image
     monkeypatch.setattr(
@@ -552,23 +562,24 @@ def test_s2_image_get_mask_bands(
     # create test stats for each parameter:
     # reference
     stats = {}
-    mask_bands = get_mask_bands(
-        mock_s2_ee_image, mask_method='cloud-score', score=0.6, cs_band='cs'
-    )
+    mask_bands = get_mask_bands(score=0.6, cs_band='cs')
     mask_image = ee.Image(list(mask_bands.values()))
     stats['ref'] = mask_image.reduceRegion('mean')
 
     # score
-    mask_bands = get_mask_bands(
-        mock_s2_ee_image, mask_method='cloud-score', score=0.8, cs_band='cs'
-    )
+    mask_bands = get_mask_bands(score=0.8, cs_band='cs')
     stats['score'] = mask_bands['cloudless'].reduceRegion('mean')
 
     # cs_band
-    mask_bands = get_mask_bands(
-        mock_s2_ee_image, mask_method='cloud-score', score=0.6, cs_band='cs_cdf'
-    )
+    mask_bands = get_mask_bands(score=0.6, cs_band='cs_cdf')
     stats['cs_band'] = mask_bands['cloudless'].reduceRegion('mean')
+
+    # mask_nonphysical
+    mask_bands = get_mask_bands(score=0.6, cs_band='cs', mask_nonphysical=True)
+    mask_image = ee.Image([mask_bands[k] for k in ['cloudless', 'nonphysical']])
+    stats['mask_nonphysical'] = mask_image.reduceRegion(
+        'mean', geometry=mock_s2_ee_image.geometry()
+    )
 
     # fetch stats, combining all getInfo() calls into one
     stats = ee.Dictionary(stats).getInfo()
@@ -584,6 +595,10 @@ def test_s2_image_get_mask_bands(
 
     # test cs_band
     assert stats['cs_band']['CLOUDLESS_MASK'] == 0.6
+
+    # test mask_nonphysical
+    assert stats['mask_nonphysical']['CLOUDLESS_MASK'] == 0.6
+    assert stats['mask_nonphysical']['NONPHYSICAL_MASK'] == 0.1
 
 
 def test_s2_image_get_mask_bands_no_cloud_score(mock_s2_ee_image: ee.Image):
