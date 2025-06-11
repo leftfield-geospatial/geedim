@@ -102,6 +102,15 @@ _s2_b1_info = {
 """Example EE band info dictionary for B1 of a Sentinel-2 image."""
 
 
+def test_xarray():
+    import xarray
+    from pandas import to_datetime  # noqa
+
+    assert xarray is not None
+    if not xarray:
+        raise ImportError()
+
+
 def test_compatible_collections(
     l4_sr_image_id: str,
     l5_sr_image_id: str,
