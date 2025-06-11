@@ -184,9 +184,6 @@ class _LandsatToaRawImage(_CloudlessImage):
             combined_mask = combined_mask.Or(aux_bands['saturation'])
 
         # find cloudless mask
-        # TODO: the cloudless mask might include nonphysical and aerosol so CLOUDLESS is not
-        #  the best description.  call it CLEAR?  also docs refer to 'cloud/shadow' which has a
-        #  similar issue.
         aux_bands['cloudless'] = combined_mask.Not().And(aux_bands['fill']).rename('CLOUDLESS_MASK')
 
         # find cloud distance from cloudless mask
@@ -263,11 +260,11 @@ class _Sentinel2Image(_CloudlessImage):
         max_cloud_dist: float = 5000,
         score: float = 0.6,
         cs_band: str | CloudScoreBand = CloudScoreBand.cs,
+        mask_nonphysical: bool = False,
     ) -> dict[str, ee.Image]:
         """Return a dictionary of mask bands and related images for the given Sentinel-2 image.
         Parts adapted from https://github.com/r-earthengine/ee_extra, under Apache 2.0 licence.
         """
-        # TODO: add nonphysical option like landsat?
         mask_method = CloudMaskMethod(mask_method)
         if mask_method is not CloudMaskMethod.cloud_score:
             warnings.warn(
@@ -420,6 +417,14 @@ class _Sentinel2Image(_CloudlessImage):
                     .focal_min(20, units='meters')
                     .focal_max(buffer, units='meters')
                 )
+
+            if mask_nonphysical:
+                # mask nonphysical reflectance (reflectance<0 is clipped to 0 and masked by default)
+                aux_bands['nonphysical'] = (
+                    ee_image.select('B.*').reduce('max').gt(10000).rename('NONPHYSICAL_MASK')
+                )
+                aux_bands['cloud_shadow'] = aux_bands['cloud_shadow'].Or(aux_bands['nonphysical'])
+
             return aux_bands
 
         # get cloud/shadow etc bands

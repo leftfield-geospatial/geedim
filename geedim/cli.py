@@ -383,7 +383,7 @@ def cli(ctx: click.Context, verbose: int, quiet: int):
     default=False,
     show_default=True,
     help="Whether to mask reflectance outside the 0-1 range.  Valid for Landsat surface "
-    "reflectance images.",
+    "reflectance images and Sentinel-2 images.",
 )
 @click.option(
     '-ma/-nma',

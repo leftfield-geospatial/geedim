@@ -634,7 +634,7 @@ class ImageAccessor:
             Whether to mask saturation.  Valid for Landsat images.  Defaults to ``False``.
         :param bool mask_nonphysical:
             Whether to mask reflectance outside the 0-1 reflectance range.  Valid for Landsat
-            surface reflectance images.  Defaults to ``False``.
+            surface reflectance images, and Sentinel-2 images.  Defaults to ``False``.
         :param bool mask_aerosols:
             Whether to mask high aerosol levels.  Valid for Landsat 8-9 surface reflectance images.
             Defaults to ``False``.
