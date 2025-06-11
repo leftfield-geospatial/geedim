@@ -208,9 +208,6 @@ def register_accessor(name: str, cls: type) -> Callable[[type[T]], type[T]]:
             self._accessor = accessor
 
         def __get__(self, obj, cls) -> type[T] | T:
-            # TODO: strictly the caching happens in the lookup chain for data descriptions,
-            #  so is not necessary here if there is no __set__:
-            #  https://realpython.com/python-descriptors/#lazy-properties
             if obj is None:
                 # return accessor type when the class attribute is accessed e.g. ee.Image.gd
                 return self._accessor
@@ -237,21 +234,6 @@ def register_accessor(name: str, cls: type) -> Callable[[type[T]], type[T]]:
 
             cache[self._name] = accessor_obj
             return accessor_obj
-
-        def __set__(self, obj, value: T) -> None:
-            # TODO: test this if it stays
-            if obj is None:
-                # raise when the class attribute is set e.g. ee.Image.gd = ...
-                raise ValueError(f"Cannot set the {self._name!r} accessor on the class.")
-
-            # retrieve the cache, creating if it does not yet exist
-            try:
-                cache = obj._accessor_cache
-            except AttributeError:
-                cache = obj._accessor_cache = {}
-
-            # set and return
-            cache[self._name] = value
 
     def decorator(accessor: type[T]) -> type[T]:
         if hasattr(cls, name):

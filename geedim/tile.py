@@ -122,6 +122,7 @@ class Tiler:
         ConnectionError,
         RasterioIOError,
     )
+    _debug_i = 0
     try:
         # retry on requests errors from ee.Image.getDownloadURL()
         from requests import RequestException
@@ -330,7 +331,6 @@ class Tiler:
 
         def read_gtiff_buf(mem_file: rio.MemoryFile) -> np.ndarray:
             """Read the given GeoTIFF memory file into a NumPy array."""
-            # TODO: exception here causes hang when there are still get_tile_url tasks waiting
             with mem_file.open() as ds:
                 return ds.read(masked=masked)
 
