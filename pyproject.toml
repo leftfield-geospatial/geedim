@@ -1,6 +1,6 @@
 [project]
 name = 'geedim'
-description = 'Export, filter and composite Google Earth Engine imagery.'
+description = 'Export and cloud/shadow mask Google Earth Engine imagery.'
 readme = 'README.rst'
 requires-python = '>=3.11'
 dependencies = [
@@ -15,7 +15,7 @@ dependencies = [
 ]
 authors = [{name = 'Leftfield Geospatial'}]
 keywords = [
-    'earth engine', 'satellite imagery', 'search', 'download', 'composite', 'cloud', 'shadow'
+    'earth engine', 'satellite', 'image', 'export', 'cloud', 'shadow', 'geotiff', 'xarray', 'numpy'
 ]
 classifiers = [
     'Programming Language :: Python :: 3',
