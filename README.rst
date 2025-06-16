@@ -1,260 +1,103 @@
 |Tests| |codecov| |PyPI version| |conda-forge version| |docs| |License|
 
-``geedim``
-==========
+Geedim
+======
 
-.. short_descr_start
+Geedim provides a Python API and command line toolkit for exporting and cloud/shadow masking Google Earth Engine (GEE) imagery.  Images and Image collections can be exported to:
 
-Search, composite, and download `Google Earth Engine <https://earthengine.google.com/>`__ imagery, without size limits.
+- GeoTIFF file
+- Xarray Dataset / DataArray
+- NumPy array
 
-.. short_descr_end
+And cloud / shadow masking is supported on:
 
-.. description_start
+- Landsat 4-9 `collection 2 <https://developers.google.com/earth-engine/datasets/catalog/landsat>`__ images
+- Sentinel-2 `TOA <https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_HARMONIZED>`__ and `surface reflectance <https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED>`__ images
 
-Description
------------
+.. Image collections can be filtered based on cloud / shadow cover, and cloud / shadow free compositing is also supported.
 
-``geedim`` provides a command line interface and API for searching, compositing and downloading satellite imagery
-from Google Earth Engine (EE). It optionally performs cloud/shadow masking, and cloud/shadow-free compositing on
-supported collections. Images and composites can be downloaded; or exported to Google Drive, Earth Engine asset or
-Google Cloud Storage. Images larger than the
-`EE size limit <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`_ are split and downloaded
-as separate tiles, then re-assembled into a single GeoTIFF.
-
-.. description_end
-
-See the documentation site for more detail: https://geedim.readthedocs.io/.
-
-.. supp_im_start
-
-Cloud/shadow support
-~~~~~~~~~~~~~~~~~~~~
-
-Any EE imagery can be searched, composited and downloaded by ``geedim``. Cloud/shadow masking, and cloud/shadow-free
-compositing are supported on the following collections:
-
-.. supp_im_end
-
-+------------------------------------------+-------------------------------------------------------+
-| EE name                                  | Description                                           |
-+==========================================+=======================================================+
-| `LANDSAT/LT04/C02/T1_L2                  | Landsat 4, collection 2, tier 1, level 2 surface      |
-| <https://developers.google.com/earth-eng | reflectance.                                          |
-| ine/datasets/catalog/LANDSAT_LT04_C02_T1 |                                                       |
-| _L2>`_                                   |                                                       |
-+------------------------------------------+-------------------------------------------------------+
-| `LANDSAT/LT05/C02/T1_L2                  | Landsat 5, collection 2, tier 1, level 2 surface      |
-| <https://developers.google.com/earth-eng | reflectance.                                          |
-| ine/datasets/catalog/LANDSAT_LT05_C02_T1 |                                                       |
-| _L2>`_                                   |                                                       |
-+------------------------------------------+-------------------------------------------------------+
-| `LANDSAT/LE07/C02/T1_L2                  | Landsat 7, collection 2, tier 1, level 2 surface      |
-| <https://developers.google.com/earth-eng | reflectance.                                          |
-| ine/datasets/catalog/LANDSAT_LE07_C02_T1 |                                                       |
-| _L2>`_                                   |                                                       |
-+------------------------------------------+-------------------------------------------------------+
-| `LANDSAT/LC08/C02/T1_L2                  | Landsat 8, collection 2, tier 1, level 2 surface      |
-| <https://developers.google.com/earth-eng | reflectance.                                          |
-| ine/datasets/catalog/LANDSAT_LC08_C02_T1 |                                                       |
-| _L2>`_                                   |                                                       |
-+------------------------------------------+-------------------------------------------------------+
-| `LANDSAT/LC09/C02/T1_L2                  | Landsat 9, collection 2, tier 1, level 2 surface      |
-| <https://developers.google.com/earth-eng | reflectance.                                          |
-| ine/datasets/catalog/LANDSAT_LC09_C02_T1 |                                                       |
-| _L2>`_                                   |                                                       |
-+------------------------------------------+-------------------------------------------------------+
-| `COPERNICUS/S2                           | Sentinel-2, level 1C, top of atmosphere reflectance.  |
-| <https://developers.google.com/earth-    |                                                       |
-| engine/datasets/catalog/COPERNICUS_S2>`_ |                                                       |
-+------------------------------------------+-------------------------------------------------------+
-| `COPERNICUS/S2_SR                        | Sentinel-2, level 2A, surface reflectance.            |
-| <https://developers.google.com/earth-eng |                                                       |
-| ine/datasets/catalog/COPERNICUS_S2_SR>`_ |                                                       |
-+------------------------------------------+-------------------------------------------------------+
-| `COPERNICUS/S2_HARMONIZED                | Harmonised Sentinel-2, level 1C, top of atmosphere    |
-| <https://developers.google.com/earth-eng | reflectance.                                          |
-| ine/datasets/catalog/COPERNICUS_S2_HARMO |                                                       |
-| NIZED>`_                                 |                                                       |
-+------------------------------------------+-------------------------------------------------------+
-| `COPERNICUS/S2_SR_HARMONIZED             | Harmonised Sentinel-2, level 2A, surface reflectance. |
-| <https://developers.google.com/earth-eng |                                                       |
-| ine/datasets/catalog/COPERNICUS_S2_SR_HA |                                                       |
-| RMONIZED>`_                              |                                                       |
-+------------------------------------------+-------------------------------------------------------+
-
-.. install_start
 
 Installation
 ------------
 
-``geedim`` is a python 3 package, and requires users to be registered with `Google Earth
-Engine <https://signup.earthengine.google.com>`__.
-
-It can be installed with `pip <https://pip.pypa.io/>`_ or `conda <https://docs.anaconda.com/free/miniconda/>`_.
-
-pip
-~~~
+To install from PyPI:
 
 .. code:: shell
 
    pip install geedim
 
-conda
-~~~~~
+To install from conda-forge:
 
 .. code:: shell
 
    conda install -c conda-forge geedim
 
-Authentication
-~~~~~~~~~~~~~~
-
-Following installation, Earth Engine should be authenticated:
+A registered Google Cloud project is required for `access to Earth Engine <https://developers.google.com/earth-engine/guides/access#create-a-project>`__.  Once installation and registration is done, Earth Engine should be authenticated:
 
 .. code:: shell
 
    earthengine authenticate
 
-.. install_end
-
-Getting started
----------------
-
-Command line interface
-~~~~~~~~~~~~~~~~~~~~~~
-
-.. cli_start
-
-``geedim`` command line functionality is accessed through the commands:
-
--  ``search``: Search for images.
--  ``composite``: Create a composite image.
--  ``download``: Download image(s).
--  ``export``: Export image(s).
--  ``config``: Configure cloud/shadow masking.
-
-Get help on ``geedim`` with:
-
-.. code:: shell
-
-   geedim --help
-
-and help on a ``geedim`` command with:
-
-.. code:: shell
-
-   geedim <command> --help
 
 Examples
-^^^^^^^^
-
-Search for Landsat-8 images, reporting cloudless portions.
-
-.. code:: shell
-
-   geedim search -c l8-c2-l2 -s 2021-06-01 -e 2021-07-01 --bbox 24 -33 24.1 -33.1 --cloudless-portion
-
-Download a Landsat-8 image with cloud/shadow mask applied.
-
-.. code:: shell
-
-   geedim download -i LANDSAT/LC08/C02/T1_L2/LC08_172083_20210610 --bbox 24 -33 24.1 -33.1 --mask
-
-Command pipelines
-~~~~~~~~~~~~~~~~~
-
-Multiple ``geedim`` commands can be chained together in a pipeline where image results from the previous command form
-inputs to the current command. For example, if the ``composite`` command is chained with ``download`` command, the
-created composite image will be downloaded, or if the ``search`` command is chained with the ``composite`` command, the
-search result images will be composited.
-
-Common command options are also piped between chained commands. For example, if the ``config`` command is chained with
-other commands, the configuration supplied with ``config`` will be applied to subsequent commands in the pipeline. Many
-command combinations are possible.
-
-.. _examples-1:
-
-Examples
-^^^^^^^^
-
-Composite two Landsat-7 images and download the result:
-
-.. code:: shell
-
-   geedim composite -i LANDSAT/LE07/C02/T1_L2/LE07_173083_20100203 -i LANDSAT/LE07/C02/T1_L2/LE07_173083_20100219 download --bbox 22 -33.1 22.1 -33 --crs EPSG:3857 --scale 30
-
-Composite the results of a Landsat-8 search and download the result.
-
-.. code:: shell
-
-   geedim search -c l8-c2-l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 composite -cm q-mosaic download --scale 30 --crs EPSG:3857
-
-Composite the results of a Landsat-8 search, export to Earth Engine asset, and download the asset image.
-
-.. code:: shell
-
-    geedim search -c l8-c2-l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 composite -cm q-mosaic export --type asset --folder <your cloud project> --scale 30 --crs EPSG:3857 download
-
-Search for Sentinel-2 SR images with a cloudless portion of at least 60%, using the ``cloud-score`` mask-method to identify clouds:
-
-.. code:: shell
-
-   geedim config --mask-method cloud-score search -c s2-sr-hm --cloudless-portion 60 -s 2022-01-01 -e 2022-01-14 --bbox 24 -34 24.5 -33.5
-
-.. cli_end
+--------
 
 API
 ~~~
 
-Example
-^^^^^^^
+Geedim provides access to its functionality through the ``gd`` accessor on the ``ee.Image`` and ``ee.ImageCollection`` `GEE <https://github.com/google/earthengine-api>`__ classes.  This example exports a 6 month cloud-free composite of Sentinel-2 surface reflectance imagery to a GeoTIFF file:
 
 .. code:: python
 
-   import geedim as gd
+    import ee
 
-   gd.Initialize()  # initialise earth engine
+    import geedim as gd  # import geedim to enable accessor
 
-   # geojson polygon to search / download
-   region = {
-       "type": "Polygon",
-       "coordinates": [[[24, -33.6], [24, -33.53], [23.93, -33.53], [23.93, -33.6], [24, -33.6]]]
-   }
+    gd.Initialize()
 
-   # make collection and search, reporting cloudless portions
-   coll = gd.MaskedCollection.from_name('COPERNICUS/S2_SR_HARMONIZED')
-   coll = coll.search('2019-01-10', '2019-01-21', region, cloudless_portion=0)
-   print(coll.schema_table)
-   print(coll.properties_table)
+    # filter collection based on cloudless portion etc.
+    region = ee.Geometry.Rectangle(24.35, -33.75, 24.45, -33.65)
+    coll = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+    filt_coll = coll.gd.filter('2024-10-01', '2025-04-01', region=region, cloudless_portion=60)
 
-   # create and download an image
-   im = gd.MaskedImage.from_id('COPERNICUS/S2_SR_HARMONIZED/20190115T080251_20190115T082230_T35HKC')
-   im.download('s2_image.tif', region=region)
+    # print image properties
+    print(filt_coll.gd.schemaTable)
+    print(filt_coll.gd.propertiesTable)
 
-   # composite search results and download
-   comp_im = coll.composite()
-   comp_im.download('s2_comp_image.tif', region=region, crs='EPSG:32735', scale=10)
+    # create a cloud/shadow free composite & download
+    comp_im = filt_coll.gd.composite('median')
+    prep_im = comp_im.gd.prepareForExport(crs='EPSG:3857', region=region, scale=10, dtype='uint16')
+    prep_im.gd.toGeoTIFF('s2_comp.tif')
+
+
+Command line interface
+~~~~~~~~~~~~~~~~~~~~~~
+
+Much of the API functionality can also be accessed on the command line with ``geedim`` and its sub-commands.  As in the API example, this exports a 6-month cloud-free composite of Sentinel-2 surface reflectance imagery to a GeoTIFF file:
+
+.. code:: shell
+
+    geedim search -c COPERNICUS/S2_SR_HARMONIZED -s 2024-10-01 -e 2025-04-01 -b 24.35 -33.75 24.45 -33.65 -cp 60 composite -cm median download -c EPSG:3857 -r - -s 10 -dt uint16
+
+
+Documentation
+-------------
+
+See `geedim.readthedocs.io <https://geedim.readthedocs.io/>`__ for usage, contribution and reference documentation.
 
 License
 -------
 
 This project is licensed under the terms of the `Apache-2.0 License <https://github.com/leftfield-geospatial/geedim/blob/main/LICENSE>`__.
 
-Contributing
-------------
-
-See the `documentation <https://geedim.readthedocs.io/en/latest/contributing.html>`__ for details.
-
 Credits
 -------
 
--  Tiled downloading was inspired by the work in `GEES2Downloader <https://github.com/cordmaur/GEES2Downloader>`__ under
-   terms of the `MIT license <https://github.com/cordmaur/GEES2Downloader/blob/main/LICENSE>`__.
--  Medoid compositing was adapted from `gee_tools <https://github.com/gee-community/gee_tools>`__ under the terms of the
-   `MIT license <https://github.com/gee-community/gee_tools/blob/master/LICENSE>`__.
+-  Tiled downloading was inspired by the `MIT licensed <https://github.com/cordmaur/GEES2Downloader/blob/main/LICENSE>`__ `GEES2Downloader <https://github.com/cordmaur/GEES2Downloader>`__ project.
+-  Medoid compositing, and the accessor approach to extending the `GEE API <https://github.com/google/earthengine-api>`__, were adapted from `geetools <https://github.com/gee-community/geetools>`__ under terms of the
+   `MIT license <https://github.com/gee-community/geetools/blob/master/LICENSE>`__.
 -  Sentinel-2 cloud/shadow masking was adapted from `ee_extra <https://github.com/r-earthengine/ee_extra>`__ under
    terms of the `Apache-2.0 license <https://github.com/r-earthengine/ee_extra/blob/master/LICENSE>`__
-
 
 .. |Tests| image:: https://github.com/leftfield-geospatial/geedim/actions/workflows/run-unit-tests.yml/badge.svg
    :target: https://github.com/leftfield-geospatial/geedim/actions/workflows/run-unit-tests.yml
