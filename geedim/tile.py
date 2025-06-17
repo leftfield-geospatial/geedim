@@ -1,18 +1,16 @@
-"""
-Copyright 2021 Dugal Harris - dugalh@gmail.com
+# Copyright The Geedim Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+# this file except in compliance with the License. You may obtain a copy of the
+# License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software distributed
+# under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+# CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+# language governing permissions and limitations under the License.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-"""
 
 from __future__ import annotations
 
@@ -45,11 +43,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class Tile:
-    """Description of a 3D image tile.
-
-    Defines the tile band, row & column extents, and provides properties to assist accessing it
-    in an Earth Engine image, Rasterio dataset or NumPy array.
-    """
+    """Description of a 3D image tile."""
 
     # band, row & col extents of the tile in the source image (included in repr)
     band_start: int
@@ -84,7 +78,9 @@ class Tile:
 
     @cached_property
     def indexes(self) -> range:
-        """Tile bands as a range of source image band indexes in one-based / Rasterio convention."""
+        """Tile bands as a range of source image band indexes in one-based / Rasterio
+        convention.
+        """
         return range(self.band_start + 1, self.band_stop + 1)
 
     @cached_property
@@ -146,45 +142,52 @@ class Tiler:
         Splits an images into tiles and downloads / decompresses them concurrently.
 
         Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
-        ``max_tile_bands``, and download / decompress concurrency with ``max_requests`` and
-        ``max_cpus``.
+        ``max_tile_bands``, and download / decompress concurrency with
+        ``max_requests`` and ``max_cpus``.
 
         :param image:
             Image to be tiled.  Should have a fixed projection.
         :param max_tile_size:
             Maximum tile size (MB).  Should be less than the `Earth Engine size limit
-            <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (32 MB).
+            <https://developers.google.com/earth-engine/apidocs/ee-image
+            -getdownloadurl>`__ (32 MB).
         :param max_tile_dim:
-            Maximum tile width / height (pixels).  Should be less than the `Earth Engine limit
-            <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (10000).
+            Maximum tile width / height (pixels).  Should be less than the `Earth
+            Engine limit <https://developers.google.com/earth-engine/apidocs/ee-image
+            -getdownloadurl>`__ (10000).
         :param max_tile_bands:
-            Maximum number of tile bands.  Should be less than the Earth Engine limit (1024).
+            Maximum number of tile bands.  Should be less than the Earth Engine limit
+            (1024).
         :param max_requests:
-            Maximum number of concurrent tile downloads.  Should be less than the `max concurrent
-            requests quota <https://developers.google.com/earth-engine/guides/usage
+            Maximum number of concurrent tile downloads.  Should be less than the
+            `max concurrent requests quota
+            <https://developers.google.com/earth-engine/guides/usage
             #adjustable_quota_limits>`__.
         :param max_cpus:
-            Maximum number of tiles to decompress concurrently.  Defaults to one less than the
-            number of CPUs, or one, whichever is greater.  Values larger than the default can
-            stall the asynchronous event loop and are not recommended.
+            Maximum number of tiles to decompress concurrently.  Defaults to one less
+            than the number of CPUs, or one, whichever is greater.  Values larger
+            than the default can stall the asynchronous event loop and are not
+            recommended.
         """
         self._validate_image(image)
         self._im = image
         self._tile_shape = self._get_tile_shape(
-            max_tile_size=max_tile_size, max_tile_dim=max_tile_dim, max_tile_bands=max_tile_bands
+            max_tile_size=max_tile_size,
+            max_tile_dim=max_tile_dim,
+            max_tile_bands=max_tile_bands,
         )
 
-        # default max_cpus to one less than the number of CPUs (leaves capacity for one cpu to
-        # run the map_tiles() function)
+        # default max_cpus to one less than the number of CPUs (leaves capacity for
+        # one cpu to run the map_tiles() function)
         max_cpus = max_cpus or max((os.cpu_count() or 0) - 1, 1)
         self._limit_requests = asyncio.Semaphore(max_requests)
         self._limit_cpus = asyncio.Semaphore(max_cpus)
 
-        # create thread pool with capacity for all synchronous tasks (+1 is for the map_tiles()
-        # map function)
+        # create thread pool with capacity for all synchronous tasks (+1 is for the
+        # map_tiles() map function)
         self._executor = ThreadPoolExecutor(max_workers=max_requests + max_cpus + 1)
-        # use one thread per tile for reading GeoTIFF buffers so that CPU loading can be
-        # controlled with max_cpus
+        # use one thread per tile for reading GeoTIFF buffers so that CPU loading can
+        # be controlled with max_cpus
         self._env = rio.Env(GDAL_NUM_THREAHDS=1)
 
     @staticmethod
@@ -192,13 +195,13 @@ class Tiler:
         """Raise an error if the image does not have a fixed projection."""
         if not image.shape:
             raise ValueError(
-                "This image cannot be exported as it does not have a fixed projection.  "
-                "'prepareForExport()' can be called to define one."
+                'This image cannot be exported as it does not have a fixed '
+                "projection.  'prepareForExport()' can be called to define one."
             )
         if image.size > 10e9:
             size_str = tqdm.format_sizeof(image.size, suffix='B')
             warnings.warn(
-                f"Consider adjusting the image bounds, resolution or data type with "
+                f'Consider adjusting the image bounds, resolution or data type with '
                 f"'prepareForExport()' to reduce the export size: {size_str}.",
                 stacklevel=2,
                 category=RuntimeWarning,
@@ -218,22 +221,24 @@ class Tiler:
         max_tile_dim: int = _ee_max_tile_dim,
         max_tile_bands: int = _ee_max_tile_bands,
     ) -> Sequence[int]:
-        """Return a 3D tile shape (bands, height, width) that satisfies the ``max_*`` parameters."""
+        """Return a 3D tile shape (bands, height, width) that satisfies the ``max_*``
+        parameters.
+        """
         if max_tile_size > Tiler._ee_max_tile_size:
             raise ValueError(
-                f"'max_tile_size' must be less than or equal to the Earth Engine limit of "
-                f"{Tiler._ee_max_tile_size} MB."
+                f"'max_tile_size' must be less than or equal to the Earth Engine "
+                f'limit of {Tiler._ee_max_tile_size} MB.'
             )
         max_tile_size = max_tile_size * 2**20  # convert MB to bytes
         if max_tile_dim > Tiler._ee_max_tile_dim:
             raise ValueError(
-                f"'max_tile_dim' must be less than or equal to the Earth Engine limit of "
-                f"{Tiler._ee_max_tile_dim}."
+                f"'max_tile_dim' must be less than or equal to the Earth Engine limit "
+                f'of {Tiler._ee_max_tile_dim}.'
             )
         if max_tile_bands > Tiler._ee_max_tile_bands:
             raise ValueError(
-                f"'max_tile_bands' must be less than or equal to the Earth Engine limit of "
-                f"{Tiler._ee_max_tile_bands}."
+                f"'max_tile_bands' must be less than or equal to the Earth Engine "
+                f'limit of {Tiler._ee_max_tile_bands}.'
             )
 
         dtype_size = np.dtype(self._im.dtype).itemsize
@@ -246,8 +251,8 @@ class Tiler:
         if max_tile_size < np.prod(min_tile_shape) * dtype_size:
             min_tile_shape = np.array([1, 1, 1])
 
-        # starting with the tile shape equal to the image shape, greedily reduce tile dimensions
-        # to satisfy max_tile_size
+        # starting with the tile shape equal to the image shape, greedily reduce tile
+        # dimensions to satisfy max_tile_size
         im_shape = np.array((self._im.count, *self._im.shape))
         tile_shape = im_shape.copy()
         for ax in range(3):
@@ -273,11 +278,13 @@ class Tiler:
             raw_tile_size = np.prod(self._tile_shape) * dtype_size
             logger.debug(f'Image shape (bands, height, width): {im_shape}')
             logger.debug(
-                f"Raw image size: {tqdm.format_sizeof(self._im.size, suffix='B', divisor=1024)}"
+                f'Raw image size: '
+                f'{tqdm.format_sizeof(self._im.size, suffix="B", divisor=1024)}'
             )
             logger.debug(f'Tile shape (bands, rows, cols): {self._tile_shape}')
             logger.debug(
-                f"Raw tile size: {tqdm.format_sizeof(raw_tile_size, suffix='B', divisor=1024)}"
+                f'Raw tile size: '
+                f'{tqdm.format_sizeof(raw_tile_size, suffix="B", divisor=1024)}'
             )
             logger.debug(f'Number of tiles: {num_tiles}')
 
@@ -287,7 +294,9 @@ class Tiler:
             range(0, im_shape[1], self._tile_shape[1]),
             range(0, im_shape[2], self._tile_shape[2]),
         ):
-            tile_stop = np.clip(np.add(tile_start, self._tile_shape), a_min=None, a_max=im_shape)
+            tile_stop = np.clip(
+                np.add(tile_start, self._tile_shape), a_min=None, a_max=im_shape
+            )
             tile_stop = tile_stop.tolist()
             yield Tile(*tile_start, *tile_stop, image_transform=self._im.transform)
 
@@ -304,7 +313,9 @@ class Tiler:
 
         def get_tile_url() -> str:
             """Return a download URL for the tile."""
-            return self._im._ee_image.slice(tile.band_start, tile.band_stop).getDownloadURL(
+            return self._im._ee_image.slice(
+                tile.band_start, tile.band_stop
+            ).getDownloadURL(
                 dict(
                     crs=self._im.crs,
                     crs_transform=tile.tile_transform,
@@ -316,7 +327,9 @@ class Tiler:
         async def download_url(url: str) -> rio.MemoryFile:
             """Download the GeoTIFF at the given URL into a memory file."""
             mem_file = rio.MemoryFile()
-            async with session.get(url, chunked=True, raise_for_status=False) as response:
+            async with session.get(
+                url, chunked=True, raise_for_status=False
+            ) as response:
                 if not response.ok:
                     # get a more detailed error message if possible
                     try:
@@ -346,10 +359,13 @@ class Tiler:
 
                 # enter memory file context (it must be closed when done)
                 with mem_file:
-                    # limit concurrent tile reads to leave CPU capacity for the event loop
+                    # limit concurrent tile reads to leave CPU capacity for the event
+                    # loop
                     async with self._limit_cpus:
                         logger.debug(f'Reading GeoTIFF buffer for {tile!r}.')
-                        array = await loop.run_in_executor(self._executor, read_gtiff_buf, mem_file)
+                        array = await loop.run_in_executor(
+                            self._executor, read_gtiff_buf, mem_file
+                        )
                 break
 
             except self._retry_exceptions as ex:
@@ -358,23 +374,27 @@ class Tiler:
                     logger.debug(f'Tile download failed for {tile!r}.  Error: {ex!r}.')
                     raise
                 # otherwise retry
-                logger.debug(f'Retry {retry + 1} of {max_retries} for {tile!r}. Error: {ex!r}.')
+                logger.debug(
+                    f'Retry {retry + 1} of {max_retries} for {tile!r}. Error: {ex!r}.'
+                )
                 await asyncio.sleep(backoff_factor * (2**retry))
 
         await loop.run_in_executor(self._executor, func, tile, array)
 
-    def map_tiles(self, func: Callable[[Tile, np.ndarray], None], masked: bool = False) -> None:
+    def map_tiles(
+        self, func: Callable[[Tile, np.ndarray], None], masked: bool = False
+    ) -> None:
         """
         Map a function over downloaded tiles.
 
         :param func:
-            Thread-safe function that is called with :class:`Tile` instance and tile array
-            parameters, for each tile.  The tile array is passed in Rasterio (bands, rows,
-            columns) dimension ordering.
+            Thread-safe function that is called with :class:`Tile` instance and tile
+            array parameters, for each tile.  The tile array is passed in Rasterio
+            (bands, rows, columns) dimension ordering.
         :param masked:
-            Whether to pass the tile array as a :class:`~numpy.ma.MaskedArray` (``True``) or
-            :class:`~numpy.ndarray` (``False``).  If  ``False``, masked pixels are set to the image
-            :attr:`nodata` value.
+            Whether to pass the tile array as a :class:`~numpy.ma.MaskedArray`
+            (``True``) or :class:`~numpy.ndarray` (``False``).  If  ``False``,
+            masked pixels are set to the image :attr:`nodata` value.
         """
         # set up progress bar kwargs
         desc = self._im.index or self._im.id

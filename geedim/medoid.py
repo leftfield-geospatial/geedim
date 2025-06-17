@@ -1,18 +1,16 @@
-"""
-Copyright 2022 Dugal Harris - dugalh@gmail.com
+# Copyright The Geedim Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+# this file except in compliance with the License. You may obtain a copy of the
+# License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software distributed
+# under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+# CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+# language governing permissions and limitations under the License.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-"""
 
 from __future__ import annotations
 
@@ -20,9 +18,8 @@ import ee
 
 from geedim.enums import SpectralDistanceMetric
 
-"""This module contains Medoid related functionality adapted from 'Google Earth Engine tools'
-under MIT license.  See https://github.com/gee-community/gee_tools.
-"""
+# This module contains Medoid related functionality adapted from 'Google Earth
+# Engine tools' under MIT licence.  See https://github.com/gee-community/geetools.
 
 
 def _sum_distance(
@@ -41,27 +38,28 @@ def _sum_distance(
 
     # Notes on masking:
     # - Where ``image`` is masked, the summed distance should be masked.
-    # - Where any other image in ``collection`` is masked, the summed distance should omit its
-    # contribution.
+    # - Where any other image in ``collection`` is masked, the summed distance should
+    # omit its contribution.
 
     # The above requirements are satisfied by leaving images masked, creating an
-    # ee.ImageCollection of distances between ``image`` and other images in the collection (these
-    # distances are masked where either image is masked), and using ImageCollection.sum() to sum
-    # distances, omitting masked areas from the sum. The sum is only masked where all component
-    # distances are masked i.e. where ``image`` is masked.
+    # ee.ImageCollection of distances between ``image`` and other images in the
+    # collection (these distances are masked where either image is masked), and using
+    # ImageCollection.sum() to sum distances, omitting masked areas from the sum. The
+    # sum is only masked where all component distances are masked i.e. where
+    # ``image`` is masked.
 
     def accum_dist_to_image(to_image: ee.Image, dist_list: ee.List) -> ee.Image:
-        """Earth engine iterator function to create a list of spectral distances between
-        ``image`` and ``to_image``.
+        """Earth engine iterator function to create a list of spectral distances
+        between ``image`` and ``to_image``.
         """
         to_image = ee.Image(to_image).select(bands)
 
-        # Find the distance between image and to_image.  Both images are not unmasked so that
-        # distance will be masked where one or both are masked.
+        # Find the distance between image and to_image.  Both images are not unmasked
+        # so that distance will be masked where one or both are masked.
         dist = image.spectralDistance(to_image, metric.value)
         if metric == SpectralDistanceMetric.sed:
-            # sqrt scaling is necessary for summing with other distances and equivalence to
-            # original method
+            # sqrt scaling is necessary for summing with other distances and
+            # equivalence to original method
             dist = dist.sqrt()
 
         # Append distance to list.
@@ -77,17 +75,18 @@ def _medoid_score(
     bands: list | None = None,
     name: str = 'sumdist',
 ) -> ee.ImageCollection:
-    """Add medoid score band (i.e. summed distance to all other images) to all images in
-    ``collection``.
+    """Add medoid score band (i.e. summed distance to all other images) to all images
+    in ``collection``.
     """
 
     def add_score_band(image: ee.Image):
         """Add medoid score band to ``image``."""
         image = ee.Image(image)
 
-        # Compute the sum of the euclidean distance between the current image
-        # and every image in the rest of the collection
-        # TODO: many (~50%) of these distance calcs are duplicates, can we make this more efficient?
+        # Compute the sum of the euclidean distance between the current image and
+        # every image in the rest of the collection
+        # TODO: many (~50%) of these distance calcs are duplicates, can we make this
+        #  more efficient?
         dist = _sum_distance(image, collection, bands=bands)
 
         # multiply by -1 so that highest score is lowest summed distance
@@ -99,7 +98,8 @@ def _medoid_score(
 def medoid(collection: ee.ImageCollection, bands: list | None = None) -> ee.Image:
     """
     Find the medoid composite of an image collection. Adapted from
-    https://www.mdpi.com/2072-4292/5/12/6481, and https://github.com/gee-community/gee_tools.
+    https://www.mdpi.com/2072-4292/5/12/6481, and
+    https://github.com/gee-community/gee_tools.
 
     :param collection:
         Image collection to composite.

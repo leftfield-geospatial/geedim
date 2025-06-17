@@ -1,18 +1,15 @@
-"""
-Copyright 2021 Dugal Harris - dugalh@gmail.com
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-"""
+# Copyright The Geedim Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+# this file except in compliance with the License. You may obtain a copy of the
+# License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software distributed
+# under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+# CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+# language governing permissions and limitations under the License.
 
 from __future__ import annotations
 
@@ -38,21 +35,24 @@ logger = logging.getLogger(__name__)
 T = TypeVar('T')
 
 
-def Initialize(opt_url: str = 'https://earthengine-highvolume.googleapis.com', **kwargs) -> None:
+def Initialize(
+    opt_url: str = 'https://earthengine-highvolume.googleapis.com', **kwargs
+) -> None:
     """
     Initialise Earth Engine.
 
-    Credentials will be read from the `EE_SERVICE_ACC_PRIVATE_KEY` environment variable if it
-    exists (useful for integrating with e.g. GitHub actions).
+    Credentials will be read from the ``EE_SERVICE_ACC_PRIVATE_KEY`` environment
+    variable if it exists (useful for integrating with e.g. GitHub actions).
 
     :param opt_url:
-        The Earth Engine endpoint to use.  Defaults to the high volume endpoint.  See `the Earth
-        Engine docs <https://developers.google.com/earth-engine/guides/processing_environments
-        #endpoints>`_ for more information.
+        The Earth Engine endpoint to use.  Defaults to the high volume endpoint.  See
+        `the Earth Engine docs <https://developers.google.com/earth-engine/guides
+        /processing_environments #endpoints>`__ for more information.
     :param kwargs:
-        Optional arguments to pass to ``ee.Initialize``.
+        Optional arguments to pass to :func:`ee.Initialize`.
     """
-    # Adapted from https://gis.stackexchange.com/questions/380664/how-to-de-authenticate-from-earth-engine-api.
+    # Adapted from https://gis.stackexchange.com/questions/380664/how-to-de
+    # -authenticate-from-earth-engine-api.
     env_key = 'EE_SERVICE_ACC_PRIVATE_KEY'
 
     if env_key in os.environ:
@@ -61,7 +61,9 @@ def Initialize(opt_url: str = 'https://earthengine-highvolume.googleapis.com', *
         credentials = ee.ServiceAccountCredentials(
             key_dict['client_email'], key_data=key_dict['private_key']
         )
-        ee.Initialize(credentials, opt_url=opt_url, project=key_dict['project_id'], **kwargs)
+        ee.Initialize(
+            credentials, opt_url=opt_url, project=key_dict['project_id'], **kwargs
+        )
     else:
         ee.Initialize(opt_url=opt_url, **kwargs)
 
@@ -115,8 +117,9 @@ class Spinner(tqdm):
         :param desc:
             Prefix for the spinner.
         :param leave:
-            Whether to leave the spinner on termination (``True``), clear it (``False``),
-            or replace the spinner character with the ``leave`` value when it is a string.
+            Whether to leave the spinner on termination (``True``), clear it
+            (``False``), or replace the spinner character with the ``leave`` value
+            when it is a string.
         :param file:
             File object to write to (defaults to ``sys.stderr``).
         :param ascii:
@@ -124,8 +127,8 @@ class Spinner(tqdm):
         :param disable:
             Whether to disable spinner display.
         :param position:
-            Line offset to print the spinner.  Automatic if ``None``.  Useful for multiple
-            spinners / tqdm bars.
+            Line offset to print the spinner.  Automatic if ``None``.  Useful for
+            multiple spinners / tqdm bars.
         :param interval:
             Update interval (seconds).
         """
@@ -175,8 +178,8 @@ def asset_id(filename: str, folder: str | None = None):
     """
     Convert a ``filename`` and ``folder`` into an Earth Engine asset ID.
 
-    If ``folder`` is not supplied, ``filename`` is returned as is.  Otherwise ``folder`` is
-    split to create an Earth Engine asset ID as:
+    If ``folder`` is not supplied, ``filename`` is returned as is.  Otherwise
+    ``folder`` is split to create an Earth Engine asset ID as:
 
         projects/<root folder>/assets/<sub folder(s)>/<filename>.
     """
@@ -191,8 +194,8 @@ def register_accessor(name: str, cls: type) -> Callable[[type[T]], type[T]]:
     """
     Decorator function to register a custom accessor on a given class.
 
-    Adapted from https://github.com/pydata/xarray/blob/main/xarray/core/extensions.py, Apache-2.0
-    Licence.
+    Adapted from https://github.com/pydata/xarray/blob/main/xarray/core/extensions
+    .py, under the Apache-2.0 Licence.
 
     :param name:
         Name under which the accessor should be registered.
@@ -209,7 +212,8 @@ def register_accessor(name: str, cls: type) -> Callable[[type[T]], type[T]]:
 
         def __get__(self, obj, cls) -> type[T] | T:
             if obj is None:
-                # return accessor type when the class attribute is accessed e.g. ee.Image.gd
+                # return accessor type when the class attribute is accessed e.g.
+                # ee.Image.gd
                 return self._accessor
 
             # retrieve the cache, creating if it does not yet exist
@@ -228,9 +232,11 @@ def register_accessor(name: str, cls: type) -> Callable[[type[T]], type[T]]:
             try:
                 accessor_obj = self._accessor(obj)
             except AttributeError as ex:
-                # __getattr__ on data object will swallow any AttributeErrors raised when
-                # initializing the accessor, so we need to raise as something else
-                raise RuntimeError(f"Error initializing {self._name!r} accessor.") from ex
+                # __getattr__ on data object will swallow any AttributeErrors raised
+                # when initializing the accessor, so we need to raise as something else
+                raise RuntimeError(
+                    f'Error initializing {self._name!r} accessor.'
+                ) from ex
 
             cache[self._name] = accessor_obj
             return accessor_obj
@@ -238,8 +244,8 @@ def register_accessor(name: str, cls: type) -> Callable[[type[T]], type[T]]:
     def decorator(accessor: type[T]) -> type[T]:
         if hasattr(cls, name):
             warnings.warn(
-                f"Registration of accessor {accessor!r} under name '{name}' for type {cls!r} is"
-                "overriding a preexisting attribute with the same name.",
+                f"Registration of accessor {accessor!r} under name '{name}' for type "
+                f'{cls!r} is overriding a preexisting attribute with the same name.',
                 category=RuntimeWarning,
                 stacklevel=2,
             )
@@ -249,7 +255,9 @@ def register_accessor(name: str, cls: type) -> Callable[[type[T]], type[T]]:
     return decorator
 
 
-def get_tqdm_kwargs(desc: str | None = None, unit: str | None = None, **kwargs) -> dict[str, Any]:
+def get_tqdm_kwargs(
+    desc: str | None = None, unit: str | None = None, **kwargs
+) -> dict[str, Any]:
     """Return a dictionary of kwargs for a tqdm progress bar."""
     tqdm_kwargs: dict[str, Any] = dict(dynamic_ncols=True, leave=None, smoothing=0)
     tqdm_kwargs.update(**kwargs)
@@ -273,8 +281,8 @@ def get_tqdm_kwargs(desc: str | None = None, unit: str | None = None, **kwargs) 
 class AsyncRunner:
     def __init__(self, **kwargs):
         """
-        A singleton that manages the lifecycle of an :mod:`~python.asyncio` event loop and
-        :mod:`aiohttp` client session.
+        A singleton that manages the lifecycle of an :mod:`~python.asyncio` event
+        loop and :mod:`aiohttp` client session.
 
         The :meth:`_close` method is executed on normal python exit.
 
@@ -288,7 +296,8 @@ class AsyncRunner:
         atexit.register(self._close)
 
     def __del__(self, _warnings: Any = warnings):
-        # _warnings kwarg keeps the warnings module available until after AsyncRunner() is deleted
+        # _warnings kwarg keeps the warnings module available until after
+        # AsyncRunner() is deleted
         if not self._closed:
             _warnings.warn(
                 f'{type(self).__name__} was never closed: {self!r}.',
@@ -332,19 +341,21 @@ class AsyncRunner:
         """Embedded client session."""
 
         async def create_session():
-            timeout = aiohttp.ClientTimeout(total=300, sock_connect=30, ceil_threshold=5)
+            timeout = aiohttp.ClientTimeout(
+                total=300, sock_connect=30, ceil_threshold=5
+            )
             return aiohttp.ClientSession(raise_for_status=True, timeout=timeout)
 
-        # a client session is bound to an event loop, so a persistent session requires a
-        # persistent event loop
+        # a client session is bound to an event loop, so a persistent session
+        # requires a persistent event loop
         self._session = self._session or self.run(create_session())
         return self._session
 
     def run(self, coro: Coroutine[Any, Any, T], **kwargs) -> T:
         """Run a coroutine in the embedded event loop.
 
-        Uses a separate thread if an event loop is already running in the current thread (e.g. the
-        main thread is a jupyter notebook).
+        Uses a separate thread if an event loop is already running in the current
+        thread (e.g. the main thread is a jupyter notebook).
 
         :param coro:
             Coroutine to run.
@@ -354,26 +365,29 @@ class AsyncRunner:
         :return:
             Coroutine result.
         """
-        # Runner.run() cannot be called from a thread with an existing event loop, so test if
-        # there is a loop running in this thread (see https://stackoverflow.com/a/75341431)
+        # Runner.run() cannot be called from a thread with an existing event loop,
+        # so test if there is a loop running in this thread (see
+        # https://stackoverflow.com/a/75341431)
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             loop = None
 
         if loop and loop.is_running():
-            # run in a separate thread if there is an existing loop (e.g. we are in a jupyter
-            # notebook)
+            # run in a separate thread if there is an existing loop (e.g. we are in a
+            # jupyter notebook)
             self._executor = self._executor or ThreadPoolExecutor(max_workers=1)
-            return self._executor.submit(lambda: self._runner.run(coro, **kwargs)).result()
+            return self._executor.submit(
+                lambda: self._runner.run(coro, **kwargs)
+            ).result()
         else:
             # run in this thread if there is no existing loop
             return self._runner.run(coro, **kwargs)
 
 
 class TqdmLoggingHandler(logging.StreamHandler):
-    """Logging handler that logs to ``tqdm.write()``.  Prevents logs interacting with any tqdm
-    progress bars.
+    """Logging handler that logs to ``tqdm.write()``.  Prevents logs interacting with
+    any tqdm progress bars.
 
     Adapted from https://github.com/tqdm/tqdm/blob/master/tqdm/contrib/logging.py.
     """

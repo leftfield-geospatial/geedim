@@ -1,18 +1,16 @@
-"""
-Copyright 2021 Dugal Harris - dugalh@gmail.com
+# Copyright The Geedim Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+# this file except in compliance with the License. You may obtain a copy of the
+# License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software distributed
+# under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+# CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+# language governing permissions and limitations under the License.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-   http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-"""
 
 from __future__ import annotations
 
@@ -44,7 +42,8 @@ class STACClient:
         if not len(parts) > 1:
             return None
 
-        # URL dictionary keys to traverse to get to the dictionary containing the URL for ee_id
+        # URL dictionary keys to traverse to get to the dictionary containing the URL
+        # for ee_id
         titles = ['ROOT', parts[0]]
 
         # traverse the URL dictionary
@@ -52,9 +51,12 @@ class STACClient:
         for title in titles:
             if title not in url_dict:
                 return None
-            # populate the URL dictionary at this level if it has not been populated already
+            # populate the URL dictionary at this level if it has not been populated
+            # already
             if isinstance(url_dict[title], str):
-                logger.debug(f"Requesting STAC catalog for '{title}' from '{url_dict[title]}'.")
+                logger.debug(
+                    f"Requesting STAC catalog for '{title}' from '{url_dict[title]}'."
+                )
                 async with session.get(url_dict[title]) as response:
                     catalog = await response.json(content_type='text/plain')
                 url_dict[title] = {
@@ -64,8 +66,8 @@ class STACClient:
                 }
             url_dict = url_dict[title]
 
-        # get the URL for ee_id (for ee_id if it has an entry, or for its parent collection
-        # otherwise)
+        # get the URL for ee_id (for ee_id if it has an entry, or for its parent
+        # collection otherwise)
         id_title = '_'.join(parts)
         parent_title = '_'.join(parts[:-1])
         if id_title in url_dict:
@@ -76,7 +78,9 @@ class STACClient:
             return None
 
         # get and cache the STAC dictionary for ee_id
-        logger.debug(f"Requesting STAC collection for '{title}' from '{url_dict[title]}'.")
+        logger.debug(
+            f"Requesting STAC collection for '{title}' from '{url_dict[title]}'."
+        )
         async with session.get(url_dict[title]) as response:
             self._cache[ee_id] = await response.json(content_type='text/plain')
         return self._cache[ee_id]

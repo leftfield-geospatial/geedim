@@ -1,18 +1,15 @@
-"""
-Copyright 2021 Dugal Harris - dugalh@gmail.com
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-"""
+# Copyright The Geedim Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+# this file except in compliance with the License. You may obtain a copy of the
+# License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software distributed
+# under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+# CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+# language governing permissions and limitations under the License.
 
 from __future__ import annotations
 
@@ -34,8 +31,8 @@ logger = logging.getLogger(__name__)
 class BaseImage(ImageAccessor):
     def __init__(self, ee_image: ee.Image):
         warnings.warn(
-            f"'{self.__class__.__name__}' is deprecated and will be removed in a future release. "
-            f"Please use the 'gd' accessor on 'ee.Image' instead.",
+            f"'{self.__class__.__name__}' is deprecated and will be removed in a "
+            f"future release.  Please use the 'gd' accessor on 'ee.Image' instead.",
             category=FutureWarning,
             stacklevel=2,
         )
@@ -82,7 +79,9 @@ class BaseImage(ImageAccessor):
 
     @property
     def footprint(self) -> dict | None:
-        """GeoJSON geometry of the image extent.  ``None`` if the image has no fixed projection."""
+        """GeoJSON geometry of the image extent.  ``None`` if the image has no fixed
+        projection.
+        """
         return self.geometry
 
     @property
@@ -124,21 +123,23 @@ class BaseImage(ImageAccessor):
         Export the image to Google Drive, Earth Engine asset or Google Cloud Storage.
 
         :param filename:
-            Destination file or asset name.  Also used to form the task name.
+            Destination file or asset name (excluding extension).  Also used to form
+            the task name.
         :param type:
             Export type.
         :param folder:
-            Google Drive folder (when ``type`` is :attr:`~geedim.enums.ExportType.drive`),
-            Earth Engine asset project (when ``type`` is :attr:`~geedim.enums.ExportType.asset`),
-            or Google Cloud Storage bucket (when ``type`` is
-            :attr:`~geedim.enums.ExportType.cloud`). If ``type`` is
-            :attr:`~geedim.enums.ExportType.asset` and ``folder`` is not supplied, ``filename``
-            should be a valid Earth Engine asset ID. If ``type`` is
-            :attr:`~geedim.enums.ExportType.cloud` then ``folder`` is required.
+            Google Drive folder (when ``type`` is
+            :attr:`~geedim.enums.ExportType.drive`), Earth Engine asset project (when
+            ``type`` is :attr:`~geedim.enums.ExportType.asset`), or Google Cloud
+            Storage bucket (when ``type`` is :attr:`~geedim.enums.ExportType.cloud`).
+             Can include sub-folders.  If ``type`` is
+             :attr:`~geedim.enums.ExportType.asset` and ``folder`` is not supplied,
+             ``filename`` should be a valid Earth Engine asset ID. If ``type`` is
+             :attr:`~geedim.enums.ExportType.cloud` then ``folder`` is required.
         :param wait:
             Whether to wait for the export to complete before returning.
         :param export_kwargs:
-            Arguments to :meth:`ImageAccessor.prepareForExport`.
+            Arguments to :meth:`geedim.image.ImageAccessor.prepareForExport`.
 
         :return:
             Export task, started if ``wait`` is False, or completed if ``wait`` is True.
@@ -163,51 +164,56 @@ class BaseImage(ImageAccessor):
         """
         Download the image to a GeoTIFF file.
 
-        The image is retrieved as separate tiles which are downloaded and decompressed
-        concurrently.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and
-        ``max_tile_bands``, and download / decompress concurrency with ``max_requests`` and
-        ``max_cpus``.
+        The image is retrieved as separate tiles which are downloaded and
+        decompressed concurrently.  Tile size can be controlled with
+        ``max_tile_size``, ``max_tile_dim`` and ``max_tile_bands``, and download /
+        decompress concurrency with ``max_requests`` and ``max_cpus``.
 
         :param filename:
-            Destination file.  Can be a path or URI string, or an :class:`~fsspec.core.OpenFile`
-            object in binary mode (``'wb'``).
+            Destination file.  Can be a path or URI string, or an
+            :class:`~fsspec.core.OpenFile` object in binary mode (``'wb'``).
         :param overwrite:
             Whether to overwrite the destination file if it exists.
         :param num_threads:
-            Deprecated and has no effect. ``max_requests`` and ``max_cpus`` can be used to
-            limit concurrency.
+            Deprecated and has no effect. ``max_requests`` and ``max_cpus`` can be
+            used to limit concurrency.
         :param nodata:
-            How to set the GeoTIFF nodata tag.  If ``True`` (the default), the nodata tag is set
-            to :attr:`nodata` (the :attr:`dtype` dependent value provided by Earth Engine).
-            Otherwise, if ``False``, the nodata tag is not set.  An integer or floating point
-            value can also be provided, in which case the nodata tag is set to this value.
-            Usually, a custom value would be supplied when the image has been unmasked with
-            ``ee.Image.unmask(nodata)``.
+            How to set the GeoTIFF nodata tag.  If ``True`` (the default), the nodata
+            tag is set to :attr:`nodata` (the :attr:`dtype` dependent value provided
+            by Earth Engine). Otherwise, if ``False``, the nodata tag is not set.  An
+            integer or floating point value can also be provided, in which case the
+            nodata tag is set to this value. Usually, a custom value would be
+            supplied when the image has been unmasked with ``ee.Image.unmask(nodata)``.
         :param driver:
             File format driver.
         :param max_tile_size:
             Maximum tile size (MB).  Should be less than the `Earth Engine size limit
-            <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (32 MB).
+            <https://developers.google.com/earth-engine/apidocs/ee-image
+            -getdownloadurl>`__ (32 MB).
         :param max_tile_dim:
-            Maximum tile width / height (pixels).  Should be less than the `Earth Engine limit
-            <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`__ (10000).
+            Maximum tile width / height (pixels).  Should be less than the `Earth
+            Engine limit <https://developers.google.com/earth-engine/apidocs/ee-image
+            -getdownloadurl>`__ (10000).
         :param max_tile_bands:
-            Maximum number of tile bands.  Should be less than the Earth Engine limit (1024).
+            Maximum number of tile bands.  Should be less than the Earth Engine limit
+            (1024).
         :param max_requests:
-            Maximum number of concurrent tile downloads.  Should be less than the `max concurrent
-            requests quota <https://developers.google.com/earth-engine/guides/usage
+            Maximum number of concurrent tile downloads.  Should be less than the
+            `max concurrent requests quota
+            <https://developers.google.com/earth-engine/guides/usage
             #adjustable_quota_limits>`__.
         :param max_cpus:
-            Maximum number of tiles to decompress concurrently.  Defaults to one less than the
-            number of CPUs, or one, whichever is greater.  Values larger than the default can
-            stall the asynchronous event loop and are not recommended.
+            Maximum number of tiles to decompress concurrently.  Defaults to one less
+            than the number of CPUs, or one, whichever is greater.  Values larger
+            than the default can stall the asynchronous event loop and are not
+            recommended.
         :param export_kwargs:
-            Arguments to :meth:`ImageAccessor.prepareForExport`.
+            Arguments to :meth:`geedim.image.ImageAccessor.prepareForExport`.
         """
         if num_threads is not None:
             warnings.warn(
-                "'num_threads' is deprecated and has no effect.  'max_requests' and 'max_cpus' "
-                "can be used to limit concurrency.",
+                "'num_threads' is deprecated and has no effect.  'max_requests' and "
+                "'max_cpus' can be used to limit concurrency.",
                 category=FutureWarning,
                 stacklevel=2,
             )

@@ -55,12 +55,12 @@ version = {attr = 'geedim.version.__version__'}
 geedim = ['py.typed']
 
 [tool.black]
-line-length = 100
+line-length = 88
 skip-string-normalization = true
 
 [tool.ruff]
-line-length = 100
-format = { quote-style = 'preserve' }
+line-length = 88
+format = { quote-style = 'single' }
 
 [tool.ruff.lint]
 select = [
