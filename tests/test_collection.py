@@ -1,24 +1,22 @@
-"""
-Copyright 2021 Dugal Harris - dugalh@gmail.com
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-   http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-"""
+# Copyright The Geedim Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+# this file except in compliance with the License. You may obtain a copy of the
+# License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software distributed
+# under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+# CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+# language governing permissions and limitations under the License.
 
 from __future__ import annotations
 
 import itertools
 import json
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 
 import ee
@@ -29,7 +27,11 @@ from pandas import to_datetime
 from rasterio.enums import Compression
 
 from geedim import ExportType, schema
-from geedim.collection import ImageCollectionAccessor, MaskedCollection, _compatible_collections
+from geedim.collection import (
+    ImageCollectionAccessor,
+    MaskedCollection,
+    _compatible_collections,
+)
 from geedim.download import BaseImage
 from geedim.enums import CompositeMethod, ResamplingMethod, SplitType
 from geedim.image import ImageAccessor, _nodata_vals
@@ -131,11 +133,15 @@ def test_from_images(s2_sr_hm_image_ids: list[str]):
     coll = ImageCollectionAccessor.fromImages(s2_sr_hm_image_ids)
     info = coll.getInfo()
     assert info['id'] == 'COPERNICUS/S2_SR_HARMONIZED'
-    assert set([im_props['id'] for im_props in info['features']]) == set(s2_sr_hm_image_ids)
+    assert set([im_props['id'] for im_props in info['features']]) == set(
+        s2_sr_hm_image_ids
+    )
 
 
 def test_from_images_error(l7_sr_image_id: str, l8_sr_image_id: str):
-    """Test ImageCollectionAccessor.fromImages() raises an error with incompatible images."""
+    """Test ImageCollectionAccessor.fromImages() raises an error with incompatible
+    images.
+    """
     with pytest.raises(ValueError, match='spectrally compatible'):
         ImageCollectionAccessor.fromImages([l7_sr_image_id, l8_sr_image_id])
 
@@ -160,12 +166,16 @@ def test_portion_scale(stac: dict, exp_val: float, monkeypatch: pytest.MonkeyPat
 
 
 @pytest.mark.parametrize(
-    'coll, exp_support', [('s2_sr_hm_coll', True), ('l9_sr_coll', True), ('modis_nbar_coll', False)]
+    'coll, exp_support',
+    [('s2_sr_hm_coll', True), ('l9_sr_coll', True), ('modis_nbar_coll', False)],
 )
 def test_properties(coll: str, exp_support: bool, request: pytest.FixtureRequest):
     """Test properties that don't have their own specific tests."""
     coll: ImageCollectionAccessor = request.getfixturevalue(coll)
-    props = {ip['properties']['system:index']: ip['properties'] for ip in coll.info['features']}
+    props = {
+        ip['properties']['system:index']: ip['properties']
+        for ip in coll.info['features']
+    }
 
     # EE info dependent properties
     assert coll.id == coll.info['id']
@@ -184,9 +194,13 @@ def test_properties(coll: str, exp_support: bool, request: pytest.FixtureRequest
     assert coll.cloudShadowSupport == exp_support
 
 
-@pytest.mark.parametrize('coll_id', ['COPERNICUS/S2_SR_HARMONIZED', 'LANDSAT/LC09/C02/T1_L2', None])
+@pytest.mark.parametrize(
+    'coll_id', ['COPERNICUS/S2_SR_HARMONIZED', 'LANDSAT/LC09/C02/T1_L2', None]
+)
 def test_schema_property_names_default(coll_id: str):
-    """Test the schemaPropertyNames and schema property defaults for different collections."""
+    """Test the schemaPropertyNames and schema property defaults for different
+    collections.
+    """
     # patch collection ID to avoid getInfo()
     coll = ImageCollectionAccessor(None)
     coll.id = coll_id
@@ -207,7 +221,11 @@ def test_schema_property_names_set():
     coll.id = 'COPERNICUS/S2_SR_HARMONIZED'
 
     # set schemaPropertyNames
-    schema_prop_names = ('CLOUDLESS_PORTION', 'CLOUD_COVERAGE_ASSESSMENT', 'unknownPropertyName')
+    schema_prop_names = (
+        'CLOUDLESS_PORTION',
+        'CLOUD_COVERAGE_ASSESSMENT',
+        'unknownPropertyName',
+    )
     coll.schemaPropertyNames = schema_prop_names
     assert coll.schemaPropertyNames == schema_prop_names
 
@@ -230,8 +248,8 @@ def test_schema_property_names_set():
 
 
 def test_schema_set_error():
-    """Test setting the schemaPropertyNames property with a value that is not an iterable of strings
-    raises an error.
+    """Test setting the schemaPropertyNames property with a value that is not an
+    iterable of strings raises an error.
     """
     # patch collection ID to avoid getInfo()
     coll = ImageCollectionAccessor(None)
@@ -266,10 +284,10 @@ def test_properties_table():
         '1': {'system:index': '1', 'system:time_start': 0, 'propName': 'value'},
         '2': {'system:index': '2', 'system:time_start': 1e9, 'propName': 1.23},
         '3': {'system:index': '3', 'system:time_start': 1e9, 'propName': None},
-        '4': {'system:index': '4', 'system:time_start': 2e9, 'anotherPropName': 'value'},
+        '4': {'system:index': '4', 'system:time_start': 2e9, 'otherPropName': 'value'},
     }
-    # mock a schema with properties that exist in all images, properties that exist in some
-    # images, and properties that exist in none
+    # mock a schema with properties that exist in all images, properties that exist
+    # in some images, and properties that exist in none
     coll.schemaPropertyNames = [
         'system:index',
         'system:time_start',
@@ -312,52 +330,57 @@ def test_properties_table():
 
 def test_filter(region_10000ha: dict):
     """Test filter() with different parameters."""
-    # get image properties for testing filter parameters (note that an ee.List or ee.Dictionary
-    # containing nested image collections doesn't return collection image info on getInfo(), so
-    # image properties are retrieved by other means):
+    # get image properties for testing filter parameters (note that an ee.List or
+    # ee.Dictionary containing nested image collections doesn't return collection
+    # image info on getInfo(), so image properties are retrieved by other means):
     # start_date, end_date & region
     coll = ImageCollectionAccessor(ee.ImageCollection('LANDSAT/LC09/C02/T1_L2'))
     props = {}
-    ref_kwargs = dict(start_date='2023-01-01', end_date='2024-01-01', region=region_10000ha)
-    filt_coll = coll.filter(**ref_kwargs)
+    ref_kwargs = dict(
+        start_date='2023-01-01', end_date='2024-01-01', region=region_10000ha
+    )
+    ref_filter = partial(coll.filter, **ref_kwargs)
+    filt_coll = ref_filter()
     props['date_region'] = dict(
         time_start=filt_coll.aggregate_array('system:time_start'),
         intersections=filt_coll.iterate(
-            lambda im, inters: ee.List(inters).add(im.geometry().intersects(region_10000ha)),
+            lambda im, inters: ee.List(inters).add(
+                im.geometry().intersects(region_10000ha)
+            ),
             ee.List([]),
         ),
     )
 
     # start_date without end_date
-    filt_coll = coll.filter(start_date=filt_coll.first().date().advance(-0.001, 'second'))
+    filt_coll = coll.filter(
+        start_date=filt_coll.first().date().advance(-0.001, 'second')
+    )
     props['start_date'] = filt_coll.aggregate_array('system:time_start')
 
     # fill_portion
     fill_portion = 99.95
-    filt_coll = coll.filter(**ref_kwargs, fill_portion=fill_portion)
     props['fill_portion'] = [
-        coll.filter(**ref_kwargs, fill_portion=fp).aggregate_array('FILL_PORTION')
+        ref_filter(fill_portion=fp).aggregate_array('FILL_PORTION')
         for fp in [0, fill_portion]
     ]
 
     # cloudless_portion
     cloudless_portion = 90
-    filt_coll = coll.filter(**ref_kwargs, cloudless_portion=cloudless_portion)
     props['cloudless_portion'] = [
-        coll.filter(**ref_kwargs, cloudless_portion=cp).aggregate_array('CLOUDLESS_PORTION')
+        ref_filter(cloudless_portion=cp).aggregate_array('CLOUDLESS_PORTION')
         for cp in [0, cloudless_portion]
     ]
 
     # custom_filter (without FILL_PORTION or CLOUDLESS_PORTION)
     cloud_cover = 50
     props['custom_filter_nop'] = [
-        coll.filter(**ref_kwargs, custom_filter=f'CLOUD_COVER<={cc}').aggregate_array('CLOUD_COVER')
+        ref_filter(custom_filter=f'CLOUD_COVER<={cc}').aggregate_array('CLOUD_COVER')
         for cc in [100, cloud_cover]
     ]
 
     # custom_filter (with FILL_PORTION or CLOUDLESS_PORTION)
     props['custom_filter_p'] = [
-        coll.filter(**ref_kwargs, custom_filter=f'CLOUDLESS_PORTION<{cp}').aggregate_array(
+        ref_filter(custom_filter=f'CLOUDLESS_PORTION<{cp}').aggregate_array(
             'CLOUDLESS_PORTION'
         )
         for cp in [100, cloudless_portion]
@@ -365,9 +388,7 @@ def test_filter(region_10000ha: dict):
 
     # cloud / shadow kwargs
     props['cs_kwargs'] = [
-        coll.filter(**ref_kwargs, fill_portion=0, mask_shadows=ms).aggregate_array(
-            'CLOUDLESS_PORTION'
-        )
+        ref_filter(fill_portion=0, mask_shadows=ms).aggregate_array('CLOUDLESS_PORTION')
         for ms in [False, True]
     ]
 
@@ -381,7 +402,8 @@ def test_filter(region_10000ha: dict):
     assert all(sorted(ref_dates) == ref_dates)
     assert all(props['date_region']['intersections'])
 
-    # test start_date without end_date (end_date should default to a millisecond after start_date)
+    # test start_date without end_date (end_date should default to a millisecond
+    # after start_date)
     assert len(props['start_date']) == 0
 
     # test fill_portion
@@ -400,13 +422,16 @@ def test_filter(region_10000ha: dict):
     assert any(cp >= cloudless_portion for cp in props['custom_filter_p'][0])
     assert all(cp < cloudless_portion for cp in props['custom_filter_p'][1])
 
-    # cloud / shadow kwargs (changing mask_shadows from False to True reduces the cloudless_portion)
-    assert any(cp_nms > cp_ms for cp_nms, cp_ms in zip(*props['cs_kwargs'], strict=True))
+    # cloud / shadow kwargs (changing mask_shadows from False to True reduces the
+    # cloudless_portion)
+    assert any(
+        cp_nms > cp_ms for cp_nms, cp_ms in zip(*props['cs_kwargs'], strict=True)
+    )
 
 
 def test_filter_error(l9_sr_coll: ImageCollectionAccessor, region_10000ha: dict):
-    """Test filter() raises an error when fill_portion or cloudless_portion are supplied without
-    region.
+    """Test filter() raises an error when fill_portion or cloudless_portion are supplied
+    without region.
     """
     with pytest.raises(ValueError, match="'region' is required"):
         l9_sr_coll.filter(start_date='2023-07-01', fill_portion=50)
@@ -415,9 +440,13 @@ def test_filter_error(l9_sr_coll: ImageCollectionAccessor, region_10000ha: dict)
 
 
 def test_prepare_for_composite_date_region(
-    l9_sr_coll: ImageCollectionAccessor, gedi_cth_coll: ImageCollectionAccessor, region_100ha: dict
+    l9_sr_coll: ImageCollectionAccessor,
+    gedi_cth_coll: ImageCollectionAccessor,
+    region_100ha: dict,
 ):
-    """Test sorting of the _prepare_for_composite() collection with date and region parameters."""
+    """Test sorting of the _prepare_for_composite() collection with date and region
+    parameters.
+    """
 
     def set_mask_portions(image: ee.Image, mi: _MaskedImage) -> ee.Image:
         """Set FILL_PORTION and CLOUDLESS_PORTION image properties."""
@@ -430,7 +459,8 @@ def test_prepare_for_composite_date_region(
     date = '2022-12-05'
     comp_coll = l9_sr_coll._prepare_for_composite('q-mosaic', date=date)
     infos['date'] = [
-        coll.aggregate_array('system:time_start') for coll in [l9_sr_coll._ee_coll, comp_coll]
+        coll.aggregate_array('system:time_start')
+        for coll in [l9_sr_coll._ee_coll, comp_coll]
     ]
 
     # region with cloud/shadow supported collection:
@@ -439,11 +469,14 @@ def test_prepare_for_composite_date_region(
     src_coll.id = l9_sr_coll.id  # patch id to avoid getInfo()
     comp_coll = src_coll._prepare_for_composite('q-mosaic', region=region_100ha)
     infos['region_cp'] = [
-        coll.aggregate_array('CLOUDLESS_PORTION') for coll in [src_coll._ee_coll, comp_coll]
+        coll.aggregate_array('CLOUDLESS_PORTION')
+        for coll in [src_coll._ee_coll, comp_coll]
     ]
 
     # region with non-cloud/shadow supported collection:
-    src_coll = gedi_cth_coll._ee_coll.map(lambda im: set_mask_portions(im, gedi_cth_coll._mi))
+    src_coll = gedi_cth_coll._ee_coll.map(
+        lambda im: set_mask_portions(im, gedi_cth_coll._mi)
+    )
     src_coll = ImageCollectionAccessor(src_coll)
     src_coll.id = gedi_cth_coll.id  # patch id to avoid getInfo()
     comp_coll = src_coll._prepare_for_composite('mosaic', region=region_100ha)
@@ -458,9 +491,8 @@ def test_prepare_for_composite_date_region(
     assert infos['date'][1] != infos['date'][0]
     date = to_datetime(date)
     date_dist = [abs(date - d) for d in to_datetime(infos['date'][1], unit='ms')]
-    sorted_dates = [
-        d for _, d in sorted(zip(date_dist, infos['date'][1], strict=True), reverse=True)
-    ]
+    sorted_dates = sorted(zip(date_dist, infos['date'][1], strict=True), reverse=True)
+    sorted_dates = [d for _, d in sorted_dates]
     assert infos['date'][1] == sorted_dates
 
     # test region with cloud/shadow supported collection:
@@ -472,12 +504,16 @@ def test_prepare_for_composite_date_region(
     assert sorted(infos['region_fp'][1]) == infos['region_fp'][1]
 
 
-def test_prepare_for_composite_errors(gedi_cth_coll: ImageCollectionAccessor, region_100ha: dict):
+def test_prepare_for_composite_errors(
+    gedi_cth_coll: ImageCollectionAccessor, region_100ha: dict
+):
     """Test _prepare_for_composite() error and warning conditions."""
     with pytest.raises(ValueError, match='cloud / shadow masking support'):
         gedi_cth_coll._prepare_for_composite('q-mosaic')
     with pytest.raises(ValueError, match="'date' or 'region'"):
-        gedi_cth_coll._prepare_for_composite('mosaic', date='2020-01-01', region=region_100ha)
+        gedi_cth_coll._prepare_for_composite(
+            'mosaic', date='2020-01-01', region=region_100ha
+        )
 
     with pytest.warns(UserWarning, match="'date' is valid"):
         gedi_cth_coll._prepare_for_composite('mean', date='2020-01-01')
@@ -491,32 +527,37 @@ def test_composite_params(l9_sr_coll: ImageCollectionAccessor, region_100ha: dic
     def get_refl_stat(image: ee.Image, stat: str = 'mean') -> ee.Number:
         """Return the mean of stat over the reflectance bands."""
         image = image.select('SR_B.*')
-        return image.reduceRegion(stat, geometry=region_100ha, scale=30).values().reduce('mean')
+        return (
+            image.reduceRegion(stat, geometry=region_100ha, scale=30)
+            .values()
+            .reduce('mean')
+        )
 
     # create stats for testing each parameter
     infos = {}
     infos['method'] = [
-        get_refl_stat(l9_sr_coll.composite(method), stat='mean') for method in CompositeMethod
+        get_refl_stat(l9_sr_coll.composite(m), stat='mean') for m in CompositeMethod
     ]
     infos['mask'] = [
-        get_refl_stat(l9_sr_coll.composite(mask=mask).mask(), stat='sum') for mask in [False, True]
+        get_refl_stat(l9_sr_coll.composite(mask=m).mask(), stat='sum')
+        for m in [False, True]
     ]
     infos['resampling'] = {
-        resampling.value: get_refl_stat(l9_sr_coll.composite(resampling=resampling), stat='stdDev')
-        for resampling in ResamplingMethod
+        r.value: get_refl_stat(l9_sr_coll.composite(resampling=r), stat='stdDev')
+        for r in ResamplingMethod
     }
     infos['date'] = [
-        get_refl_stat(l9_sr_coll.composite('mosaic', date=date), stat='mean')
-        for date in [None, '2022-12-05']
+        get_refl_stat(l9_sr_coll.composite('mosaic', date=d), stat='mean')
+        for d in [None, '2022-12-05']
     ]
     infos['region'] = [
-        get_refl_stat(l9_sr_coll.composite('mosaic', region=region), stat='mean')
-        for region in [None, region_100ha]
+        get_refl_stat(l9_sr_coll.composite('mosaic', region=r), stat='mean')
+        for r in [None, region_100ha]
     ]
     # cloud / shadow kwargs
     infos['cs_kwargs'] = [
-        get_refl_stat(l9_sr_coll.composite(mask_shadows=mask_shadows).mask(), stat='sum')
-        for mask_shadows in [False, True]
+        get_refl_stat(l9_sr_coll.composite(mask_shadows=ms).mask(), stat='sum')
+        for ms in [False, True]
     ]
 
     # combine getInfo() calls into one
@@ -527,7 +568,9 @@ def test_composite_params(l9_sr_coll: ImageCollectionAccessor, region_100ha: dic
     # test mask=True reduces the mask=False masked area
     assert infos['mask'][0] > infos['mask'][1]
     # test each resampling method gives a unique reflectance std dev
-    assert len(infos['resampling'].values()) == len(set(infos['resampling'].values())) > 0
+    assert (
+        len(infos['resampling'].values()) == len(set(infos['resampling'].values())) > 0
+    )
     # test nearest resampling gives a larger std dev than the other methods
     assert all(
         infos['resampling']['near'] > infos['resampling'][k]
@@ -552,7 +595,9 @@ def test_composite_properties(l9_sr_coll: ImageCollectionAccessor):
     exp_index = f'{method.upper()}-COMP'
     assert info['properties']['system:index'] == exp_index
     assert info['id'] == l9_sr_coll.id + '/' + exp_index
-    coll_time_starts = [prop['system:time_start'] for prop in l9_sr_coll.properties.values()]
+    coll_time_starts = [
+        prop['system:time_start'] for prop in l9_sr_coll.properties.values()
+    ]
     assert info['properties']['system:time_start'] == min(coll_time_starts)
     assert info['properties']['system:time_end'] == max(coll_time_starts)
 
@@ -564,24 +609,32 @@ def test_composite_properties(l9_sr_coll: ImageCollectionAccessor):
 
 def test_add_mask_bands(l9_sr_coll: ImageCollectionAccessor):
     """Test addMaskBands()."""
-    # This just tests bands exist and kwargs were passed. Detailed mask testing is done in
-    # test_mask.py.
+    # This just tests bands exist and kwargs were passed. Detailed mask testing is
+    # done in test_mask.py.
     cs_coll = l9_sr_coll.addMaskBands(mask_shadows=False)
     info = cs_coll.getInfo()
     assert len(info['features']) == len(l9_sr_coll.properties)
     for im_info in info['features']:
         band_names = [bi['id'] for bi in im_info['bands']]
-        assert all(bn in band_names for bn in ['CLOUDLESS_MASK', 'CLOUD_DIST', 'FILL_MASK'])
+        assert all(
+            bn in band_names for bn in ['CLOUDLESS_MASK', 'CLOUD_DIST', 'FILL_MASK']
+        )
         assert 'SHADOW_MASK' not in band_names
 
 
 def test_mask_clouds(l9_sr_coll: ImageCollectionAccessor, region_100ha: dict):
     """Test maskClouds()."""
-    # This just tests the masked area increases. Detailed mask testing is done in test_mask.py.
+    # This just tests the masked area increases. Detailed mask testing is done in
+    # test_mask.py.
 
     def aggregate_mask_sum(image: ee.Image, sums: ee.List) -> ee.List:
         """Add the sum of the image masks to the sums list."""
-        sum_ = image.mask().reduceRegion('sum', geometry=region_100ha).values().reduce('mean')
+        sum_ = (
+            image.mask()
+            .reduceRegion('sum', geometry=region_100ha)
+            .values()
+            .reduce('mean')
+        )
         return ee.List(sums).add(sum_)
 
     # find & compare image mask sums before and after masking
@@ -619,7 +672,9 @@ def test_medoid(l9_sr_coll: ImageCollectionAccessor, region_100ha: dict):
     assert all(diffs[1][bn] != 0 for bn in l9_sr_coll.specBands)
 
 
-@pytest.mark.parametrize('features', [([{'bands': [_s2_b1_info, dict(_s2_b1_info, id='B2')]}] * 2)])
+@pytest.mark.parametrize(
+    'features', [([{'bands': [_s2_b1_info, dict(_s2_b1_info, id='B2')]}] * 2)]
+)
 def test_raise_image_consistency(features: list):
     """Test _raise_image_consistency() with a consistent collection."""
     coll = ImageCollectionAccessor(None)
@@ -633,7 +688,10 @@ def test_raise_image_consistency(features: list):
     [
         # inconsistent number of bands
         (
-            [{'bands': [_s2_b1_info, dict(_s2_b1_info, id='B2')]}, {'bands': [_s2_b1_info]}],
+            [
+                {'bands': [_s2_b1_info, dict(_s2_b1_info, id='B2')]},
+                {'bands': [_s2_b1_info]},
+            ],
             'number of bands or band names',
         ),
         # inconsistent band names
@@ -696,7 +754,9 @@ def test_raise_image_consistency_error(features: list, match: str):
 
 
 def test_prepare_for_export(
-    s2_sr_hm_coll: ImageCollectionAccessor, s2_sr_hm_image: ImageAccessor, region_100ha: dict
+    s2_sr_hm_coll: ImageCollectionAccessor,
+    s2_sr_hm_image: ImageAccessor,
+    region_100ha: dict,
 ):
     """Test prepareForExport()."""
     # adapted from test_image.test_prepare_for_export()
@@ -704,16 +764,29 @@ def test_prepare_for_export(
     prep_kwargs_list = [
         dict(crs=crs, region=region_100ha, scale=60),
         dict(crs=crs, region=region_100ha, shape=(300, 400)),
-        dict(crs=crs, crs_transform=(60.0, 0.0, 500000.0, 0.0, -30.0, 6400000.0), shape=(600, 400)),
+        dict(
+            crs=crs,
+            crs_transform=(60.0, 0.0, 500000.0, 0.0, -30.0, 6400000.0),
+            shape=(600, 400),
+        ),
         dict(region=region_100ha),
-        dict(crs=crs, region=region_100ha, scale=60, dtype='int16', bands=['B4', 'B3', 'B2']),
+        dict(
+            crs=crs,
+            region=region_100ha,
+            scale=60,
+            dtype='int16',
+            bands=['B4', 'B3', 'B2'],
+        ),
         # maintain pixel grid
         dict(crs=s2_sr_hm_image.crs, region=region_100ha),
         dict(region=region_100ha, scale=s2_sr_hm_image.scale),
         dict(region=region_100ha),
         dict(),
     ]
-    prep_colls = [s2_sr_hm_coll.prepareForExport(**prep_kwargs) for prep_kwargs in prep_kwargs_list]
+    prep_colls = [
+        s2_sr_hm_coll.prepareForExport(**prep_kwargs)
+        for prep_kwargs in prep_kwargs_list
+    ]
     prep_colls = accessors_from_collections(prep_colls)
 
     # test prepared collection properties
@@ -731,19 +804,22 @@ def test_prepare_for_export(
         if 'crs_transform' in prep_kwargs:
             assert prep_first.transform == prep_kwargs['crs_transform']
 
-        # region is a special case that is approximate & needs transformation between CRSs
+        # region is a special case that is approximate & needs transformation between
+        # CRSs
         if 'region' in prep_kwargs:
-            region_bounds = transform_bounds(ee.Geometry(prep_kwargs['region']).toGeoJSON(), crs)
+            region_bounds = transform_bounds(
+                ee.Geometry(prep_kwargs['region']).toGeoJSON(), crs
+            )
             image_bounds = transform_bounds(prep_first.geometry, crs)
             assert image_bounds == pytest.approx(region_bounds, abs=60)
 
     # test pixel grid is maintained when arguments allow
-    src_transform = rio.Affine(*s2_sr_hm_image.transform)
+    src_tform = rio.Affine(*s2_sr_hm_image.transform)
     for prep_coll in prep_colls[-4:]:
         prep_first = prep_coll._first
-        prep_transform = rio.Affine(*prep_first.transform)
-        assert (prep_transform[0], prep_transform[4]) == (src_transform[0], src_transform[4])
-        pixel_offset = ~src_transform * (prep_transform[2], prep_transform[5])
+        prep_tform = rio.Affine(*prep_first.transform)
+        assert (prep_tform[0], prep_tform[4]) == (src_tform[0], src_tform[4])
+        pixel_offset = ~src_tform * (prep_tform[2], prep_tform[5])
         assert pixel_offset == (int(pixel_offset[0]), int(pixel_offset[1]))
 
 
@@ -751,8 +827,8 @@ def test_prepare_for_export_scale_offset(
     s2_sr_hm_coll: ImageCollectionAccessor, region_100ha: dict
 ):
     """Test the prepareForExport() scale_offset parameter."""
-    # This just tests the scale_offset parameter was acted on. Detailed scale / offset testing is
-    # done in test_image.test_scale_offset(). (Adapted from
+    # This just tests the scale_offset parameter was acted on. Detailed scale /
+    # offset testing is done in test_image.test_scale_offset(). (Adapted from
     # test_image.test_prepare_for_export_scale_offset())
     prep_colls = [
         s2_sr_hm_coll.prepareForExport(region=region_100ha, scale_offset=scale_offset)
@@ -809,14 +885,20 @@ def test_to_google_cloud(
 ):
     """Test toGoogleCloud()."""
     exp_num_tasks = (
-        len(prepared_coll.properties) if split is SplitType.images else prepared_coll._first.count
+        len(prepared_coll.properties)
+        if split is SplitType.images
+        else prepared_coll._first.count
     )
-    tasks = prepared_coll.toGoogleCloud(type=etype, folder='geedim', wait=False, split=split)
+    tasks = prepared_coll.toGoogleCloud(
+        type=etype, folder='geedim', wait=False, split=split
+    )
     assert len(tasks) == exp_num_tasks
     # test monitorTask is not called with wait=False
     assert capsys.readouterr().err == ''
 
-    tasks = prepared_coll.toGoogleCloud(type=etype, folder='geedim', wait=True, split=split)
+    tasks = prepared_coll.toGoogleCloud(
+        type=etype, folder='geedim', wait=True, split=split
+    )
     assert len(tasks) == exp_num_tasks
     # test monitorTask is called with wait=True
     captured = capsys.readouterr()
@@ -825,7 +907,10 @@ def test_to_google_cloud(
 
 @pytest.mark.parametrize(
     'split, kwargs',
-    [(SplitType.bands, dict(driver='gtiff')), (SplitType.images, dict(driver='cog', nodata=False))],
+    [
+        (SplitType.bands, dict(driver='gtiff')),
+        (SplitType.images, dict(driver='cog', nodata=False)),
+    ],
 )
 def test_to_geotiff(
     prepared_coll: ImageCollectionAccessor,
@@ -840,7 +925,9 @@ def test_to_geotiff(
 
     first = prepared_coll._first
     exp_file_stems = (
-        list(prepared_coll.properties.keys()) if split is SplitType.images else first.bandNames
+        list(prepared_coll.properties.keys())
+        if split is SplitType.images
+        else first.bandNames
     )
     files = list(tmp_path.glob('*'))
     assert set([f.stem for f in files]) == set(exp_file_stems)
@@ -853,7 +940,9 @@ def test_to_geotiff(
             assert ds.transform[:6] == first.transform
             assert ds.shape == first.shape
             assert ds.count == (
-                first.count if split is SplitType.images else len(prepared_coll.properties)
+                first.count
+                if split is SplitType.images
+                else len(prepared_coll.properties)
             )
             assert ds.dtypes[0] == first.dtype
             assert ds.compression == Compression.deflate
@@ -867,8 +956,8 @@ def test_to_geotiff(
             # contents
             array = ds.read()
             array = np.moveaxis(array, 0, -1)
-            # masked pixels will always == _nodata_vals[image.dtype], irrespective of the nodata
-            # value
+            # masked pixels will always == _nodata_vals[image.dtype], irrespective of
+            # the nodata value
             mask = array != _nodata_vals[first.dtype]
             axis = 2 if split is SplitType.bands else 3
             assert (mask == ~prepared_coll_array.mask.take(fi, axis=axis)).all()
@@ -920,13 +1009,18 @@ def test_to_numpy(
     if structured:
         indexes = list(prepared_coll.properties.keys())
         assert array.shape == first.shape
-        assert len(array.dtype) == len(indexes) if split is SplitType.images else first.count
+        assert (
+            len(array.dtype) == len(indexes)
+            if split is SplitType.images
+            else first.count
+        )
 
         # construct reference structured dtype
-        date_strings = [
-            datetime.fromtimestamp(p['system:time_start'] / 1000).isoformat(timespec='seconds')
-            for p in prepared_coll.properties.values()
+        dates = [
+            datetime.fromtimestamp(p['system:time_start'] / 1000)
+            for p in (prepared_coll.properties.values())
         ]
+        date_strings = [d.isoformat(timespec='seconds') for d in dates]
         # last dimension dtype
         names = (
             first.bandNames
@@ -962,7 +1056,9 @@ def test_to_numpy(
 
     # contents
     ref_array = (
-        np.swapaxes(prepared_coll_array, 2, 3) if split is SplitType.images else prepared_coll_array
+        np.swapaxes(prepared_coll_array, 2, 3)
+        if split is SplitType.images
+        else prepared_coll_array
     )
     array_ = array.view(first.dtype).reshape(ref_array.shape) if structured else array
     mask = ~array_.mask if masked else array_ != first.nodata
@@ -970,7 +1066,9 @@ def test_to_numpy(
     assert (array_ == ref_array).all()
 
 
-@pytest.mark.parametrize('masked, split', [(False, SplitType.bands), (True, SplitType.images)])
+@pytest.mark.parametrize(
+    'masked, split', [(False, SplitType.bands), (True, SplitType.images)]
+)
 def test_to_xarray(
     prepared_coll: ImageCollectionAccessor,
     prepared_coll_array: np.ndarray,
@@ -1076,8 +1174,12 @@ def test_masked_from_list(s2_sr_hm_image_ids: list[str]):
     'masked_coll, accessor',
     [('s2_sr_hm_masked_coll', 's2_sr_hm_coll'), ('l9_sr_masked_coll', 'l9_sr_coll')],
 )
-def test_masked_properties(masked_coll: str, accessor: str, request: pytest.FixtureRequest):
-    """Test MaskedCollection specific properties against a matching ImageCollectionAccessor."""
+def test_masked_properties(
+    masked_coll: str, accessor: str, request: pytest.FixtureRequest
+):
+    """Test MaskedCollection specific properties against a matching
+    ImageCollectionAccessor.
+    """
     masked_coll: MaskedCollection = request.getfixturevalue(masked_coll)
     accessor: ImageCollectionAccessor = request.getfixturevalue(accessor)
     props = {
@@ -1102,15 +1204,18 @@ def test_masked_properties(masked_coll: str, accessor: str, request: pytest.Fixt
 
 def test_masked_search(region_10000ha: dict):
     """Test MaskedCollection.search()."""
-    # this just tests args are passed through and add_props are maintained, detailed testing is done
-    # in test_filter()
+    # this just tests args are passed through and add_props are maintained, detailed
+    # testing is done in test_filter()
     add_props = ['CLOUD_COVER']
-    coll = MaskedCollection(ee.ImageCollection('LANDSAT/LC09/C02/T1_L2'), add_props=add_props)
+    coll = MaskedCollection(
+        ee.ImageCollection('LANDSAT/LC09/C02/T1_L2'), add_props=add_props
+    )
     kwargs = dict(start_date='2023-01-01', end_date='2024-01-01', region=region_10000ha)
     filt_coll = coll.search(**kwargs)
 
     assert isinstance(filt_coll, MaskedCollection)
-    dates = to_datetime([p['system:time_start'] for p in filt_coll.properties.values()], unit='ms')
+    dates = [p['system:time_start'] for p in filt_coll.properties.values()]
+    dates = to_datetime(dates, unit='ms')
     # test add_props is maintained in filtered collection
     assert set(filt_coll.schema.keys()).issuperset(add_props)
     # test search kwargs are passed through

@@ -1,18 +1,15 @@
-"""
-Copyright 2021 Dugal Harris - dugalh@gmail.com
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-   http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-"""
+# Copyright The Geedim Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+# this file except in compliance with the License. You may obtain a copy of the
+# License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software distributed
+# under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+# CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+# language governing permissions and limitations under the License.
 
 from __future__ import annotations
 
@@ -36,7 +33,9 @@ from tests.conftest import accessors_from_collections, transform_bounds
 
 
 @pytest.fixture(scope='session')
-def region_100ha_file(region_100ha: dict, tmp_path_factory: pytest.TempPathFactory) -> Path:
+def region_100ha_file(
+    region_100ha: dict, tmp_path_factory: pytest.TempPathFactory
+) -> Path:
     """GeoJSON polygon file."""
     out_file = tmp_path_factory.mktemp('data').joinpath('region_100ha.json')
     with open(out_file, 'w') as f:
@@ -80,7 +79,9 @@ def patch_filter(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
         # cache mock EE info to avoid getInfo() via the search command
         coll.gd._info = {
             'id': 'MOCK-ID',
-            'features': [{'properties': {'system:index': 'MOCK-INDEX-1', 'system:time_start': 0}}],
+            'features': [
+                {'properties': {'system:index': 'MOCK-INDEX-1', 'system:time_start': 0}}
+            ],
         }
         return coll
 
@@ -89,7 +90,9 @@ def patch_filter(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
 
 
 @pytest.fixture
-def patch_prepare_export_collection(monkeypatch: pytest.MonkeyPatch) -> list[tuple[tuple, dict]]:
+def patch_prepare_export_collection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[tuple[tuple, dict]]:
     """Patched _prepare_export_collection() for testing passed args."""
     passed_args = []
 
@@ -161,9 +164,9 @@ def prepare_export_collection_kwargs(
     region_100ha: dict[str, Any], raster_file: Path
 ) -> dict[str, Any]:
     """Dictionary of kwargs for _prepare_export_collection()."""
-    # in normal use, some of _prepare_export_collection() kwargs are mutually exclusive or
-    # redundant, but here all kwargs are included for testing conversion & passing of the
-    # CLI options
+    # in normal use, some of _prepare_export_collection() kwargs are mutually
+    # exclusive or redundant, but here all kwargs are included for testing conversion
+    # & passing of the CLI options
     with rio.open(raster_file, 'r') as ds:
         like = dict(crs=ds.crs.to_wkt(), crs_transform=ds.transform[:6], shape=ds.shape)
     return dict(
@@ -192,9 +195,10 @@ def prepare_export_collection_cli_str(
     transform_str = ' '.join(map(str, kwargs['crs_transform']))
     bands_str = ' '.join([f'-bn {b}' for b in kwargs['bands']])
     cli_str = (
-        f"-c {kwargs['crs']} -b {bounds_str} -buf {kwargs['buffer']} -s {kwargs['scale']} "
-        f"-ct {transform_str} -sh {kwargs['shape'][0]} {kwargs['shape'][1]} -l {raster_file} "
-        f"-dt {kwargs['dtype']} {bands_str} -rs {kwargs['resampling']}"
+        f'-c {kwargs["crs"]} -b {bounds_str} -buf {kwargs["buffer"]} -s '
+        f'{kwargs["scale"]} -ct {transform_str} -sh {kwargs["shape"][0]} '
+        f'{kwargs["shape"][1]} -l {raster_file} -dt {kwargs["dtype"]} {bands_str} -rs '
+        f'{kwargs["resampling"]}'
     )
     cli_str += ' ' + ('-m' if kwargs['mask'] else '-nm')
     cli_str += ' ' + ('-so' if kwargs['scale_offset'] else '-nso')
@@ -233,13 +237,17 @@ def test_bbox_cb(region_100ha: dict[str, Any]):
     assert ctx.params['geometry'] is None
 
 
-def test_region_cb(region_100ha_file: Path, raster_file: Path, region_100ha: dict[str, Any]):
+def test_region_cb(
+    region_100ha_file: Path, raster_file: Path, region_100ha: dict[str, Any]
+):
     """Test the --region callback."""
     # raster
     ctx = click.Context(cli.search)
     ctx.obj = {}
     cli._region_cb(ctx, None, str(raster_file))
-    assert bounds(ctx.params['geometry']) == pytest.approx(bounds(region_100ha), abs=1e-6)
+    assert bounds(ctx.params['geometry']) == pytest.approx(
+        bounds(region_100ha), abs=1e-6
+    )
 
     # geojson
     ctx = click.Context(cli.search)
@@ -268,12 +276,17 @@ def test_like_cb(raster_file: Path):
     value = cli._like_cb(ctx, None, raster_file)
 
     with rio.open(raster_file, 'r') as ds:
-        exp_value = dict(crs=ds.crs.to_wkt(), crs_transform=ds.transform[:6], shape=ds.shape)
+        exp_value = dict(
+            crs=ds.crs.to_wkt(), crs_transform=ds.transform[:6], shape=ds.shape
+        )
     assert value == exp_value
 
 
 def test_search(
-    patch_filter: list[dict], region_100ha: dict[str, Any], runner: CliRunner, tmp_path: Path
+    patch_filter: list[dict],
+    region_100ha: dict[str, Any],
+    runner: CliRunner,
+    tmp_path: Path,
 ):
     """Test the search command."""
     start_date = '2023-01-01'
@@ -287,9 +300,9 @@ def test_search(
     res_file = tmp_path.joinpath('results.json')
 
     cli_str = (
-        f'search -c MOCK-ID -s {start_date} -e {end_date} -b {bounds_str} -buf {buffer} '
-        f'-fp {fill_portion} -cp {cloudless_portion} -cf {custom_filter} -ap {add_props} '
-        f'-op {res_file}'
+        f'search -c MOCK-ID -s {start_date} -e {end_date} -b {bounds_str} -buf '
+        f'{buffer} -fp {fill_portion} -cp {cloudless_portion} -cf {custom_filter} -ap '
+        f'{add_props} -op {res_file}'
     )
     res = runner.invoke(cli.cli, cli_str.split())
     assert res.exit_code == 0, res.output
@@ -322,20 +335,28 @@ def test_config_search_pipe(patch_filter: list[dict], runner: CliRunner):
     assert passed_kwargs['mask_shadows'] is False
 
 
-def test_prepare_export_collection_buffer(l9_sr_image_id: str, region_100ha: dict[str, Any]):
+def test_prepare_export_collection_buffer(
+    l9_sr_image_id: str, region_100ha: dict[str, Any]
+):
     """Test _prepare_export_collection() buffer parameter."""
     images = [ee.Image(l9_sr_image_id)]
     crs = 'EPSG:3857'
     buffer = 500
-    buffer_bounds = ee.Geometry(region_100ha).buffer(buffer).bounds(maxError=1, proj=crs).getInfo()
+    buffer_bounds = (
+        ee.Geometry(region_100ha).buffer(buffer).bounds(maxError=1, proj=crs).getInfo()
+    )
     buffer_bounds = bounds(buffer_bounds)
 
-    coll = cli._prepare_export_collection(images, geometry=region_100ha, buffer=buffer, crs=crs)
+    coll = cli._prepare_export_collection(
+        images, geometry=region_100ha, buffer=buffer, crs=crs
+    )
     assert coll.gd._first.crs == crs
     assert bounds(coll.gd._first.geometry) == pytest.approx(buffer_bounds, abs=100)
 
 
-def test_prepare_export_collection_like(l9_sr_image_id: str, region_100ha: dict[str, Any]):
+def test_prepare_export_collection_like(
+    l9_sr_image_id: str, region_100ha: dict[str, Any]
+):
     """Test _prepare_export_collection() like parameter."""
     images = [ee.Image(l9_sr_image_id)]
     crs = 'EPSG:4326'
@@ -357,35 +378,52 @@ def test_prepare_export_collection_cloud_kwargs(l9_sr_image_id: str):
     images = [ee.Image(l9_sr_image_id)]
     coll = cli._prepare_export_collection(images, cloud_kwargs=dict(mask_shadows=False))
 
-    assert set(coll.gd._first.bandNames).issuperset(['CLOUDLESS_MASK', 'CLOUD_DIST', 'FILL_MASK'])
+    assert set(coll.gd._first.bandNames).issuperset(
+        ['CLOUDLESS_MASK', 'CLOUD_DIST', 'FILL_MASK']
+    )
     assert 'SHADOW_MASK' not in coll.gd._first.bandNames
 
 
-def test_prepare_export_collection_mask(l9_sr_image_id: str, region_100ha: dict[str, Any]):
+def test_prepare_export_collection_mask(
+    l9_sr_image_id: str, region_100ha: dict[str, Any]
+):
     """Test _prepare_export_collection() mask parameter."""
     # adapted from test_collection.test_mask_clouds()
     images = [ee.Image(l9_sr_image_id)]
-    colls = [cli._prepare_export_collection(images, mask=mask) for mask in [False, True]]
+    colls = [
+        cli._prepare_export_collection(images, mask=mask) for mask in [False, True]
+    ]
     colls = accessors_from_collections(colls)
 
     # test mask bands always added
     for coll in colls:
-        assert set(coll._first.bandNames).issuperset(['CLOUDLESS_MASK', 'CLOUD_DIST', 'FILL_MASK'])
+        assert set(coll._first.bandNames).issuperset(
+            ['CLOUDLESS_MASK', 'CLOUD_DIST', 'FILL_MASK']
+        )
 
     def aggregate_mask_sum(image: ee.Image, sums: ee.List) -> ee.List:
         """Add the sum of the image masks to the sums list."""
-        sum_ = image.mask().reduceRegion('sum', geometry=region_100ha).values().reduce('mean')
+        sum_ = (
+            image.mask()
+            .reduceRegion('sum', geometry=region_100ha)
+            .values()
+            .reduce('mean')
+        )
         return ee.List(sums).add(sum_)
 
-    mask_sums = [coll._ee_coll.iterate(aggregate_mask_sum, ee.List([])) for coll in colls]
+    mask_sums = [
+        coll._ee_coll.iterate(aggregate_mask_sum, ee.List([])) for coll in colls
+    ]
     mask_sums = ee.List(mask_sums).getInfo()
 
     assert len(mask_sums[0]) == len(mask_sums[1]) == len(images)
-    for unmasked_sum, masked_sum in zip(*mask_sums, strict=False):
+    for unmasked_sum, masked_sum in zip(*mask_sums, strict=True):
         assert unmasked_sum > masked_sum
 
 
-def test_prepare_export_collection_other(l9_sr_image_id: str, region_100ha: dict[str, Any]):
+def test_prepare_export_collection_other(
+    l9_sr_image_id: str, region_100ha: dict[str, Any]
+):
     """Test other _prepare_export_collection() kwargs not tested above."""
     images = [ee.Image(l9_sr_image_id)]
     crs = 'EPSG:3857'
@@ -404,7 +442,9 @@ def test_prepare_export_collection_other(l9_sr_image_id: str, region_100ha: dict
     )
     first = coll.gd._first
     max_band = 'SR_B3'
-    max = coll.first().select(max_band).reduceRegion(reducer='max', geometry=region_100ha)
+    max = (
+        coll.first().select(max_band).reduceRegion(reducer='max', geometry=region_100ha)
+    )
     max = max.getInfo()[max_band]
 
     assert first.crs == crs
@@ -425,7 +465,7 @@ def test_download(
     runner: CliRunner,
     tmp_path: Path,
 ):
-    """Test the download command"""
+    """Test the download command."""
     # toGeoTIFF() kwargs to test against
     tg_kwargs = dict(
         split=enums.SplitType.bands,
@@ -442,9 +482,9 @@ def test_download(
     ee_id = 'MOCK-ID/MOCK-INDEX'
     cli_str = f'download -i {ee_id} ' + prepare_export_collection_cli_str
     cli_str += (
-        f" -sp {tg_kwargs['split']} -nn -dv {tg_kwargs['driver']} "
-        f"-mts {tg_kwargs['max_tile_size']} -mtd {tg_kwargs['max_tile_dim']} "
-        f"-mr {tg_kwargs['max_requests']} -mc {tg_kwargs['max_cpus']} -o -dd {tmp_path}"
+        f' -sp {tg_kwargs["split"]} -nn -dv {tg_kwargs["driver"]} '
+        f'-mts {tg_kwargs["max_tile_size"]} -mtd {tg_kwargs["max_tile_dim"]} '
+        f'-mr {tg_kwargs["max_requests"]} -mc {tg_kwargs["max_cpus"]} -o -dd {tmp_path}'
     )
 
     res = runner.invoke(cli.cli, cli_str.split())
@@ -453,7 +493,9 @@ def test_download(
     # test _prepare_export_collection() args
     passed_args, passed_kwargs = patch_prepare_export_collection.pop(-1)
     assert passed_args[0] == [ee.Image(ee_id)]
-    assert all([passed_kwargs[k] == v for k, v in prepare_export_collection_kwargs.items()])
+    assert all(
+        [passed_kwargs[k] == v for k, v in prepare_export_collection_kwargs.items()]
+    )
 
     # test toGeoTIFF() args
     passed_args, passed_kwargs = patch_to_geotiff.pop(-1)
@@ -510,16 +552,21 @@ def test_export(
     prepare_export_collection_cli_str: str,
     runner: CliRunner,
 ):
-    """Test the export command"""
+    """Test the export command."""
     # toGoogleCloud() kwargs to test against
     tg_kwargs = dict(
-        type=enums.ExportType.cloud, folder='test', split=enums.SplitType.bands, wait=False
+        type=enums.ExportType.cloud,
+        folder='test',
+        split=enums.SplitType.bands,
+        wait=False,
     )
 
     # form a CLI string containing all options
     ee_id = 'MOCK-ID/MOCK-INDEX'
     cli_str = f'export -i {ee_id} ' + prepare_export_collection_cli_str
-    cli_str += f" -t {tg_kwargs['type']} -f {tg_kwargs['folder']} -sp {tg_kwargs['split']} -nw"
+    cli_str += (
+        f' -t {tg_kwargs["type"]} -f {tg_kwargs["folder"]} -sp {tg_kwargs["split"]} -nw'
+    )
 
     res = runner.invoke(cli.cli, cli_str.split())
     assert res.exit_code == 0, res.output
@@ -527,7 +574,9 @@ def test_export(
     # test _prepare_export_collection() args
     passed_args, passed_kwargs = patch_prepare_export_collection.pop(-1)
     assert passed_args[0] == [ee.Image(ee_id)]
-    assert all([passed_kwargs[k] == v for k, v in prepare_export_collection_kwargs.items()])
+    assert all(
+        [passed_kwargs[k] == v for k, v in prepare_export_collection_kwargs.items()]
+    )
 
     # test toGoogleCloud() kwargs
     passed_kwargs = patch_to_google_cloud.pop(-1)
@@ -588,7 +637,10 @@ def test_composite(
     resampling = enums.ResamplingMethod.bilinear
     bounds_str = ' '.join(map(str, bounds(region_100ha)))
     date = '2023-01-01'
-    cli_str = f'composite -i {ee_id} -cm {method} -nm -rs {resampling} -b {bounds_str} -d {date}'
+    cli_str = (
+        f'composite -i {ee_id} -cm {method} -nm -rs {resampling} -b '
+        f'{bounds_str} -d {date}'
+    )
 
     res = runner.invoke(cli.cli, cli_str.split())
     assert res.exit_code == 0, res.output

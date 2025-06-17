@@ -1,18 +1,15 @@
-"""
-Copyright 2021 Dugal Harris - dugalh@gmail.com
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-   http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-"""
+# Copyright The Geedim Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+# this file except in compliance with the License. You may obtain a copy of the
+# License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software distributed
+# under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+# CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+# language governing permissions and limitations under the License.
 
 from __future__ import annotations
 
@@ -51,13 +48,15 @@ def test_tile():
     """Test Tile."""
     band_start, row_start, col_start = (10, 200, 300)
     band_stop, row_stop, col_stop = (20, 400, 600)
-    image_transform = (10, 0, 10000, 0, -20, 20000)
-    tile = Tile(band_start, row_start, col_start, band_stop, row_stop, col_stop, image_transform)
+    im_tform = (10, 0, 10000, 0, -20, 20000)
+    tile = Tile(
+        band_start, row_start, col_start, band_stop, row_stop, col_stop, im_tform
+    )
     assert tile.shape == (row_stop - row_start, col_stop - col_start)
     assert tile.count == (band_stop - band_start)
     assert tile.window == Window(col_start, row_start, *tile.shape[::-1])
-    tile_transform = (Affine(*image_transform) * Affine.translation(col_start, row_start))[:6]
-    assert tile.tile_transform == tile_transform
+    tile_tform = (Affine(*im_tform) * Affine.translation(col_start, row_start))[:6]
+    assert tile.tile_transform == tile_tform
     assert tile.slices.col == slice(col_start, col_stop)
     assert tile.slices.row == slice(row_start, row_stop)
     assert tile.slices.band == slice(band_start, band_stop)
@@ -93,7 +92,9 @@ def test_tiler_init():
 
 
 def test_tiler_init_error():
-    """Test Tiler.__init__() raises an error when the image has a non-fixed projection."""
+    """Test Tiler.__init__() raises an error when the image has a non-fixed
+    projection.
+    """
     with pytest.raises(ValueError, match='fixed'):
         _ = Tiler(MockImageAccessor(shape=None))
 
@@ -113,8 +114,9 @@ def test_tiler_context():
 
 def test_tiler_get_tile_shape():
     """Test Tiler._get_tile_shape()."""
-    # test tile size and shape with different image dimensions (that don't exceed max_tile_dim
-    # or max_tile_bands), and with max_tile_size values that span the size of a GeoTIFF tile
+    # test tile size and shape with different image dimensions (that don't exceed
+    # max_tile_dim or max_tile_bands), and with max_tile_size values that span the
+    # size of a GeoTIFF tile
     dtype = 'float64'
     dtype_size = np.dtype(dtype).itemsize
     tiler = Tiler(MockImageAccessor())
@@ -127,7 +129,8 @@ def test_tiler_get_tile_shape():
         if max_tile_size < min_tile_shape.prod() * dtype_size:
             min_tile_shape = np.array([1, 1, 1])
 
-        # patch the tiler _im attribute rather than creating a new Tiler on each iteration
+        # patch the tiler _im attribute rather than creating a new Tiler on each
+        # iteration
         image = MockImageAccessor(shape=(height, width), count=count, dtype=dtype)
         tiler._im = image
         tile_shape = np.array(tiler._get_tile_shape(max_tile_size=mts))
@@ -141,14 +144,15 @@ def test_tiler_get_tile_shape():
         assert tile_shape[0] <= Tiler._ee_max_tile_bands
         assert tile_size <= max_tile_size
 
-        # test tile dimensions lie either on the image bounds, or are multiples of min_tile_shape
-        # dimensions
+        # test tile dimensions lie either on the image bounds, or are multiples of
+        # min_tile_shape dimensions
         assert all(
             (tile_shape == im_shape)
             | (np.round(tile_shape / min_tile_shape) == tile_shape / min_tile_shape)
         )
 
-        # if the image consists of >1 tile, test the tile size against a rough lower bound
+        # if the image consists of >1 tile, test the tile size against a rough lower
+        # bound
         if any(tile_shape < im_shape):
             assert tile_size > max_tile_size / 2
 
@@ -193,17 +197,19 @@ def test_tiler_tiles():
         prev_tile = tile
 
     # test tile coverage
-    accum_tile = tile_union(tiles)
-    assert (accum_tile.band_start, accum_tile.row_start, accum_tile.col_start) == (0, 0, 0)
-    assert (accum_tile.band_stop, accum_tile.row_stop, accum_tile.col_stop) == im_shape
+    acc_tile = tile_union(tiles)
+    assert (acc_tile.band_start, acc_tile.row_start, acc_tile.col_start) == (0, 0, 0)
+    assert (acc_tile.band_stop, acc_tile.row_stop, acc_tile.col_stop) == im_shape
 
 
-def test_tile_map_tile_retries(prepared_image: ImageAccessor, monkeypatch: pytest.MonkeyPatch):
+def test_tile_map_tile_retries(
+    prepared_image: ImageAccessor, monkeypatch: pytest.MonkeyPatch
+):
     """Test Tiler._map_tile() retry behaviour."""
 
     class MockDatasetReader(rio.DatasetReader):
-        """Mocked Rasterio DatasetReader that raises exceptions on the first max_exceptions
-        reads, then reads as normal.
+        """Mocked Rasterio DatasetReader that raises exceptions on the first
+        max_exceptions reads, then reads as normal.
         """
 
         exceptions = 0
@@ -224,7 +230,9 @@ def test_tile_map_tile_retries(prepared_image: ImageAccessor, monkeypatch: pytes
     with Tiler(prepared_image) as tiler:
         # test a tile is downloaded correctly after max_exceptions retries
         max_exceptions = 1
-        array = np.ones((prepared_image.count, *prepared_image.shape), dtype=prepared_image.dtype)
+        array = np.ones(
+            (prepared_image.count, *prepared_image.shape), dtype=prepared_image.dtype
+        )
         tile = next(tiler._tiles())
         AsyncRunner().run(
             tiler._map_tile(
@@ -241,8 +249,8 @@ def test_tile_map_tile_retries(prepared_image: ImageAccessor, monkeypatch: pytes
         assert not np.all(mask)
         assert np.all((array.T == range(1, prepared_image.count + 1)) == mask.T)
 
-        # test an error is raised when a tile is not downloaded correctly within max_retries
-        # retries
+        # test an error is raised when a tile is not downloaded correctly within
+        # max_retries retries
         MockDatasetReader.exceptions = 0
         with pytest.raises(RasterioIOError, match='Mock error'):
             AsyncRunner().run(
