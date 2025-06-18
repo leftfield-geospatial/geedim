@@ -207,6 +207,20 @@ class ImageCollectionAccessor:
             first = ImageAccessor(self._ee_coll.first())
         return first
 
+    @property
+    def info(self) -> dict[str, Any]:
+        """Earth Engine information as returned by :meth:`ee.ImageCollection.getInfo`,
+        but limited to the first 5000 images.
+        """
+        if self._info is None:
+            self._info = self._ee_coll.limit(self._max_export_images).getInfo()
+        return self._info
+
+    @property
+    def stac(self) -> dict[str, Any] | None:
+        """STAC dictionary.  ``None`` if there is no STAC entry for this collection."""
+        return STACClient().get(self.id)
+
     @cached_property
     def id(self) -> str | None:
         """Earth Engine ID."""
@@ -216,20 +230,6 @@ class ImageCollectionAccessor:
             return self._info.get('id', None)
         else:
             return self._ee_coll.get('system:id').getInfo()
-
-    @property
-    def stac(self) -> dict[str, Any] | None:
-        """STAC dictionary.  ``None`` if there is no STAC entry for this collection."""
-        return STACClient().get(self.id)
-
-    @property
-    def info(self) -> dict[str, Any]:
-        """Earth Engine information as returned by :meth:`ee.ImageCollection.getInfo`,
-        but limited to the first 5000 images.
-        """
-        if self._info is None:
-            self._info = self._ee_coll.limit(self._max_export_images).getInfo()
-        return self._info
 
     @property
     def schemaPropertyNames(self) -> tuple[str]:
