@@ -108,8 +108,6 @@ class ImageCollectionAccessor:
         :param ee_coll:
             Image collection to access.
         """
-        # TODO: strictly this is an _init_ docstring, not class docstring.  does
-        #  moving it (and all other class docstrings) to _init_ work with sphinx?
         self._ee_coll = ee_coll
         self._info = None
         self._schema = None
