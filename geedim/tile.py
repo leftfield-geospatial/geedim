@@ -118,7 +118,6 @@ class Tiler:
         ConnectionError,
         RasterioIOError,
     )
-    _debug_i = 0
     try:
         # retry on requests errors from ee.Image.getDownloadURL()
         from requests import RequestException
