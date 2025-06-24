@@ -387,13 +387,13 @@ class Tiler:
         Map a function over downloaded tiles.
 
         :param func:
-            Thread-safe function that is called with :class:`Tile` instance and tile
-            array parameters, for each tile.  The tile array is passed in Rasterio
-            (bands, rows, columns) dimension ordering.
+            Thread-safe function that is called with a :class:`Tile` instance and
+            tile NumPy array, for each tile.  The tile array is passed in
+            Rasterio (bands, rows, columns) dimension ordering.
         :param masked:
-            Whether to pass the tile array as a :class:`~numpy.ma.MaskedArray`
-            (``True``) or :class:`~numpy.ndarray` (``False``).  If  ``False``,
-            masked pixels are set to the image :attr:`nodata` value.
+            Whether to pass the tile array as a masked (``True``) or standard
+            (``False``) NumPy array.  If  ``False``, masked pixels are set to the
+            image :attr:`nodata` value.
         """
         # set up progress bar kwargs
         desc = self._im.index or self._im.id
