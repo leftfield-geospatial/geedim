@@ -572,15 +572,15 @@ class ImageCollectionAccessor:
         **kwargs,
     ) -> ee.ImageCollection:
         """
-        Search the collection for images that satisfy date, region, filled/cloudless
-        portion, and custom criteria.
+        Filter the collection on date, region, filled/cloudless portion, and custom
+        criteria.
 
         Filled and cloudless portions are only calculated and included in collection
         :attr:`properties` when one or both of ``fill_portion`` /
         ``cloudless_portion`` are supplied.  If ``fill_portion`` or
         ``cloudless_portion`` are supplied, ``region`` is required.
 
-        Search speeds can be improved by supplying multiple of the ``start_date``,
+        Filter speeds can be improved by supplying multiple of the ``start_date``,
         ``end_date``, ``region`` and ``custom_filter`` arguments.
 
         :param start_date:
@@ -949,6 +949,11 @@ class ImageCollectionAccessor:
         ``max_tile_dim`` and ``max_tile_bands``, and download / decompress
         concurrency with ``max_requests`` and ``max_cpus``.
 
+        When ``split`` is :attr:`~geedim.enums.SplitType.images`, GeoTIFF default
+        namespace tags are written with the
+        :attr:`~geedim.image.ImageAccessor.properties`, and band tags with the
+        :attr:`~geedim.image.ImageAccessor.bandProps` attributes of their source images.
+
         A maximum of 5000 images can be exported.
 
         :param dirname:
@@ -1196,10 +1201,12 @@ class ImageCollectionAccessor:
         ``max_tile_dim`` and ``max_tile_bands``, and download / decompress
         concurrency with ``max_requests`` and ``max_cpus``.
 
-        Dataset attributes include the export :attr:`crs`, :attr:`transform` and
-        ``nodata`` values for compatibility with `rioxarray
-        <https://github.com/corteva/rioxarray>`_, as well as ``ee`` and ``stac`` JSON
-        strings corresponding to Earth Engine property and STAC dictionaries.
+        Dataset attributes include the export
+        :attr:`~geedim.image.ImageAccessor.crs`,
+        :attr:`~geedim.image.ImageAccessor.transform` and ``nodata`` values for
+        compatibility with `rioxarray <https://github.com/corteva/rioxarray>`_,
+        as well as ``ee`` and ``stac`` JSON strings corresponding to Earth Engine
+        property and STAC dictionaries.
 
         A maximum of 5000 images can be exported.
 
