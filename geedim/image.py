@@ -345,6 +345,10 @@ class ImageAccessor:
         For integer :attr:`dtype`, this is the minimum possible value, and for
         floating point :attr:`dtype`, it is ``float('-inf')``.
         """
+        # TODO: exporting
+        #  COPERNICUS/S2_SR_HARMONIZED/20241025T080011_20241025T082124_T35HKC has
+        #  nodata issues: i think EE converts valid unmasked 0 value pixels to nodata,
+        #  when dtype is integer (e.g. exporting to int16)
         return _nodata_vals[self.dtype] if self.dtype else None
 
     @property
@@ -673,8 +677,7 @@ class ImageAccessor:
             Whether to mask high aerosol levels.  Valid for Landsat 8-9 surface
             reflectance images. Defaults to ``False``.
         :param ~geedim.enums.CloudMaskMethod mask_method:
-            Method used to mask clouds.  Valid for Sentinel-2 images.  See
-            :class:`~geedim.enums.CloudMaskMethod` for details.  Defaults to
+            Method used to mask clouds.  Valid for Sentinel-2 images.  Defaults to
             :attr:`~geedim.enums.CloudMaskMethod.cloud_score`.
         :param float prob:
             Cloud probability threshold (%).  Valid for Sentinel-2 images with the
@@ -976,6 +979,9 @@ class ImageAccessor:
         ``max_tile_size``, ``max_tile_dim`` and ``max_tile_bands``, and download /
         decompress concurrency with ``max_requests`` and ``max_cpus``.
 
+        GeoTIFF default namespace tags are written with :attr:`properties`, and band
+        tags with :attr:`bandProps`.
+
         :param file:
             Destination file.  Can be a path or URI string, or an
             :class:`~fsspec.core.OpenFile` object in binary mode (``'wb'``).
@@ -1258,11 +1264,12 @@ class ImageAccessor:
         date = self.date.isoformat(timespec='milliseconds') if self.date else None
         attrs = dict(id=self.id, date=date)
         # add rioxarray required attributes
-        attrs.update(
-            crs=self.crs,
-            transform=self.transform,
-            nodata=_nodata_vals[self.dtype] if not masked else float('nan'),
+        nodata = (
+            _nodata_vals[self.dtype]
+            if not masked or not array.mask.any()
+            else float('nan')
         )
+        attrs.update(crs=self.crs, transform=self.transform, nodata=nodata)
         # add EE / STAC attributes (use json strings here, then drop all Nones for
         # serialisation compatibility e.g. netcdf)
         attrs['ee'] = json.dumps(self.properties) if self.properties else None
