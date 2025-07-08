@@ -3,19 +3,23 @@
 Geedim
 ======
 
+.. description_start
+
 Geedim provides a Python API and command line toolkit for exporting and cloud/shadow masking Google Earth Engine (GEE) imagery.  Images and Image collections can be exported to:
 
 - GeoTIFF file
-- Xarray Dataset / DataArray
 - NumPy array
+- Xarray Dataset / DataArray
+- Google Cloud platforms
 
 And cloud / shadow masking is supported on:
 
 - Landsat 4-9 `collection 2 <https://developers.google.com/earth-engine/datasets/catalog/landsat>`__ images
 - Sentinel-2 `TOA <https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_HARMONIZED>`__ and `surface reflectance <https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED>`__ images
 
-.. Image collections can be filtered based on cloud / shadow cover, and cloud / shadow free compositing is also supported.
+.. description_end
 
+.. install_start
 
 Installation
 ------------
@@ -38,6 +42,7 @@ A registered Google Cloud project is required for `access to Earth Engine <https
 
    earthengine authenticate
 
+.. install_end
 
 Examples
 --------
@@ -51,14 +56,17 @@ Geedim provides access to its functionality through the ``gd`` accessor on the `
 
     import ee
 
-    import geedim as gd  # import geedim to enable accessor
+    # import geedim to enable accessors
+    import geedim  # noqa: F401
 
-    gd.Initialize()
+    ee.Initialize()
 
     # filter collection based on cloudless portion etc.
     region = ee.Geometry.Rectangle(24.35, -33.75, 24.45, -33.65)
     coll = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
-    filt_coll = coll.gd.filter('2024-10-01', '2025-04-01', region=region, cloudless_portion=60)
+    filt_coll = coll.gd.filter(
+        '2021-10-01', '2022-04-01', region=region, cloudless_portion=60
+    )
 
     # print image properties
     print(filt_coll.gd.schemaTable)
@@ -66,8 +74,11 @@ Geedim provides access to its functionality through the ``gd`` accessor on the `
 
     # create a cloud/shadow free composite & download
     comp_im = filt_coll.gd.composite('median')
-    prep_im = comp_im.gd.prepareForExport(crs='EPSG:3857', region=region, scale=10, dtype='uint16')
+    prep_im = comp_im.gd.prepareForExport(
+        crs='EPSG:3857', region=region, scale=10, dtype='uint16'
+    )
     prep_im.gd.toGeoTIFF('s2_comp.tif')
+
 
 
 Command line interface
