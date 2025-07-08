@@ -1,6 +1,6 @@
-sphinx!=5.2.0.post0
+sphinx
+furo
 sphinx-click
-sphinx-rtd-theme
+sphinx-copybutton
 nbsphinx
 ipykernel
-jupyter-sphinx
