@@ -868,8 +868,8 @@ class ImageAccessor:
         **kwargs,
     ) -> ee.batch.Task:
         """
-        Export the image to Google Drive, Earth Engine asset or Google Cloud Storage
-        using the Earth Engine batch environment.
+        Export the image to a raster file on Google Drive, Earth Engine asset,
+        or raster file on Google Cloud Storage.
 
         :meth:`prepareForExport` can be called before this method to apply export
         parameters.
@@ -904,13 +904,10 @@ class ImageAccessor:
                 f'Uncompressed size: {tqdm.format_sizeof(self.size, suffix="B")}'
             )
 
-        # update defaults with any supplied **kwargs
-        exp_kwargs = dict(
-            description=filename.replace('/', '-')[:100],
-            maxPixels=1e9,
-            formatOptions=dict(cloudOptimized=True),
-        )
-        exp_kwargs.update(**kwargs)
+        # set default **kwargs
+        kwargs.setdefault('description', filename.replace('/', '-')[:100])
+        kwargs.setdefault('maxPixels', 1e9)
+        kwargs.setdefault('formatOptions', dict(cloudOptimized=True))
 
         # create export task and start
         type = ExportType(type)
@@ -920,19 +917,16 @@ class ImageAccessor:
             filepath = Path(folder or '', filename)
             folder, filename = '/'.join(filepath.parts[:-1]), filepath.parts[-1]
             task = ee.batch.Export.image.toDrive(
-                image=self._ee_image,
-                folder=folder,
-                fileNamePrefix=filename,
-                **exp_kwargs,
+                image=self._ee_image, folder=folder, fileNamePrefix=filename, **kwargs
             )
 
         elif type == ExportType.asset:
             # if folder is supplied create an EE asset ID from it and filename,
             # else treat filename as a valid EE asset ID
             asset_id = utils.asset_id(filename, folder) if folder else filename
-            exp_kwargs.pop('formatOptions')  # not used for asset export
+            kwargs.pop('formatOptions')  # not used for asset export
             task = ee.batch.Export.image.toAsset(
-                image=self._ee_image, assetId=asset_id, **exp_kwargs
+                image=self._ee_image, assetId=asset_id, **kwargs
             )
 
         else:
@@ -943,10 +937,7 @@ class ImageAccessor:
             filepath = Path(folder, filename)
             folder, filename = filepath.parts[0], '/'.join(filepath.parts[1:])
             task = ee.batch.Export.image.toCloudStorage(
-                image=self._ee_image,
-                bucket=folder,
-                fileNamePrefix=filename,
-                **exp_kwargs,
+                image=self._ee_image, bucket=folder, fileNamePrefix=filename, **kwargs
             )
         task.start()
 
