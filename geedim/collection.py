@@ -854,17 +854,12 @@ class ImageCollectionAccessor:
         **kwargs,
     ) -> list[ee.batch.Task]:
         """
-        Export the collection as GeoTIFF files to Google Drive, Earth Engine assets
-        or Google Cloud Storage using the Earth Engine batch environment.
+        Export the collection to raster files on Google Drive, Earth Engine assets,
+        or raster files on Google Cloud Storage.
 
-        Export projection and bounds are defined by the
-        :attr:`~geedim.image.ImageAccessor.crs`,
-        :attr:`~geedim.image.ImageAccessor.transform` and
-        :attr:`~geedim.image.ImageAccessor.shape` properties, and the data type by
-        the :attr:`~geedim.image.ImageAccessor.dtype` property of the collection
-        images. All bands in the collection should share the same projection,
-        bounds and data type. :meth:`prepareForExport` can be called before this
-        method to apply export parameters and create an export-ready collection.
+        All bands in the collection should share the same projection, bounds and data
+        type. :meth:`prepareForExport` can be called before this method to apply
+        export parameters and create an export-ready collection.
 
         A maximum of 5000 images can be exported.
 
@@ -881,15 +876,17 @@ class ImageCollectionAccessor:
         :param wait:
             Whether to wait for the exports to complete before returning.
         :param split:
-            Export a file for each collection band
+            Export a file / asset for each collection band
             (:attr:`~geedim.enums.SplitType.bands`), or for each collection image
-            (:attr:`~geedim.enums.SplitType.images`).  Files are named with their band
-            name, and file band descriptions are set to the ``system:index`` property
-            of the band's source image, when ``split`` is
-            :attr:`~geedim.enums.SplitType.bands`.  Otherwise, files are named with
-            the ``system:index`` property of the file's source image, and file band
-            descriptions are set to the image band names, when ``split`` is
-            :attr:`~geedim.enums.SplitType.images`.
+            (:attr:`~geedim.enums.SplitType.images`).  Files / assets are named with
+            their band name, and band descriptions / names set to the
+            ``system:index`` property of the band's source image, when ``split`` is
+            :attr:`~geedim.enums.SplitType.bands`. Otherwise, files / assets are
+            named with the ``system:index`` property of the source image, and band
+            descriptions / names set to the image band names, when ``split`` is
+            :attr:`~geedim.enums.SplitType.images`.  Band names are prefixed with
+            ``'B_'`` if ``split`` is :attr:`~geedim.enums.SplitType.bands` and
+            ``type`` is :attr:`~geedim.enums.ExportType.asset`.
         :param kwargs:
             Additional arguments to the ``type`` dependent Earth Engine function:
             ``Export.image.toDrive``, ``Export.image.toAsset`` or
@@ -899,14 +896,20 @@ class ImageCollectionAccessor:
             List of image export tasks, started if ``wait`` is ``False``,
             or completed if ``wait`` is ``True``.
         """
+        type = enums.ExportType(type)
         split = enums.SplitType(split)
         images = self._split_images(split)
 
         # start exporting the split images concurrently
         tasks = {}
         for name, image in images.items():
+            if type is enums.ExportType.asset and split is enums.SplitType.bands:
+                # prefix image band names with 'B_' (asset image band names must
+                # start with an alpha character)
+                image._ee_image = image._ee_image.regexpRename('^(.*)', 'B_$1')
+
             tasks[name] = image.toGoogleCloud(
-                filename=name, folder=folder, wait=False, **kwargs
+                filename=name, type=type, folder=folder, wait=False, **kwargs
             )
 
         if wait:
