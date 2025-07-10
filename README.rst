@@ -36,6 +36,8 @@ To install from conda-forge:
 
    conda install -c conda-forge geedim
 
+For Xarray export support, use ``pip install geedim[xarray]`` or ``conda install -c conda-forge geedim xarray`` instead.
+
 A registered Google Cloud project is required for `access to Earth Engine <https://developers.google.com/earth-engine/guides/access#create-a-project>`__.  Once installation and registration is done, Earth Engine should be authenticated:
 
 .. code:: shell
@@ -109,6 +111,9 @@ Credits
    `MIT license <https://github.com/gee-community/geetools/blob/master/LICENSE>`__.
 -  Sentinel-2 cloud/shadow masking was adapted from `ee_extra <https://github.com/r-earthengine/ee_extra>`__ under
    terms of the `Apache-2.0 license <https://github.com/r-earthengine/ee_extra/blob/master/LICENSE>`__
+
+.. TODO: include a section on why geedim and not Xee?
+
 
 .. |Tests| image:: https://github.com/leftfield-geospatial/geedim/actions/workflows/run-unit-tests.yml/badge.svg
    :target: https://github.com/leftfield-geospatial/geedim/actions/workflows/run-unit-tests.yml
