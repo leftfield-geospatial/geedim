@@ -368,7 +368,7 @@ class ImageAccessor:
             return None
         return dict(
             crs=_rio_crs(self.crs),
-            transform=self.transform,
+            transform=Affine(*self.transform),
             width=self.shape[1],
             height=self.shape[0],
             count=self.count,

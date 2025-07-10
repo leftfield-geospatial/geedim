@@ -68,7 +68,7 @@ def test_properties(
     assert image.nodata == _nodata_vals[image.dtype]
     assert image.profile == dict(
         crs=_rio_crs(image.crs),  # test conversion for MODIS CRS
-        transform=image.transform,
+        transform=rio.Affine(*image.transform),
         width=image.shape[1],
         height=image.shape[0],
         count=image.count,
