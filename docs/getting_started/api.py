@@ -44,15 +44,18 @@ print(filt_coll.gd.schemaTable)
 # ---------  -------------------------------  ----------------------------------------------
 # INDEX      system:index                     Earth Engine image index
 # DATE       system:time_start                Image capture date/time (UTC)
+# FILL       FILL_PORTION                     Portion of region pixels that are valid (%)
+# CLOUDLESS  CLOUDLESS_PORTION                Portion of filled pixels that are cloud/shadow
+#                                             free (%)
 # ...        ...                              ...
 # VP         VEGETATION_PERCENTAGE            Percentage of pixels classified as vegetation
 print(filt_coll.gd.propertiesTable)
-# INDEX                                  DATE               FILL CLOUDLESS ...       VP
-# -------------------------------------- ---------------- ------ --------- ------ -----
-# 20211006T075809_20211006T082043_T35HKC 2021-10-06 08:29 100.00     99.33 ...    22.25
-# 20211021T075951_20211021T082750_T35HKC 2021-10-21 08:29 100.00    100.00 ...    14.52
-# ...                                    ...              ...       ...    ...    ...
-# 20220330T075611_20220330T082727_T35HKC 2022-03-30 08:29 100.00    100.00 ...    21.63
+# INDEX                                  DATE               FILL CLOUDLESS ...      VP
+# -------------------------------------- ---------------- ------ --------- ----- -----
+# 20211006T075809_20211006T082043_T35HKC 2021-10-06 08:29 100.00     99.33 ...   22.25
+# 20211021T075951_20211021T082750_T35HKC 2021-10-21 08:29 100.00    100.00 ...   14.52
+# ...                                    ...              ...       ...    ...   ...
+# 20220330T075611_20220330T082727_T35HKC 2022-03-30 08:29 100.00    100.00 ...   21.63
 # [end tables]
 
 # [composite]
@@ -78,15 +81,6 @@ prep_im = im.gd.prepareForExport(
     crs='EPSG:3857', region=region, scale=30, dtype='uint16'
 )
 # [end image prepare for export]
-# TODO: include?
-print(prep_im.gd.crs)
-# EPSG:3857
-print(prep_im.gd.transform)
-# (30.0, 0.0, 2710620.0, 0.0, -30.0, -3981900.0)
-print(prep_im.gd.shape)
-# (447, 372)
-print(prep_im.gd.dtype)
-# uint16
 
 Path('s2.tif').unlink(missing_ok=True)
 # [image geotiff]
@@ -105,11 +99,11 @@ import rasterio as rio
 with rio.open('s2.tif') as ds:
     # default namespace tags
     print(ds.tags())
-    # {'AOT_RETRIEVAL_ACCURACY': '0', 'CLOUDY_PIXEL_PERCENTAGE': '7.464998', ...}
+    # {'AOT_RETRIEVAL_ACCURACY': '0', 'CLOUDY_PIXEL_PERCENTAGE': '7.464998', ...
 
     # band 1 tags
     print(ds.tags(bidx=1))
-    # {'center_wavelength': '0.4439', 'description': 'Aerosols', 'gee-scale': '0.0001', ...}
+    # {'center_wavelength': '0.4439', 'description': 'Aerosols', 'gee-scale': '0.0001', ...
 # [end image geotiff tags]
 
 exp_path = Path('s2')
@@ -286,3 +280,52 @@ print(da.isnull().any())
 print(da.dtype)
 # float32
 # [end xarray masked]
+
+# [image google cloud]
+# create and prepare image
+im = ee.Image('COPERNICUS/S2_SR_HARMONIZED/20211220T080341_20211220T082827_T35HKC')
+region = ee.Geometry.Rectangle(24.35, -33.75, 24.45, -33.65)
+prep_im = im.gd.prepareForExport(region=region, scale=30, dtype='uint16')
+
+# export to Earth Engine asset 's2' in the 'geedim' project, waiting for completion
+prep_im.gd.toGoogleCloud('s2', type='asset', folder='geedim', wait=True)
+
+# print asset image info
+print(ee.Image('projects/geedim/assets/s2').getInfo())
+# {'type': 'Image', 'bands': [{'id': 'B1', 'data_type': {'type': 'PixelType', ...
+# [end image google cloud]
+ee.data.deleteAsset('projects/geedim/assets/s2')
+
+# [coll google cloud]
+# create and prepare a collection (prepared collection has two images and three bands)
+region = ee.Geometry.Rectangle(24.35, -33.75, 24.45, -33.65)
+coll = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+coll = coll.filterBounds(region).limit(2)
+prep_coll = coll.gd.prepareForExport(
+    region=region, scale=30, dtype='uint16', bands=['B4', 'B3', 'B2']
+)
+
+# export to earth engine assets in the 'geedim' project, waiting for completion
+# (one asset for each collection band)
+prep_coll.gd.toGoogleCloud(type='asset', folder='geedim', wait=True, split='bands')
+
+# print info of the first asset image
+print(ee.Image('projects/geedim/assets/B4').getInfo())
+# {'type': 'Image', 'bands': [{'id': 'B_20180510T075611_20180510T082300_T35HKC', ...
+# [end coll google cloud]
+for bn in ['B4', 'B3', 'B2']:
+    try:
+        ee.data.deleteAsset(f'projects/geedim/assets/{bn}')
+    except:
+        pass
+
+# [google cloud kwargs]
+# export to Google Drive using the TFRecord format
+prep_im.gd.toGoogleCloud(
+    's2',
+    type='drive',
+    folder='geedim',
+    fileFormat='TFRecord',
+    formatOptions={'patchDimensions': [256, 256], 'compressed': True},
+)
+# [end google cloud kwargs]

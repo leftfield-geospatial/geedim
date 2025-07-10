@@ -3,6 +3,14 @@ API
 
 .. TODO: make all code cross-refs use :meth:`ee.Image.gd.method() <geedim.image.ImageAccessor.method>` style?
 
+.. TODO: standardise headings e.g. masking/masked/nodata -> masking
+
+.. TODO: note on fsspec
+
+.. TODO: note on tiling params
+
+.. TODO: note on mem limit error
+
 Initialisation
 --------------
 
@@ -216,7 +224,47 @@ Attributes
 
 DataArray / Dataset attributes include :attr:`~geedim.image.ImageAccessor.crs`, :attr:`~geedim.image.ImageAccessor.transform` and ``nodata`` values for compatibility with `rioxarray <https://github.com/corteva/rioxarray>`__, as well as ``ee`` and ``stac`` JSON strings of the Earth Engine property and STAC dictionaries.
 
+
+Google cloud
+~~~~~~~~~~~~
+
+Image
+^^^^^
+
+:meth:`ee.Image.toGoogleCloud() <geedim.image.ImageAccessor.toGoogleCloud>` exports an image to Google Drive, Earth Engine asset or Google Cloud Storage:
+
+.. literalinclude:: api.py
+    :language: python
+    :start-after: [image google cloud]
+    :end-before: [end image google cloud]
+
+Collection
+^^^^^^^^^^
+
+:meth:`ee.ImageCollection.toGoogleCloud() <geedim.collection.ImageCollectionAccessor.toGoogleCloud>` exports a collection to Google Drive, Earth Engine asset or Google Cloud Storage.  The ``split`` parameter controls whether exported files / assets correspond to collection :attr:`~geedim.enums.SplitType.bands` or :attr:`~geedim.enums.SplitType.images`:
+
+.. literalinclude:: api.py
+    :language: python
+    :start-after: [coll google cloud]
+    :end-before: [end coll google cloud]
+
+Additional arguments
+^^^^^^^^^^^^^^^^^^^^
+
+Depending on the ``type`` parameter, ``toGoogleCloud()`` calls one of the ``Export.image.toDrive()``, ``Export.image.toAsset()`` and ``Export.image.toCloudStorage()`` Earth Engine functions to perform the export.  :meth:`ee.Image.toGoogleCloud() <geedim.image.ImageAccessor.toGoogleCloud>` and :meth:`ee.ImageCollection.toGoogleCloud() <geedim.collection.ImageCollectionAccessor.toGoogleCloud>` allow additional keyword arguments to be passed to the ``type`` relevant Earth Engine function.  See the |toDrive|_, |toAsset|_ and |toCloudStorage|_ documentation for supported parameters.  E.g.
+
+.. literalinclude:: api.py
+    :language: python
+    :start-after: [google cloud kwargs]
+    :end-before: [end google cloud kwargs]
+
 .. |ee.Image.gd| replace:: ``ee.Image.gd``
 .. |ee.ImageCollection.gd| replace:: ``ee.ImageCollection.gd``
+.. |toDrive| replace:: ``Export.image.toDrive()``
+.. |toAsset| replace:: ``Export.image.toAsset()``
+.. |toCloudStorage| replace:: ``Export.image.toCloudStorage()``
 .. _ee.Image.gd: ../../reference/api/api.html#geedim.image.ImageAccessor
 .. _ee.ImageCollection.gd: ../../reference/api/api.html#geedim.collection.ImageCollectionAccessor
+.. _toDrive: https://developers.google.com/earth-engine/apidocs/export-image-todrive
+.. _toAsset: https://developers.google.com/earth-engine/apidocs/export-image-toasset
+.. _toCloudStorage: https://developers.google.com/earth-engine/apidocs/export-image-tocloudstorage
