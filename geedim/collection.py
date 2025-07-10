@@ -855,7 +855,7 @@ class ImageCollectionAccessor:
     ) -> list[ee.batch.Task]:
         """
         Export the collection to raster files on Google Drive, Earth Engine assets,
-        or raster files on Google Cloud Storage.
+        or raster files on Google Cloud Storage, using batch tasks.
 
         All bands in the collection should share the same projection, bounds and data
         type. :meth:`prepareForExport` can be called before this method to apply
@@ -889,8 +889,8 @@ class ImageCollectionAccessor:
             ``type`` is :attr:`~geedim.enums.ExportType.asset`.
         :param kwargs:
             Additional arguments to the ``type`` dependent Earth Engine function:
-            ``Export.image.toDrive``, ``Export.image.toAsset`` or
-            ``Export.image.toCloudStorage``.
+            ``Export.image.toDrive()``, ``Export.image.toAsset()`` or
+            ``Export.image.toCloudStorage()``.
 
         :return:
             List of image export tasks, started if ``wait`` is ``False``,

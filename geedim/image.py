@@ -869,7 +869,7 @@ class ImageAccessor:
     ) -> ee.batch.Task:
         """
         Export the image to a raster file on Google Drive, Earth Engine asset,
-        or raster file on Google Cloud Storage.
+        or raster file on Google Cloud Storage, using a batch task.
 
         :meth:`prepareForExport` can be called before this method to apply export
         parameters.
@@ -892,8 +892,8 @@ class ImageAccessor:
             Whether to wait for the export to complete before returning.
         :param kwargs:
             Additional arguments to the ``type`` dependent Earth Engine function:
-            ``Export.image.toDrive``, ``Export.image.toAsset`` or
-            ``Export.image.toCloudStorage``.
+            ``Export.image.toDrive()``, ``Export.image.toAsset()`` or
+            ``Export.image.toCloudStorage()``.
 
         :return:
             Export task, started if ``wait`` is ``False``, or completed if ``wait``
@@ -907,7 +907,9 @@ class ImageAccessor:
         # set default **kwargs
         kwargs.setdefault('description', filename.replace('/', '-')[:100])
         kwargs.setdefault('maxPixels', 1e9)
-        kwargs.setdefault('formatOptions', dict(cloudOptimized=True))
+        # default to COG unless otherwise specified
+        if 'fileFormat' not in kwargs:
+            kwargs.setdefault('formatOptions', dict(cloudOptimized=True))
 
         # create export task and start
         type = ExportType(type)
