@@ -150,6 +150,11 @@ By default, GeoTIFF file nodata tag(s) are set to the :attr:`~geedim.image.Image
     :start-after: [geotiff nodata]
     :end-before: [end geotiff nodata]
 
+Paths and URIs
+^^^^^^^^^^^^^^
+
+The ``file`` argument in :meth:`ee.Image.toGeoTIFF() <geedim.image.ImageAccessor.toGeoTIFF>` and ``dirname`` argument in :meth:`ee.ImageCollection.toGeoTIFF() <geedim.collection.ImageCollectionAccessor.toGeoTIFF>` can be local paths or remote URIs.  See the :ref:`related note <getting_started/cli:paths and uris>` in the command line section for more information.
+
 
 NumPy
 ~~~~~
