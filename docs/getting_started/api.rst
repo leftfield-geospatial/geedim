@@ -179,8 +179,8 @@ Collection
     :start-after: [coll numpy]
     :end-before: [end coll numpy]
 
-Masked and structured arrays
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Masking and data type
+^^^^^^^^^^^^^^^^^^^^^
 
 Both :meth:`ee.Image.toNumPy() <geedim.image.ImageAccessor.toNumPy>` and :meth:`ee.ImageCollection.toNumPy() <geedim.collection.ImageCollectionAccessor.toNumPy>` have ``masked`` and ``structured`` parameters.  The ``masked`` parameter controls whether the exported array has masked pixels set to :attr:`~geedim.image.ImageAccessor.nodata`, or is a :class:`~numpy.ma.MaskedArray`.  The ``structured`` parameter controls whether the exported array has a `numerical <https://numpy.org/devdocs//user/basics.types.html#numerical-data-types>`__ or `structured <https://numpy.org/doc/stable/user/basics.rec.html#structured-arrays>`__ data type.  E.g.:
 
@@ -256,12 +256,32 @@ Collection
 Additional arguments
 ^^^^^^^^^^^^^^^^^^^^
 
-Depending on the ``type`` parameter, ``toGoogleCloud()`` calls one of the ``Export.image.toDrive()``, ``Export.image.toAsset()`` and ``Export.image.toCloudStorage()`` Earth Engine functions to perform the export.  :meth:`ee.Image.toGoogleCloud() <geedim.image.ImageAccessor.toGoogleCloud>` and :meth:`ee.ImageCollection.toGoogleCloud() <geedim.collection.ImageCollectionAccessor.toGoogleCloud>` allow additional keyword arguments to be passed to the ``type`` relevant Earth Engine function.  See the |toDrive|_, |toAsset|_ and |toCloudStorage|_ documentation for supported parameters.  E.g.
+Depending on the ``type`` parameter, ``toGoogleCloud()`` calls one of the ``Export.image.toDrive()``, ``Export.image.toAsset()`` and ``Export.image.toCloudStorage()`` Earth Engine functions to perform the export.  :meth:`ee.Image.toGoogleCloud() <geedim.image.ImageAccessor.toGoogleCloud>` and :meth:`ee.ImageCollection.toGoogleCloud() <geedim.collection.ImageCollectionAccessor.toGoogleCloud>` allow additional keyword arguments to be passed to the ``type`` relevant Earth Engine function.  See the |toDrive|_, |toAsset|_ and |toCloudStorage|_ docs for supported parameters.  E.g.
 
 .. literalinclude:: api.py
     :language: python
     :start-after: [google cloud kwargs]
     :end-before: [end google cloud kwargs]
+
+
+Tiling
+~~~~~~
+
+Geedim divides images into tiles for export.  Tiles are downloaded and decompressed concurrently, then reassembled into the target export format.  The ``toGeoTIFF()``, ``toNumPy()`` and ``toXarray()`` methods all use this approach and take the same tiling parameters.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and ``max_tile_bands``.  Download concurrency can be controlled with the ``max_requests``, and decompress concurrency with ``max_cpus``.  Each parameter has an upper limit - see the ``toGeoTIFF()``, ``toNumPy()`` or ``toXarray()`` :doc:`reference docs <../reference/api>` for details.  For most uses, the tiling parameters can be left on their defaults.
+
+
+User memory limit error
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Earth engine has a `limit on user memory <https://developers.google.com/earth-engine/guides/usage#per-request_memory_footprint>`__ for image computations.  A ``'User memory limit exceeded'`` error is raised if this limit is exceeded.  Exporting with ``toGoogleCloud()`` uses the `batch environment <https://developers.google.com/earth-engine/guides/processing_environments>`__ which is not subject to this limit. But exporting with ``toGeoTIFF()``, ``toNumPy()`` or ``toXarray()`` computes image tiles in the `interactive environment <https://developers.google.com/earth-engine/guides/processing_environments>`__, which though unlikely, could exceed the limit in some cases.
+
+Using ``toGoogleCloud()`` in these situations is recommended.  Image(s) can first be exported to Earth Engine asset with ``toGoogleCloud()``, and then the asset(s) exported with one of ``toGeoTIFF()``, ``toNumPy()`` or ``toXarray()``.  E.g.:
+
+.. literalinclude:: api.py
+    :language: python
+    :start-after: [mem limit]
+    :end-before: [end mem limit]
+
 
 .. |ee.Image.gd| replace:: ``ee.Image.gd``
 .. |ee.ImageCollection.gd| replace:: ``ee.ImageCollection.gd``

@@ -281,6 +281,7 @@ print(da.dtype)
 # float32
 # [end xarray masked]
 
+# TODO: change folder='geedim' to folder='<project name>'?
 # [image google cloud]
 # create and prepare image
 im = ee.Image('COPERNICUS/S2_SR_HARMONIZED/20211220T080341_20211220T082827_T35HKC')
@@ -329,3 +330,17 @@ prep_im.gd.toGoogleCloud(
     formatOptions={'patchDimensions': [256, 256], 'compressed': True},
 )
 # [end google cloud kwargs]
+
+# [mem limit]
+# create and prepare an image
+im = ee.Image('COPERNICUS/S2_SR_HARMONIZED/20211220T080341_20211220T082827_T35HKC')
+region = ee.Geometry.Rectangle(24.35, -33.75, 24.45, -33.65)
+prep_im = im.gd.prepareForExport(region=region, scale=30, dtype='uint16')
+
+# export to Earth Engine asset 's2' in the 'geedim' project
+prep_im.gd.toGoogleCloud('s2', type='asset', folder='geedim', wait=True)
+
+# export the asset to a NumPy array
+array = ee.Image('projects/geedim/assets/s2').gd.toNumPy()
+# [end mem limit]
+ee.data.deleteAsset('projects/geedim/assets/s2')
