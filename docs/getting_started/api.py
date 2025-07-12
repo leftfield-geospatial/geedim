@@ -16,6 +16,7 @@ print(im.gd.cloudShadowSupport)
 # [end cloud support]
 
 # [mask]
+# add mask bands created with a threshold of 0.7 on the 'cs_cdf' Cloud Score+ band
 im = im.gd.addMaskBands(score=0.7, cs_band='cs_cdf')
 
 print(im.gd.bandNames)
