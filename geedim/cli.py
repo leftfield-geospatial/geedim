@@ -248,7 +248,7 @@ bbox_option = click.option(
     type=click.FLOAT,
     nargs=4,
     default=None,
-    show_default='source image bounds',
+    show_default='auto',
     callback=_bbox_cb,
     expose_value=False,  # callback exposes 'geometry' to the command
     metavar='LEFT BOTTOM RIGHT TOP',
@@ -259,7 +259,7 @@ region_option = click.option(
     '--region',
     type=click.Path(dir_okay=False),
     default=None,
-    show_default='source image bounds',
+    show_default='auto',
     callback=_region_cb,
     expose_value=False,  # callback exposes 'geometry' to the command
     help='Path / URI of a GeoJSON or georeferenced image file defining the export '
@@ -279,7 +279,7 @@ crs_option = click.option(
     '--crs',
     type=click.STRING,
     default=None,
-    show_default='source image CRS',
+    show_default='auto',
     callback=_crs_cb,
     help='CRS of the export image(s) as a well known authority (e.g. EPSG) or WKT '
     'string, path / URI of text file containing a string, or path / URI of an '
@@ -290,7 +290,6 @@ scale_option = click.option(
     '--scale',
     type=click.FLOAT,
     default=None,
-    show_default='minimum scale of source image bands',
     help='Pixel scale of the export image(s) (m).',
 )
 dtype_option = click.option(
@@ -331,6 +330,7 @@ crs_transform_option = click.option(
     type=click.FLOAT,
     nargs=6,
     default=None,
+    show_default='auto',
     metavar='XSCALE XSHEAR XTRANSLATION YSHEAR YSCALE YTRANSLATION',
     help='Georeferencing transform of the export image(s).',
 )
@@ -340,6 +340,7 @@ shape_option = click.option(
     type=click.INT,
     nargs=2,
     default=None,
+    show_default='auto',
     metavar='HEIGHT WIDTH',
     help='Dimensions of the export image(s) (pixels).',
 )
@@ -634,7 +635,7 @@ def search(
     Search a collection for images.
 
     Search result images are added to images piped in from previous commands,
-    and piped out for use by subsequent commands.
+    and piped out for use by subsequent pipeline commands.
     """
     # raise an error if --fill-portion / --cloudless-portion were supplied without
     # --bbox / --region
@@ -787,8 +788,8 @@ def download(
     Export image(s) to GeoTIFF file(s).
 
     Images piped from previous commands will be exported, in addition to any images
-    specified with :option:`--id <geedim-download --id>`.  All input images are piped
-    out of this command for use by subsequent commands.
+    specified with :option:`--id <geedim-download --id>`.  Input images are piped out
+    of this command for use by subsequent commands.
 
     Exported images include a fill (validity) mask band, and cloud/shadow related
     bands when supported.
@@ -887,8 +888,8 @@ def export(
     Export image(s) to Google cloud platforms.
 
     Images piped from previous commands will be exported, in addition to any images
-    specified with :option:`--id <geedim-export --id>`.  All input images are piped
-    out of this command for use by subsequent commands.
+    specified with :option:`--id <geedim-download --id>`.  Input images are piped out
+    of this command for use by subsequent commands.
 
     Exported images include a fill (validity) mask band, and cloud/shadow related
     bands when supported.
