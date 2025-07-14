@@ -326,9 +326,7 @@ class Tiler:
         async def download_url(url: str) -> rio.MemoryFile:
             """Download the GeoTIFF at the given URL into a memory file."""
             mem_file = rio.MemoryFile()
-            async with session.get(
-                url, chunked=True, raise_for_status=False
-            ) as response:
+            async with session.get(url, raise_for_status=False) as response:
                 if not response.ok:
                     # get a more detailed error message if possible
                     try:
