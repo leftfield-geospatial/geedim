@@ -191,7 +191,7 @@ def test_properties(coll: str, exp_support: bool, request: pytest.FixtureRequest
     assert coll.specBands == spec_bands
 
     # cloud/shadow support
-    assert coll.cloudShadowSupport == exp_support
+    assert coll.cloudSupport == exp_support
 
 
 @pytest.mark.parametrize(
@@ -508,17 +508,12 @@ def test_prepare_for_composite_errors(
     gedi_cth_coll: ImageCollectionAccessor, region_100ha: dict
 ):
     """Test _prepare_for_composite() error and warning conditions."""
-    with pytest.raises(ValueError, match='cloud / shadow masking support'):
+    with pytest.raises(ValueError, match='cloud mask support'):
         gedi_cth_coll._prepare_for_composite('q-mosaic')
     with pytest.raises(ValueError, match="'date' or 'region'"):
         gedi_cth_coll._prepare_for_composite(
             'mosaic', date='2020-01-01', region=region_100ha
         )
-
-    with pytest.warns(UserWarning, match="'date' is valid"):
-        gedi_cth_coll._prepare_for_composite('mean', date='2020-01-01')
-    with pytest.warns(UserWarning, match="'region' is valid"):
-        gedi_cth_coll._prepare_for_composite('mean', region=region_100ha)
 
 
 def test_composite_params(l9_sr_coll: ImageCollectionAccessor, region_100ha: dict):

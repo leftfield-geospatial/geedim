@@ -124,8 +124,8 @@ class ImageCollectionAccessor:
     @staticmethod
     def fromImages(images: Any) -> ee.ImageCollection:
         """
-        Create an image collection with support for cloud/shadow masking,
-        that contains the given images.
+        Create an image collection with support for cloud masking, from the given
+        images.
 
         Images from spectrally compatible Landsat collections can be combined i.e.
         Landsat-4 with Landsat-5, and Landsat-8 with Landsat-9.  Otherwise,
@@ -134,7 +134,7 @@ class ImageCollectionAccessor:
         of their component images.
 
         Use this method (instead of :meth:`ee.ImageCollection` or
-        :meth:`ee.ImageCollection.fromImages`) to support cloud/shadow masking on a
+        :meth:`ee.ImageCollection.fromImages`) to support cloud masking on a
         collection built from a sequence of images.
 
         :param images:
@@ -155,7 +155,7 @@ class ImageCollectionAccessor:
                 'Images must belong to the same, or spectrally compatible, collections.'
             )
 
-        # set the collection ID to enable cloud/shadow masking if supported
+        # set the collection ID to enable cloud masking if supported
         ee_coll = ee_coll.set('system:id', ids[0])
         return ee_coll
 
@@ -361,8 +361,8 @@ class ImageCollectionAccessor:
         return self._first.specBands
 
     @property
-    def cloudShadowSupport(self) -> bool:
-        """Whether this collection has cloud/shadow support."""
+    def cloudSupport(self) -> bool:
+        """Whether this collection has cloud mask support."""
         return issubclass(self._mi, _CloudlessImage)
 
     def _prepare_for_composite(
@@ -377,16 +377,11 @@ class ImageCollectionAccessor:
         """Return a collection that has been prepared for compositing."""
         method = enums.CompositeMethod(method)
         resampling = enums.ResamplingMethod(resampling)
-        sort_methods = [
-            enums.CompositeMethod.mosaic,
-            enums.CompositeMethod.q_mosaic,
-            enums.CompositeMethod.medoid,
-        ]
 
-        if (method is enums.CompositeMethod.q_mosaic) and (not self.cloudShadowSupport):
+        if (method is enums.CompositeMethod.q_mosaic) and (not self.cloudSupport):
             raise ValueError(
-                "The 'q-mosaic' method requires cloud / shadow masking support, "
-                'which this collection does not have.'
+                "The 'q-mosaic' method requires cloud mask support, which this "
+                'collection does not have.'
             )
 
         if date and region:
@@ -394,7 +389,7 @@ class ImageCollectionAccessor:
 
         def prepare_image(ee_image: ee.Image) -> ee.Image:
             """Prepare an Earth Engine image for use in compositing."""
-            if date and (method in sort_methods):
+            if date:
                 date_dist = (
                     ee.Number(ee_image.date().millis())
                     .subtract(ee.Date(date).millis())
@@ -403,7 +398,7 @@ class ImageCollectionAccessor:
                 ee_image = ee_image.set('DATE_DIST', date_dist)
 
             ee_image = self._mi.add_mask_bands(ee_image, **kwargs)
-            if region and (method in sort_methods):
+            if region:
                 ee_image = self._mi.set_mask_portions(
                     ee_image, region=region, scale=self._portion_scale
                 )
@@ -413,29 +408,13 @@ class ImageCollectionAccessor:
 
         ee_coll = self._ee_coll.map(prepare_image)
 
-        if method in sort_methods:
-            if date:
-                ee_coll = ee_coll.sort('DATE_DIST', ascending=False)
-            elif region:
-                sort_key = (
-                    'CLOUDLESS_PORTION' if self.cloudShadowSupport else 'FILL_PORTION'
-                )
-                ee_coll = ee_coll.sort(sort_key)
-            else:
-                ee_coll = ee_coll.sort('system:time_start')
+        if date:
+            ee_coll = ee_coll.sort('DATE_DIST', ascending=False)
+        elif region:
+            sort_key = 'CLOUDLESS_PORTION' if self.cloudSupport else 'FILL_PORTION'
+            ee_coll = ee_coll.sort(sort_key)
         else:
-            if date:
-                warnings.warn(
-                    f"'date' is valid for {sort_methods} methods only.",
-                    category=UserWarning,
-                    stacklevel=2,
-                )
-            elif region:
-                warnings.warn(
-                    f"'region' is valid for {sort_methods} methods only.",
-                    category=UserWarning,
-                    stacklevel=2,
-                )
+            ee_coll = ee_coll.sort('system:time_start')
 
         return ee_coll
 
@@ -517,14 +496,13 @@ class ImageCollectionAccessor:
 
     def addMaskBands(self, **kwargs) -> ee.ImageCollection:
         """
-        Return this collection with cloud/shadow masks and related bands added when
-        supported, otherwise with fill (validity) masks added.
+        Return this collection with mask and related bands added.
 
         Existing mask bands are overwritten, except on images without fixed projections,
         where no mask bands are added or overwritten.
 
         :param kwargs:
-            Cloud/shadow masking arguments - see
+            Cloud masking arguments - see
             :meth:`geedim.image.ImageAccessor.addMaskBands` for details.
 
         :return:
@@ -536,8 +514,8 @@ class ImageCollectionAccessor:
 
     def maskClouds(self) -> ee.ImageCollection:
         """
-        Return this collection with cloud/shadow masks applied when supported,
-        otherwise return this collection unaltered.
+        Return this collection with cloud masks applied when supported, otherwise
+        return this collection unaltered.
 
         Mask bands should be added with :meth:`addMaskBands` before calling this method.
 
@@ -572,10 +550,10 @@ class ImageCollectionAccessor:
         **kwargs,
     ) -> ee.ImageCollection:
         """
-        Filter the collection on date, region, filled/cloudless portion, and custom
+        Filter the collection on date, region, filled / cloud-free portion, and custom
         criteria.
 
-        Filled and cloudless portions are only calculated and included in collection
+        Filled and cloud-free portions are only calculated and included in collection
         :attr:`properties` when one or both of ``fill_portion`` /
         ``cloudless_portion`` are supplied.  If ``fill_portion`` or
         ``cloudless_portion`` are supplied, ``region`` is required.
@@ -595,13 +573,13 @@ class ImageCollectionAccessor:
         :param fill_portion:
             Lower limit on the portion of ``region`` that contains filled pixels (%).
         :param cloudless_portion:
-            Lower limit on the portion of filled pixels that are cloud/shadow free (%).
+            Lower limit on the portion of filled pixels that are cloud-free (%).
         :param custom_filter:
             Custom image property filter expression e.g. ``property > value``.  See
             the `EE docs <https://developers.google.com/earth-engine/apidocs/ee
             -filter-expression>`_ for details.
         :param kwargs:
-            Cloud/shadow masking arguments - see
+            Cloud masking arguments - see
             :meth:`geedim.image.ImageAccessor.addMaskBands` for details.
 
         :return:
@@ -613,7 +591,7 @@ class ImageCollectionAccessor:
                 'supplied.'
             )
 
-        # filter the image collection, finding cloud/shadow masks and region stats
+        # filter the image collection, finding cloud masks and region stats
         ee_coll = self._ee_coll
         if start_date:
             ee_coll = ee_coll.filterDate(start_date, end_date)
@@ -676,35 +654,21 @@ class ImageCollectionAccessor:
 
         :param method:
             Compositing method. By default,
-            :attr:`~geedim.enums.CompositeMethod.q_mosaic` is used for cloud/shadow
-            mask supported collections, and
-            :attr:`~geedim.enums.CompositeMethod.mosaic` otherwise.
+            :attr:`~geedim.enums.CompositeMethod.q_mosaic` is used for cloud mask
+            supported collections, and :attr:`~geedim.enums.CompositeMethod.mosaic`
+            otherwise.
         :param mask:
-            Whether to mask collection images prior to compositing.  The cloud/shadow
-            mask is applied when supported, otherwise the fill (validity) mask is
-            applied.
+            Whether to cloud mask collection images prior to compositing, when
+            supported.
         :param resampling:
             Resampling method to use on collection images prior to compositing.
         :param date:
-            Sort collection images by their absolute difference in capture time from
-            this date. This prioritises pixels from images closest to ``date``.  Valid
-            for the :attr:`~geedim.enums.CompositeMethod.q_mosaic`,
-            :attr:`~geedim.enums.CompositeMethod.mosaic` and
-            :attr:`~geedim.enums.CompositeMethod.medoid` ``method`` only.  If a
-            string, it should be in ISO format.  If ``None``, no time difference
-            sorting is done (the default).
+            Sort component images by the absolute difference in capture time with
+            this date.  If a string, it should be in ISO format.
         :param region:
-            Sort collection images by the portion of valid pixels inside this region
-            that are cloudless. Can be a GeoJSON dictionary or ``ee.Geometry``.  This
-            prioritises pixels from the least cloudy images. Valid for the
-            :attr:`~geedim.enums.CompositeMethod.q_mosaic`,
-            :attr:`~geedim.enums.CompositeMethod.mosaic` and
-            :attr:`~geedim.enums.CompositeMethod.medoid` ``method`` only.  If the
-            collection has no cloud/shadow mask support, images are sorted by the
-            portion of their valid pixels that are inside ``region``.  This
-            prioritises pixels from images with the best ``region`` coverage. If
-            ``region`` is ``None``, no cloudless/valid portion sorting is done (the
-            default).
+            Sort component images by the portion of cloud-free pixels inside this
+            region when cloud masking is supported, otherwise sort by the filled
+            (valid) portion.  Can be a GeoJSON dictionary or ``ee.Geometry``.
         :param kwargs:
             Cloud/shadow masking arguments - see
             :meth:`geedim.image.ImageAccessor.addMaskBands` for details.
