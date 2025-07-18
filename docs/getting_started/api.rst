@@ -5,11 +5,6 @@ API
 
 .. TODO: standardise headings e.g. masking/masked/nodata -> masking
 
-.. TODO: note on fsspec
-
-.. TODO: note on tiling params
-
-.. TODO: note on mem limit error
 
 Initialisation
 --------------
@@ -72,7 +67,8 @@ Collections can be composited using :meth:`~geedim.collection.ImageCollectionAcc
     :start-after: [composite]
     :end-before: [end composite]
 
-:class:`~geedim.enums.CompositeMethod` documents supported values for the ``method`` parameter.  Optionally, images can be sorted by closeness to a provided ``date``, or by the cloud-free portion of a ``region``.  See the :meth:`~geedim.collection.ImageCollectionAccessor.composite` reference for details.
+:class:`~geedim.enums.CompositeMethod` documents supported values for the ``method`` parameter.  The :attr:`~geedim.enums.CompositeMethod.mosaic`, :attr:`~geedim.enums.CompositeMethod.q_mosaic`, and :attr:`~geedim.enums.CompositeMethod.medoid` methods prioritise images in their sort order i.e. when more than one image pixel qualifies for selection, they select the first one.  Images can be sorted by closeness to a provided ``date``, or by the cloud-free portion of a ``region``.  If neither ``date`` or ``region`` are supplied, images are sorted by capture date.
+
 
 Exporting
 ---------
@@ -266,7 +262,7 @@ Depending on the ``type`` parameter, ``toGoogleCloud()`` calls one of the ``Expo
 Tiling
 ~~~~~~
 
-Geedim divides images into tiles for export.  Tiles are downloaded and decompressed concurrently, then reassembled into the target export format.  The ``toGeoTIFF()``, ``toNumPy()`` and ``toXarray()`` methods all use this approach and take the same tiling parameters.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and ``max_tile_bands``.  Download concurrency can be controlled with the ``max_requests``, and decompress concurrency with ``max_cpus``.  Each parameter has an upper limit - see the ``toGeoTIFF()``, ``toNumPy()`` or ``toXarray()`` :doc:`reference docs <../reference/api>` for details.  For most uses, the tiling parameters can be left on their defaults.
+Geedim divides images into tiles for export.  Tiles are downloaded and decompressed concurrently, then reassembled into the target export format.  The ``toGeoTIFF()``, ``toNumPy()`` and ``toXarray()`` methods all use this approach and take the same tiling parameters.  Tile size can be controlled with ``max_tile_size``, ``max_tile_dim`` and ``max_tile_bands``.  Download concurrency can be controlled with the ``max_requests``, and decompress concurrency with ``max_cpus``.  Each parameter has an upper limit - see the ``toGeoTIFF()``, ``toNumPy()`` or ``toXarray()`` :doc:`reference docs <../reference/api>` for details.  For most uses, the tiling parameters can be left on their default values.
 
 
 User memory limit error
@@ -287,8 +283,8 @@ Using ``toGoogleCloud()`` in these situations is recommended.  Image(s) can firs
 .. |toDrive| replace:: ``Export.image.toDrive()``
 .. |toAsset| replace:: ``Export.image.toAsset()``
 .. |toCloudStorage| replace:: ``Export.image.toCloudStorage()``
-.. _ee.Image.gd: ../../reference/api/api.html#geedim.image.ImageAccessor
-.. _ee.ImageCollection.gd: ../../reference/api/api.html#geedim.collection.ImageCollectionAccessor
+.. _ee.Image.gd: ../reference/api.html#geedim.image.ImageAccessor
+.. _ee.ImageCollection.gd: ../reference/api.html#geedim.collection.ImageCollectionAccessor
 .. _toDrive: https://developers.google.com/earth-engine/apidocs/export-image-todrive
 .. _toAsset: https://developers.google.com/earth-engine/apidocs/export-image-toasset
 .. _toCloudStorage: https://developers.google.com/earth-engine/apidocs/export-image-tocloudstorage

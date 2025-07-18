@@ -1,8 +1,6 @@
 Command line
 ============
 
-.. Geedim command line functionality is accessed with the |geedim|_ command, and its sub-commands.
-
 Much of the API functionality can also be accessed on the command line with the |geedim|_ command, and its sub-commands.
 
 Get help on ``geedim`` with:
@@ -25,7 +23,7 @@ Command line and API file / directory parameters can be specified as local paths
 Command chaining
 ----------------
 
-Multiple |geedim|_ commands can be chained together in a pipeline where image results from previous command(s) form inputs to the current command.  For example, to download a composite of the images produced by a search, the ``search``, ``composite`` and ``download`` commands would be chained.  Cloud configuration and ``--region`` / ``--bbox`` options are also piped between commands to save repeating these for multiple commands.  More detail on what each command reads from and outputs to the pipeline are given in the sections below.
+Multiple |geedim|_ commands can be chained together in a pipeline where image results from previous command(s) form inputs to the current command.  For example, to download a composite of the images produced by a search, the ``search``, ``composite`` and ``download`` commands would be chained.  Cloud mask configuration and ``--region`` / ``--bbox`` options are also piped between commands to save repeating these for multiple commands.  More detail on what each command reads from and outputs to the pipeline are given in the sections below.
 
 Cloud configuration
 -------------------
@@ -64,7 +62,7 @@ The export pixel grid, bounds and data type are defined automatically based on t
 
     geedim download --id COPERNICUS/S2_SR_HARMONIZED/20211220T080341_20211220T082827_T35HKC --crs EPSG:3857 --bbox 24.35 -33.75 24.45 -33.65 --scale 30 --dtype uint16
 
-Masks and related bands are added to exported images.  Cloud masks can be applied with :option:`--mask <geedim-download --mask>`, when supported.  Any cloud configuration piped with |config|_ is used to form the cloud masks.  E.g.:
+Masks and related bands are added to exported images.  Cloud masks can be applied with :option:`--mask <geedim-download --mask>`, when supported.  Any configuration piped with |config|_ is used to form the cloud masks.  E.g.:
 
 .. code-block::
 
@@ -93,15 +91,14 @@ Export pixel grid and bounds, cloud masking, image / band splitting, and piping 
 Compositing images
 ------------------
 
-|composite|_ creates a composite of input images.  Input images can be piped from previous commands, or specified with :option:`--id <geedim-composite --id>`.  The composite image is piped out for use by subsequent commands.  |download|_ or |export|_ should be chained after |composite|_ to export the composite image.
-
-Cloud is masked from input images by default.  This can be disabled with :option:`--no-mask <geedim-composite --no-mask>`.  Images can be sorted by closeness to :option:`--date <geedim-composite --date>`, or by the cloud-free portion of :option:`--bbox <geedim-composite --bbox>` /  :option:`--region <geedim-composite --region>`.
-
-This forms a cloud-free ``median`` composite from search result images, and downloads the result:
+|composite|_ creates a composite of input images.  Input images can be piped from previous commands, or specified with :option:`--id <geedim-composite --id>`.  The composite image is piped out for use by subsequent commands.  |download|_ or |export|_ should be chained after |composite|_ to export the composite image.  This forms a cloud-free ``median`` composite from search result images, and downloads the result:
 
 .. code-block::
 
     geedim search --collection COPERNICUS/S2_SR_HARMONIZED --start-date 2024-10-01 --end-date 2025-04-01 --bbox 24.35 -33.75 24.45 -33.65 --cloudless-portion 60 composite --method median download --crs EPSG:3857 --region - --scale 30 --dtype uint16
+
+Cloud is masked from input images by default.  This can be disabled with :option:`--no-mask <geedim-composite --no-mask>`.  A compositing method can be specified with :option:`--method <geedim-composite --method>`.  The :class:`~geedim.enums.CompositeMethod` reference documents supported values.  The :attr:`~geedim.enums.CompositeMethod.mosaic`, :attr:`~geedim.enums.CompositeMethod.q_mosaic`, and :attr:`~geedim.enums.CompositeMethod.medoid` methods prioritise images in their sort order i.e. when more than one image pixel qualifies for selection, they select the first one.  Images can be sorted by closeness to :option:`--date <geedim-composite --date>`, or by the cloud-free portion of :option:`--bbox <geedim-composite --bbox>` /  :option:`--region <geedim-composite --region>`.  If none of the sorting options are provided, images are sorted by capture date.
+
 
 .. |geedim| replace:: ``geedim``
 .. _geedim: ../reference/cli.html#geedim
