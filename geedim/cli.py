@@ -956,7 +956,7 @@ def export(
     '-d',
     '--date',
     type=click.DateTime(),
-    help='Sort component images by the absolute difference in capture time with this '
+    help='Sort component images by the absolute difference of capture time and this '
     'date (UTC).',
 )
 @click.option(

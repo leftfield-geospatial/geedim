@@ -72,7 +72,7 @@ Collections can be composited using :meth:`~geedim.collection.ImageCollectionAcc
     :start-after: [composite]
     :end-before: [end composite]
 
-:class:`~geedim.enums.CompositeMethod` documents supported values for the ``method`` parameter.  Optionally, images can be prioritised by closeness to a provided ``date``, or by the cloud-free portion of a ``region``.  See the :meth:`~geedim.collection.ImageCollectionAccessor.composite` reference for details.
+:class:`~geedim.enums.CompositeMethod` documents supported values for the ``method`` parameter.  Optionally, images can be sorted by closeness to a provided ``date``, or by the cloud-free portion of a ``region``.  See the :meth:`~geedim.collection.ImageCollectionAccessor.composite` reference for details.
 
 Exporting
 ---------

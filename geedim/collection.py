@@ -663,7 +663,7 @@ class ImageCollectionAccessor:
         :param resampling:
             Resampling method to use on collection images prior to compositing.
         :param date:
-            Sort component images by the absolute difference in capture time with
+            Sort component images by the absolute difference between capture time and
             this date.  If a string, it should be in ISO format.
         :param region:
             Sort component images by the portion of cloud-free pixels inside this

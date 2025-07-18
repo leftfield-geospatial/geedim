@@ -95,7 +95,7 @@ Compositing images
 
 |composite|_ creates a composite of input images.  Input images can be piped from previous commands, or specified with :option:`--id <geedim-composite --id>`.  The composite image is piped out for use by subsequent commands.  |download|_ or |export|_ should be chained after |composite|_ to export the composite image.
 
-Cloud is masked from input images by default.  This can be disabled with :option:`--no-mask <geedim-composite --no-mask>`.  With the ``mosaic`` or ``q-mosiac`` compositing :option:`--method <geedim-composite --method>`, images can be prioritised by closeness to :option:`--date <geedim-composite --date>` or by the cloud-free portion of :option:`--region <geedim-composite --region>`.
+Cloud is masked from input images by default.  This can be disabled with :option:`--no-mask <geedim-composite --no-mask>`.  Images can be sorted by closeness to :option:`--date <geedim-composite --date>`, or by the cloud-free portion of :option:`--bbox <geedim-composite --bbox>` /  :option:`--region <geedim-composite --region>`.
 
 This forms a cloud-free ``median`` composite from search result images, and downloads the result:
 
