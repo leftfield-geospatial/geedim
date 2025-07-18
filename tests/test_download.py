@@ -32,7 +32,7 @@ def const_base_image() -> BaseImage:
 
 @pytest.fixture(scope='session')
 def s2_sr_hm_base_image(s2_sr_hm_image_id: str) -> BaseImage:
-    """Harmonised Sentinel-2 SR BaseImage with partial cloud/shadow in region_*ha."""
+    """Harmonised Sentinel-2 SR BaseImage with partial cloud in region_*ha."""
     return BaseImage.from_id(s2_sr_hm_image_id)
 
 

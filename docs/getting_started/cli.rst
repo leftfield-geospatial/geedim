@@ -25,27 +25,27 @@ Command line and API file / directory parameters can be specified as local paths
 Command chaining
 ----------------
 
-Multiple |geedim|_ commands can be chained together in a pipeline where image results from previous command(s) form inputs to the current command.  For example, to download a composite of the images produced by a search, the ``search``, ``composite`` and ``download`` commands would be chained.  Cloud / shadow configuration and ``--region`` / ``--bbox`` options are also piped between commands to save repeating these for multiple commands.  More detail on what each command reads from and outputs to the pipeline are given in the sections below.
+Multiple |geedim|_ commands can be chained together in a pipeline where image results from previous command(s) form inputs to the current command.  For example, to download a composite of the images produced by a search, the ``search``, ``composite`` and ``download`` commands would be chained.  Cloud configuration and ``--region`` / ``--bbox`` options are also piped between commands to save repeating these for multiple commands.  More detail on what each command reads from and outputs to the pipeline are given in the sections below.
 
-Cloud / shadow configuration
-----------------------------
+Cloud configuration
+-------------------
 
-|config|_ configures cloud / shadow masking for subsequent commands in the pipeline.  Commands use a default configuration when they're not chained after |config|_.  E.g. this configures Sentinel-2 masking to use a threshold of 0.7 on the 'cs_cdf' Cloud Score+ band:
+|config|_ configures cloud masking for subsequent commands in the pipeline.  Commands use a default configuration when they're not chained after |config|_.  E.g. this configures Sentinel-2 masking to use a threshold of 0.7 on the 'cs_cdf' Cloud Score+ band:
 
 .. code-block:: 
 
     geedim config --score 0.7 --cs-band cs_cdf
 
 Filtering image collections
-----------------------------
+---------------------------
 
-|search|_ searches (filters) an image collection with user criteria and displays a table of the resulting images and their properties.  The resulting images are added to any images already in the pipeline, and piped out for use by subsequent commands.  E.g. this filters the Sentinel-2 surface reflectance collection on date range, region bounds, and a lower limit of 60% on the cloud / shadow - free portion of region:
+|search|_ searches (filters) an image collection with user criteria and displays a table of the resulting images and their properties.  The resulting images are added to any images already in the pipeline, and piped out for use by subsequent commands.  E.g. this filters the Sentinel-2 surface reflectance collection on date range, region bounds, and a lower limit of 60% on the cloud-free portion of region:
 
 .. code-block:: 
 
     geedim search --collection COPERNICUS/S2_SR_HARMONIZED --start-date 2024-10-01 --end-date 2025-04-01 --bbox 24.35 -33.75 24.45 -33.65 --cloudless-portion 60
 
-When |search|_ is chained after |config|_, it uses the piped configuration to find the the cloud / shadow - free portions.  E.g.:
+When |search|_ is chained after |config|_, it uses the piped configuration to find the the cloud-free portions.  E.g.:
 
 .. code-block:: 
 
@@ -64,7 +64,7 @@ The export pixel grid, bounds and data type are defined automatically based on t
 
     geedim download --id COPERNICUS/S2_SR_HARMONIZED/20211220T080341_20211220T082827_T35HKC --crs EPSG:3857 --bbox 24.35 -33.75 24.45 -33.65 --scale 30 --dtype uint16
 
-Fill (validity) masks are added to exported images, as are cloud / shadow mask and related bands when supported.  Masks can be applied with :option:`--mask <geedim-download --mask>`.  Any cloud / shadow configuration piped with |config|_ is used to form the cloud / shadow masks.  E.g.:
+Masks and related bands are added to exported images.  Cloud masks can be applied with :option:`--mask <geedim-download --mask>`, when supported.  Any cloud configuration piped with |config|_ is used to form the cloud masks.  E.g.:
 
 .. code-block::
 
@@ -88,8 +88,20 @@ The :option:`--type <geedim-export --type>` and :option:`--folder <geedim-export
 
     geedim export --id COPERNICUS/S2_SR_HARMONIZED/20211220T080341_20211220T082827_T35HKC --type asset --folder geedim --crs EPSG:3857 --bbox 24.35 -33.75 24.45 -33.65 --scale 30 --dtype uint16
 
-Export pixel grid and bounds, cloud / shadow masking, image / band splitting, and piping behaviours are the same as with |download|_, and share the same options.  See that :ref:`section <geotiff>` for details.
+Export pixel grid and bounds, cloud masking, image / band splitting, and piping behaviours are the same as with |download|_, and share the same options.  See that :ref:`section <geotiff>` for details.
 
+Compositing images
+------------------
+
+|composite|_ creates a composite of input images.  Input images can be piped from previous commands, or specified with :option:`--id <geedim-composite --id>`.  The composite image is piped out for use by subsequent commands.  |download|_ or |export|_ should be chained after |composite|_ to export the composite image.
+
+Cloud is masked from input images by default.  This can be disabled with :option:`--no-mask <geedim-composite --no-mask>`.  With the ``mosaic`` or ``q-mosiac`` compositing :option:`--method <geedim-composite --method>`, images can be prioritised by closeness to :option:`--date <geedim-composite --date>` or by the cloud-free portion of :option:`--region <geedim-composite --region>`.
+
+This forms a cloud-free ``median`` composite from search result images, and downloads the result:
+
+.. code-block::
+
+    geedim search --collection COPERNICUS/S2_SR_HARMONIZED --start-date 2024-10-01 --end-date 2025-04-01 --bbox 24.35 -33.75 24.45 -33.65 --cloudless-portion 60 composite --method median download --crs EPSG:3857 --region - --scale 30 --dtype uint16
 
 .. |geedim| replace:: ``geedim``
 .. _geedim: ../reference/cli.html#geedim
@@ -105,3 +117,6 @@ Export pixel grid and bounds, cloud / shadow masking, image / band splitting, an
 
 .. |export| replace:: ``geedim export``
 .. _export: ../reference/cli.html#geedim-export
+
+.. |composite| replace:: ``geedim composite``
+.. _composite: ../reference/cli.html#geedim-composite

@@ -305,8 +305,8 @@ mask_option = click.option(
     '--mask/--no-mask',
     default=False,
     show_default=True,
-    help='Whether to mask cloud/shadow in the export image(s).  Has no effect if '
-    'cloud/shadow masking is not supported.',
+    help='Whether to mask cloud in the export image(s).  Has no effect if cloud '
+    'masking is not supported.',
 )
 resampling_option = click.option(
     '-rs',
@@ -479,8 +479,8 @@ def cli(ctx: click.Context, verbose: int, quiet: int):
     type=click.INT,
     default=50,
     show_default=True,
-    help='Distance (m) to dilate cloud/shadow.  Valid for Sentinel-2 images with the '
-    "'qa' or 'cloud-prob' :option:`--mask-method`.",
+    help="Distance (m) to dilate cloud.  Valid for Sentinel-2 images with the 'qa' "
+    "or 'cloud-prob' :option:`--mask-method`.",
 )
 @click.option(
     '-cdi',
@@ -488,7 +488,7 @@ def cli(ctx: click.Context, verbose: int, quiet: int):
     type=click.FloatRange(min=-1, max=1),
     default=None,
     help='Cloud Displacement Index (CDI) threshold.  Values below this threshold are '
-    "considered potential clouds.  Valid for Sentinel-2 images with the 'qa' or "
+    "considered potential cloud.  Valid for Sentinel-2 images with the 'qa' or "
     "'cloud-prob' :option:`--mask-method`.  By default, the CDI is not used.",
 )
 @click.option(
@@ -522,9 +522,9 @@ def cli(ctx: click.Context, verbose: int, quiet: int):
 @click.pass_context
 def config(ctx: click.Context, **kwargs):
     """
-    Configure cloud/shadow masking.
+    Configure cloud masking.
 
-    Cloud/shadow configuration is piped out of this command and used by subsequent
+    Masking configuration is piped out of this command and used by subsequent
     pipeline commands that require it.
     """
     # store configuration in the context object for use by other commands (only
@@ -594,8 +594,8 @@ def config(ctx: click.Context, **kwargs):
     flag_value=0,
     show_default="don't calculate or filter on cloudless portion",
     help='Lower limit on the portion of filled pixels in :option:`--bbox` / '
-    ':option:`--region` that are cloud/shadow free (%). Uses zero if VALUE is  '
-    'not supplied. Has no effect if cloud/shadow masking is not supported for '
+    ':option:`--region` that are cloud-free (%). Uses zero if VALUE is not '
+    'supplied. Has no effect if cloud masking is not supported for '
     ':option:`--collection`.',
 )
 @click.option(
@@ -791,8 +791,7 @@ def download(
     specified with :option:`--id <geedim-download --id>`.  Input images are piped out
     of this command for use by subsequent commands.
 
-    Exported images include a fill (validity) mask band, and cloud/shadow related
-    bands when supported.
+    Exported images include mask and related bands.
 
     Images are retrieved as separate tiles which are downloaded and decompressed
     concurrently.  Tile size can be controlled with :option:`--max-tile-size
@@ -891,8 +890,7 @@ def export(
     specified with :option:`--id <geedim-download --id>`.  Input images are piped out
     of this command for use by subsequent commands.
 
-    Exported images include a fill (validity) mask band, and cloud/shadow related
-    bands when supported.
+    Exported images include mask and related bands.
 
     Files are named with the Earth Engine index of their source image, and file band
     descriptions set to image band names with :option:`--split <geedim-export
@@ -935,8 +933,7 @@ def export(
     'method',
     type=click.Choice(enums.CompositeMethod, case_sensitive=False),
     default=None,
-    show_default="'q-mosaic' for cloud/shadow supported collections, 'mosaic' "
-    'otherwise.',
+    show_default="'q-mosaic' for cloud mask supported collections, 'mosaic' otherwise.",
     help='Compositing method.',
 )
 @click.option(
@@ -944,8 +941,8 @@ def export(
     '--mask/--no-mask',
     default=True,
     show_default=True,
-    help='Whether to mask cloud/shadow in component images.  Has no effect if '
-    'cloud/shadow masking is not supported.',
+    help='Whether to mask cloud in component images.  Has no effect if cloud masking '
+    'is not supported.',
 )
 @click.option(
     '-rs',
@@ -956,6 +953,13 @@ def export(
     help='Resampling method for component images.',
 )
 @click.option(
+    '-d',
+    '--date',
+    type=click.DateTime(),
+    help='Sort component images by the absolute difference in capture time with this '
+    'date (UTC).',
+)
+@click.option(
     '-b',
     '--bbox',
     type=click.FLOAT,
@@ -964,8 +968,8 @@ def export(
     callback=_bbox_cb,
     expose_value=False,  # callback exposes 'geometry' parameter for the command
     metavar='LEFT BOTTOM RIGHT TOP',
-    help='Prioritise component images by their cloudless / filled portion inside '
-    "these bounds.  Valid for the 'mosaic' and 'q-mosaic' :option:`--method`.",
+    help='Sort component images by their cloud-free / filled portion inside these '
+    'bounds.',
 )
 @click.option(
     '-r',
@@ -974,17 +978,9 @@ def export(
     default=None,
     callback=_region_cb,
     expose_value=False,  # callback exposes 'geometry' parameter for the command
-    help='Prioritise component images by their cloudless / filled portion inside the '
-    'bounds defined by this GeoJSON / georeferenced image file.  Valid for the '
-    "'mosaic' and 'q-mosaic' :option:`--method`.  Use '-' to read from previous "
-    '``--bbox`` / ``--region`` options in the pipeline.',
-)
-@click.option(
-    '-d',
-    '--date',
-    type=click.DateTime(),
-    help='Prioritise component images closest to this date (UTC).  Valid for the '
-    "'mosaic' and 'q-mosaic' :option:`--method`.",
+    help='Sort component images by their cloud-free / filled portion inside the '
+    "bounds defined by this GeoJSON / georeferenced image file.  Use '-' to read from "
+    'previous ``--bbox`` / ``--region`` options in the pipeline.',
 )
 @click.pass_obj
 def composite(
@@ -1003,10 +999,14 @@ def composite(
     Input images should belong to the same collection or to spectrally compatible
     Landsat collections i.e. Landsat-4 with Landsat-5, or Landsat-8 with Landsat-9.
 
-    When supported, the default is to cloud/shadow mask input images.  This can be
-    turned off with :option:`--no-mask <geedim-composite --no-mask>`.  The 'q-mosaic'
+    When supported, input images are cloud masked by default.  This can be turned off
+    with :option:`--no-mask <geedim-composite --no-mask>`.  The 'q-mosaic'
     :option:`--method <geedim-composite --method>` uses distance to the nearest cloud
-    as the quality measure and requires cloud/shadow support.
+    as the quality measure and requires cloud mask support.
+
+    Images are sorted by their capture time when option:`--date <geedim-composite
+    --date>` and :option:`--bbox <geedim-composite --bbox>` / :option:`--region
+    <geedim-composite --region>` are not provided,
     """
     images = _get_images(obj, image_ids)
     coll = ee.ImageCollection.gd.fromImages(images)

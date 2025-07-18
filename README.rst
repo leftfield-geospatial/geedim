@@ -5,14 +5,14 @@ Geedim
 
 .. description_start
 
-Geedim provides a Python API and command line toolkit for exporting and cloud/shadow masking Google Earth Engine (GEE) imagery.  Images and Image collections can be exported to:
+Geedim provides a Python API and command line toolkit for exporting and cloud masking Google Earth Engine (GEE) imagery.  Images and Image collections can be exported to:
 
 - GeoTIFF file
 - NumPy array
 - Xarray Dataset / DataArray
 - Google Cloud platforms
 
-And cloud / shadow masking is supported on:
+And cloud masking is supported on:
 
 - Landsat 4-9 `collection 2 <https://developers.google.com/earth-engine/datasets/catalog/landsat>`__ images
 - Sentinel-2 `TOA <https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_HARMONIZED>`__ and `surface reflectance <https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED>`__ images
@@ -74,13 +74,12 @@ Geedim provides access to its functionality through the ``gd`` accessor on the `
     print(filt_coll.gd.schemaTable)
     print(filt_coll.gd.propertiesTable)
 
-    # create a cloud/shadow free composite & download
+    # create a cloud-free composite & download
     comp_im = filt_coll.gd.composite('median')
     prep_im = comp_im.gd.prepareForExport(
         crs='EPSG:3857', region=region, scale=10, dtype='uint16'
     )
     prep_im.gd.toGeoTIFF('s2_comp.tif')
-
 
 
 Command line interface
@@ -109,7 +108,7 @@ Credits
 -  Tiled downloading was inspired by the `MIT licensed <https://github.com/cordmaur/GEES2Downloader/blob/main/LICENSE>`__ `GEES2Downloader <https://github.com/cordmaur/GEES2Downloader>`__ project.
 -  Medoid compositing, and the accessor approach to extending the `GEE API <https://github.com/google/earthengine-api>`__, were adapted from `geetools <https://github.com/gee-community/geetools>`__ under terms of the
    `MIT license <https://github.com/gee-community/geetools/blob/master/LICENSE>`__.
--  Sentinel-2 cloud/shadow masking was adapted from `ee_extra <https://github.com/r-earthengine/ee_extra>`__ under
+-  Sentinel-2 cloud masking was adapted from `ee_extra <https://github.com/r-earthengine/ee_extra>`__ under
    terms of the `Apache-2.0 license <https://github.com/r-earthengine/ee_extra/blob/master/LICENSE>`__
 
 .. TODO: include a section on why geedim and not Xee?

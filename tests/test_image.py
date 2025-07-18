@@ -84,8 +84,8 @@ def test_properties(
         assert len(spec_bands) > 0
     assert image.specBands == spec_bands
 
-    # cloud/shadow support
-    assert image.cloudShadowSupport == exp_support
+    # cloud mask support
+    assert image.cloudSupport == exp_support
 
 
 @pytest.mark.parametrize(

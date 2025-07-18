@@ -11,7 +11,7 @@ ee.Initialize()
 # [cloud support]
 im = ee.Image('COPERNICUS/S2_SR_HARMONIZED/20211220T080341_20211220T082827_T35HKC')
 
-print(im.gd.cloudShadowSupport)
+print(im.gd.cloudSupport)
 # True
 # [end cloud support]
 
@@ -29,8 +29,8 @@ im = im.gd.maskClouds()
 region = ee.Geometry.Rectangle(24.35, -33.75, 24.45, -33.65)
 coll = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
 
-# filter by date range, region bounds, and a lower limit of 60% on the
-# cloud/shadow-free portion of region
+# filter by date range, region bounds, and a lower limit of 60% on the cloud-free
+# portion of region
 filt_coll = coll.gd.filter(
     '2021-10-01', '2022-04-01', region=region, cloudless_portion=60
 )
@@ -42,12 +42,11 @@ filt_coll.gd.schemaPropertyNames += ('VEGETATION_PERCENTAGE',)
 
 print(filt_coll.gd.schemaTable)
 # ABBREV     NAME                             DESCRIPTION
-# ---------  -------------------------------  ----------------------------------------------
+# ---------  -------------------------------  ------------------------------------------------
 # INDEX      system:index                     Earth Engine image index
 # DATE       system:time_start                Image capture date/time (UTC)
 # FILL       FILL_PORTION                     Portion of region pixels that are valid (%)
-# CLOUDLESS  CLOUDLESS_PORTION                Portion of filled pixels that are cloud/shadow
-#                                             free (%)
+# CLOUDLESS  CLOUDLESS_PORTION                Portion of filled pixels that are cloud-free (%)
 # ...        ...                              ...
 # VP         VEGETATION_PERCENTAGE            Percentage of pixels classified as vegetation
 print(filt_coll.gd.propertiesTable)
@@ -207,7 +206,7 @@ print(array.dtype)
 # [end numpy masked structured]
 
 # [image xarray]
-# create and prepare a cloud/shadow masked image
+# create and prepare a cloud masked image
 im = ee.Image('COPERNICUS/S2_SR_HARMONIZED/20211220T080341_20211220T082827_T35HKC')
 im = im.gd.addMaskBands().gd.maskClouds()
 region = ee.Geometry.Rectangle(24.35, -33.75, 24.45, -33.65)

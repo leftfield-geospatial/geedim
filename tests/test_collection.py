@@ -190,7 +190,7 @@ def test_properties(coll: str, exp_support: bool, request: pytest.FixtureRequest
         assert len(spec_bands) > 0
     assert coll.specBands == spec_bands
 
-    # cloud/shadow support
+    # cloud mask support
     assert coll.cloudSupport == exp_support
 
 
@@ -386,8 +386,8 @@ def test_filter(region_10000ha: dict):
         for cp in [100, cloudless_portion]
     ]
 
-    # cloud / shadow kwargs
-    props['cs_kwargs'] = [
+    # cloud masking kwargs
+    props['cm_kwargs'] = [
         ref_filter(fill_portion=0, mask_shadows=ms).aggregate_array('CLOUDLESS_PORTION')
         for ms in [False, True]
     ]
@@ -422,10 +422,10 @@ def test_filter(region_10000ha: dict):
     assert any(cp >= cloudless_portion for cp in props['custom_filter_p'][0])
     assert all(cp < cloudless_portion for cp in props['custom_filter_p'][1])
 
-    # cloud / shadow kwargs (changing mask_shadows from False to True reduces the
+    # cloud maskingkwargs (changing mask_shadows from False to True reduces the
     # cloudless_portion)
     assert any(
-        cp_nms > cp_ms for cp_nms, cp_ms in zip(*props['cs_kwargs'], strict=True)
+        cp_nms > cp_ms for cp_nms, cp_ms in zip(*props['cm_kwargs'], strict=True)
     )
 
 
@@ -463,7 +463,7 @@ def test_prepare_for_composite_date_region(
         for coll in [l9_sr_coll._ee_coll, comp_coll]
     ]
 
-    # region with cloud/shadow supported collection:
+    # region with cloud mask supported collection:
     src_coll = l9_sr_coll._ee_coll.map(lambda im: set_mask_portions(im, l9_sr_coll._mi))
     src_coll = ImageCollectionAccessor(src_coll)
     src_coll.id = l9_sr_coll.id  # patch id to avoid getInfo()
@@ -473,7 +473,7 @@ def test_prepare_for_composite_date_region(
         for coll in [src_coll._ee_coll, comp_coll]
     ]
 
-    # region with non-cloud/shadow supported collection:
+    # region with non-cloud mask supported collection:
     src_coll = gedi_cth_coll._ee_coll.map(
         lambda im: set_mask_portions(im, gedi_cth_coll._mi)
     )
@@ -495,11 +495,11 @@ def test_prepare_for_composite_date_region(
     sorted_dates = [d for _, d in sorted_dates]
     assert infos['date'][1] == sorted_dates
 
-    # test region with cloud/shadow supported collection:
+    # test region with cloud mask supported collection:
     assert infos['region_cp'][1] != infos['region_cp'][0]
     assert sorted(infos['region_cp'][1]) == infos['region_cp'][1]
 
-    # test region with non-cloud/shadow supported collection:
+    # test region with non-cloud mask supported collection:
     assert infos['region_fp'][1] != infos['region_fp'][0]
     assert sorted(infos['region_fp'][1]) == infos['region_fp'][1]
 
@@ -549,8 +549,8 @@ def test_composite_params(l9_sr_coll: ImageCollectionAccessor, region_100ha: dic
         get_refl_stat(l9_sr_coll.composite('mosaic', region=r), stat='mean')
         for r in [None, region_100ha]
     ]
-    # cloud / shadow kwargs
-    infos['cs_kwargs'] = [
+    # cloud masking kwargs
+    infos['cm_kwargs'] = [
         get_refl_stat(l9_sr_coll.composite(mask_shadows=ms).mask(), stat='sum')
         for ms in [False, True]
     ]
@@ -576,9 +576,9 @@ def test_composite_params(l9_sr_coll: ImageCollectionAccessor, region_100ha: dic
     assert infos['date'][0] != infos['date'][1]
     # test region (CLOUDLESS_PORTION) ordering affects the mean reflectance
     assert infos['region'][0] != infos['region'][1]
-    # test cloud / shadow kwargs have an effect (i.e. mask_shadows=True reduces the
+    # test cloud masking kwargs have an effect (i.e. mask_shadows=True reduces the
     # mask_shadows=False masked area)
-    assert infos['cs_kwargs'][0] > infos['cs_kwargs'][1]
+    assert infos['cm_kwargs'][0] > infos['cm_kwargs'][1]
 
 
 def test_composite_properties(l9_sr_coll: ImageCollectionAccessor):

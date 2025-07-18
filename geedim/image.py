@@ -428,8 +428,8 @@ class ImageAccessor:
         ]
 
     @property
-    def cloudShadowSupport(self) -> bool:
-        """Whether this image has cloud/shadow support."""
+    def cloudSupport(self) -> bool:
+        """Whether this image has cloud mask support."""
         return issubclass(self._mi, mask._CloudlessImage)
 
     def _raise_cannot_export(self):
@@ -651,8 +651,7 @@ class ImageAccessor:
 
     def addMaskBands(self, **kwargs) -> ee.Image:
         """
-        Return this image with cloud/shadow masks and related bands added when
-        supported, otherwise with fill (validity) mask added.
+        Return this image with mask and related bands added.
 
         Existing mask bands are overwritten except if this image has no fixed
         projection, in which case no bands are added or overwritten.
@@ -695,8 +694,8 @@ class ImageAccessor:
             or :attr:`~geedim.enums.CloudMaskMethod.cloud_prob` ``mask_method``.
             Defaults to ``1000``.
         :param int buffer:
-            Distance (m) to dilate cloud/shadow.  Valid for Sentinel-2 images with
-            the :attr:`~geedim.enums.CloudMaskMethod.qa` or
+            Distance (m) to dilate cloud.  Valid for Sentinel-2 images with the
+            :attr:`~geedim.enums.CloudMaskMethod.qa` or
             :attr:`~geedim.enums.CloudMaskMethod.cloud_prob` ``mask_method``.
             Defaults to ``50``.
         :param float cdi_thresh:
@@ -726,8 +725,8 @@ class ImageAccessor:
 
     def maskClouds(self) -> ee.Image:
         """
-        Return this image with cloud/shadow masks applied when supported, otherwise
-        return this image unaltered.
+        Return this image with cloud mask applied when supported, otherwise return
+        this image unaltered.
 
         Mask bands should be added with :meth:`addMaskBands` before calling this method.
 

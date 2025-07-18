@@ -33,7 +33,7 @@ landsat_prop_schema = {
     **default_prop_schema,
     'CLOUDLESS_PORTION': {
         'abbrev': 'CLOUDLESS',
-        'description': 'Portion of filled pixels that are cloud/shadow free (%)',
+        'description': 'Portion of filled pixels that are cloud-free (%)',
     },
     'GEOMETRIC_RMSE_MODEL': {
         'abbrev': 'GRMSE',
@@ -47,7 +47,7 @@ s2_prop_schema = {
     **default_prop_schema,
     'CLOUDLESS_PORTION': {
         'abbrev': 'CLOUDLESS',
-        'description': 'Portion of filled pixels that are cloud/shadow free (%)',
+        'description': 'Portion of filled pixels that are cloud-free (%)',
     },
     'RADIOMETRIC_QUALITY': {
         'abbrev': 'RADQ',
@@ -249,7 +249,7 @@ gd_to_ee = {v['gd_coll_name']: k for k, v in collection_schema.items()}
 # "Two way" dict to convert Earth Engine to/from geedim collection names
 coll_names = dict(**gd_to_ee, **ee_to_gd)
 
-# A list of cloud/shadow mask supported EE collection names
+# A list of cloud mask supported EE collection names
 cloud_coll_names = [
     k
     for k, v in collection_schema.items()
@@ -258,9 +258,7 @@ cloud_coll_names = [
 
 
 def cli_cloud_coll_table() -> str:
-    """Return a table of cloud/shadow mask supported collections for use in CLI help
-    strings.
-    """
+    """Return a table of cloud mask supported collections for use in CLI help strings."""
     headers = dict(gd_coll_name='geedim name', ee_coll_name='EE name')
     data = []
     for key, val in collection_schema.items():
@@ -270,7 +268,7 @@ def cli_cloud_coll_table() -> str:
 
 
 def cloud_coll_table(descr_join='\n') -> str:
-    """Return a table of cloud/shadow mask supported collections as a printable string.
+    """Return a table of cloud mask supported collections as a printable string.
     - Use descr_join='\n' for github README friendly formatting.
     - Use descr_join='\n\n' for RTD/Sphinx friendly formatting.
     """

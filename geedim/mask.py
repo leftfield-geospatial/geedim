@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 class _MaskedImage:
-    """Masking method container for images without cloud/shadow support."""
+    """Masking method container for images without cloud mask support."""
 
     @staticmethod
     def _get_mask_bands(ee_image: ee.Image) -> dict[str, ee.Image]:
@@ -40,8 +40,7 @@ class _MaskedImage:
 
     @classmethod
     def add_mask_bands(cls, ee_image: ee.Image, **kwargs) -> ee.Image:
-        """Return the given image with cloud/shadow masks and related bands added
-        when supported, otherwise with fill (validity) mask added. Mask bands are
+        """Return the given image with mask and related bands added. Mask bands are
         overwritten if they exist, except on images without fixed projections,
         in which case no bands are added or overwritten.
         """
@@ -58,8 +57,8 @@ class _MaskedImage:
 
     @staticmethod
     def mask_clouds(ee_image: ee.Image) -> ee.Image:
-        """Return the given image with cloud/shadow masks applied when supported,
-        otherwise return the given image unaltered.  Mask bands should be added with
+        """Return the given image with cloud mask applied when supported, otherwise
+        return the image unaltered.  Mask bands should be added with
         :meth:`add_mask_bands` before calling this method.
         """
         return ee_image
@@ -73,7 +72,7 @@ class _MaskedImage:
         """Return the given image with the ``FILL_PORTION`` property set to the
         filled percentage of the given region, and the ``CLOUDLESS_PORTION`` property
         set to the cloudless percentage of ``FILL_PORTION``.  ``CLOUDLESS_PORTION``
-        is set to ``100`` if cloud/shadow masking is not supported.
+        is set to ``100`` if cloud masking is not supported.
         """
         portions = ImageAccessor(ee_image.select('FILL_MASK')).regionCoverage(
             region=region, scale=scale, maxPixels=1e6, bestEffort=True
@@ -84,7 +83,7 @@ class _MaskedImage:
 
 
 class _CloudlessImage(_MaskedImage):
-    """Abstract masking method container for images with cloud/shadow support."""
+    """Abstract masking method container for images with cloud mask support."""
 
     @staticmethod
     def _get_cloud_dist(
@@ -92,7 +91,7 @@ class _CloudlessImage(_MaskedImage):
         proj: ee.Projection = None,
         max_cloud_dist: float = 5000,
     ) -> ee.Image:
-        """Return a cloud/shadow distance (m) image for the given cloudless mask."""
+        """Return a cloud distance (m) image for the given cloudless mask."""
         # projection & scale of the distance image
         proj = proj or cloudless_mask.projection()
         scale = proj.nominalScale()
@@ -100,12 +99,11 @@ class _CloudlessImage(_MaskedImage):
         # max_cloud_dist in pixels
         max_cloud_pix = ee.Number(max_cloud_dist).divide(scale).round()
 
-        # Find distance to nearest cloud/shadow (m).  Distances are found for all
-        # pixels, including masked / invalid pixels, which are treated as 0 (non
-        # cloud/shadow).
-        cloud_shadow_mask = cloudless_mask.Not()
+        # Find distance to nearest cloud (m).  Distances are found for all
+        # pixels, including masked / invalid pixels, which are treated as 0 (non cloud).
+        cloud_mask = cloudless_mask.Not()
         cloud_dist = (
-            cloud_shadow_mask.fastDistanceTransform(
+            cloud_mask.fastDistanceTransform(
                 neighborhood=max_cloud_pix, units='pixels', metric='squared_euclidean'
             )
             .sqrt()
@@ -253,6 +251,7 @@ class _LandsatSrAerosolImage(_LandsatSrImage):
         ee_image: ee.Image, mask_aerosols: bool = False, **kwargs
     ) -> dict[str, ee.Image]:
         aux_bands = _LandsatSrImage._get_mask_bands(ee_image, **kwargs)
+        # TODO: find cloud distance w/o saturation and with aerosol?
         if mask_aerosols:
             # find & incorporate high aerosol level mask
             sr_qa_aerosol = ee_image.select('SR_QA_AEROSOL')
@@ -314,7 +313,7 @@ class _Sentinel2Image(_CloudlessImage):
             # TODO: would it be possible (and faster) to use
             #  ee.ImageCollection.linkCollection, for the ImageCollection accessor
             #  rather than linking per image?  I think linkCollection is a shortcut
-            #  for ee.Join.saveFirst
+            #  for ee.Join.saveFirst.
             # default fully masked image
             default = ee.Image().updateMask(0)
             default = default.rename(band)
@@ -401,7 +400,7 @@ class _Sentinel2Image(_CloudlessImage):
             cloud_mask = cloud_prob.gte(prob)
             return cloud_mask.rename('CLOUD_MASK'), cloud_prob.rename('CLOUD_PROB')
 
-        def cloud_score_cloud_shadow_mask(
+        def cloud_score_cloud_mask(
             ee_image: ee.Image,
         ) -> tuple[ee.Image, ee.Image]:
             """Return the cloud score thresholded cloud mask, and cloud score image for
@@ -435,13 +434,11 @@ class _Sentinel2Image(_CloudlessImage):
             return cdi_image.lt(cdi_thresh).rename('CDI_CLOUD_MASK')
 
         def cloud_shadow_masks(ee_image: ee.Image) -> dict[str, ee.Image]:
-            """Return a dictionary of cloud/shadow masks & related images for
-            ``ee_image``.
-            """
+            """Return a dictionary of cloud mask & related bands for ``ee_image``."""
             aux_bands = {}
             if mask_method is CloudMaskMethod.cloud_score:
-                aux_bands['cloud_shadow'], aux_bands['score'] = (
-                    cloud_score_cloud_shadow_mask(ee_image)
+                aux_bands['combined'], aux_bands['score'] = cloud_score_cloud_mask(
+                    ee_image
                 )
             else:
                 if mask_method is CloudMaskMethod.qa:
@@ -461,17 +458,15 @@ class _Sentinel2Image(_CloudlessImage):
                 )
 
                 if mask_shadows:
-                    aux_bands['cloud_shadow'] = aux_bands['cloud'].Or(
-                        aux_bands['shadow']
-                    )
+                    aux_bands['combined'] = aux_bands['cloud'].Or(aux_bands['shadow'])
                 else:
-                    aux_bands['cloud_shadow'] = aux_bands['cloud']
+                    aux_bands['combined'] = aux_bands['cloud']
                     aux_bands.pop('shadow', None)
 
                 # do a morphological opening that removes small (20m) blobs from the
                 # mask and then dilates
-                aux_bands['cloud_shadow'] = (
-                    aux_bands['cloud_shadow']
+                aux_bands['combined'] = (
+                    aux_bands['combined']
                     .focal_min(20, units='meters')
                     .focal_max(buffer, units='meters')
                 )
@@ -485,13 +480,13 @@ class _Sentinel2Image(_CloudlessImage):
                     .gt(10000)
                     .rename('NONPHYSICAL_MASK')
                 )
-                aux_bands['cloud_shadow'] = aux_bands['cloud_shadow'].Or(
+                aux_bands['combined'] = aux_bands['combined'].Or(
                     aux_bands['nonphysical']
                 )
 
             return aux_bands
 
-        # get cloud/shadow etc bands
+        # get cloud etc bands
         aux_bands = cloud_shadow_masks(ee_image)
 
         # derive a fill mask from the Earth Engine mask for the surface reflectance
@@ -505,11 +500,12 @@ class _Sentinel2Image(_CloudlessImage):
 
         # combine masks into cloudless_mask
         aux_bands['cloudless'] = (
-            (aux_bands['cloud_shadow'].Not())
+            (aux_bands['combined'].Not())
             .And(aux_bands['fill'])
             .rename('CLOUDLESS_MASK')
         )
-        aux_bands.pop('cloud_shadow')
+        # TODO: reduce / simplify the number of bands added (for landsat too)?
+        aux_bands.pop('combined')
 
         # find cloud distance from cloudless mask
         aux_bands['dist'] = _CloudlessImage._get_cloud_dist(
@@ -574,7 +570,7 @@ class MaskedImage(BaseImage):
             as a GeoJSON dictionary or ``ee.Geometry``.  Percentages are stored in
             the image properties. If ``None``, statistics are not found (the default).
         :param kwargs:
-            Cloud/shadow masking parameters - see
+            Cloud masking parameters - see
             :meth:`~geedim.image.ImageAccessor.addMaskBands` for details.
         """
         super().__init__(ee_image)
@@ -602,5 +598,5 @@ class MaskedImage(BaseImage):
         return MaskedImage(ee.Image(image_id), **kwargs)
 
     def mask_clouds(self):
-        """Apply the cloud/shadow mask if supported, otherwise apply the fill mask."""
+        """Apply the cloud mask if supported, otherwise apply the fill mask."""
         self._ee_image = self.maskClouds()

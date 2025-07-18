@@ -33,32 +33,34 @@ class _StrChoiceEnum(str, Enum):
 
 
 class CompositeMethod(_StrChoiceEnum):
-    """Enumeration for the compositing method, i.e. the method for finding a
-    composite pixel from the stack of corresponding input image pixels.
+    """Enumeration for the compositing method i.e. the method for finding a
+    composite pixel from the corresponding input image pixels.
     """
 
     q_mosaic = 'q-mosaic'
     """Use the unmasked pixel with the highest cloud distance (distance to nearest 
-    cloud). Where more than one pixel has the same cloud distance, the first one in 
-    the stack is selected."""
+    cloud). When more than one pixel has the same cloud distance, the first one is 
+    used.
+    """
 
     mosaic = 'mosaic'
-    """Use the first unmasked pixel in the stack."""
+    """Use the first unmasked pixel."""
 
     medoid = 'medoid'
-    """Use the medoid of the unmasked pixels.  This is the pixel from the image 
-    having the minimum sum of spectral distances to the rest of the images. Maintains 
-    the original relationship between bands. See 
-    https://www.mdpi.com/2072-4292/5/12/6481 for detail."""
+    """Medoid of the unmasked pixels.  This is the pixel from the image with the 
+    minimum sum of spectral distances to the rest of the images.  Where more than one 
+    pixel has the same summed distance, the first one is used.  See 
+    https://www.mdpi.com/2072-4292/5/12/6481 for detail.
+    """
 
     median = 'median'
-    """Use the median of the unmasked pixels."""
+    """Median of the unmasked pixels."""
 
     mode = 'mode'
-    """Use the mode of the unmasked pixels."""
+    """Mode of the unmasked pixels."""
 
     mean = 'mean'
-    """Use the mean of the unmasked pixels."""
+    """Mean of the unmasked pixels."""
 
 
 class CloudMaskMethod(_StrChoiceEnum):

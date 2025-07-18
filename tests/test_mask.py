@@ -37,7 +37,7 @@ def constant_ee_image() -> ee.Image:
 
 @pytest.fixture(scope='session')
 def fill_ee_image(constant_ee_image: ee.Image) -> ee.Image:
-    """Mock non cloud/shadow image with a known FILL_MASK band."""
+    """Mock non cloud mask supported image with a known FILL_MASK band."""
     # FILL_MASK covers half the image
     fill_mask = (
         constant_ee_image.mask().reduce(ee.Reducer.allNonZero()).rename('FILL_MASK')
@@ -47,7 +47,7 @@ def fill_ee_image(constant_ee_image: ee.Image) -> ee.Image:
 
 @pytest.fixture(scope='session')
 def cloudless_ee_image(fill_ee_image: ee.Image) -> ee.Image:
-    """Mock cloud/shadow image with known FILL_MASK and CLOUDLESS_MASK bands."""
+    """Mock cloud mask supported image with known FILL_MASK and CLOUDLESS_MASK bands."""
     # CLOUDLESS_MASK covers half of FILL_MASK (i.e. CLOUDLESS_MASK and FILL_MASK image portions
     # are 0.25 and 0.5 resp.).
     cloudless_bounds = ee.Geometry.Rectangle((0.5, -1.0, 1.0, 1.0), proj='EPSG:3857')

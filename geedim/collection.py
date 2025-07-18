@@ -1274,8 +1274,8 @@ class MaskedCollection(ImageCollectionAccessor):
         self, ee_collection: ee.ImageCollection, add_props: list[str] | None = None
     ):
         """
-        A class for describing, searching, compositing and cloud / shadow masking an
-        image collection.
+        A class for describing, searching, compositing and cloud masking an image
+        collection.
 
         .. deprecated:: 2.0.0
             Please use the :class:`gd <geedim.collection.ImageCollectionAccessor>`
@@ -1325,8 +1325,8 @@ class MaskedCollection(ImageCollectionAccessor):
         add_props: list[str] | None = None,
     ) -> MaskedCollection:
         """
-        Create an MaskedCollection with support for cloud/shadow masking,
-        that contains the given images.
+        Create an MaskedCollection with support for cloud masking, that contains the
+        given images.
 
         Images from spectrally compatible Landsat collections can be combined i.e.
         Landsat-4 with Landsat-5, and Landsat-8 with Landsat-9.  Otherwise,
@@ -1335,7 +1335,7 @@ class MaskedCollection(ImageCollectionAccessor):
         belonging to the collection of their component images.
 
         Use this method (instead of :meth:`ee.ImageCollection` or
-        :meth:`ee.ImageCollection.fromImages`) to support cloud/shadow masking on a
+        :meth:`ee.ImageCollection.fromImages`) to support cloud masking on a
         collection built from a sequence of images.
 
         :param images:

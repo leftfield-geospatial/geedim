@@ -24,20 +24,19 @@ Geedim extends the `GEE API <https://github.com/google/earthengine-api>`__ with 
 
 If you use a linter, you may need to include the ``# noqa: F401`` suppression comment after the ``geedim`` import to prevent it being removed.
 
-Cloud / shadow
---------------
+Cloud masking
+-------------
 
-Masking
-~~~~~~~
-
-Cloud / shadow masking is supported on Landsat 4-9 `collection 2 <https://developers.google.com/earth-engine/datasets/catalog/landsat>`__ images and Sentinel-2 `TOA <https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_HARMONIZED>`__ and `surface reflectance <https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED>`__ images.  The ``cloudShadowSupport`` property is ``True`` on images / collections with cloud / shadow support:
+Cloud masking is supported on Landsat 4-9 `collection 2 <https://developers.google.com/earth-engine/datasets/catalog/landsat>`__ images and Sentinel-2 `TOA <https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_HARMONIZED>`__ and `surface reflectance <https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED>`__ images.  The ``cloudSupport`` property is ``True`` on images / collections with cloud mask support:
 
 .. literalinclude:: api.py
     :language: python
     :start-after: [cloud support]
     :end-before: [end cloud support]
 
-Image and collection accessors share the same interface for cloud / shadow masking.  Cloud / shadow masks and related bands can be added with ``addMaskBands()``, and image mask(s) updated with ``maskClouds()``:
+.. TODO: change the 'can be' phrasing to e.g. 'addMaskBands adds cloud / shadow masks ...'
+
+Image and collection accessors share the same interface for cloud masking.  Masks and related bands can be added with ``addMaskBands()``, and cloud mask(s) applied with ``maskClouds()``:
 
 .. literalinclude:: api.py
     :language: python
@@ -47,9 +46,9 @@ Image and collection accessors share the same interface for cloud / shadow maski
 The :meth:`~geedim.image.ImageAccessor.addMaskBands` reference documents the masking parameters for images / collections.
 
 Filtering
-~~~~~~~~~
+---------
 
-Collections can be filtered on the filled or cloud / shadow - free portions of a given region with :meth:`~geedim.collection.ImageCollectionAccessor.filter`.  For convenience, this method allows date, region and custom filters to be included too:
+Collections can be filtered on the filled or cloud-free portions of a given region with :meth:`~geedim.collection.ImageCollectionAccessor.filter`.  For convenience, this method allows date, region and custom filters to be included too:
 
 .. literalinclude:: api.py
     :language: python
@@ -64,16 +63,16 @@ The :attr:`~geedim.collection.ImageCollectionAccessor.schemaTable` and :attr:`~g
     :end-before: [end tables]
 
 Compositing
-~~~~~~~~~~~~
+-----------
 
-Collections can be composited using :meth:`~geedim.collection.ImageCollectionAccessor.composite`.  By default, cloud / shadow is masked in the component images before forming the composite by default.  E.g. to form a cloud / shadow - free :attr:`~geedim.enums.CompositeMethod.median` composite:
+Collections can be composited using :meth:`~geedim.collection.ImageCollectionAccessor.composite`.  By default, cloud is masked in the component images before forming the composite.  E.g. to form a cloud-free :attr:`~geedim.enums.CompositeMethod.median` composite:
 
 .. literalinclude:: api.py
     :language: python
     :start-after: [composite]
     :end-before: [end composite]
 
-:class:`~geedim.enums.CompositeMethod` documents supported values for the ``method`` parameter.  Optionally, images can be prioritised by closeness to a provided ``date``, or by cloud / shadow - free portion of a ``region``.  See the :meth:`~geedim.collection.ImageCollectionAccessor.composite` reference for details.
+:class:`~geedim.enums.CompositeMethod` documents supported values for the ``method`` parameter.  Optionally, images can be prioritised by closeness to a provided ``date``, or by the cloud-free portion of a ``region``.  See the :meth:`~geedim.collection.ImageCollectionAccessor.composite` reference for details.
 
 Exporting
 ---------

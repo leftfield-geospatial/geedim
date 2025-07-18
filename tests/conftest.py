@@ -147,7 +147,7 @@ def region_10000ha() -> dict:
 @pytest.fixture(scope='session')
 def l4_sr_image_id() -> str:
     """Landsat-4 surface reflectance EE ID for image that covering `region_*ha`, with
-    partial cloud/shadow for `region10000ha` only.
+    partial cloud for `region10000ha` only.
     """
     return 'LANDSAT/LT04/C02/T1_L2/LT04_173083_19880310'
 
@@ -155,7 +155,7 @@ def l4_sr_image_id() -> str:
 @pytest.fixture(scope='session')
 def l4_toa_image_id(l4_sr_image_id: str) -> str:
     """Landsat-4 TOA reflectance EE ID for image that covering `region_*ha`, with
-    partial cloud/shadow for `region10000ha` only.
+    partial cloud for `region10000ha` only.
     """
     return 'LANDSAT/LT04/C02/T1_TOA/' + l4_sr_image_id.split('/')[-1]
 
@@ -163,7 +163,7 @@ def l4_toa_image_id(l4_sr_image_id: str) -> str:
 @pytest.fixture(scope='session')
 def l4_raw_image_id(l4_sr_image_id: str) -> str:
     """Landsat-4 at sensor radiance EE ID for image that covering `region_*ha`, with
-    partial cloud/shadow for `region10000ha` only.
+    partial cloud for `region10000ha` only.
     """
     return 'LANDSAT/LT04/C02/T1/' + l4_sr_image_id.split('/')[-1]
 
@@ -171,7 +171,7 @@ def l4_raw_image_id(l4_sr_image_id: str) -> str:
 @pytest.fixture(scope='session')
 def l5_sr_image_id() -> str:
     """Landsat-5 surface reflectance EE ID for image covering `region_*ha` with partial
-    cloud/shadow.
+    cloud.
     """
     return 'LANDSAT/LT05/C02/T1_L2/LT05_173083_20051112'
 
@@ -179,7 +179,7 @@ def l5_sr_image_id() -> str:
 @pytest.fixture(scope='session')
 def l5_toa_image_id(l5_sr_image_id: str) -> str:
     """Landsat-5 TOA reflectance EE ID for image covering `region_*ha` with partial
-    cloud/shadow.
+    cloud.
     """
     return 'LANDSAT/LT05/C02/T1_TOA/' + l5_sr_image_id.split('/')[-1]
 
@@ -187,7 +187,7 @@ def l5_toa_image_id(l5_sr_image_id: str) -> str:
 @pytest.fixture(scope='session')
 def l5_raw_image_id(l5_sr_image_id: str) -> str:
     """Landsat-5 at sensor radiance EE ID for image covering `region_*ha` with partial
-    cloud/shadow.
+    cloud.
     """
     return 'LANDSAT/LT05/C02/T1/' + l5_sr_image_id.split('/')[-1]
 
@@ -195,7 +195,7 @@ def l5_raw_image_id(l5_sr_image_id: str) -> str:
 @pytest.fixture(scope='session')
 def l7_sr_image_id() -> str:
     """Landsat-7 surface reflectance EE ID for image covering `region_*ha` with partial
-    cloud/shadow.
+    cloud.
     """
     return 'LANDSAT/LE07/C02/T1_L2/LE07_173083_20220119'
 
@@ -203,7 +203,7 @@ def l7_sr_image_id() -> str:
 @pytest.fixture(scope='session')
 def l7_toa_image_id(l7_sr_image_id: str) -> str:
     """Landsat-7 TOA reflectance EE ID for image covering `region_*ha` with partial
-    cloud/shadow.
+    cloud.
     """
     return 'LANDSAT/LE07/C02/T1_TOA/' + l7_sr_image_id.split('/')[-1]
 
@@ -211,7 +211,7 @@ def l7_toa_image_id(l7_sr_image_id: str) -> str:
 @pytest.fixture(scope='session')
 def l7_raw_image_id(l7_sr_image_id: str) -> str:
     """Landsat-7 at sensor radiance EE ID for image covering `region_*ha` with partial
-    cloud/shadow.
+    cloud.
     """
     return 'LANDSAT/LE07/C02/T1/' + l7_sr_image_id.split('/')[-1]
 
@@ -219,7 +219,7 @@ def l7_raw_image_id(l7_sr_image_id: str) -> str:
 @pytest.fixture(scope='session')
 def l8_sr_image_id() -> str:
     """Landsat-8 surface reflectance EE ID for image covering `region_*ha` with partial
-    cloud/shadow.
+    cloud.
     """
     return 'LANDSAT/LC08/C02/T1_L2/LC08_173083_20180217'
 
@@ -227,7 +227,7 @@ def l8_sr_image_id() -> str:
 @pytest.fixture(scope='session')
 def l8_toa_image_id(l8_sr_image_id: str) -> str:
     """Landsat-8 TOA reflectance EE ID for image covering `region_*ha` with partial
-    cloud/shadow.
+    cloud.
     """
     return 'LANDSAT/LC08/C02/T1_TOA/' + l8_sr_image_id.split('/')[-1]
 
@@ -235,7 +235,7 @@ def l8_toa_image_id(l8_sr_image_id: str) -> str:
 @pytest.fixture(scope='session')
 def l8_raw_image_id(l8_sr_image_id: str) -> str:
     """Landsat-8 at sensor radiance EE ID for image covering `region_*ha` with partial
-    cloud/shadow.
+    cloud.
     """
     return 'LANDSAT/LC08/C02/T1/' + l8_sr_image_id.split('/')[-1]
 
@@ -243,7 +243,7 @@ def l8_raw_image_id(l8_sr_image_id: str) -> str:
 @pytest.fixture(scope='session')
 def l9_sr_image_id() -> str:
     """Landsat-9 surface reflectance EE ID for image covering `region_*ha` with partial
-    cloud/shadow.
+    cloud.
     """
     return 'LANDSAT/LC09/C02/T1_L2/LC09_173083_20220308'
 
@@ -251,7 +251,7 @@ def l9_sr_image_id() -> str:
 @pytest.fixture(scope='session')
 def l9_toa_image_id(l9_sr_image_id: str) -> str:
     """Landsat-9 TOA reflectance EE ID for image covering `region_*ha` with partial
-    cloud/shadow.
+    cloud.
     """
     return 'LANDSAT/LC09/C02/T1_TOA/' + l9_sr_image_id.split('/')[-1]
 
@@ -259,7 +259,7 @@ def l9_toa_image_id(l9_sr_image_id: str) -> str:
 @pytest.fixture(scope='session')
 def l9_raw_image_id(l9_sr_image_id: str) -> str:
     """Landsat-9 at sensor radiance EE ID for image covering `region_*ha` with partial
-    cloud/shadow.
+    cloud.
     """
     return 'LANDSAT/LC09/C02/T1/' + l9_sr_image_id.split('/')[-1]
 
@@ -269,7 +269,7 @@ def ls_sr_image_ids(
     l4_sr_image_id, l5_sr_image_id, l7_sr_image_id, l8_sr_image_id, l9_sr_image_id
 ) -> list[str]:
     """Landsat4-9 surface reflectance EE IDs for images covering `region_*ha` with
-    partial cloud/shadow.
+    partial cloud.
     """
     return [
         l4_sr_image_id,
@@ -285,7 +285,7 @@ def ls_toa_image_ids(
     l4_toa_image_id, l5_toa_image_id, l7_toa_image_id, l8_toa_image_id, l9_toa_image_id
 ) -> list[str]:
     """Landsat4-9 TOA reflectance EE IDs for images covering `region_*ha` with partial
-    cloud/shadow.
+    cloud.
     """
     return [
         l4_toa_image_id,
@@ -301,7 +301,7 @@ def ls_raw_image_ids(
     l4_raw_image_id, l5_raw_image_id, l7_raw_image_id, l8_raw_image_id, l9_raw_image_id
 ) -> list[str]:
     """Landsat4-9 at sensor radiance EE IDs for images covering `region_*ha` with
-    partial cloud/shadow.
+    partial cloud.
     """
     return [
         l4_raw_image_id,
@@ -315,7 +315,7 @@ def ls_raw_image_ids(
 @pytest.fixture(scope='session')
 def s2_sr_image_id() -> str:
     """Sentinel-2 surface reflectance EE ID for image with QA* data, covering
-    `region_*ha` with partial cloud/shadow.
+    `region_*ha` with partial cloud.
     """
     return 'COPERNICUS/S2_SR/20200929T080731_20200929T083634_T34HEJ'
 
@@ -323,7 +323,7 @@ def s2_sr_image_id() -> str:
 @pytest.fixture(scope='session')
 def s2_toa_image_id() -> str:
     """Sentinel-2 TOA reflectance EE ID for image with QA* data, covering `region_*ha`
-    with partial cloud/shadow.
+    with partial cloud.
     """
     return 'COPERNICUS/S2/20210216T081011_20210216T083703_T34HEJ'
 
@@ -331,7 +331,7 @@ def s2_toa_image_id() -> str:
 @pytest.fixture(scope='session')
 def s2_sr_hm_image_id(s2_sr_image_id: str) -> str:
     """Harmonised Sentinel-2 surface reflectance EE ID for image with QA* data, covering
-    `region_*ha` with partial cloud/shadow.
+    `region_*ha` with partial cloud.
     """
     return 'COPERNICUS/S2_SR_HARMONIZED/' + s2_sr_image_id.split('/')[-1]
 
@@ -339,7 +339,7 @@ def s2_sr_hm_image_id(s2_sr_image_id: str) -> str:
 @pytest.fixture(scope='session')
 def s2_toa_hm_image_id(s2_toa_image_id: str) -> str:
     """Harmonised Sentinel-2 TOA reflectance EE ID for image with QA* data, covering
-    `region_*ha` with partial cloud/shadow.
+    `region_*ha` with partial cloud.
     """
     return 'COPERNICUS/S2_HARMONIZED/' + s2_toa_image_id.split('/')[-1]
 
@@ -348,7 +348,7 @@ def s2_toa_hm_image_id(s2_toa_image_id: str) -> str:
 def s2_image_ids(
     s2_sr_image_id, s2_toa_image_id, s2_sr_hm_image_id, s2_toa_hm_image_id
 ) -> list[str]:
-    """Sentinel-2 EE IDs for images covering `region_*ha` with partial cloud/shadow."""
+    """Sentinel-2 EE IDs for images covering `region_*ha` with partial cloud."""
     return [s2_sr_image_id, s2_toa_image_id, s2_sr_hm_image_id, s2_toa_hm_image_id]
 
 
@@ -375,7 +375,7 @@ def landsat_ndvi_image_id() -> str:
 @pytest.fixture(scope='session')
 def l9_sr_image_ids(l9_sr_image_id: str) -> list[str]:
     """A list of Landsat-9 C2 SR image IDs, covering `region_*ha` with partial
-    cloud/shadow..
+    cloud.
     """
     return [
         l9_sr_image_id,
@@ -387,7 +387,7 @@ def l9_sr_image_ids(l9_sr_image_id: str) -> list[str]:
 @pytest.fixture(scope='session')
 def s2_sr_hm_image_ids(s2_sr_image_id: str, s2_toa_image_id: str) -> list[str]:
     """A list of harmonised Sentinel-2 SR image IDs, covering `region_*ha` with partial
-    cloud/shadow.
+    cloud.
     """
     return [
         'COPERNICUS/S2_SR_HARMONIZED/' + s2_sr_image_id.split('/')[-1],
@@ -398,13 +398,13 @@ def s2_sr_hm_image_ids(s2_sr_image_id: str, s2_toa_image_id: str) -> list[str]:
 
 @pytest.fixture(scope='session')
 def l9_sr_image(l9_sr_image_id: str) -> ImageAccessor:
-    """Landsat-9 SR image with partial cloud/shadow in region_*ha."""
+    """Landsat-9 SR image with partial cloud in region_*ha."""
     return ImageAccessor(ee.Image(l9_sr_image_id))
 
 
 @pytest.fixture(scope='session')
 def s2_sr_hm_image(s2_sr_hm_image_id: str) -> ImageAccessor:
-    """Harmonised Sentinel-2 SR image with partial cloud/shadow in region_*ha."""
+    """Harmonised Sentinel-2 SR image with partial cloud in region_*ha."""
     return ImageAccessor(ee.Image(s2_sr_hm_image_id))
 
 

@@ -327,7 +327,7 @@ def test_search(
 
 
 def test_config_search_pipe(patch_filter: list[dict], runner: CliRunner):
-    """Test search uses cloud/shadow configuration piped from config."""
+    """Test search uses cloud mask configuration piped from config."""
     cli_str = 'config -nms search -c MOCK-ID'
     res = runner.invoke(cli.cli, cli_str.split())
     assert res.exit_code == 0, res.output
@@ -508,7 +508,7 @@ def test_config_download_pipe(
     patch_to_geotiff: list[tuple[tuple, dict]],
     runner: CliRunner,
 ):
-    """Test the download command uses cloud/shadow configuration piped from config."""
+    """Test the download command uses cloud mask configuration piped from config."""
     cli_str = 'config -nms download -i MOCK-ID/MOCK-INDEX'
     res = runner.invoke(cli.cli, cli_str.split())
     assert res.exit_code == 0, res.output
@@ -588,7 +588,7 @@ def test_config_export_pipe(
     patch_to_google_cloud: list[tuple[tuple, dict]],
     runner: CliRunner,
 ):
-    """Test the export command uses cloud/shadow configuration piped from config."""
+    """Test the export command uses cloud mask configuration piped from config."""
     cli_str = 'config -nms export -i MOCK-ID/MOCK-INDEX'
     res = runner.invoke(cli.cli, cli_str.split())
     assert res.exit_code == 0, res.output
@@ -663,7 +663,7 @@ def test_config_composite_pipe(
     patch_composite: list[dict],
     runner: CliRunner,
 ):
-    """Test the composite command uses cloud/shadow configuration piped from config."""
+    """Test the composite command uses cloud mask configuration piped from config."""
     cli_str = 'config -nms composite -i MOCK-ID/MOCK-INDEX'
     res = runner.invoke(cli.cli, cli_str.split())
     assert res.exit_code == 0, res.output

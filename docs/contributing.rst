@@ -36,7 +36,7 @@ Development guide
 Cloud/shadow masking
 ^^^^^^^^^^^^^^^^^^^^
 
-If you want to add cloud/shadow masking support for a new Earth Engine image collection, you should subclass
+If you want to add cloud masking support for a new Earth Engine image collection, you should subclass
 ``geedim.mask.CloudMaskedImage``, and implement at least the ``_aux_image()`` method.  Then add a new entry to
 ``geedim.schema.collection_schema``.
 
