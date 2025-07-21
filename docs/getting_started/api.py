@@ -93,6 +93,7 @@ prep_im = im.gd.prepareForExport(region=region, scale=30, dtype='uint16')
 prep_im.gd.toGeoTIFF('s2.tif')
 # [end image geotiff]
 
+# fmt: off
 # [image geotiff tags]
 import rasterio as rio
 
@@ -105,6 +106,7 @@ with rio.open('s2.tif') as ds:
     print(ds.tags(bidx=1))
     # {'center_wavelength': '0.4439', 'description': 'Aerosols', 'gee-scale': '0.0001', ...
 # [end image geotiff tags]
+# fmt: on
 
 exp_path = Path('s2')
 for f in exp_path.glob('*.tif'):
@@ -115,9 +117,9 @@ if exp_path.exists():
 # [coll geotiff]
 from pathlib import Path
 
-# create and prepare a collection (prepared collection has two images and three bands)
-region = ee.Geometry.Rectangle(24.35, -33.75, 24.45, -33.65)
+# create and prepare a collection (with two images and three bands)
 coll = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+region = ee.Geometry.Rectangle(24.35, -33.75, 24.45, -33.65)
 coll = coll.filterBounds(region).limit(2)
 prep_coll = coll.gd.prepareForExport(
     region=region, scale=30, dtype='uint16', bands=['B4', 'B3', 'B2']
@@ -172,9 +174,9 @@ print(array.dtype)
 # [end image numpy]
 
 # [coll numpy]
-# create and prepare a collection (prepared collection has two images and three bands)
-region = ee.Geometry.Rectangle(24.35, -33.75, 24.45, -33.65)
+# create and prepare a collection (with two images and three bands)
 coll = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+region = ee.Geometry.Rectangle(24.35, -33.75, 24.45, -33.65)
 coll = coll.filterBounds(region).limit(2)
 prep_coll = coll.gd.prepareForExport(
     region=region, scale=30, dtype='uint16', bands=['B4', 'B3', 'B2']
@@ -206,9 +208,8 @@ print(array.dtype)
 # [end numpy masked structured]
 
 # [image xarray]
-# create and prepare a cloud masked image
+# create and prepare image
 im = ee.Image('COPERNICUS/S2_SR_HARMONIZED/20211220T080341_20211220T082827_T35HKC')
-im = im.gd.addMaskBands().gd.maskClouds()
 region = ee.Geometry.Rectangle(24.35, -33.75, 24.45, -33.65)
 prep_im = im.gd.prepareForExport(
     region=region, scale=30, dtype='uint16', bands=['B4', 'B3', 'B2']
@@ -217,7 +218,6 @@ prep_im = im.gd.prepareForExport(
 # export (3D DataArray)
 da = prep_im.gd.toXarray()
 
-# examine data array
 print(da)
 # <xarray.DataArray (y: 379, x: 320, band: 3)> Size: 728kB
 # array([[[ 427,  450,  343],
@@ -238,9 +238,9 @@ print(da)
 # [end image xarray]
 
 # [coll xarray]
-# create and prepare a collection (prepared collection has two images and three bands)
-region = ee.Geometry.Rectangle(24.35, -33.75, 24.45, -33.65)
+# create and prepare a collection (with two images and three bands)
 coll = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+region = ee.Geometry.Rectangle(24.35, -33.75, 24.45, -33.65)
 coll = coll.filterBounds(region).limit(2)
 prep_coll = coll.gd.prepareForExport(
     region=region, scale=30, dtype='uint16', bands=['B4', 'B3', 'B2']
@@ -249,7 +249,6 @@ prep_coll = coll.gd.prepareForExport(
 # export (Dataset with bands as variables)
 ds = prep_coll.gd.toXarray(split='bands')
 
-# examine dataset
 print(ds)
 # <xarray.Dataset> Size: 1MB
 # Dimensions:  (y: 379, x: 320, time: 2)
@@ -271,9 +270,18 @@ print(ds)
 # [end coll xarray]
 
 # [xarray masked]
+# create and prepare a cloud masked image
+im = ee.Image('COPERNICUS/S2_SR_HARMONIZED/20211220T080341_20211220T082827_T35HKC')
+im = im.gd.addMaskBands().gd.maskClouds()
+region = ee.Geometry.Rectangle(24.35, -33.75, 24.45, -33.65)
+prep_im = im.gd.prepareForExport(
+    region=region, scale=30, dtype='uint16', bands=['B4', 'B3', 'B2']
+)
+
 # export setting masked pixels to NaN
 da = prep_im.gd.toXarray(masked=True)
 
+# check for NaN pixels and floating point data type
 print(da.isnull().any())
 # <xarray.DataArray ()> Size: 1B
 # array(True)
@@ -281,7 +289,6 @@ print(da.dtype)
 # float32
 # [end xarray masked]
 
-# TODO: change folder='geedim' to folder='<project name>'?
 # [image google cloud]
 # create and prepare image
 im = ee.Image('COPERNICUS/S2_SR_HARMONIZED/20211220T080341_20211220T082827_T35HKC')
@@ -298,19 +305,19 @@ print(ee.Image('projects/geedim/assets/s2').getInfo())
 ee.data.deleteAsset('projects/geedim/assets/s2')
 
 # [coll google cloud]
-# create and prepare a collection (prepared collection has two images and three bands)
-region = ee.Geometry.Rectangle(24.35, -33.75, 24.45, -33.65)
+# create and prepare a collection (with two images and three bands)
 coll = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+region = ee.Geometry.Rectangle(24.35, -33.75, 24.45, -33.65)
 coll = coll.filterBounds(region).limit(2)
 prep_coll = coll.gd.prepareForExport(
     region=region, scale=30, dtype='uint16', bands=['B4', 'B3', 'B2']
 )
 
-# export to earth engine assets in the 'geedim' project, waiting for completion
+# export to Earth Engine assets in the 'geedim' project, waiting for completion
 # (one asset for each collection band)
 prep_coll.gd.toGoogleCloud(type='asset', folder='geedim', wait=True, split='bands')
 
-# print info of the first asset image
+# print the info of the first asset image
 print(ee.Image('projects/geedim/assets/B4').getInfo())
 # {'type': 'Image', 'bands': [{'id': 'B_20180510T075611_20180510T082300_T35HKC', ...
 # [end coll google cloud]
@@ -332,15 +339,28 @@ prep_im.gd.toGoogleCloud(
 # [end google cloud kwargs]
 
 # [mem limit]
-# create and prepare an image
-im = ee.Image('COPERNICUS/S2_SR_HARMONIZED/20211220T080341_20211220T082827_T35HKC')
+# create a 2 year cloud-free median composite
+coll = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
 region = ee.Geometry.Rectangle(24.35, -33.75, 24.45, -33.65)
-prep_im = im.gd.prepareForExport(region=region, scale=30, dtype='uint16')
+coll = coll.gd.filter('2021-01-01', '2023-01-01', region=region)
+comp_im = coll.gd.composite(method='median')
 
-# export to Earth Engine asset 's2' in the 'geedim' project
-prep_im.gd.toGoogleCloud('s2', type='asset', folder='geedim', wait=True)
+# prepare the composite for export
+prep_im = comp_im.gd.prepareForExport(
+    crs='EPSG:3857', region=region, scale=10, dtype='uint16'
+)
+
+# attempt export to NumPy array
+array = prep_im.gd.toNumPy()
+# ...
+# aiohttp.client_exceptions.ClientResponseError: 400, message='User memory limit exceeded.', ...
+# [end mem limit]
+
+# [asset numpy]
+# export composite to Earth Engine asset 's2-comp' in the 'geedim' project
+prep_im.gd.toGoogleCloud('s2-comp', type='asset', folder='geedim', wait=True)
 
 # export the asset to a NumPy array
-array = ee.Image('projects/geedim/assets/s2').gd.toNumPy()
-# [end mem limit]
-ee.data.deleteAsset('projects/geedim/assets/s2')
+array = ee.Image('projects/geedim/assets/s2-comp').gd.toNumPy()
+# [end asset numpy]
+ee.data.deleteAsset('projects/geedim/assets/s2-comp')
