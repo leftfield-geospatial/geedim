@@ -1,3 +1,7 @@
+.. TODO: add section on user mem limit errors
+
+.. TODO: add details on GeoTIFF file tags / format e.g. also for split=bands?
+
 Command line
 ============
 
@@ -23,12 +27,12 @@ Command line and API file / directory parameters can be specified as local paths
 Command chaining
 ----------------
 
-Multiple |geedim|_ commands can be chained together in a pipeline where image results from previous command(s) form inputs to the current command.  For example, to download a composite of the images produced by a search, the ``search``, ``composite`` and ``download`` commands would be chained.  Cloud mask configuration and ``--region`` / ``--bbox`` options are also piped between commands to save repeating these for multiple commands.  More detail on what each command reads from and outputs to the pipeline are given in the sections below.
+Multiple |geedim|_ commands can be chained together in a pipeline where image results from previous commands form inputs to the current command.  For example, to download a composite of the images produced by a search, the ``search``, ``composite`` and ``download`` commands would be chained.  Cloud mask configuration and ``--region`` / ``--bbox`` options are also piped between commands to save repeating these for multiple commands.  More detail on what each command reads from and outputs to the pipeline are given in the sections below.
 
 Cloud configuration
 -------------------
 
-|config|_ configures cloud masking for subsequent commands in the pipeline.  Commands use a default configuration when they're not chained after |config|_.  E.g. this configures Sentinel-2 masking to use a threshold of 0.7 on the 'cs_cdf' Cloud Score+ band:
+|config|_ configures cloud masking for subsequent commands in the pipeline.  Commands use a default configuration when they're not chained after |config|_.  E.g. this configures Sentinel-2 masking to use a threshold of 0.7 on the ``'cs_cdf'`` Cloud Score+ band:
 
 .. code-block:: 
 
@@ -37,13 +41,13 @@ Cloud configuration
 Filtering image collections
 ---------------------------
 
-|search|_ searches (filters) an image collection with user criteria and displays a table of the resulting images and their properties.  The resulting images are added to any images already in the pipeline, and piped out for use by subsequent commands.  E.g. this filters the Sentinel-2 surface reflectance collection on date range, region bounds, and a lower limit of 60% on the cloud-free portion of region:
+|search|_ searches (filters) an image collection and displays a table of filtered image properties.  Filter criteria can include a lower limit on the cloud-free portion of :option:`--bbox <geedim-search --bbox>` / :option:`--region <geedim-search --region>`.  E.g. this filters the Sentinel-2 surface reflectance collection on date range, region bounds, and cloud-free portion:
 
 .. code-block:: 
 
     geedim search --collection COPERNICUS/S2_SR_HARMONIZED --start-date 2024-10-01 --end-date 2025-04-01 --bbox 24.35 -33.75 24.45 -33.65 --cloudless-portion 60
 
-When |search|_ is chained after |config|_, it uses the piped configuration to find the the cloud-free portions.  E.g.:
+Filtered images are added to any images already in the pipeline, and piped out for use by subsequent commands.  When |search|_ is chained after |config|_, it uses the piped configuration to find the the cloud-free portions.  E.g.:
 
 .. code-block:: 
 
@@ -68,7 +72,7 @@ Masks and related bands are added to exported images.  Cloud masks can be applie
 
     geedim config --score 0.7 --cs-band cs_cdf download --id COPERNICUS/S2_SR_HARMONIZED/20211220T080341_20211220T082827_T35HKC --crs EPSG:3857 --bbox 24.35 -33.75 24.45 -33.65 --scale 30 --dtype uint16 --mask
 
-The :option:`--split <geedim-download --split>` option controls whether a file is exported for each input image (the default), or each band of the input image(s).  E.g. this pipes images from a search and exports an image for each of the ``B2``, ``B3`` and ``B4`` bands:
+The :option:`--split <geedim-download --split>` option controls whether a file is exported for each input image (the default), or each band of the input image(s).  E.g. this pipes images from a search and exports an image for each of the ``'B2'``, ``'B3'`` and ``'B4'`` bands:
 
 .. code-block::
 
@@ -91,7 +95,7 @@ Export pixel grid and bounds, cloud masking, image / band splitting, and piping 
 Compositing images
 ------------------
 
-|composite|_ creates a composite of input images.  Input images can be piped from previous commands, or specified with :option:`--id <geedim-composite --id>`.  The composite image is piped out for use by subsequent commands.  |download|_ or |export|_ should be chained after |composite|_ to export the composite image.  This forms a cloud-free ``median`` composite from search result images, and downloads the result:
+|composite|_ creates a composite of input images.  Input images can be piped from previous commands, or specified with :option:`--id <geedim-composite --id>`.  The composite image is piped out for use by subsequent commands.  |download|_ or |export|_ should be chained after |composite|_ to export the composite image.  This forms a cloud-free ``'median'`` composite from search result images, and downloads the result:
 
 .. code-block::
 
