@@ -1,7 +1,3 @@
-.. TODO: add section on user mem limit errors
-
-.. TODO: add details on GeoTIFF file tags / format e.g. also for split=bands?
-
 Command line
 ============
 
@@ -72,12 +68,11 @@ Masks and related bands are added to exported images.  Cloud masks can be applie
 
     geedim config --score 0.7 --cs-band cs_cdf download --id COPERNICUS/S2_SR_HARMONIZED/20211220T080341_20211220T082827_T35HKC --crs EPSG:3857 --bbox 24.35 -33.75 24.45 -33.65 --scale 30 --dtype uint16 --mask
 
-The :option:`--split <geedim-download --split>` option controls whether a file is exported for each input image (the default), or each band of the input image(s).  E.g. this pipes images from a search and exports an image for each of the ``'B2'``, ``'B3'`` and ``'B4'`` bands:
+The :option:`--split <geedim-download --split>` option controls whether a file is exported for each input image (the default), or each band of the input images.  Exported files are named with the Earth Engine image index when they correspond to images, or band name when they correspond to bands.  E.g. this pipes images from a search and exports an image for each of the ``'B2'``, ``'B3'`` and ``'B4'`` bands:
 
 .. code-block::
 
     geedim search --collection COPERNICUS/S2_SR_HARMONIZED --start-date 2024-11-10 --end-date 2024-11-20 --bbox 24.35 -33.75 24.45 -33.65 download --region - --band-name B2 --band-name B3 --band-name B4 --split bands
-
 
 Exporting images to Google cloud
 --------------------------------
@@ -95,13 +90,23 @@ Export pixel grid and bounds, cloud masking, image / band splitting, and piping 
 Compositing images
 ------------------
 
-|composite|_ creates a composite of input images.  Input images can be piped from previous commands, or specified with :option:`--id <geedim-composite --id>`.  The composite image is piped out for use by subsequent commands.  |download|_ or |export|_ should be chained after |composite|_ to export the composite image.  This forms a cloud-free ``'median'`` composite from search result images, and downloads the result:
+|composite|_ creates a composite of input images.  Input images can be piped from previous commands, or specified with :option:`--id <geedim-composite --id>`.  The composite image is piped out for use by subsequent commands.  |download|_ or |export|_ should be chained after |composite|_ to export the composite image, which will be named ``'{--method NAME}-COMP'``.  E.g. this creates a cloud-free ``'median'`` composite from search result images, and exports to a GeoTIFF:
 
 .. code-block::
 
     geedim search --collection COPERNICUS/S2_SR_HARMONIZED --start-date 2024-10-01 --end-date 2025-04-01 --bbox 24.35 -33.75 24.45 -33.65 --cloudless-portion 60 composite --method median download --crs EPSG:3857 --region - --scale 30 --dtype uint16
 
 Cloud is masked from input images by default.  This can be disabled with :option:`--no-mask <geedim-composite --no-mask>`.  A compositing method can be specified with :option:`--method <geedim-composite --method>`.  The :class:`~geedim.enums.CompositeMethod` reference documents supported values.  The :attr:`~geedim.enums.CompositeMethod.mosaic`, :attr:`~geedim.enums.CompositeMethod.q_mosaic`, and :attr:`~geedim.enums.CompositeMethod.medoid` methods prioritise images in their sort order i.e. when more than one image pixel qualifies for selection, they select the first one.  Images can be sorted by closeness to :option:`--date <geedim-composite --date>`, or by the cloud-free portion of :option:`--bbox <geedim-composite --bbox>` /  :option:`--region <geedim-composite --region>`.  If none of the sorting options are provided, images are sorted by capture date.
+
+Memory limit error
+------------------
+
+Exporting a composite with |download|_ could raise a ``'User memory limit exceeded'`` in some unusual cases.  |export|_ is not subject to the `limit on user memory <https://developers.google.com/earth-engine/guides/usage#per-request_memory_footprint>`__ which causes this error, and using it for export is recommended in this situation.  The composite can first be exported to Earth Engine asset with |export|_, and then the asset image exported to GeoTIFF with |download|_.  E.g.:
+
+.. code-block::
+
+    geedim search --collection COPERNICUS/S2_SR_HARMONIZED --start-date 2021-01-01 --end-date 2023-01-01 --bbox 24.35 -33.75 24.45 -33.65 composite --method median export --type asset --folder geedim --crs EPSG:3857 --region - --scale 10 --dtype uint16
+    geedim download --id projects/geedim/assets/MEDIAN-COMP
 
 
 .. |geedim| replace:: ``geedim``
