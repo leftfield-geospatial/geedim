@@ -36,7 +36,7 @@ To install from conda-forge:
 
    conda install -c conda-forge geedim
 
-For Xarray export support, use ``pip install geedim[xarray]`` or ``conda install -c conda-forge geedim xarray`` instead.
+To support exporting to Xarray, use ``pip install geedim[xarray]`` or ``conda install -c conda-forge geedim xarray`` instead.
 
 A registered Google Cloud project is required for `access to Earth Engine <https://developers.google.com/earth-engine/guides/access#create-a-project>`__.  Once installation and registration is done, Earth Engine should be authenticated:
 
