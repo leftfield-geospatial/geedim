@@ -24,8 +24,6 @@ Cloud masking is supported on Landsat 4-9 `collection 2 <https://developers.goog
     :start-after: [cloud support]
     :end-before: [end cloud support]
 
-.. TODO: change the 'can be' phrasing to e.g. 'addMaskBands adds cloud / shadow masks ...'
-
 Image and collection accessors share the same interface for cloud masking.  Masks and related bands can be added with ``addMaskBands()``, and cloud masks applied with ``maskClouds()``:
 
 .. literalinclude:: api.py
@@ -63,7 +61,6 @@ Collections can be composited using :meth:`~geedim.collection.ImageCollectionAcc
     :end-before: [end composite]
 
 :class:`~geedim.enums.CompositeMethod` documents supported values for the ``method`` parameter.  The :attr:`~geedim.enums.CompositeMethod.mosaic`, :attr:`~geedim.enums.CompositeMethod.q_mosaic`, and :attr:`~geedim.enums.CompositeMethod.medoid` methods prioritise images in their sort order i.e. when more than one image pixel qualifies for selection, they select the first one.  Images can be sorted by closeness to the ``date`` parameter, or by cloud-free portion of the ``region`` parameter.  If neither ``date`` or ``region`` are supplied, images are sorted by capture date.
-
 
 Exporting
 ---------
@@ -145,7 +142,6 @@ Paths and URIs
 
 The ``file`` argument in :meth:`ee.Image.gd.toGeoTIFF() <geedim.image.ImageAccessor.toGeoTIFF>` and ``dirname`` argument in :meth:`ee.ImageCollection.gd.toGeoTIFF() <geedim.collection.ImageCollectionAccessor.toGeoTIFF>` can be local paths or remote URIs.  See the :ref:`related note <getting_started/cli:paths and uris>` in the command line section for more information.
 
-
 NumPy
 ~~~~~
 
@@ -219,7 +215,6 @@ Attributes
 
 DataArray / Dataset attributes include ``crs``, ``transform`` and ``nodata`` values for compatibility with `rioxarray <https://github.com/corteva/rioxarray>`__, as well as ``ee`` and ``stac`` JSON strings of the Earth Engine property and STAC dictionaries.
 
-
 Google cloud
 ~~~~~~~~~~~~
 
@@ -253,12 +248,10 @@ Depending on the ``type`` parameter, ``toGoogleCloud()`` calls one of the ``Expo
     :start-after: [google cloud kwargs]
     :end-before: [end google cloud kwargs]
 
-
 Tiling
 ~~~~~~
 
 The ``toGeoTIFF()``, ``toNumPy()`` and ``toXarray()`` methods divide images into tiles for export.  Tiles are downloaded and decompressed concurrently, then reassembled into the target export format.  Tile size can be controlled with the ``max_tile_size``, ``max_tile_dim`` and ``max_tile_bands`` parameters.  Download concurrency can be controlled with the ``max_requests``, and decompress concurrency with the ``max_cpus`` parameter.  Each parameter has an upper limit - see the ``toGeoTIFF()``, ``toNumPy()`` or ``toXarray()`` :doc:`reference docs <../reference/api>` for details.  For most uses, the tiling parameters can be left on their default values.
-
 
 User memory limit error
 ~~~~~~~~~~~~~~~~~~~~~~~
