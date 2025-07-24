@@ -727,7 +727,7 @@ def search(
     type=click.FLOAT,
     default=Tiler._default_max_tile_size,
     show_default=True,
-    help='Maximum download tile size (MB).',
+    help='Maximum tile size (MB).',
 )
 @click.option(
     '-mtd',
@@ -735,7 +735,15 @@ def search(
     type=click.INT,
     default=Tiler._ee_max_tile_dim,
     show_default=True,
-    help='Maximum download tile dimension (pixels).',
+    help='Maximum tile width / height (pixels).',
+)
+@click.option(
+    '-mtb',
+    '--max-tile-bands',
+    type=click.INT,
+    default=Tiler._ee_max_tile_bands,
+    show_default=True,
+    help='Maximum number of tile bands.',
 )
 @click.option(
     '-mr',
@@ -778,6 +786,7 @@ def download(
     driver: enums.Driver,
     max_tile_size: float,
     max_tile_dim: int,
+    max_tile_bands: int,
     max_requests: int,
     max_cpus: int,
     download_dir: OpenFile,
@@ -821,6 +830,7 @@ def download(
             driver=driver,
             max_tile_size=max_tile_size,
             max_tile_dim=max_tile_dim,
+            max_tile_bands=max_tile_bands,
             max_requests=max_requests,
             max_cpus=max_cpus,
         )

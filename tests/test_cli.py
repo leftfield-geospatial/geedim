@@ -473,6 +473,7 @@ def test_download(
         driver=enums.Driver.cog,
         max_tile_size=32,
         max_tile_dim=5000,
+        max_tile_bands=512,
         max_requests=16,
         max_cpus=1,
         overwrite=True,
@@ -484,7 +485,8 @@ def test_download(
     cli_str += (
         f' -sp {tg_kwargs["split"]} -nn -dv {tg_kwargs["driver"]} '
         f'-mts {tg_kwargs["max_tile_size"]} -mtd {tg_kwargs["max_tile_dim"]} '
-        f'-mr {tg_kwargs["max_requests"]} -mc {tg_kwargs["max_cpus"]} -o -dd {tmp_path}'
+        f'-mtb {tg_kwargs["max_tile_bands"]} -mr {tg_kwargs["max_requests"]} '
+        f'-mc {tg_kwargs["max_cpus"]} -o -dd {tmp_path}'
     )
 
     res = runner.invoke(cli.cli, cli_str.split())
