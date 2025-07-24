@@ -56,7 +56,7 @@ Exporting images to GeoTIFF
 
 |download|_ exports images to GeoTIFF files.  Input images can be piped from previous commands or provided with :option:`--id <geedim-download --id>`.  All input images are piped out for use by subsequent commands.
 
-The export pixel grid, bounds and data type are defined automatically based on the first input image by default.  User pixel grid and bounds can be supplied with :option:`--crs <geedim-download --crs>`, :option:`--bbox <geedim-download --bbox>` / :option:`--region <geedim-download --region>` and :option:`--scale <geedim-download --scale>` / :option:`--shape <geedim-download --shape>`; or :option:`--crs <geedim-download --crs>`, :option:`--crs-transform  <geedim-download --crs-transform >` and :option:`--shape <geedim-download --shape>`.   The data type can be modified with :option:`--dtype  <geedim-download --dtype>`. E.g.:
+The export projection, bounds and data type are defined automatically based on the first input image by default.  User projection and bounds can be supplied with :option:`--crs <geedim-download --crs>`, :option:`--bbox <geedim-download --bbox>` / :option:`--region <geedim-download --region>` and :option:`--scale <geedim-download --scale>` / :option:`--shape <geedim-download --shape>`; or :option:`--crs <geedim-download --crs>`, :option:`--crs-transform  <geedim-download --crs-transform >` and :option:`--shape <geedim-download --shape>`.   The data type can be modified with :option:`--dtype  <geedim-download --dtype>`. E.g.:
 
 .. code-block::
 
@@ -85,7 +85,7 @@ The :option:`--type <geedim-export --type>` and :option:`--folder <geedim-export
 
     geedim export --id COPERNICUS/S2_SR_HARMONIZED/20211220T080341_20211220T082827_T35HKC --type asset --folder geedim --crs EPSG:3857 --bbox 24.35 -33.75 24.45 -33.65 --scale 30 --dtype uint16
 
-Export pixel grid and bounds, cloud masking, image / band splitting, and piping behaviours are the same as with |download|_, and share the same options.  See that :ref:`section <geotiff>` for details.
+Export projection and bounds, cloud masking, image / band splitting, and piping behaviours are the same as with |download|_, and share the same options.  See that :ref:`section <geotiff>` for details.
 
 Compositing images
 ------------------

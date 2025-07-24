@@ -68,30 +68,30 @@ Exporting
 Preparation
 ~~~~~~~~~~~
 
-Images are exported on the pixel grid and bounds given by their :attr:`~geedim.image.ImageAccessor.crs`, :attr:`~geedim.image.ImageAccessor.transform` and :attr:`~geedim.image.ImageAccessor.shape` properties; and with data type given by their :attr:`~geedim.image.ImageAccessor.dtype` property:
+Images are exported with the projection and bounds given by their :attr:`~geedim.image.ImageAccessor.crs`, :attr:`~geedim.image.ImageAccessor.transform` and :attr:`~geedim.image.ImageAccessor.shape` properties; and with data type given by their :attr:`~geedim.image.ImageAccessor.dtype` property:
 
 .. literalinclude:: api.py
     :language: python
     :start-after: [image grid]
     :end-before: [end image grid]
 
-Collections are exported on the pixel grid, bounds and data type given by the first collection image.
+Collections are exported with the projection, bounds and data type given by the first collection image.
 
-Both the image and collection accessor have a ``prepareForExport()`` method with the same parameters.  This can be called before exporting to change the pixel grid, bounds and data type:
+Both the image and collection accessor have a ``prepareForExport()`` method with the same parameters.  This can be called before exporting to change the projection, bounds and data type:
 
 .. note::
 
     This is required for:
 
     - images without a fixed projection (e.g. composites)
-    - collections whose images don't have a fixed projection, or don't share the same pixel grid, bounds and data type
+    - collections whose images don't have a fixed projection, or don't share the same projection, bounds and data type
 
 .. literalinclude:: api.py
     :language: python
     :start-after: [image prepare for export]
     :end-before: [end image prepare for export]
 
-Pixel grid and bounds can be defined with the ``crs``, ``region`` and ``scale`` / ``shape``; or ``crs``, ``crs_transform`` and ``shape`` parameters.  Other parameters alter resampling, selected bands and scale / offset - see the :meth:`ee.Image.gd.prepareForExport() <geedim.image.ImageAccessor.prepareForExport>` or :meth:`ee.ImageCollection.gd.prepareForExport() <geedim.collection.ImageCollectionAccessor.prepareForExport>` docs for details.
+Projection and bounds can be defined with the ``crs``, ``region`` and ``scale`` / ``shape``; or ``crs``, ``crs_transform`` and ``shape`` parameters.  Other parameters alter resampling, selected bands and scale / offset - see the :meth:`ee.Image.gd.prepareForExport() <geedim.image.ImageAccessor.prepareForExport>` or :meth:`ee.ImageCollection.gd.prepareForExport() <geedim.collection.ImageCollectionAccessor.prepareForExport>` docs for details.
 
 GeoTIFF
 ~~~~~~~
