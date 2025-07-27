@@ -155,8 +155,9 @@ class Tiler:
             Engine limit <https://developers.google.com/earth-engine/apidocs/ee-image
             -getdownloadurl>`__ (10000).
         :param max_tile_bands:
-            Maximum number of tile bands.  Should be less than the Earth Engine limit
-            (1024).
+            Maximum number of tile bands.  Should be less than the `Earth Engine
+            limit <https://developers.google.com/earth-engine/reference/rest/v1
+            /projects.image/computePixels>`__ (1024).
         :param max_requests:
             Maximum number of concurrent tile downloads.  Should be less than the
             `max concurrent requests quota

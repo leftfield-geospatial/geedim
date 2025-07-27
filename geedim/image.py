@@ -342,8 +342,8 @@ class ImageAccessor:
     def nodata(self) -> float | int | None:
         """Masked pixel value used by Earth Engine when exporting.
 
-        For integer :attr:`dtype`, this is the minimum possible value, and for
-        floating point :attr:`dtype`, it is ``float('-inf')``.
+        For integer :attr:`dtype`, this is the minimum possible :attr:`dtype` value,
+        and for floating point :attr:`dtype`, it is ``float('-inf')``.
         """
         # TODO: exporting
         #  COPERNICUS/S2_SR_HARMONIZED/20241025T080011_20241025T082124_T35HKC has
@@ -408,7 +408,7 @@ class ImageAccessor:
 
     @property
     def bandProps(self) -> list[dict[str, Any]]:
-        """STAC band properties."""
+        """List of STAC band properties."""
         band_props = (
             self.stac.get('summaries', {}).get('eo:bands', []) if self.stac else []
         )
@@ -477,10 +477,10 @@ class ImageAccessor:
     @staticmethod
     def monitorTask(task: ee.batch.Task, label: str | None = None) -> None:
         """
-        Monitor and display the progress of a :meth:`toGoogleCloud` export task.
+        Monitor and display the progress of an export task.
 
         :param task:
-            Earth Engine task to monitor (as returned by :meth:`export`).
+            Earth Engine task to monitor (as returned by :meth:`toGoogleCloud`).
         :param label:
             Optional label for progress display.  Defaults to the task description.
         """
@@ -529,8 +529,8 @@ class ImageAccessor:
         Resample the image.
 
         Extends :meth:`ee.Image.resample` by providing an
-        :attr:`~geedim.enums.ResamplingMethod.average` method for downsampling,
-        and returning images without fixed projections (e.g. composites) unaltered.
+        :attr:`~geedim.enums.ResamplingMethod.average` method for downsampling and
+        returning images without fixed projections (e.g. composites) unaltered.
 
         Composites can be resampled by resampling their component images.
 
@@ -615,7 +615,7 @@ class ImageAccessor:
 
         :param region:
             Region over which to find coverage as a GeoJSON dictionary or
-            ``ee.Geometry``. Defaults to the image geometry.
+            :class:`ee.Geometry`. Defaults to the image geometry.
         :param scale:
             Scale at which to find coverage.  Defaults to the minimum scale of the
             image bands.
@@ -707,8 +707,8 @@ class ImageAccessor:
             `<https://developers.google.com/earth-engine/apidocs/ee-algorithms
             -sentinel2-cdi>`__ for details.
         :param int max_cloud_dist:
-            Maximum distance (m) to look for clouds when forming the 'cloud distance'
-            band.  Valid for Sentinel-2 images.  Defaults to ``5000``.
+            Maximum distance (m) to look for clouds when forming the cloud distance
+            band.  Valid for Landsat and Sentinel-2 images.  Defaults to ``5000``.
         :param float score:
             Cloud Score+ threshold.  Valid for Sentinel-2 images with the
             :attr:`~geedim.enums.CloudMaskMethod.cloud_score` ``mask_method``.
@@ -767,7 +767,7 @@ class ImageAccessor:
             (height, width) dimensions of the prepared image in pixels.
         :param region:
             Region defining the prepared image bounds as a GeoJSON dictionary or
-            ``ee.Geometry``. Defaults to the image geometry.  Ignored if
+            :class:`ee.Geometry`. Defaults to the image geometry.  Ignored if
             ``crs_transform`` is supplied.
         :param scale:
             Pixel scale (m) of the prepared image.  Defaults to the minimum scale of
@@ -874,8 +874,7 @@ class ImageAccessor:
         parameters.
 
         :param filename:
-            Destination file or asset name (excluding extension).  Also used to form
-            the task name.
+            Destination file or asset name (excluding extension).
         :param type:
             Export type.
         :param folder:
@@ -981,11 +980,10 @@ class ImageAccessor:
             Whether to overwrite the destination file if it exists.
         :param nodata:
             How to set the GeoTIFF nodata tag.  If ``True`` (the default), the nodata
-            tag is set to :attr:`nodata` (the :attr:`dtype` dependent value provided
-            by Earth Engine). Otherwise, if ``False``, the nodata tag is not set.  An
-            integer or floating point value can also be provided, in which case the
-            nodata tag is set to this value. Usually, a custom value would be
-            supplied when the image has been unmasked with ``ee.Image.unmask(nodata)``.
+            tag is set to :attr:`nodata`. Otherwise, if ``False``, the nodata tag is
+            not set.  A custom value can also be provided, in which case the nodata
+            tag is set to this value. Usually, a custom value would be supplied when
+            the image has been unmasked with ``ee.Image.unmask(nodata)``.
         :param driver:
             File format driver.
         :param max_tile_size:
@@ -997,8 +995,9 @@ class ImageAccessor:
             Engine limit <https://developers.google.com/earth-engine/apidocs/ee-image
             -getdownloadurl>`__ (10000).
         :param max_tile_bands:
-            Maximum number of tile bands.  Should be less than the Earth Engine limit
-            (1024).
+            Maximum number of tile bands.  Should be less than the `Earth Engine
+            limit <https://developers.google.com/earth-engine/reference/rest/v1
+            /projects.image/computePixels>`__ (1024).
         :param max_requests:
             Maximum number of concurrent tile downloads.  Should be less than the
             `max concurrent requests quota
@@ -1119,8 +1118,9 @@ class ImageAccessor:
             Engine limit <https://developers.google.com/earth-engine/apidocs/ee-image
             -getdownloadurl>`__ (10000).
         :param max_tile_bands:
-            Maximum number of tile bands.  Should be less than the Earth Engine limit
-            (1024).
+            Maximum number of tile bands.  Should be less than the `Earth Engine
+            limit <https://developers.google.com/earth-engine/reference/rest/v1
+            /projects.image/computePixels>`__ (1024).
         :param max_requests:
             Maximum number of concurrent tile downloads.  Should be less than the
             `max concurrent requests quota
@@ -1191,10 +1191,10 @@ class ImageAccessor:
         ``max_tile_size``, ``max_tile_dim`` and ``max_tile_bands``, and download /
         decompress concurrency with ``max_requests`` and ``max_cpus``.
 
-        DataArray attributes include the export :attr:`crs`, :attr:`transform` and
-        ``nodata`` values for compatibility with `rioxarray
-        <https://github.com/corteva/rioxarray>`_, as well as ``ee`` and ``stac`` JSON
-        strings of the Earth Engine property and STAC dictionaries.
+        DataArray attributes include ``crs``, ``transform`` and ``nodata`` values for
+        compatibility with `rioxarray <https://github.com/corteva/rioxarray>`_,
+        as well as ``ee`` and ``stac`` JSON strings of the Earth Engine property and
+        STAC dictionaries.
 
         :param masked:
             Set masked pixels in the returned array to the :attr:`nodata` value
@@ -1210,8 +1210,9 @@ class ImageAccessor:
             Engine limit <https://developers.google.com/earth-engine/apidocs/ee-image
             -getdownloadurl>`__ (10000).
         :param max_tile_bands:
-            Maximum number of tile bands.  Should be less than the Earth Engine limit
-            (1024).
+            Maximum number of tile bands.  Should be less than the `Earth Engine
+            limit <https://developers.google.com/earth-engine/reference/rest/v1
+            /projects.image/computePixels>`__ (1024).
         :param max_requests:
             Maximum number of concurrent tile downloads.  Should be less than the
             `max concurrent requests quota

@@ -555,20 +555,22 @@ class MaskedImage(BaseImage):
         **kwargs,
     ):
         """
-        A class for describing, masking and downloading an Earth Engine image.
+        A class for encapsulating an Earth Engine image.
+
+        Mask and related bands are added to the supplied ``ee_image``.
 
         .. deprecated:: 2.0.0
-            Please use the :class:`gd <geedim.image.ImageAccessor>` accessor on
-            :class:`ee.Image` instead.
+            Please use the :class:`ee.Image.gd <geedim.image.ImageAccessor>` accessor
+            instead.
 
         :param ee_image:
-            Earth Engine image to encapsulate.
+            Image to encapsulate.
         :param mask:
             Whether to mask the image.
         :param region:
-            Region over which to find filled and cloudless percentages for the image,
-            as a GeoJSON dictionary or ``ee.Geometry``.  Percentages are stored in
-            the image properties. If ``None``, statistics are not found (the default).
+            Region over which to find filled and cloud-free portions for the image,
+            as a GeoJSON dictionary or :class:`ee.Geometry`.  Portions are stored in
+            the image properties.  If ``None``, portions are not found (the default).
         :param kwargs:
             Cloud masking parameters - see
             :meth:`~geedim.image.ImageAccessor.addMaskBands` for details.
@@ -590,13 +592,13 @@ class MaskedImage(BaseImage):
         :param image_id:
             ID of the Earth Engine image to encapsulate.
         :param kwargs:
-            Optional keyword arguments to pass to :meth:`__init__`.
+            Keyword arguments to pass to :class:`MaskedImage`.
 
         :return:
-            A MaskedImage instance.
+            Image.
         """
         return MaskedImage(ee.Image(image_id), **kwargs)
 
     def mask_clouds(self):
-        """Apply the cloud mask if supported, otherwise apply the fill mask."""
+        """Apply the cloud mask if supported, otherwise leave the image unaltered."""
         self._ee_image = self.maskClouds()

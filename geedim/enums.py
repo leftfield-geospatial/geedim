@@ -34,7 +34,7 @@ class _StrChoiceEnum(str, Enum):
 
 class CompositeMethod(_StrChoiceEnum):
     """Enumeration for the compositing method i.e. the method for finding a
-    composite pixel from the corresponding input image pixels.
+    composite pixel from the corresponding component image pixels.
     """
 
     q_mosaic = 'q-mosaic'
@@ -47,9 +47,9 @@ class CompositeMethod(_StrChoiceEnum):
     """Use the first unmasked pixel."""
 
     medoid = 'medoid'
-    """Medoid of the unmasked pixels.  This is the pixel from the image with the 
-    minimum sum of spectral distances to the rest of the images.  Where more than one 
-    pixel has the same summed distance, the first one is used.  See 
+    """Medoid of the unmasked pixels i.e. the pixel from the image with the minimum 
+    sum of spectral distances to the rest of the images.  Where more than one pixel 
+    has the same summed distance, the first one is used.  See 
     https://www.mdpi.com/2072-4292/5/12/6481 for detail.
     """
 
@@ -70,32 +70,39 @@ class CloudMaskMethod(_StrChoiceEnum):
     """Threshold the Sentinel-2 Cloud Probability.
     
     .. deprecated:: 2.0.0
-        Please use the ``cloud-score`` method.    
+        Please use the :attr:`cloud_score` method.    
     """
 
     qa = 'qa'
     """Bit mask the `QA60` quality assessment band.
 
     .. deprecated:: 2.0.0
-        Please use the ``cloud-score`` method.    
+        Please use the :attr:`cloud_score` method.    
     """
 
     cloud_score = 'cloud-score'
-    """Threshold the Sentinel-2 Cloud Score+."""
+    """Threshold the `Sentinel-2 Cloud Score+ 
+    <https://developers.google.com/earth-engine/datasets/catalog
+    /GOOGLE_CLOUD_SCORE_PLUS_V1_S2_HARMONIZED#description>`__.
+    """
 
 
 class CloudScoreBand(_StrChoiceEnum):
-    """Enumeration for the Sentinel-2 Cloud Score+ band to use with the
+    """Enumeration for the `Sentinel-2 Cloud Score+
+    <https://developers.google.com/earth-engine/datasets/catalog
+    /GOOGLE_CLOUD_SCORE_PLUS_V1_S2_HARMONIZED#description>`__ band to use with the
     :attr:`~CloudMaskMethod.cloud_score` cloud masking method.
     """
 
     cs = 'cs'
     """Pixel quality score based on spectral distance from a (theoretical) clear 
-    reference."""
+    reference.
+    """
 
     cs_cdf = 'cs_cdf'
-    """Value of the cumulative distribution function of possible cs values for the 
-    estimated cs value."""
+    """Value of the cumulative distribution function of possible ``cs`` values for the 
+    estimated ``cs`` value.
+    """
 
 
 class ResamplingMethod(_StrChoiceEnum):
@@ -111,7 +118,7 @@ class ResamplingMethod(_StrChoiceEnum):
     """Bicubic."""
 
     average = 'average'
-    """Average (recommended for downsampling)."""
+    """Average."""
 
 
 class ExportType(_StrChoiceEnum):
@@ -121,7 +128,7 @@ class ExportType(_StrChoiceEnum):
     """Export to Google Drive."""
 
     asset = 'asset'
-    """Export to an Earth Engine asset."""
+    """Export to Earth Engine asset."""
 
     cloud = 'cloud'
     """Export to Google Cloud Storage."""

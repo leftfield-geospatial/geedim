@@ -133,7 +133,7 @@ class ImageCollectionAccessor:
         created :meth:`composite`, which are treated as belonging to the collection
         of their component images.
 
-        Use this method (instead of :meth:`ee.ImageCollection` or
+        Use this method (instead of :class:`ee.ImageCollection` or
         :meth:`ee.ImageCollection.fromImages`) to support cloud masking on a
         collection built from a sequence of images.
 
@@ -231,7 +231,7 @@ class ImageCollectionAccessor:
 
     @property
     def schemaPropertyNames(self) -> tuple[str]:
-        """:attr:`schema` property names."""
+        """Names of properties to include in :attr:`schema`."""
         if self._schema_prop_names is None:
             if self.id in schema.collection_schema:
                 self._schema_prop_names = schema.collection_schema[self.id][
@@ -327,8 +327,8 @@ class ImageCollectionAccessor:
 
     @property
     def propertiesTable(self) -> str:
-        """:attr:`properties` formatted with :attr:`schema` as a printable table
-        string.
+        """The :attr:`schema` defined subset of :attr:`properties`, abbreviated and
+        formatted as a printable table string.
         """
         coll_schema_props = []
         for im_props in self.properties.values():
@@ -532,7 +532,7 @@ class ImageCollectionAccessor:
 
         :param bands:
             List of bands to include in the medoid score.  Defaults to
-            :attr:`reflBands` if available, otherwise all bands.
+            :attr:`specBands` if available, otherwise all bands.
 
         :return:
             Medoid composite image.
@@ -553,7 +553,7 @@ class ImageCollectionAccessor:
         Filter the collection on date, region, filled / cloud-free portion, and custom
         criteria.
 
-        Filled and cloud-free portions are only calculated and included in collection
+        Filled and cloud-free portions are only included in returned image
         :attr:`properties` when one or both of ``fill_portion`` /
         ``cloudless_portion`` are supplied.  If ``fill_portion`` or
         ``cloudless_portion`` are supplied, ``region`` is required.
@@ -569,21 +569,23 @@ class ImageCollectionAccessor:
             is not supplied.
         :param region:
             Region that images should intersect as a GeoJSON dictionary or
-            ``ee.Geometry``.
+            :class:`ee.Geometry`.
         :param fill_portion:
-            Lower limit on the portion of ``region`` that contains filled pixels (%).
+            Lower limit on the filled (valid) portion of ``region`` (%).
         :param cloudless_portion:
-            Lower limit on the portion of filled pixels that are cloud-free (%).
+            Lower limit on the cloud-free portion of the filled portion of ``region``
+            (%).
         :param custom_filter:
             Custom image property filter expression e.g. ``property > value``.  See
-            the `EE docs <https://developers.google.com/earth-engine/apidocs/ee
-            -filter-expression>`_ for details.
+            the `Earth Engine docs
+            <https://developers.google.com/earth-engine/apidocs/ee-filter-expression>`__
+            for details.
         :param kwargs:
-            Cloud masking arguments - see
+            Cloud masking arguments used for ``cloudless_portion`` - see
             :meth:`geedim.image.ImageAccessor.addMaskBands` for details.
 
         :return:
-            Filtered image collection containing search result image(s).
+            Filtered image collection.
         """
         if (fill_portion is not None or cloudless_portion is not None) and not region:
             raise ValueError(
@@ -649,26 +651,27 @@ class ImageCollectionAccessor:
         """
         Create a composite from the images in the collection.
 
-        If both ``date`` and ``region`` are ``None``, images are sorted by their
-        capture date (the default).
-
         :param method:
             Compositing method. By default,
             :attr:`~geedim.enums.CompositeMethod.q_mosaic` is used for cloud mask
             supported collections, and :attr:`~geedim.enums.CompositeMethod.mosaic`
             otherwise.
         :param mask:
-            Whether to cloud mask collection images prior to compositing, when
-            supported.
+            Whether to cloud mask images before compositing.  No effect if cloud
+            masking is not supported.
         :param resampling:
-            Resampling method to use on collection images prior to compositing.
+            Resampling method to use on images before compositing.
         :param date:
-            Sort component images by the absolute difference between capture time and
-            this date.  If a string, it should be in ISO format.
+            Sort component images by the absolute difference between their capture
+            time and this date.  If a string, it should be in ISO format.  Images are
+            sorted by their capture time if both ``date`` and ``region`` are ``None``
+            (the default).
         :param region:
-            Sort component images by the portion of cloud-free pixels inside this
-            region when cloud masking is supported, otherwise sort by the filled
-            (valid) portion.  Can be a GeoJSON dictionary or ``ee.Geometry``.
+            Sort component images by their cloud-free portion inside this region when
+            cloud masking is supported, otherwise sort by their filled (valid) portion.
+            Can be a GeoJSON dictionary or :class:`ee.Geometry`. Images are sorted by
+            their capture time if both ``date`` and ``region`` are ``None`` (the
+            default).
         :param kwargs:
             Cloud/shadow masking arguments - see
             :meth:`geedim.image.ImageAccessor.addMaskBands` for details.
@@ -752,8 +755,8 @@ class ImageCollectionAccessor:
             (height, width) dimensions of the prepared images in pixels.
         :param region:
             Region defining the prepared image bounds as a GeoJSON dictionary or
-            ``ee.Geometry``. Defaults to the geometry of the first image.  Ignored if
-            ``crs_transform`` is supplied.
+            :class:`ee.Geometry`. Defaults to the geometry of the first image.
+            Ignored if ``crs_transform`` is supplied.
         :param scale:
             Pixel scale (m) of the prepared images.  Defaults to the minimum scale of
             the first image's bands.  Ignored if ``crs_transform`` is supplied.
@@ -940,13 +943,12 @@ class ImageCollectionAccessor:
             :attr:`~geedim.enums.SplitType.images`.
         :param nodata:
             How to set the GeoTIFF nodata tags.  If ``True`` (the default),
-            the nodata tags are set to :attr:`~geedim.image.ImageAccessor.nodata`
-            value of the collection images (the :attr:`dtype` dependent value
-            provided by Earth Engine). Otherwise, if ``False``, the nodata tags are
-            not set.  An integer or floating point value can also be provided,
-            in which case the nodata tags are set to this value. Usually, a custom
-            value would be supplied when the collection images have been unmasked
-            with ``ee.Image.unmask(nodata)``.
+            the nodata tags are set to the :attr:`~geedim.image.ImageAccessor.nodata`
+            value of the collection images. Otherwise, if ``False``, the nodata tags
+            are not set.  A custom value can also be provided, in which case the
+            nodata tags are set to this value. Usually, a custom value would be
+            supplied when the collection images have been unmasked with
+            ``ee.Image.unmask(nodata)``.
         :param driver:
             File format driver.
         :param max_tile_size:
@@ -958,8 +960,9 @@ class ImageCollectionAccessor:
             Engine limit <https://developers.google.com/earth-engine/apidocs/ee-image
             -getdownloadurl>`__ (10000).
         :param max_tile_bands:
-            Maximum number of tile bands.  Should be less than the Earth Engine limit
-            (1024).
+            Maximum number of tile bands.  Should be less than the `Earth Engine
+            limit <https://developers.google.com/earth-engine/reference/rest/v1
+            /projects.image/computePixels>`__ (1024).
         :param max_requests:
             Maximum number of concurrent tile downloads.  Should be less than the
             `max concurrent requests quota
@@ -1031,8 +1034,8 @@ class ImageCollectionAccessor:
 
         :param masked:
             Return a :class:`~numpy.ndarray` with masked pixels set to the shared
-            :attr:`nodata` value of the collection images (``False``),
-            or a :class:`~numpy.ma.MaskedArray` (``True``).
+            :attr:`~geedim.image.ImageAccessor.nodata` value of the collection images
+            (``False``), or a :class:`~numpy.ma.MaskedArray` (``True``).
         :param structured:
             Return a 4D array with a numerical ``dtype`` (``False``), or a 2D array
             with a structured ``dtype`` (``True``).  Array dimension ordering,
@@ -1056,8 +1059,9 @@ class ImageCollectionAccessor:
             Engine limit <https://developers.google.com/earth-engine/apidocs/ee-image
             -getdownloadurl>`__ (10000).
         :param max_tile_bands:
-            Maximum number of tile bands.  Should be less than the Earth Engine limit
-            (1024).
+            Maximum number of tile bands.  Should be less than the `Earth Engine
+            limit <https://developers.google.com/earth-engine/reference/rest/v1
+            /projects.image/computePixels>`__ (1024).
         :param max_requests:
             Maximum number of concurrent tile downloads.  Should be less than the
             `max concurrent requests quota
@@ -1168,21 +1172,20 @@ class ImageCollectionAccessor:
         ``max_tile_dim`` and ``max_tile_bands``, and download / decompress
         concurrency with ``max_requests`` and ``max_cpus``.
 
-        Dataset attributes include the export
-        :attr:`~geedim.image.ImageAccessor.crs`,
-        :attr:`~geedim.image.ImageAccessor.transform` and ``nodata`` values for
+        DataArray attributes include ``crs``, ``transform`` and ``nodata`` values for
         compatibility with `rioxarray <https://github.com/corteva/rioxarray>`_,
-        as well as ``ee`` and ``stac`` JSON strings corresponding to Earth Engine
-        property and STAC dictionaries.
+        as well as ``ee`` and ``stac`` JSON strings of the Earth Engine property and
+        STAC dictionaries.
 
         A maximum of 5000 images can be exported.
 
         :param masked:
-            Set masked pixels in the returned array to the shared :attr:`nodata`
-            value of the collection images (``False``), or to NaN (``True``).  If
-            ``True``, the export ``dtype`` is integer, and one or more pixels are
-            masked, the returned array is converted to a minimal floating point type
-            able to represent the export ``dtype``.
+            Set masked pixels in the returned array to the shared
+            :attr:`~geedim.image.ImageAccessor.nodata` value of the collection images
+            (``False``), or to NaN (``True``).  If ``True``, the export data type is
+            integer, and one or more pixels are masked, the returned array is
+            converted to a minimal floating point type able to represent the export
+            data type.
         :param split:
             Return a dataset with bands as variables
             (:attr:`~geedim.enums.SplitType.bands`), or a dataset with images as
@@ -1201,8 +1204,9 @@ class ImageCollectionAccessor:
             Engine limit <https://developers.google.com/earth-engine/apidocs/ee-image
             -getdownloadurl>`__ (10000).
         :param max_tile_bands:
-            Maximum number of tile bands.  Should be less than the Earth Engine limit
-            (1024).
+            Maximum number of tile bands.  Should be less than the `Earth Engine
+            limit <https://developers.google.com/earth-engine/reference/rest/v1
+            /projects.image/computePixels>`__ (1024).
         :param max_requests:
             Maximum number of concurrent tile downloads.  Should be less than the
             `max concurrent requests quota
@@ -1274,23 +1278,21 @@ class MaskedCollection(ImageCollectionAccessor):
         self, ee_collection: ee.ImageCollection, add_props: list[str] | None = None
     ):
         """
-        A class for describing, searching, compositing and cloud masking an image
-        collection.
+        A class for encapsulating an Earth Engine image collection.
 
         .. deprecated:: 2.0.0
-            Please use the :class:`gd <geedim.collection.ImageCollectionAccessor>`
-            accessor on :class:`ee.ImageCollection` instead.
+            Please use the :class:`ee.ImageCollection.gd
+            <geedim.collection.ImageCollectionAccessor>` accessor instead.
 
         :param ee_collection:
-            Earth Engine image collection to encapsulate.
+            Image collection to encapsulate.
         :param add_props:
-            Additional Earth Engine image properties to include in :attr:`schema` and
+            Additional image properties to include in :attr:`schema` and
             :attr:`properties`.
         """
         warnings.warn(
             f"'{self.__class__.__name__}' is deprecated and will be removed in a "
-            f"future release. Please use the 'gd' accessor on 'ee.ImageCollection' "
-            f'instead.',
+            f"future release. Please use the 'ee.ImageCollection.gd' accessor instead.",
             category=FutureWarning,
             stacklevel=2,
         )
@@ -1308,24 +1310,24 @@ class MaskedCollection(ImageCollectionAccessor):
         Create a MaskedCollection from an Earth Engine image collection ID.
 
         :param name:
-            Earth Engine image collection ID.
+            Image collection ID.
         :param add_props:
-            Additional Earth Engine image properties to include in :attr:`schema` and
+            Additional image properties to include in :attr:`schema` and
             :attr:`properties`.
 
         :return:
-            MaskedCollection instance.
+            Image collection.
         """
         return cls(ee.ImageCollection(name), add_props=add_props)
 
     @classmethod
     def from_list(
         cls,
-        image_list: list[str | MaskedImage | ee.Image],
+        image_list: list[str | BaseImage | ee.Image],
         add_props: list[str] | None = None,
     ) -> MaskedCollection:
         """
-        Create an MaskedCollection with support for cloud masking, that contains the
+        Create a MaskedCollection with support for cloud masking, that contains the
         given images.
 
         Images from spectrally compatible Landsat collections can be combined i.e.
@@ -1338,15 +1340,15 @@ class MaskedCollection(ImageCollectionAccessor):
         :meth:`ee.ImageCollection.fromImages`) to support cloud masking on a
         collection built from a sequence of images.
 
-        :param images:
+        :param image_list:
             Sequence of images, as Earth Engine image IDs, :class:`ee.Image`
-            instances or :class:`~geedim.mask.BaseImage` instances.
+            instances or :class:`~geedim.download.BaseImage` instances.
         :param add_props:
-            Additional Earth Engine image properties to include in :attr:`schema` and
+            Additional image properties to include in :attr:`schema` and
             :attr:`properties`.
 
         :return:
-            MaskedCollection instance.
+            Image collection.
         """
         if len(image_list) == 0:
             raise ValueError("'image_list' is empty.")
@@ -1360,7 +1362,7 @@ class MaskedCollection(ImageCollectionAccessor):
 
     @property
     def ee_collection(self) -> ee.ImageCollection:
-        """Earth Engine image collection."""
+        """Encapsulated Earth Engine image collection."""
         return self._ee_coll
 
     @property
@@ -1377,13 +1379,15 @@ class MaskedCollection(ImageCollectionAccessor):
 
     @property
     def stats_scale(self) -> float | None:
-        """Scale to use for re-projections when finding region statistics."""
+        """Scale to use for finding mask portions.  ``None`` if there is no STAC band
+        information for this collection.
+        """
         return self._portion_scale
 
     @property
     def schema(self) -> dict[str, dict]:
         """Dictionary of property abbreviations and descriptions used to form
-        :attr:`schemaTable`, :attr:`properties` and :attr:`propertiesTable`.
+        :attr:`schema_table`, :attr:`properties` and :attr:`properties_table`.
         """
         return super().schema
 
@@ -1411,11 +1415,13 @@ class MaskedCollection(ImageCollectionAccessor):
 
     @property
     def properties_table(self) -> str:
-        """:attr:`properties` formatted as a printable table string."""
+        """:attr:`properties` abbreviated with :attr:`schema` and formatted as a
+        printable table string.
+        """
         return self.propertiesTable
 
     @property
-    def refl_bands(self) -> list[str] | None:
+    def refl_bands(self) -> list[str]:
         """List of spectral band names."""
         return self.specBands
 
@@ -1424,6 +1430,8 @@ class MaskedCollection(ImageCollectionAccessor):
         gd_coll = MaskedCollection(ee_coll)
         gd_coll.schemaPropertyNames = self.schemaPropertyNames
         return gd_coll
+
+    search.__doc__ = ImageCollectionAccessor.filter.__doc__
 
     def composite(self, *args, **kwargs) -> MaskedImage:
         ee_image = super().composite(*args, **kwargs)

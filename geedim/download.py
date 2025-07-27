@@ -30,9 +30,19 @@ logger = logging.getLogger(__name__)
 
 class BaseImage(ImageAccessor):
     def __init__(self, ee_image: ee.Image):
+        """
+        A class for encapsulating an Earth Engine image.
+
+        .. deprecated:: 2.0.0
+            Please use the :class:`ee.Image.gd <geedim.image.ImageAccessor>` accessor
+            instead.
+
+        :param ee_image:
+            Image to encapsulate.
+        """
         warnings.warn(
             f"'{self.__class__.__name__}' is deprecated and will be removed in a "
-            f"future release.  Please use the 'gd' accessor on 'ee.Image' instead.",
+            f"future release.  Please use the 'ee.Image.gd' accessor instead.",
             category=FutureWarning,
             stacklevel=2,
         )
@@ -44,10 +54,10 @@ class BaseImage(ImageAccessor):
         Create a BaseImage instance from an Earth Engine image ID.
 
         :param image_id:
-           ID of earth engine image to wrap.
+           Image ID.
 
         :return:
-            BaseImage instance.
+            Image.
         """
         ee_image = ee.Image(image_id)
         gd_image = cls(ee_image)
@@ -69,7 +79,9 @@ class BaseImage(ImageAccessor):
 
     @property
     def name(self) -> str | None:
-        """Image name (the :attr:`id` with slashes replaced by dashes)."""
+        """Image name (:attr:`~geedim.image.ImageAccessor.id` with slashes replaced
+        by dashes).
+        """
         return self.id.replace('/', '-') if self.id else None
 
     @property
@@ -90,13 +102,13 @@ class BaseImage(ImageAccessor):
         return self.shape is not None
 
     @property
-    def refl_bands(self) -> list[str] | None:
-        """List of spectral / reflectance bands, if any."""
+    def refl_bands(self) -> list[str]:
+        """List of spectral band names."""
         return self.specBands
 
     @property
-    def band_properties(self) -> list[dict]:
-        """STAC band properties."""
+    def band_properties(self) -> list[dict[str, Any]]:
+        """List of STAC band properties."""
         return super().bandProps
 
     @staticmethod
@@ -120,11 +132,11 @@ class BaseImage(ImageAccessor):
         **export_kwargs,
     ) -> ee.batch.Task:
         """
-        Export the image to Google Drive, Earth Engine asset or Google Cloud Storage.
+        Export the image to a raster file on Google Drive, Earth Engine asset,
+        or raster file on Google Cloud Storage, using a batch task.
 
         :param filename:
-            Destination file or asset name (excluding extension).  Also used to form
-            the task name.
+            Destination file or asset name (excluding extension).
         :param type:
             Export type.
         :param folder:
@@ -139,10 +151,11 @@ class BaseImage(ImageAccessor):
         :param wait:
             Whether to wait for the export to complete before returning.
         :param export_kwargs:
-            Arguments to :meth:`geedim.image.ImageAccessor.prepareForExport`.
+            Arguments to :meth:`~geedim.image.ImageAccessor.prepareForExport`.
 
         :return:
-            Export task, started if ``wait`` is False, or completed if ``wait`` is True.
+            Export task, started if ``wait`` is ``False``, or completed if ``wait``
+            is ``True``.
         """
         export_image = ImageAccessor(self.prepareForExport(**export_kwargs))
         return export_image.toGoogleCloud(filename, type=type, folder=folder, wait=wait)
@@ -162,14 +175,18 @@ class BaseImage(ImageAccessor):
         **export_kwargs,
     ) -> None:
         """
-        Download the image to a GeoTIFF file.
+        Export the image to a GeoTIFF file.
 
         The image is retrieved as separate tiles which are downloaded and
         decompressed concurrently.  Tile size can be controlled with
         ``max_tile_size``, ``max_tile_dim`` and ``max_tile_bands``, and download /
         decompress concurrency with ``max_requests`` and ``max_cpus``.
 
-        :param filename:
+        GeoTIFF default namespace tags are written with
+        :attr:`~geedim.image.ImageAccessor.properties`, and band tags with
+        :attr:`band_properties`.
+
+        :param file:
             Destination file.  Can be a path or URI string, or an
             :class:`~fsspec.core.OpenFile` object in binary mode (``'wb'``).
         :param overwrite:
@@ -179,11 +196,11 @@ class BaseImage(ImageAccessor):
             used to limit concurrency.
         :param nodata:
             How to set the GeoTIFF nodata tag.  If ``True`` (the default), the nodata
-            tag is set to :attr:`nodata` (the :attr:`dtype` dependent value provided
-            by Earth Engine). Otherwise, if ``False``, the nodata tag is not set.  An
-            integer or floating point value can also be provided, in which case the
-            nodata tag is set to this value. Usually, a custom value would be
-            supplied when the image has been unmasked with ``ee.Image.unmask(nodata)``.
+            tag is set to :attr:`~geedim.image.ImageAccessor.nodata`. Otherwise,
+            if ``False``, the nodata tag is not set.  A custom value can also be
+            provided, in which case the nodata tag is set to this value. Usually,
+            a custom value would be supplied when the image has been unmasked with
+            ``ee.Image.unmask(nodata)``.
         :param driver:
             File format driver.
         :param max_tile_size:
@@ -195,8 +212,9 @@ class BaseImage(ImageAccessor):
             Engine limit <https://developers.google.com/earth-engine/apidocs/ee-image
             -getdownloadurl>`__ (10000).
         :param max_tile_bands:
-            Maximum number of tile bands.  Should be less than the Earth Engine limit
-            (1024).
+            Maximum number of tile bands.  Should be less than the `Earth Engine
+            limit <https://developers.google.com/earth-engine/reference/rest/v1
+            /projects.image/computePixels>`__ (1024).
         :param max_requests:
             Maximum number of concurrent tile downloads.  Should be less than the
             `max concurrent requests quota
@@ -208,7 +226,7 @@ class BaseImage(ImageAccessor):
             than the default can stall the asynchronous event loop and are not
             recommended.
         :param export_kwargs:
-            Arguments to :meth:`geedim.image.ImageAccessor.prepareForExport`.
+            Arguments to :meth:`~geedim.image.ImageAccessor.prepareForExport`.
         """
         if num_threads is not None:
             warnings.warn(
