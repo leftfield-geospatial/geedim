@@ -16,6 +16,7 @@ API
 .. autoclass:: geedim.mask.MaskedImage
     :members:
     :show-inheritance:
+    :inherited-members: ImageAccessor
 
 .. autoclass:: geedim.collection.MaskedCollection
     :members:
