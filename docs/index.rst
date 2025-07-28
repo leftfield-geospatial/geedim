@@ -1,4 +1,4 @@
-geedim
+Geedim
 ======
 
 .. include:: ../README.rst
@@ -9,16 +9,14 @@ Documentation
 -------------
 
 .. toctree::
-   :maxdepth: 2
+    :maxdepth: 2
 
-   installation
-   getting_started/index
-   contributing
-   reference/index
+    installation
+    getting_started/index
+    reference/index
 
-..   cli/index
-   api/index
+.. toctree::
+    :maxdepth: 1
 
-
-..   cli
-..   api
+    contributing
+    changelog
