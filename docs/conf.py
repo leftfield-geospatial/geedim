@@ -20,7 +20,6 @@ release = __version__
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
-# TODO: remove unneeded extensions & settings
 extensions = [
     'sphinx.ext.intersphinx',
     'sphinx.ext.autodoc',
@@ -66,7 +65,6 @@ intersphinx_mapping = {
     'python': ('https://docs.python.org/3', None),
     'numpy': ('https://numpy.org/doc/stable', None),
     'xarray': ('https://docs.xarray.dev/en/stable', None),
-    'rasterio': ('https://rasterio.readthedocs.io/en/stable/', None),
     'fsspec': ('https://filesystem-spec.readthedocs.io/en/latest/', None),
 }
 
