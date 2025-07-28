@@ -1,18 +1,15 @@
-"""
-Copyright 2021 Dugal Harris - dugalh@gmail.com
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-   http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-"""
+# Copyright The Geedim Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+# this file except in compliance with the License. You may obtain a copy of the
+# License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software distributed
+# under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+# CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+# language governing permissions and limitations under the License.
 
 import ee
 import numpy as np
@@ -32,7 +29,9 @@ def test_asset_export(prepared_image: ImageAccessor, prepared_image_array: np.nd
     ee.data.createFolder(asset_folder)
     try:
         # export
-        task = prepared_image.toGoogleCloud(asset_id, type=enums.ExportType.asset, wait=True)
+        task = prepared_image.toGoogleCloud(
+            asset_id, type=enums.ExportType.asset, wait=True
+        )
         status = task.status()
         assert status['state'] == 'COMPLETED'
 
@@ -54,12 +53,13 @@ def test_asset_export(prepared_image: ImageAccessor, prepared_image_array: np.nd
 
 
 @pytest.mark.parametrize(
-    'dtype', ['float32', 'float64', 'uint8', 'int8', 'uint16', 'int16', 'uint32', 'int32']
+    'dtype',
+    ['float32', 'float64', 'uint8', 'int8', 'uint16', 'int16', 'uint32', 'int32'],
 )
 def test_ee_geotiff_nodata(dtype: str, l9_sr_image_id: str):
-    """Test the nodata value of the Earth Engine GeoTIFF returned by ``ee.data.computePixels()`` or
-    ``ee.Image.getDownloadUrl()`` equals the geedim expected value (see
-    https://issuetracker.google.com/issues/350528377 for context).
+    """Test the nodata value of the Earth Engine GeoTIFF returned by
+    ``ee.data.computePixels()`` or ``ee.Image.getDownloadUrl()`` equals the geedim
+    expected value (see https://issuetracker.google.com/issues/350528377 for context).
     """
     # prepare an image for downloading as dtype
     image = ImageAccessor(ee.Image(l9_sr_image_id))

@@ -135,7 +135,7 @@ def _region_cb(ctx: click.Context, param: click.Parameter, region: str) -> None:
 
 
 def _dir_cb(ctx: click.Context, param: click.Parameter, uri_path: str) -> OpenFile:
-    """Click callback to convert a directory path / URI to an fsspec OpenFile,
+    """Click callback to convert a directory path / URI to a fsspec OpenFile,
     and validate.
     """
     try:

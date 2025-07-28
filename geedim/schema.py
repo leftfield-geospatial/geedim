@@ -258,7 +258,9 @@ cloud_coll_names = [
 
 
 def cli_cloud_coll_table() -> str:
-    """Return a table of cloud mask supported collections for use in CLI help strings."""
+    """Return a table of cloud mask supported collections for use in CLI help
+    strings.
+    """
     headers = dict(gd_coll_name='geedim name', ee_coll_name='EE name')
     data = []
     for key, val in collection_schema.items():
@@ -269,7 +271,7 @@ def cli_cloud_coll_table() -> str:
 
 def cloud_coll_table(descr_join='\n') -> str:
     """Return a table of cloud mask supported collections as a printable string.
-    - Use descr_join='\n' for github README friendly formatting.
+    - Use descr_join='\n' for GitHub README friendly formatting.
     - Use descr_join='\n\n' for RTD/Sphinx friendly formatting.
     """
     headers = dict(ee_coll_name='EE name', descr='Description')

@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import os
 import warnings
+from typing import Any
 
 import ee
 import rasterio as rio

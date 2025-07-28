@@ -38,8 +38,8 @@ class CompositeMethod(_StrChoiceEnum):
     """
 
     q_mosaic = 'q-mosaic'
-    """Use the unmasked pixel with the highest cloud distance (distance to nearest 
-    cloud). When more than one pixel has the same cloud distance, the first one is 
+    """Use the unmasked pixel with the highest cloud distance (distance to nearest
+    cloud). When more than one pixel has the same cloud distance, the first one is
     used.
     """
 
@@ -47,9 +47,9 @@ class CompositeMethod(_StrChoiceEnum):
     """Use the first unmasked pixel."""
 
     medoid = 'medoid'
-    """Medoid of the unmasked pixels i.e. the pixel from the image with the minimum 
-    sum of spectral distances to the rest of the images.  Where more than one pixel 
-    has the same summed distance, the first one is used.  See 
+    """Medoid of the unmasked pixels i.e. the pixel from the image with the minimum
+    sum of spectral distances to the rest of the images.  Where more than one pixel
+    has the same summed distance, the first one is used.  See
     https://www.mdpi.com/2072-4292/5/12/6481 for detail.
     """
 
@@ -68,20 +68,20 @@ class CloudMaskMethod(_StrChoiceEnum):
 
     cloud_prob = 'cloud-prob'
     """Threshold the Sentinel-2 Cloud Probability.
-    
+
     .. deprecated:: 2.0.0
-        Please use the :attr:`cloud_score` method.    
+        Please use the :attr:`cloud_score` method.
     """
 
     qa = 'qa'
     """Bit mask the `QA60` quality assessment band.
 
     .. deprecated:: 2.0.0
-        Please use the :attr:`cloud_score` method.    
+        Please use the :attr:`cloud_score` method.
     """
 
     cloud_score = 'cloud-score'
-    """Threshold the `Sentinel-2 Cloud Score+ 
+    """Threshold the `Sentinel-2 Cloud Score+
     <https://developers.google.com/earth-engine/datasets/catalog
     /GOOGLE_CLOUD_SCORE_PLUS_V1_S2_HARMONIZED#description>`__.
     """
@@ -95,12 +95,12 @@ class CloudScoreBand(_StrChoiceEnum):
     """
 
     cs = 'cs'
-    """Pixel quality score based on spectral distance from a (theoretical) clear 
+    """Pixel quality score based on spectral distance from a (theoretical) clear
     reference.
     """
 
     cs_cdf = 'cs_cdf'
-    """Value of the cumulative distribution function of possible ``cs`` values for the 
+    """Value of the cumulative distribution function of possible ``cs`` values for the
     estimated ``cs`` value.
     """
 

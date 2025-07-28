@@ -174,7 +174,7 @@ class Spinner(tqdm):
         super().close()
 
 
-def asset_id(filename: str, folder: str | None = None):
+def asset_id(filename: str, folder: str | None = None) -> str:
     """
     Convert a ``filename`` and ``folder`` into an Earth Engine asset ID.
 
@@ -186,7 +186,7 @@ def asset_id(filename: str, folder: str | None = None):
     if not folder:
         return filename
     parts = folder.strip('/').split('/')
-    asset_path = '/'.join(parts[1:] + [filename])
+    asset_path = '/'.join([*parts[1:], filename])
     return f'projects/{parts[0]}/assets/{asset_path}'
 
 
