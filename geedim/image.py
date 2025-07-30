@@ -903,7 +903,8 @@ class ImageAccessor:
             )
 
         # set default **kwargs
-        kwargs.setdefault('description', filename.replace('/', '-')[:100])
+        desc = self.index or self.id or filename
+        kwargs.setdefault('description', desc.replace('/', '-')[:100])
         kwargs.setdefault('maxPixels', 1e9)
         # default to COG unless otherwise specified
         if 'fileFormat' not in kwargs:
