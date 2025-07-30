@@ -24,6 +24,7 @@ extensions = [
     'sphinx.ext.intersphinx',
     'sphinx.ext.autodoc',
     'sphinx.ext.autosectionlabel',
+    'sphinx.ext.doctest',
     'sphinx_click',
     'sphinx_copybutton',
 ]
@@ -71,7 +72,10 @@ intersphinx_mapping = {
 # -- Options for pygments -----------------------------------------------------
 highlight_language = 'none'
 
-# -- Options for autosectionlabel ----------------------------------------------------
+# -- Options for autosectionlabel ---------------------------------------------
 # Make sure the target is unique
 autosectionlabel_prefix_document = True
 # autosectionlabel_maxdepth = 3  # avoid duplicate section labels for CLI examples
+
+# -- Options for sphinx_copybutton --------------------------------------------
+copybutton_exclude = '.linenos, .gp, .go'
