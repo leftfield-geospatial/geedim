@@ -26,6 +26,7 @@ from geedim.enums import (
 )
 from geedim.mask import MaskedImage
 from geedim.utils import Initialize
+from geedim.version import __version__
 
 # Add a NullHandler to the package logger to hide logs by default.  Applications can
 # then add their own handler(s).
