@@ -32,7 +32,7 @@ xarray = ['xarray']
 
 [dependency-groups]
 tests = ['pytest', 'pytest-xdist', 'xarray']
-docs = ['sphinx', 'furo', 'sphinx-click', 'sphinx-copybutton']
+docs = ['sphinx', 'furo', 'sphinx-click', 'sphinx-copybutton', 'jupyter-sphinx']
 
 [project.urls]
 Homepage = 'https://github.com/leftfield-geospatial/geedim'
