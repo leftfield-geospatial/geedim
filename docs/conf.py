@@ -1,25 +1,14 @@
 # Configuration file for the Sphinx documentation builder.
-#
-# For the full list of built-in configuration values, see the documentation:
-# https://www.sphinx-doc.org/en/master/usage/configuration.html
-
-# -- Path information -----------------------------------------------------
-import os
-import sys
-
-sys.path.insert(0, os.path.abspath('..'))
-from geedim.version import __version__
 
 # -- Project information -----------------------------------------------------
-# https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
+from geedim.version import __version__
 
 project = 'Geedim'
-copyright = '2021, Leftfield Geospatial'
+copyright = 'Geedim contributors'
 author = 'Leftfield Geospatial'
 release = __version__
 
 # -- General configuration ---------------------------------------------------
-# https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 extensions = [
     'sphinx.ext.intersphinx',
     'sphinx.ext.autodoc',
@@ -27,18 +16,18 @@ extensions = [
     'sphinx.ext.doctest',
     'sphinx_click',
     'sphinx_copybutton',
+    'jupyter_sphinx',
 ]
 
-templates_path = ['_templates']
-exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store', '_temp', 'examples']
-# nitpicky = True
+# -- Options for source files ------------------------------------------------
+exclude_patterns = ['_build', '**.ipynb_checkpoints']
 
 # -- Options for HTML output -------------------------------------------------
-# https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 html_theme = 'furo'
-# html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']
+html_css_files = ['jupyter-sphinx.css', 'custom.css']
 html_title = f'Geedim {__version__}'
+
 html_theme_options = {
     # copied from https://github.com/pradyunsg/furo/blob/main/docs/conf.py
     'footer_icons': [
@@ -55,12 +44,6 @@ html_theme_options = {
     ],
 }
 
-# -- Options for autodoc -----------------------------------------------------
-# see https://www.sphinx-doc.org/en/master/usage/extensions/autodoc.html
-autodoc_member_order = 'bysource'
-autodoc_typehints = 'description'
-autoclass_content = 'both'
-
 # -- Options for intersphinx ---------------------------------------------------
 intersphinx_mapping = {
     'python': ('https://docs.python.org/3', None),
@@ -69,13 +52,22 @@ intersphinx_mapping = {
     'fsspec': ('https://filesystem-spec.readthedocs.io/en/latest/', None),
 }
 
-# -- Options for pygments -----------------------------------------------------
-highlight_language = 'none'
+# -- Options for autodoc -----------------------------------------------------
+autodoc_member_order = 'bysource'
+autodoc_typehints = 'description'
+autoclass_content = 'both'
 
 # -- Options for autosectionlabel ---------------------------------------------
-# Make sure the target is unique
-autosectionlabel_prefix_document = True
-# autosectionlabel_maxdepth = 3  # avoid duplicate section labels for CLI examples
+autosectionlabel_prefix_document = True  # make sure the target is unique
+autosectionlabel_maxdepth = 2  # avoid duplicate section labels
 
-# -- Options for sphinx_copybutton --------------------------------------------
-copybutton_exclude = '.linenos, .gp, .go'
+# -- Options for linkcheck ----------------------------------------------------
+linkcheck_ignore = ['https://www.mdpi.com/*', '../reference/*']
+
+# -- Options for jupyter-sphinx -----------------------------------------------
+jupyter_execute_kwargs = {
+    'timeout': 300,
+    'allow_errors': True,
+    # prevents inclusion of jupyter widget style sheet
+    'store_widget_state': False,
+}
