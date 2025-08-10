@@ -1,0 +1,9 @@
+/* Override the jupyter_sphinx style sheet so Sphinx / furo defaults are used.
+
+ See https://jupyter-sphinx.readthedocs.io/en/latest/options.html#styling-options.
+*/
+
+/* Limit the height of jupyter_sphinx text outputs, adding a vertical scroll bar. */
+.output pre {
+    max-height: 20em;
+}
