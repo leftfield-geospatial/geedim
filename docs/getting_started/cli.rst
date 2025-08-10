@@ -18,12 +18,12 @@ and help on an ``geedim`` sub-command with:
 Paths and URIs
 --------------
 
-Command line and API file / directory parameters can be specified as local paths or remote URIs.  Geedim uses `fsspec <https://github.com/fsspec/filesystem_spec>`__ for file IO, which provides built-in support for `a number of remote file systems <https://filesystem-spec.readthedocs.io/en/stable/api.html#implementations>`__.  Support for other remote systems is available by installing `the relevant extension package <https://filesystem-spec.readthedocs.io/en/latest/api.html#other-known-implementations>`__.  See the `fsspec documentation <https://filesystem-spec.readthedocs.io/en/stable/features.html#configuration>`__ if your file system requires credentials or other configuration.
+Command line and API file / directory parameters can be specified as local paths or remote URIs.  Geedim uses `fsspec <https://github.com/fsspec/filesystem_spec>`__ for file IO, which provides built-in support for `a number of remote file systems <https://filesystem-spec.readthedocs.io/en/stable/api.html#implementations>`__.  Support for other remote systems is available by installing `the relevant extension package <https://filesystem-spec.readthedocs.io/en/stable/api.html#other-known-implementations>`__.  See the `fsspec documentation <https://filesystem-spec.readthedocs.io/en/stable/features.html#configuration>`__ if your file system requires credentials or other configuration.
 
 Command chaining
 ----------------
 
-Multiple |geedim|_ commands can be chained together in a pipeline where image results from previous commands form inputs to the current command.  For example, to download a composite of the images produced by a search, the ``search``, ``composite`` and ``download`` commands would be chained.  Cloud mask configuration and ``--region`` / ``--bbox`` options are also piped between commands to save repeating these for multiple commands.  More detail on what each command reads from and outputs to the pipeline are given in the sections below.
+Multiple |geedim|_ commands can be chained together in a pipeline where image results from previous commands form inputs to the current command.  For example, to download a composite of the images produced by a search, the ``search``, ``composite`` and ``download`` commands would be chained.  Cloud mask configuration and ``--region`` / ``--bbox`` options are also piped between commands to save repeating these for multiple commands.  More detail on what each command reads from and outputs to the pipeline are given in the sections that follow.
 
 Cloud configuration
 -------------------
