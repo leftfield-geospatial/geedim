@@ -66,8 +66,8 @@ jobs:
       - name: Install dependencies
         run: |
           conda info
-          conda install pytest pytest-xdist
-          conda install earthengine-api click rasterio tqdm tabulate
+          conda install pytest pytest-xdist earthengine-api click rasterio tqdm tabulate fsspec aiohttp xarray
+          conda list
 
       - name: Run integration tests
         timeout-minutes: 10
