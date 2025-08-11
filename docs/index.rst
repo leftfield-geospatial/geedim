@@ -5,8 +5,8 @@ Geedim
     :start-after: description_start
     :end-before: description_end
 
-Documentation
--------------
+Contents
+--------
 
 .. toctree::
     :maxdepth: 2
