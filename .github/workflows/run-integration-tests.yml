@@ -38,7 +38,7 @@ jobs:
           python -m pytest -n auto ./tests/integration.py
 
   test-conda:
-    needs: test-pypi   # run after test-conda to limit concurrent ee requests
+    needs: test-pypi   # run after test-pypi to limit concurrent ee requests
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -48,7 +48,7 @@ jobs:
       max-parallel: 2
       matrix:
         os: [ macos-latest, ubuntu-latest, windows-latest ]
-        python-version: [ '3.9', '3.12' ]
+        python-version: [ '3.11', '3.13' ]
 
     steps:
       - name: Check out repository
