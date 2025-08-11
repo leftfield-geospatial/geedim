@@ -422,7 +422,7 @@ def test_filter(region_10000ha: dict):
     assert any(cp >= cloudless_portion for cp in props['custom_filter_p'][0])
     assert all(cp < cloudless_portion for cp in props['custom_filter_p'][1])
 
-    # cloud maskingkwargs (changing mask_shadows from False to True reduces the
+    # cloud masking kwargs (changing mask_shadows from False to True reduces the
     # cloudless_portion)
     assert any(
         cp_nms > cp_ms for cp_nms, cp_ms in zip(*props['cm_kwargs'], strict=True)
