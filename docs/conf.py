@@ -44,6 +44,9 @@ html_theme_options = {
     ],
 }
 
+# -- Options for pygments -----------------------------------------------------
+highlight_language = 'none'
+
 # -- Options for intersphinx ---------------------------------------------------
 intersphinx_mapping = {
     'python': ('https://docs.python.org/3', None),
