@@ -101,7 +101,7 @@ Cloud is masked from input images by default.  This can be disabled with :option
 Memory limit error
 ------------------
 
-Exporting a composite with |download|_ could raise a ``'User memory limit exceeded'`` in some unusual cases.  |export|_ is not subject to the `limit on user memory <https://developers.google.com/earth-engine/guides/usage#per-request_memory_footprint>`__ which causes this error, and using it for export is recommended in this situation.  The composite can first be exported to Earth Engine asset with |export|_, and then the asset image exported to GeoTIFF with |download|_.  E.g.:
+Exporting a composite with |download|_ could raise a ``'User memory limit exceeded'`` error in some unusual cases.  |export|_ is not subject to the `limit on user memory <https://developers.google.com/earth-engine/guides/usage#per-request_memory_footprint>`__ which causes this error, and using it for export is recommended in this situation.  The composite can first be exported to Earth Engine asset with |export|_, and then the asset image exported to GeoTIFF with |download|_.  E.g.:
 
 .. code-block::
 
