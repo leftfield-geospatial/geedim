@@ -69,14 +69,14 @@ class CloudMaskMethod(_StrChoiceEnum):
     cloud_prob = 'cloud-prob'
     """Threshold the Sentinel-2 Cloud Probability.
 
-    .. deprecated:: 2.0.0
+    .. deprecated:: 1.9.0
         Please use the :attr:`cloud_score` method.
     """
 
     qa = 'qa'
     """Bit mask the `QA60` quality assessment band.
 
-    .. deprecated:: 2.0.0
+    .. deprecated:: 1.9.0
         Please use the :attr:`cloud_score` method.
     """
 
