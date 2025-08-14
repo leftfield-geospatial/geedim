@@ -4,6 +4,48 @@ Changelog
 Unreleased
 ----------
 
+This release provides a new API via ``gd`` accessors on the ``ee.Image`` and ``ee.ImageCollection`` Earth Engine classes.  Existing export functionality has been expanded to allow image and image collection export to various formats.  Cloud masking has been extended to support more collections and masking options.
+
+Breaking changes
+~~~~~~~~~~~~~~~~
+
+- The default Landsat cloud mask is more aggressive.  Following `<https://gis.stackexchange.com/a/473652>`__, it now includes dilated cloud, and all medium confidence cloud, shadow & cirrus pixels.
+- The ``MaskedCollection.stac`` property now returns a STAC dictionary and not a ``StacItem`` instance.
+- ``MaskedImage`` does not add mask bands to images without fixed projections.
+- ``MaskedImage.mask_clouds()`` does not apply any mask if cloud masking is not supported.
+- ``MaskedCollection.properties_table`` lists image indexes rather than IDs.
+- The ``geedim download`` and ``geedim export`` CLI commands name files with their image index rather than ID.
+
+Deprecations
+~~~~~~~~~~~~
+
+- Deprecate the ``MaskedImage`` and ``MaskedCollection`` classes.  The ``ee.Image.gd`` and ``ee.ImageCollection.gd`` accessors should be used instead.
+
+Features
+~~~~~~~~
+
+- Provide the API via ``ee.Image.gd`` and ``ee.ImageCollection.gd`` accessors.
+- Allow images and image collections to be exported to GeoTIFF, NumPy, Xarray and Google Cloud formats.
+- Allow setting a custom nodata value when exporting to GeoTIFF (#21).
+- Extend cloud masking support to Landsat C2 collections.
+- Allow saturated, non-physical reflectance or aerosol pixels to be included in cloud masks.
+
+Packaging
+~~~~~~~~~
+
+- Change the minimum required Python to 3.11 for ``asyncio.Runner`` support.
+- Add ``fsspec`` and AIOHTTP dependencies for new export internals.
+
+Documentation
+~~~~~~~~~~~~~
+
+- Update the site theme & layout, and add new getting started sections.
+
+Internal changes
+~~~~~~~~~~~~~~~~
+
+- Rewrite tiled downloading with AIOHTTP and custom retries (#22, #26, #30).
+
 v1.9.1 - 2025-05-13
 -------------------
 
