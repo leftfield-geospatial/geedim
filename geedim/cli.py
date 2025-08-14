@@ -574,29 +574,22 @@ def config(ctx: click.Context, **kwargs):
     '-fp',
     '--fill-portion',
     '--fill',
-    metavar='VALUE',
     type=click.FloatRange(min=0, max=100),
     default=None,
-    is_flag=False,
-    flag_value=0,
     show_default="don't calculate or filter on fill portion",
     help='Lower limit on the portion of :option:`--bbox` / :option:`--region` that '
-    'contains filled pixels (%). Uses zero if VALUE is not supplied.',
+    'contains filled pixels (%).',
 )
 @click.option(
     '-cp',
     '--cloudless-portion',
     '--cloudless',
-    metavar='VALUE',
     type=click.FloatRange(min=0, max=100),
     default=None,
-    is_flag=False,
-    flag_value=0,
     show_default="don't calculate or filter on cloudless portion",
     help='Lower limit on the portion of filled pixels in :option:`--bbox` / '
-    ':option:`--region` that are cloud-free (%). Uses zero if VALUE is not '
-    'supplied. Has no effect if cloud masking is not supported for '
-    ':option:`--collection`.',
+    ':option:`--region` that are cloud-free (%). Has no effect if cloud masking is '
+    'not supported for :option:`--collection`.',
 )
 @click.option(
     '-cf',
