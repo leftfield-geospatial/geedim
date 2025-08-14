@@ -31,8 +31,10 @@ geedim = 'geedim.cli:cli'
 xarray = ['xarray']
 
 [dependency-groups]
-tests = ['pytest', 'pytest-xdist', 'xarray']
-docs = ['sphinx', 'furo', 'sphinx-click', 'sphinx-copybutton', 'jupyter-sphinx']
+tests = ['pytest', 'pytest-xdist', 'pytest-cov', 'xarray']
+docs = [
+    'sphinx', 'furo', 'sphinx-click', 'sphinx-copybutton', 'jupyter-sphinx', 'xarray'
+]
 
 [project.urls]
 Homepage = 'https://github.com/leftfield-geospatial/geedim'
