@@ -4,47 +4,55 @@ Changelog
 Unreleased
 ----------
 
-This release provides a new API via ``gd`` accessors on the ``ee.Image`` and ``ee.ImageCollection`` Earth Engine classes.  Existing export functionality has been expanded to allow image and image collection export to various formats.  Cloud masking has been extended to support more collections and masking options.
+This release provides a new API via ``gd`` accessors on the ``ee.Image`` and ``ee.ImageCollection`` Earth Engine classes.  Existing export functionality has been expanded to allow image and image collection export to various formats.  Cloud masking has been extended to support more collections and masking options.  With a substantial part of the package having been rewritten, some breaking changes were necessary.
 
 Breaking changes
 ~~~~~~~~~~~~~~~~
 
 - The default Landsat cloud mask is more aggressive.  Following `<https://gis.stackexchange.com/a/473652>`__, it now includes dilated cloud, and all medium confidence cloud, shadow & cirrus pixels.
 - The ``MaskedCollection.stac`` property now returns a STAC dictionary and not a ``StacItem`` instance.
-- ``MaskedImage`` does not add mask bands to images without fixed projections.
-- ``MaskedImage.mask_clouds()`` does not apply any mask if cloud masking is not supported.
-- ``MaskedCollection.properties_table`` lists image indexes rather than IDs.
-- The ``geedim download`` and ``geedim export`` CLI commands name files with their image index rather than ID.
+- ``MaskedImage`` doesn't add mask bands to composite images.  Previously mask bands were added to composite images that had no existing mask bands.
+- When cloud masking is not supported, ``MaskedImage.mask_clouds()`` leaves the image unaltered instead of applying a fill mask.
+- ``MaskedImage.scale`` is in units of its ``crs``, not meters.
+- The ``MaskedImage.search()`` ``end_date`` parameter defaults to a millisecond after ``start_date``, not one day.
+- The ``geedim download`` and ``geedim export`` CLI commands name image files with their Earth Engine index rather than ID.
+- The piped value of the CLI ``--region`` option is no longer implicitly used by subsequent commands in the pipeline.
 
 Deprecations
 ~~~~~~~~~~~~
 
-- Deprecate the ``MaskedImage`` and ``MaskedCollection`` classes.  The ``ee.Image.gd`` and ``ee.ImageCollection.gd`` accessors should be used instead.
+- The ``MaskedImage`` and ``MaskedCollection`` classes are deprecated.  The ``ee.Image.gd`` and ``ee.ImageCollection.gd`` accessors should be used instead.
 
 Features
 ~~~~~~~~
 
 - Provide the API via ``ee.Image.gd`` and ``ee.ImageCollection.gd`` accessors.
-- Allow images and image collections to be exported to GeoTIFF, NumPy, Xarray and Google Cloud formats.
+- Provide client-side access to image and collection properties.
+- Allow images and image collections to be exported to GeoTIFF file, NumPy array, Xarray DataArray / Dataset and Google Cloud platforms.
+- Support exporting to Cloud Optimised GeoTIFF.
 - Allow setting a custom nodata value when exporting to GeoTIFF (#21).
+- Support specifying file / directory paths as remote URIs with ``fsspec``.
 - Extend cloud masking support to Landsat C2 collections.
 - Allow saturated, non-physical reflectance or aerosol pixels to be included in cloud masks.
+- Add a CLI ``--buffer`` option for buffering the ``--region`` / ``--bbox``.
 
 Packaging
 ~~~~~~~~~
 
-- Change the minimum required Python to 3.11 for ``asyncio.Runner`` support.
-- Add ``fsspec`` and AIOHTTP dependencies for new export internals.
+- Increase the minimum Python version to 3.11.
+- Add ``fsspec`` and AIOHTTP dependencies.
 
 Documentation
 ~~~~~~~~~~~~~
 
-- Update the site theme & layout, and add new getting started sections.
+- Update the site theme & layout.
+- Add new getting started sections.
 
 Internal changes
 ~~~~~~~~~~~~~~~~
 
 - Rewrite tiled downloading with AIOHTTP and custom retries (#22, #26, #30).
+- Rewrite STAC retrieval with AIOHTTP.
 
 v1.9.1 - 2025-05-13
 -------------------
