@@ -557,7 +557,8 @@ class MaskedImage(BaseImage):
         """
         A class for encapsulating an Earth Engine image.
 
-        Mask and related bands are added to the supplied ``ee_image``.
+        Mask and related bands are added to the supplied ``ee_image`` when it has a
+        fixed projection.
 
         .. deprecated:: 2.0.0
             Please use the :class:`ee.Image.gd <geedim.image.ImageAccessor>` accessor
