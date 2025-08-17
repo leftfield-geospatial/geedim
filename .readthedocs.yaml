@@ -9,6 +9,7 @@ build:
     python: "3.13"
   jobs:
     install:
+      - echo $EE_SERVICE_ACC_PRIVATE_KEY
       # upgrade pip for --group support
       - pip install --upgrade pip
       # install geedim with docs dependency group
