@@ -9,7 +9,7 @@ build:
     python: "3.13"
   jobs:
     install:
-      - pip --version
+      - pip install --upgrade pip
       - pip install --group docs
 
 python:
