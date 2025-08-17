@@ -9,9 +9,4 @@ build:
     python: "3.12"
   jobs:
     install:
-      - pip install --group 'docs'
-
-python:
-  install:
-    - method: pip
-      path: .
+      - pip install --group docs
