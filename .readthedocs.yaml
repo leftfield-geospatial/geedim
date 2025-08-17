@@ -9,7 +9,7 @@ build:
     python: "3.12"
   jobs:
     install:
-    - pip install --group 'docs'
+      - pip install --group 'docs'
 
 python:
   install:
