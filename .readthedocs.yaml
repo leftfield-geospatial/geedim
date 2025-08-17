@@ -9,10 +9,7 @@ build:
     python: "3.13"
   jobs:
     install:
+      # upgrade pip for --group support
       - pip install --upgrade pip
-      - pip install --group docs
-
-python:
-  install:
-    - method: pip
-      path: .
+      # install geedim with docs dependency group
+      - pip install --group docs .
