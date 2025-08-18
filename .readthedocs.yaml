@@ -9,7 +9,7 @@ build:
     python: "3.12"
   jobs:
     install:
-      - python -c 'import os, json;print(os.environ["TEST_VAR"]);print(json.loads(os.environ["TEST_VAR"]));'
+      - python -c "import os, json;print(os.environ[\"TEST_VAR\"]);print(json.loads(os.environ[\"TEST_VAR\"]));"
       # upgrade pip for --group support
       - pip install --upgrade pip
       # install geedim with docs dependency group
