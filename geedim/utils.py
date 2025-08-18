@@ -19,6 +19,7 @@ import io
 import json
 import logging
 import os
+import shlex
 import threading
 import warnings
 from asyncio.runners import Runner
@@ -57,7 +58,11 @@ def Initialize(
 
     if env_key in os.environ:
         # authenticate with service account
-        key_dict = json.loads(os.environ[env_key])
+        try:
+            key_dict = json.loads(os.environ[env_key])
+        except json.JSONDecodeError:
+            # work around for https://github.com/readthedocs/readthedocs.org/issues/8636
+            key_dict = json.loads(''.join(shlex.split(os.environ[env_key])))
         credentials = ee.ServiceAccountCredentials(
             key_dict['client_email'], key_data=key_dict['private_key']
         )
