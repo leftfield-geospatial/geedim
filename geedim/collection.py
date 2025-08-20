@@ -130,8 +130,8 @@ class ImageCollectionAccessor:
         Images from spectrally compatible Landsat collections can be combined i.e.
         Landsat-4 with Landsat-5, and Landsat-8 with Landsat-9.  Otherwise,
         images should belong to the same collection.  Images may include composites
-        created :meth:`composite`, which are treated as belonging to the collection
-        of their component images.
+        created with :meth:`composite`, which are treated as belonging to the
+        collection of their component images.
 
         Use this method (instead of :class:`ee.ImageCollection` or
         :meth:`ee.ImageCollection.fromImages`) to support cloud masking on a
@@ -708,12 +708,12 @@ class ImageCollectionAccessor:
             comp_image = getattr(ee_coll, method.name)()
 
         # populate composite image metadata
-        comp_index = ee.String(f'{method.value.upper()}-COMP')
+        comp_index = f'{method.value.upper()}-COMP'
         # set 'properties'->'system:index'
         comp_image = comp_image.set('system:index', comp_index)
         # set root 'id' property
-        comp_id = ee.String(self.id + '/') if self.id else ee.String('')
-        comp_id = comp_id.cat(comp_index)
+        comp_id = (self.id + '/') if self.id else ''
+        comp_id += comp_index
         comp_image = comp_image.set('system:id', comp_id)
         # set composite start-end times
         date_range = ee_coll.reduceColumns(ee.Reducer.minMax(), ['system:time_start'])
@@ -837,9 +837,10 @@ class ImageCollectionAccessor:
             :attr:`~geedim.enums.ExportType.drive`), Earth Engine asset project (when
             ``type`` is :attr:`~geedim.enums.ExportType.asset`), or Google Cloud
             Storage bucket (when ``type`` is :attr:`~geedim.enums.ExportType.cloud`).
-            Can include sub-folders.  If ``type`` is
+            Can include sub-folders, or an image collection name if ``type`` is
+            :attr:`~geedim.enums.ExportType.asset`.  Required if ``type`` is
             :attr:`~geedim.enums.ExportType.asset` or
-            :attr:`~geedim.enums.ExportType.cloud` then ``folder`` is required.
+            :attr:`~geedim.enums.ExportType.cloud`.
         :param wait:
             Whether to wait for the exports to complete before returning.
         :param split:

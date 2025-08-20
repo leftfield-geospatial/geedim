@@ -106,8 +106,10 @@ Exporting a composite with |download|_ could raise a ``'User memory limit exceed
 .. code-block::
 
     geedim search --collection COPERNICUS/S2_SR_HARMONIZED --start-date 2021-01-01 --end-date 2023-01-01 --bbox 24.35 -33.75 24.45 -33.65 composite --method median export --type asset --folder geedim --crs EPSG:3857 --region - --scale 10 --dtype uint16
-    geedim download --id projects/geedim/assets/MEDIAN-COMP
 
+.. code-block::
+
+    geedim download --id projects/geedim/assets/MEDIAN-COMP
 
 .. |geedim| replace:: ``geedim``
 .. _geedim: ../reference/cli.html#geedim

@@ -804,9 +804,9 @@ def download(
 
     Files are named with the Earth Engine index of their source image, and file band
     descriptions set to image band names with :option:`--split <geedim-download
-    --split>` images.  Otherwise, files are named with their band name, and file band
-    descriptions set to the Earth Engine index of the band's source image with
-    :option:`--split <geedim-download --split>` bands.
+    --split>` ``images``.  Otherwise, files are named with their band name, and file
+    band descriptions set to the Earth Engine index of the band's source image with
+    :option:`--split <geedim-download --split>` ``bands``.
     """
     obj['images'] = _get_images(obj, image_ids=image_ids)
     coll = _prepare_export_collection(
@@ -852,8 +852,8 @@ def download(
     type=click.STRING,
     default=None,
     help='Google Drive folder, Earth Engine asset project, or Google Cloud Storage '
-    'bucket to export image(s) to.  Can include sub-folders.  Interpretation '
-    'based on :option:`--type`.',
+    'bucket to export image(s) to.  Can include sub-folders or an image collection '
+    'name.  Interpretation based on :option:`--type`.',
 )
 @crs_option
 @bbox_option
@@ -897,9 +897,9 @@ def export(
 
     Files are named with the Earth Engine index of their source image, and file band
     descriptions set to image band names with :option:`--split <geedim-export
-    --split>` images.  Otherwise, files are named with their band name, and file band
-    descriptions set to the Earth Engine index of the band's source image with
-    :option:`--split <geedim-export --split>` bands.
+    --split>` ``images``.  Otherwise, files are named with their band name, and file
+    band descriptions set to the Earth Engine index of the band's source image with
+    :option:`--split <geedim-export --split>` ``bands``.
     """
     if (type in [enums.ExportType.asset, enums.ExportType.cloud]) and not folder:
         raise click.MissingParameter(

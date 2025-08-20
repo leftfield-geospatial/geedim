@@ -882,10 +882,11 @@ class ImageAccessor:
             :attr:`~geedim.enums.ExportType.drive`), Earth Engine asset project (when
             ``type`` is :attr:`~geedim.enums.ExportType.asset`), or Google Cloud
             Storage bucket (when ``type`` is :attr:`~geedim.enums.ExportType.cloud`).
-            Can include sub-folders.  If ``type`` is
+            Can include sub-folders, or an image collection name if ``type`` is
+            :attr:`~geedim.enums.ExportType.asset`.  If ``type`` is
             :attr:`~geedim.enums.ExportType.asset` and ``folder`` is not supplied,
-            ``filename`` should be a valid Earth Engine asset ID. If ``type`` is
-            :attr:`~geedim.enums.ExportType.cloud` then ``folder`` is required.
+            ``filename`` should be a valid Earth Engine asset ID.  Required if
+            ``type`` is :attr:`~geedim.enums.ExportType.cloud`.
         :param wait:
             Whether to wait for the export to complete before returning.
         :param kwargs:

@@ -22,7 +22,7 @@ Dependencies required for running tests can be installed, and Geedim linked into
 
 .. code-block::
 
-    pip install -e .[tests]
+    pip install --group tests -e .
 
 Pull requests
 ~~~~~~~~~~~~~

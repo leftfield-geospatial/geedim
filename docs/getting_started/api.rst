@@ -154,7 +154,7 @@ Image
 
 .. _geotiff-tags:
 
-Image :attr:`~geedim.image.ImageAccessor.properties` are written to the GeoTIFF file default namespace tags, and :attr:`~geedim.image.ImageAccessor.bandProps` are written to the band tags:
+Image :attr:`~geedim.image.ImageAccessor.properties` are written to the GeoTIFF default namespace tags, and :attr:`~geedim.image.ImageAccessor.bandProps` are written to the band tags:
 
 .. jupyter-execute::
 
@@ -210,7 +210,7 @@ Collection
         dirname.rmdir()
 
 
-When ``split`` is :attr:`~geedim.enums.SplitType.images`, image :attr:`~geedim.image.ImageAccessor.properties` are written to the GeoTIFF file default namespace tags, and :attr:`~geedim.image.ImageAccessor.bandProps` are written to the band tags (see the :ref:`image <geotiff-tags>` example).
+When ``split`` is :attr:`~geedim.enums.SplitType.images`, image :attr:`~geedim.image.ImageAccessor.properties` are written to the GeoTIFF default namespace tags, and :attr:`~geedim.image.ImageAccessor.bandProps` are written to the band tags (see the :ref:`image <geotiff-tags>` example).
 
 Nodata
 ^^^^^^
@@ -251,7 +251,7 @@ Image
 
 .. jupyter-execute::
 
-    # create and prepare image (with 3 bands)
+    # create and prepare an image (with 3 bands)
     im = ee.Image('COPERNICUS/S2_SR_HARMONIZED/20211220T080341_20211220T082827_T35HKC')
     region = ee.Geometry.Rectangle(24.35, -33.75, 24.45, -33.65)
     prep_im = im.gd.prepareForExport(
@@ -481,11 +481,6 @@ Exporting computed images with ``toGeoTIFF()``, ``toNumPy()`` or ``toXarray()`` 
 
     # attempt export to NumPy array
     array = prep_im.gd.toNumPy()
-
-..
-    Traceback (most recent call last):
-    ...
-    aiohttp.client_exceptions.ClientResponseError: 400, message='User memory limit exceeded.', ...
 
 ``toGoogleCloud()`` is not subject to the limit and using it for export is recommended in this situation.  Images can first be exported to Earth Engine asset with ``toGoogleCloud()``, and then the computed assets exported to a target format with one of ``toGeoTIFF()``, ``toNumPy()`` or ``toXarray()``.  E.g.:
 

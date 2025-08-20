@@ -57,12 +57,14 @@ def Initialize(
     env_key = 'EE_SERVICE_ACC_PRIVATE_KEY'
 
     if env_key in os.environ:
-        # authenticate with service account
+        # read private key
         try:
             key_dict = json.loads(os.environ[env_key])
         except json.JSONDecodeError:
             # work around for https://github.com/readthedocs/readthedocs.org/issues/8636
             key_dict = json.loads(''.join(shlex.split(os.environ[env_key])))
+
+        # authenticate with service account
         credentials = ee.ServiceAccountCredentials(
             key_dict['client_email'], key_data=key_dict['private_key']
         )
