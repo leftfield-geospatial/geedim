@@ -118,7 +118,7 @@ class BaseImage(ImageAccessor):
         Monitor and display the progress of an export task.
 
         :param task:
-            Earth Engine task to monitor (as returned by :meth:`export`).
+            Earth Engine task to monitor (e.g. as returned by :meth:`export`).
         :param label:
             Optional label for progress display.  Defaults to the task description.
         """
@@ -145,10 +145,11 @@ class BaseImage(ImageAccessor):
             :attr:`~geedim.enums.ExportType.drive`), Earth Engine asset project (when
             ``type`` is :attr:`~geedim.enums.ExportType.asset`), or Google Cloud
             Storage bucket (when ``type`` is :attr:`~geedim.enums.ExportType.cloud`).
-            Can include sub-folders.  If ``type`` is
+            Can include sub-folders, or an image collection name if ``type`` is
+            :attr:`~geedim.enums.ExportType.asset`.  If ``type`` is
             :attr:`~geedim.enums.ExportType.asset` and ``folder`` is not supplied,
-            ``filename`` should be a valid Earth Engine asset ID. If ``type`` is
-            :attr:`~geedim.enums.ExportType.cloud` then ``folder`` is required.
+            ``filename`` should be a valid Earth Engine asset ID.  Required if
+            ``type`` is :attr:`~geedim.enums.ExportType.cloud`.
         :param wait:
             Whether to wait for the export to complete before returning.
         :param export_kwargs:
@@ -187,7 +188,7 @@ class BaseImage(ImageAccessor):
         :attr:`~geedim.image.ImageAccessor.properties`, and band tags with
         :attr:`band_properties`.
 
-        :param file:
+        :param filename:
             Destination file.  Can be a path or URI string, or an
             :class:`~fsspec.core.OpenFile` object in binary mode (``'wb'``).
         :param overwrite:

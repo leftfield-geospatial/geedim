@@ -397,7 +397,7 @@ def cli(ctx: click.Context, verbose: int, quiet: int):
 
 
 # config command
-@cli.command(epilog='See https://geedim.readthedocs.io/ for more details.')
+@cli.command()
 @click.option(
     '-mc/-nmc',
     '--mask-cirrus/--no-mask-cirrus',
@@ -538,9 +538,7 @@ def config(ctx: click.Context, **kwargs):
 
 
 # search command
-@cli.command(
-    cls=_EECommand, epilog='See https://geedim.readthedocs.io/ for more details.'
-)
+@cli.command(cls=_EECommand)
 @click.option(
     '-c',
     '--collection',
@@ -564,7 +562,7 @@ def config(ctx: click.Context, **kwargs):
     type=click.DateTime(),
     required=False,
     default=None,
-    show_default='one millisecond after :option:`--start-date`',
+    show_default='one millisecond after --start-date',
     help='End date (UTC).',
 )
 @bbox_option
@@ -679,9 +677,7 @@ def search(
 
 
 # download command
-@cli.command(
-    cls=_EECommand, epilog='See https://geedim.readthedocs.io/ for more details.'
-)
+@cli.command(cls=_EECommand)
 @image_ids_option
 @crs_option
 @bbox_option
@@ -703,8 +699,9 @@ def search(
     type=click.BOOL,
     default=True,
     show_default=True,
-    help='Set the nodata tag of downloaded file(s) to the --dtype dependent value '
-    'provided by Earth Engine (``--nodata``), or leave it unset (``--no-nodata``).',
+    help='Set the nodata tag of downloaded file(s) to the :option:`--dtype` dependent '
+    'value provided by Earth Engine (``--nodata``), or leave it unset '
+    '(``--no-nodata``).',
 )
 @click.option(
     '-dv',
@@ -797,16 +794,17 @@ def download(
 
     Images are retrieved as separate tiles which are downloaded and decompressed
     concurrently.  Tile size can be controlled with :option:`--max-tile-size
-    <geedim-download --max-tile-size>` and :option:`--max-tile-dim <geedim-download
-    --max-tile-dim>`, and download / decompress concurrency with
+    <geedim-download --max-tile-size>`, :option:`--max-tile-dim <geedim-download
+    --max-tile-dim>` and :option:`--max-tile-bands <geedim-download
+    --max-tile-bands>`, and download / decompress concurrency with
     :option:`--max-requests <geedim-download --max-requests>` and :option:`--max-cpus
     <geedim-download --max-cpus>`.
 
     Files are named with the Earth Engine index of their source image, and file band
     descriptions set to image band names with :option:`--split <geedim-download
-    --split>` ``images``.  Otherwise, files are named with their band name, and file
+    --split>` 'images'.  Otherwise, files are named with their band name, and file
     band descriptions set to the Earth Engine index of the band's source image with
-    :option:`--split <geedim-download --split>` ``bands``.
+    :option:`--split <geedim-download --split>` 'bands'.
     """
     obj['images'] = _get_images(obj, image_ids=image_ids)
     coll = _prepare_export_collection(
@@ -832,9 +830,7 @@ def download(
 
 
 # export command
-@cli.command(
-    cls=_EECommand, epilog='See https://geedim.readthedocs.io/ for more details.'
-)
+@cli.command(cls=_EECommand)
 @image_ids_option
 @click.option(
     '-t',
@@ -890,16 +886,16 @@ def export(
     Export image(s) to Google cloud platforms.
 
     Images piped from previous commands will be exported, in addition to any images
-    specified with :option:`--id <geedim-download --id>`.  Input images are piped out
+    specified with :option:`--id <geedim-export --id>`.  Input images are piped out
     of this command for use by subsequent commands.
 
     Exported images include mask and related bands.
 
     Files are named with the Earth Engine index of their source image, and file band
     descriptions set to image band names with :option:`--split <geedim-export
-    --split>` ``images``.  Otherwise, files are named with their band name, and file
+    --split>` 'images'.  Otherwise, files are named with their band name, and file
     band descriptions set to the Earth Engine index of the band's source image with
-    :option:`--split <geedim-export --split>` ``bands``.
+    :option:`--split <geedim-export --split>` 'bands'.
     """
     if (type in [enums.ExportType.asset, enums.ExportType.cloud]) and not folder:
         raise click.MissingParameter(
@@ -919,9 +915,7 @@ def export(
 
 
 # composite command
-@cli.command(
-    cls=_EECommand, epilog='See https://geedim.readthedocs.io/ for more details.'
-)
+@cli.command(cls=_EECommand)
 @click.option(
     '-i',
     '--id',
@@ -959,7 +953,8 @@ def export(
     '-d',
     '--date',
     type=click.DateTime(),
-    help='Sort component images by the absolute difference of capture time and this '
+    default=None,
+    help='Sort component images by the absolute difference of capture date and this '
     'date (UTC).',
 )
 @click.option(
@@ -999,17 +994,14 @@ def composite(
     to any images specified with :option:`--id <geedim-composite --id>`.  The
     composite image is piped out of this command for use by subsequent commands.
 
-    Input images should belong to the same collection or to spectrally compatible
-    Landsat collections i.e. Landsat-4 with Landsat-5, or Landsat-8 with Landsat-9.
-
     When supported, input images are cloud masked by default.  This can be turned off
     with :option:`--no-mask <geedim-composite --no-mask>`.  The 'q-mosaic'
     :option:`--method <geedim-composite --method>` uses distance to the nearest cloud
     as the quality measure and requires cloud mask support.
 
-    Images are sorted by their capture time when option:`--date <geedim-composite
+    Images are sorted by their capture date when :option:`--date <geedim-composite
     --date>` and :option:`--bbox <geedim-composite --bbox>` / :option:`--region
-    <geedim-composite --region>` are not provided,
+    <geedim-composite --region>` are not provided.
     """
     images = _get_images(obj, image_ids)
     coll = ee.ImageCollection.gd.fromImages(images)

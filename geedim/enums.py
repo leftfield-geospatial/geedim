@@ -74,7 +74,7 @@ class CloudMaskMethod(_StrChoiceEnum):
     """
 
     qa = 'qa'
-    """Bit mask the `QA60` quality assessment band.
+    """Bit mask the ``QA60`` quality assessment band.
 
     .. deprecated:: 1.9.0
         Please use the :attr:`cloud_score` method.
@@ -161,7 +161,7 @@ class SplitType(_StrChoiceEnum):
 
 
 class Driver(_StrChoiceEnum):
-    """Enumeration for image file format."""
+    """Enumeration for the image file format."""
 
     gtiff = 'gtiff'
     """GeoTIFF."""

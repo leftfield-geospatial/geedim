@@ -63,7 +63,7 @@ Geedim provides access to its functionality through the ``gd`` accessor on the `
 
     ee.Initialize()
 
-    # filter collection based on cloudless portion etc.
+    # filter collection based on cloud-free portion etc.
     region = ee.Geometry.Rectangle(24.35, -33.75, 24.45, -33.65)
     coll = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
     filt_coll = coll.gd.filter(
@@ -85,7 +85,7 @@ Geedim provides access to its functionality through the ``gd`` accessor on the `
 Command line interface
 ~~~~~~~~~~~~~~~~~~~~~~
 
-Much of the API functionality can also be accessed on the command line with ``geedim`` and its sub-commands.  As in the API example, this exports a 6-month cloud-free composite of Sentinel-2 surface reflectance imagery to a GeoTIFF file:
+Much of the API functionality can also be accessed on the command line with ``geedim`` and its sub-commands.  This repeats the API example, exporting a 6-month cloud-free composite of Sentinel-2 surface reflectance imagery to a GeoTIFF file:
 
 .. code:: shell
 
@@ -95,7 +95,7 @@ Much of the API functionality can also be accessed on the command line with ``ge
 Documentation
 -------------
 
-See `geedim.readthedocs.io <https://geedim.readthedocs.io/>`__ for usage, contribution and reference documentation.
+Documentation is hosted at `geedim.readthedocs.io <https://geedim.readthedocs.io/>`__.
 
 License
 -------

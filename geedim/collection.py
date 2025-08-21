@@ -670,7 +670,7 @@ class ImageCollectionAccessor:
             Sort component images by their cloud-free portion inside this region when
             cloud masking is supported, otherwise sort by their filled (valid) portion.
             Can be a GeoJSON dictionary or :class:`ee.Geometry`. Images are sorted by
-            their capture time if both ``date`` and ``region`` are ``None`` (the
+            their capture date if both ``date`` and ``region`` are ``None`` (the
             default).
         :param kwargs:
             Cloud/shadow masking arguments - see
@@ -1181,10 +1181,10 @@ class ImageCollectionAccessor:
         A maximum of 5000 images can be exported.
 
         :param masked:
-            Set masked pixels in the returned array to the shared
+            Set masked pixels in the returned dataset to the shared
             :attr:`~geedim.image.ImageAccessor.nodata` value of the collection images
             (``False``), or to NaN (``True``).  If ``True``, the export data type is
-            integer, and one or more pixels are masked, the returned array is
+            integer, and one or more pixels are masked, the returned dataset is
             converted to a minimal floating point type able to represent the export
             data type.
         :param split:

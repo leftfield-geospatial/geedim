@@ -480,7 +480,7 @@ class ImageAccessor:
         Monitor and display the progress of an export task.
 
         :param task:
-            Earth Engine task to monitor (as returned by :meth:`toGoogleCloud`).
+            Earth Engine task to monitor (e.g. as returned by :meth:`toGoogleCloud`).
         :param label:
             Optional label for progress display.  Defaults to the task description.
         """
@@ -570,7 +570,7 @@ class ImageAccessor:
         Convert the image data dtype.
 
         :param dtype:
-            A recognised NumPy / Rasterio data type to convert to.
+            A NumPy / Rasterio data type to convert to.
 
         :return:
             Converted image.
@@ -817,7 +817,7 @@ class ImageAccessor:
         # set a default scale and try to maintain pixel grid if no scaling params
         # supplied
         if not crs_transform and not shape and not scale:
-            # default to the minimum scale
+            # default to the minimum scale (m)
             scale = exp_image.projection().nominalScale()
             # Only pass crs to ee.Image.prepare_for_export() when it is different
             # from the source.  Passing same crs as source does not maintain the
