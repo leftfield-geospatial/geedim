@@ -1,8 +1,8 @@
 Changelog
 =========
 
-Unreleased
-----------
+v2.0.0 - 2025-08-22
+-------------------
 
 This release provides a new API via ``gd`` accessors on the ``ee.Image`` and ``ee.ImageCollection`` Earth Engine classes.  Existing export functionality has been expanded to allow image and image collection export to various formats.  Cloud masking has been extended to support more collections and masking options.  With a substantial part of the package having been rewritten, some breaking changes were necessary.
 
