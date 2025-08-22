@@ -39,6 +39,6 @@ jobs:
       run: |
           geedim --version
           geedim search -c l8-c2-l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 composite -cm q-mosaic --mask download --scale 30 --crs EPSG:3857 -r - -o
-          dir -f Q-MOSAIC-COMP.tif && echo "Test OK"
+          dir Q-MOSAIC-COMP.tif && echo "Test OK"
           pwd
           ls -R
