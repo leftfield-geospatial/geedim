@@ -12,7 +12,7 @@ jobs:
       max-parallel: 2
       matrix:
         os: [ macos-latest, ubuntu-latest, windows-latest ]
-        python-version: [ '3.8', '3.12' ]
+        python-version: [ '3.11', '3.13' ]
 
     steps:
       - name: Check out repository
@@ -28,7 +28,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install pytest pytest-xdist
-          python -m pip install earthengine-api click rasterio tqdm tabulate
+          python -m pip install earthengine-api click rasterio tqdm tabulate fsspec aiohttp xarray
 
       - name: Run integration tests
         timeout-minutes: 10
@@ -38,7 +38,7 @@ jobs:
           python -m pytest -n auto ./tests/integration.py
 
   test-conda:
-    needs: test-pypi   # run after test-conda to limit concurrent ee requests
+    needs: test-pypi   # run after test-pypi to limit concurrent ee requests
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -48,7 +48,7 @@ jobs:
       max-parallel: 2
       matrix:
         os: [ macos-latest, ubuntu-latest, windows-latest ]
-        python-version: [ '3.8', '3.12' ]
+        python-version: [ '3.11', '3.13' ]
 
     steps:
       - name: Check out repository
@@ -66,8 +66,8 @@ jobs:
       - name: Install dependencies
         run: |
           conda info
-          conda install pytest pytest-xdist
-          conda install earthengine-api click rasterio tqdm tabulate
+          conda install pytest pytest-xdist earthengine-api click rasterio tqdm tabulate fsspec aiohttp xarray
+          conda list
 
       - name: Run integration tests
         timeout-minutes: 10

@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.8', '3.12']
+        python-version: ['3.11', '3.13']
         os: [ macos-latest, ubuntu-latest, windows-latest ]
 
     steps:
@@ -34,7 +34,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         python -m pip install flake8 pytest pytest-xdist pytest-cov
-        python -m pip install earthengine-api click rasterio tqdm tabulate
+        python -m pip install earthengine-api click rasterio tqdm tabulate fsspec aiohttp typing-extensions xarray
 
     - name: Lint with flake8
       run: |

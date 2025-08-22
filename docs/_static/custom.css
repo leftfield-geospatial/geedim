@@ -1,0 +1,17 @@
+/* Set Xarray colours so the HTML repr works with furo's light/dark/auto mode.
+
+ Uses a tighter selector than the Xarray package style(s) to give this style priority.
+
+ See https://github.com/pradyunsg/furo/blob/main/src/furo/assets/styles/variables/_colors.scss
+ and https://github.com/pydata/xarray/blob/main/xarray/static/css/style.css
+*/
+ .xr-wrap {
+    --xr-font-color0: var(--color-foreground-primary);
+    --xr-font-color2: var(--color-foreground-secondary);
+    --xr-font-color3: var(--color-foreground-muted);
+    --xr-border-color: var(--color-background-border);
+    --xr-disabled-color: var(--color-foreground-border);
+    --xr-background-color: var(--color-background-primary);
+    --xr-background-color-row-even: var(--color-background-hover);
+    --xr-background-color-row-odd: var(--color-background-item);
+ }

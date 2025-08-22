@@ -1,260 +1,328 @@
-"""
-    Copyright 2021 Dugal Harris - dugalh@gmail.com
+# Copyright The Geedim Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+# this file except in compliance with the License. You may obtain a copy of the
+# License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software distributed
+# under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+# CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+# language governing permissions and limitations under the License.
 
-    Licensed under the Apache License, Version 2.0 (the "License");
-    you may not use this file except in compliance with the License.
-    You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-    Unless required by applicable law or agreed to in writing, software
-    distributed under the License is distributed on an "AS IS" BASIS,
-    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-    See the License for the specific language governing permissions and
-    limitations under the License.
-"""
+from __future__ import annotations
 
 import json
 import logging
-import os
-import pathlib
+import posixpath
 import re
-import sys
-from types import SimpleNamespace
-from typing import List
+import warnings
+from collections.abc import Sequence
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlparse
 
 import click
+import ee
+import fsspec
 import rasterio as rio
-import rasterio.crs as rio_crs
 from click.core import ParameterSource
-from rasterio.errors import CRSError
+from fsspec.core import OpenFile
+from rasterio.warp import transform_bounds
+from tqdm.auto import tqdm
 
-from geedim import Initialize, schema, version
-from geedim.collection import MaskedCollection
-from geedim.download import _nodata_vals, BaseImage
-from geedim.enums import CloudMaskMethod, CloudScoreBand, CompositeMethod, ExportType, ResamplingMethod
-from geedim.mask import MaskedImage
-from geedim.utils import asset_id, get_bounds, Spinner
+from geedim import enums, schema, utils, version
+from geedim.image import ImageAccessor, _nodata_vals
+from geedim.tile import Tiler
 
 logger = logging.getLogger(__name__)
 
 
-class PlainInfoFormatter(logging.Formatter):
-    """logging formatter to format INFO logs without the module name etc prefix"""
-
-    def format(self, record):
-        if record.levelno == logging.INFO:
-            self._style._fmt = "%(message)s"
-        else:
-            self._style._fmt = "%(levelname)s:%(name)s: %(message)s"
-        return super().format(record)
+click_wrap_text = click.formatting.wrap_text
 
 
-class ChainedCommand(click.Command):
+def _wrap_text(text: str, *args, **kwargs) -> str:
+    """click.formatting.wrap_text() replacement that strips some RST markup from help
+    text for CLI display.
     """
-    click Command sub-class for managing parameters shared between chained commands.
-    """
+    subs = {
+        # convert from RST '``literal``' to 'literal'
+        '``(.*?)``': r'\g<1>',
+        # convert ':option:`--name <group-command --name>`' to '--name'
+        r':option:`(.*?)(\s+<.*?>)?`': r'\g<1>',
+        # convert ':option:`--name`' to '--name'
+        ':option:`(.*?)`': r'\g<1>',
+    }
 
-    def get_help(self, ctx):
-        """Strip some RST markup from the help text for CLI display.  Assumes no grid tables."""
-        if not hasattr(self, 'click_wrap_text'):
-            self.click_wrap_text = click.formatting.wrap_text
+    for sub_key, sub_value in subs.items():
+        text = re.sub(sub_key, sub_value, text, flags=re.DOTALL)
 
-        sub_strings = {
-            '\b\n': '\n\b',  # convert from RST friendly to click literal (unwrapped) block marker
-            r'\| ': '',  # strip RST literal (unwrapped) marker in e.g. tables and bullet lists
-            '\n\\.\\. _.*:\n': '',  # strip RST ref directive '\n.. _<name>:\n'
-            '::': ':',  # convert from RST '::' to ':'
-            '``(.*?)``': r'\g<1>',  # convert from RST '``literal``' to 'literal'
-            ':option:`(.*?)( <.*?>)?`': r'\g<1>',  # convert ':option:`--name <group-command --name>`' to '--name'
-            ':option:`(.*?)`': r'\g<1>',  # convert ':option:`--name`' to '--name'
-            '`([^<]*) <([^>]*)>`_': r'\g<1>',  # convert from RST cross-ref '`<name> <<link>>`_' to 'name'
-        }  # yapf: disable
-
-        def reformat_text(text, width, **kwargs):
-            for sub_key, sub_value in sub_strings.items():
-                text = re.sub(sub_key, sub_value, text, flags=re.DOTALL)
-            return self.click_wrap_text(text, width, **kwargs)
-
-        click.formatting.wrap_text = reformat_text
-        return click.Command.get_help(self, ctx)
-
-    def invoke(self, ctx):
-        """Manage shared `image_list` and `region` parameters."""
-
-        # initialise earth engine (do it here, rather than in cli() so that it does not delay --help)
-        Initialize()
-
-        # combine `region` and `bbox` into a single region in the context object
-        region = ctx.params['region'] if 'region' in ctx.params else None
-        bbox = ctx.params['bbox'] if 'bbox' in ctx.params else None
-        region = region or bbox
-        if region is not None:
-            ctx.obj.region = region
-
-        if 'image_id' in ctx.params:
-            # append any image id's to the image_list
-            ctx.obj.image_list += list(ctx.params['image_id'])
-
-        if ('like' in ctx.params) and (ctx.params['like'] is not None):
-            # populate crs, crs_transform & shape parameters from a template raster
-            with rio.open(ctx.params['like'], 'r') as im:
-                ctx.params['crs'] = im.crs.to_string()
-                ctx.params['crs_transform'] = im.transform
-                ctx.params['shape'] = im.shape
-
-        return click.Command.invoke(self, ctx)
+    return click_wrap_text(text, *args, **kwargs)
 
 
-def _configure_logging(verbosity):
-    """configure python logging level"""
-    # adapted from rasterio https://github.com/rasterio/rasterio
-    log_level = max(10, 20 - 10 * verbosity)
-
-    # limit logging config to geedim by applying to package logger, rather than root logger
-    # pkg_logger level etc are then 'inherited' by logger = getLogger(__name__) in the modules
-    pkg_logger = logging.getLogger(__package__)
-    formatter = PlainInfoFormatter()
-    handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(formatter)
-    pkg_logger.addHandler(handler)
-    pkg_logger.setLevel(log_level)
-    logging.captureWarnings(True)
+click.formatting.wrap_text = _wrap_text
 
 
-def _collection_cb(ctx, param, value):
-    """click callback to validate collection name"""
-    if value in schema.gd_to_ee:
-        value = schema.gd_to_ee[value]
-    return value
+class _EECommand(click.Command):
+    """click Command subclass for initialising Earth Engine."""
+
+    def invoke(self, ctx: click.Context) -> Any:
+        utils.Initialize()
+        return super().invoke(ctx)
 
 
-def _crs_cb(ctx, param, crs):
-    """click callback to validate and parse the CRS."""
-    if crs is not None:
+def _collection_cb(ctx: click.Context, param: click.Parameter, name: str) -> str:
+    """click callback to convert abbreviated to full collection name."""
+    return schema.gd_to_ee.get(name, name)
+
+
+def _crs_cb(ctx: click.Context, param: click.Parameter, crs: str) -> str | None:
+    """click callback to read --crs."""
+    if crs:
+        crs_path = Path(crs)
         try:
-            wkt_fn = pathlib.Path(crs)
-            if wkt_fn.exists():  # read WKT from file, if it exists
-                with open(wkt_fn, 'r') as f:
-                    crs = f.read()
-
-            crs = rio_crs.CRS.from_string(crs).to_wkt()
-        except CRSError as ex:
-            raise click.BadParameter(f'Invalid CRS value: {crs}.\n {str(ex)}', param=param)
+            if crs_path.suffix.lower() in ['.tif', '.tiff', '.gtiff']:
+                # read CRS from geotiff path / URI
+                with rio.open(fsspec.open(crs, 'rb'), 'r') as im:
+                    crs = im.crs.to_wkt()
+            else:
+                if (
+                    crs_path.exists()
+                    or urlparse(crs).scheme in fsspec.available_protocols()
+                ):
+                    # read WKT string from text file path / URI
+                    with fsspec.open(crs, 'rt', encoding='utf-8') as f:
+                        crs = f.read()
+        except Exception as ex:
+            raise click.BadParameter(str(ex)) from ex
     return crs
 
 
-def _bbox_cb(ctx, param, value):
-    """click callback to validate and parse --bbox"""
-    if isinstance(value, tuple) and len(value) == 4:  # --bbox
-        xmin, ymin, xmax, ymax = value
-        coordinates = [[xmax, ymax], [xmax, ymin], [xmin, ymin], [xmin, ymax], [xmax, ymax]]
-        value = dict(type='Polygon', coordinates=[coordinates])
-    elif value is not None and len(value) != 0:
-        raise click.BadParameter(f'Invalid bbox: {value}.', param=param)
-    return value
+def _bbox_cb(
+    ctx: click.Context, param: click.Parameter, bounds: Sequence[float]
+) -> None:
+    """click callback to convert --bbox to a GeoJSON polygon."""
+    # --bbox and --region are not exposed but combined into 'geometry' which is
+    # passed to the command
+    ctx.params.setdefault('geometry', None)
+    if bounds:
+        bounds = _bounds_to_geojson(*bounds)
+        ctx.params['geometry'] = ctx.obj['geometry'] = bounds
 
 
-def _region_cb(ctx, param, value):
-    """click callback to validate and parse --region"""
-    filename = value
-    if isinstance(value, str):  # read region file/string
-        if value == '-' or 'json' in value:
-            with click.open_file(value, encoding='utf-8') as f:
-                value = json.load(f)
-        else:
-            value = get_bounds(value, expand=10)
-    elif value is not None and len(value) != 0:
-        raise click.BadParameter(f'Invalid region: {filename}.', param=param)
-    return value
+def _region_cb(ctx: click.Context, param: click.Parameter, region: str) -> None:
+    """click callback to read --region and convert to a GeoJSON polygon."""
+    # --bbox and --region are not exposed but combined into 'geometry' which is
+    # passed to the command
+    ctx.params.setdefault('geometry', None)
+    if region == '-':
+        if 'geometry' not in ctx.obj:
+            raise click.BadParameter('No piped bounds or region available.')
+        ctx.params['geometry'] = ctx.obj['geometry']
+    elif region:
+        try:
+            if region.lower().endswith('json'):
+                with fsspec.open(region, 'rt', encoding='utf-8') as f:
+                    region = json.load(f)
+            else:
+                with rio.open(fsspec.open(region, 'rb'), 'r') as ds:
+                    bounds = transform_bounds(ds.crs, 'EPSG:4326', *ds.bounds)
+                    region = _bounds_to_geojson(*bounds)
+        except Exception as ex:
+            raise click.BadParameter(str(ex)) from ex
+        ctx.params['geometry'] = ctx.obj['geometry'] = region
 
 
-def _prepare_image_list(obj: SimpleNamespace, mask=False) -> List[MaskedImage,]:
-    """Validate and prepare the obj.image_list for export/download.  Returns a list of MaskedImage objects."""
-    if len(obj.image_list) == 0:
-        raise click.BadOptionUsage(
-            'image_id', 'Either pass --id, or chain this command with a successful `search` or `composite`'
+def _dir_cb(ctx: click.Context, param: click.Parameter, uri_path: str) -> OpenFile:
+    """Click callback to convert a directory path / URI to a fsspec OpenFile,
+    and validate.
+    """
+    try:
+        ofile = fsspec.open(uri_path)
+    except Exception as ex:
+        raise click.BadParameter(str(ex)) from ex
+
+    # isdir() requires a trailing slash on some file systems (e.g. gcs)
+    if not ofile.fs.isdir(posixpath.join(ofile.path, '')):
+        raise click.BadParameter(
+            f"'{uri_path}' is not a directory or cannot be accessed."
         )
-    image_list = []
-    for im_obj in obj.image_list:
-        if isinstance(im_obj, str):
-            im_obj = MaskedImage.from_id(im_obj, mask=mask, **obj.cloud_kwargs)
-        elif isinstance(im_obj, MaskedImage):
-            if mask:
-                im_obj.mask_clouds()
-        else:
-            raise ValueError(f'Unsupported image object type: {type(im_obj)}')
-        image_list.append(im_obj)
-
-    return image_list
+    return ofile
 
 
-# Define click options that are common to more than one command
+def _like_cb(
+    ctx: click.Context, param: click.Parameter, uri_path: str
+) -> dict[str, Any] | None:
+    """Click callback to read --like."""
+    if uri_path:
+        try:
+            with rio.open(fsspec.open(uri_path, 'rb'), 'r') as ds:
+                if not ds.crs:
+                    raise click.BadParameter('Image is not georeferenced.')
+                return dict(
+                    crs=ds.crs.to_wkt(), crs_transform=ds.transform[:6], shape=ds.shape
+                )
+        except Exception as ex:
+            raise click.BadParameter(str(ex)) from ex
+    return None
+
+
+def _bounds_to_geojson(
+    left: float, bottom: float, right: float, top: float
+) -> dict[str, Any]:
+    """Convert bounds to a GeoJSON polygon."""
+    coords = [[left, top], [left, bottom], [right, bottom], [right, top]]
+    return dict(type='Polygon', coordinates=[coords], evenOdd=True)
+
+
+def _configure_logging(verbosity: int):
+    """Configure logging level, redirecting warnings to the logger and logs to
+    ``tqdm.write()``.
+    """
+    # configure the package logger (adapted from rasterio:
+    # https://github.com/rasterio/rasterio/blob/main/rasterio/rio/main.py)
+    pkg_logger = logging.getLogger(__package__)
+    log_level = max(10, 20 - 10 * verbosity)
+    # route logs through tqdm handler so they don't interfere with progress bars
+    handler = utils.TqdmLoggingHandler()
+    handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
+    pkg_logger.addHandler(handler)
+    pkg_logger.setLevel(log_level)
+
+    # redirect warnings to package logger
+    def showwarning(message, category, filename, lineno, file=None, line=None):
+        """Redirect warnings to the package logger."""
+        pkg_logger.warning(message)
+
+    warnings.showwarning = showwarning
+
+
+def _get_images(obj: dict[str, Any], image_ids: tuple[str]) -> list[ee.Image]:
+    """Combine piped images in the click context object with images created from --id
+    image IDs.
+    """
+    images = obj.get('images', []) + [ee.Image(ee_id) for ee_id in image_ids]
+    if len(images) == 0:
+        raise click.UsageError(
+            "No images - either supply '--id' / '-i' or pipe images into this command."
+        )
+    return images
+
+
+def _prepare_export_collection(
+    images: list[ee.Image],
+    cloud_kwargs: dict | None = None,
+    geometry: dict[str, Any] | None = None,
+    buffer: float | None = None,
+    like: dict[str, Any] | None = None,
+    mask: bool = False,
+    **kwargs,
+) -> ee.ImageCollection:
+    """Create an image collection and prepare it for export."""
+    # resolve and buffer region
+    if buffer is not None:
+        if not geometry:
+            raise click.UsageError(
+                "'-b' / '--bbox' or '-r' / '--region' is required with '-buf' / "
+                "'--buffer'"
+            )
+        geometry = ee.Geometry(geometry).buffer(buffer)
+
+    if like:
+        # overwrite crs, crs_transform and shape from --like
+        kwargs.update(**like)
+
+    coll = ee.ImageCollection.gd.fromImages(images)
+    coll = coll.gd.addMaskBands(**(cloud_kwargs or {}))
+    if mask:
+        coll = coll.gd.maskClouds()
+    coll = coll.gd.prepareForExport(region=geometry, **kwargs)
+    return coll
+
+
+# Define click options that are common to more than one command.
 bbox_option = click.option(
     '-b',
     '--bbox',
     type=click.FLOAT,
     nargs=4,
     default=None,
+    show_default='auto',
     callback=_bbox_cb,
+    expose_value=False,  # callback exposes 'geometry' to the command
     metavar='LEFT BOTTOM RIGHT TOP',
-    help='Region defined by WGS84 bounding box co-ordinates.',
+    help='WGS84 geographic coordinates of the export bounds.',
 )
 region_option = click.option(
     '-r',
     '--region',
-    type=click.Path(exists=True, dir_okay=False, allow_dash=True),
+    type=click.Path(dir_okay=False),
     default=None,
+    show_default='auto',
     callback=_region_cb,
-    help='Region defined by geojson polygon file, or raster file.  Use "-" to read geojson from stdin.',
+    expose_value=False,  # callback exposes 'geometry' to the command
+    help='Path / URI of a GeoJSON or georeferenced image file defining the export '
+    "bounds.  Use '-' to read from previous ``--bbox`` / ``--region`` options in the "
+    'pipeline.',
+)
+buffer_option = click.option(
+    '-buf',
+    '--buffer',
+    type=click.FLOAT,
+    default=None,
+    show_default=True,
+    help='Distance (m) to buffer :option:`--bbox` / :option:`--region` with.',
 )
 crs_option = click.option(
     '-c',
     '--crs',
     type=click.STRING,
     default=None,
+    show_default='auto',
     callback=_crs_cb,
-    show_default='source image CRS.',
-    help='CRS to reproject image(s) to (EPSG string or path to WKT text file).',
+    help='CRS of the export image(s) as a well known authority (e.g. EPSG) or WKT '
+    'string, path / URI of text file containing a string, or path / URI of an '
+    'image with metadata CRS.',
 )
 scale_option = click.option(
     '-s',
     '--scale',
     type=click.FLOAT,
     default=None,
-    show_default='minimum scale of the source image bands.',
-    help='Pixel scale (size) to resample image(s) to (m).',
+    help='Pixel scale of the export image(s) (m).',
 )
 dtype_option = click.option(
     '-dt',
     '--dtype',
     type=click.Choice(_nodata_vals.keys(), case_sensitive=True),
     default=None,
-    show_default='smallest data type able to represent the range of pixel values.',
-    help='Data type to convert image(s) to.',
+    show_default='auto',
+    help='Data type of the export image(s).',
 )
 mask_option = click.option(
     '-m/-nm',
     '--mask/--no-mask',
-    default=MaskedImage._default_mask,
+    default=False,
     show_default=True,
-    help='Whether to apply cloud/shadow mask(s); or fill mask(s), in the case of images without '
-    'support for cloud/shadow masking.',
+    help='Whether to mask cloud in the export image(s).  Has no effect if cloud '
+    'masking is not supported.',
 )
 resampling_option = click.option(
     '-rs',
     '--resampling',
-    type=click.Choice(ResamplingMethod, case_sensitive=True),
-    default=BaseImage._default_resampling,
+    type=click.Choice(enums.ResamplingMethod, case_sensitive=True),
+    default=ImageAccessor._default_resampling,
     show_default=True,
-    help='Resampling method.',
+    help='Resampling method to use when reprojecting.',
 )
 scale_offset_option = click.option(
     '-so/-nso',
     '--scale-offset/--no-scale-offset',
     default=False,
     show_default=True,
-    help='Whether to apply any EE band scales and offsets to the image.',
+    help='Whether to apply any STAC scales and offsets to the export image(s) (e.g. '
+    'to convert digital numbers to physical units).',
 )
 crs_transform_option = click.option(
     '-ct',
@@ -262,71 +330,118 @@ crs_transform_option = click.option(
     type=click.FLOAT,
     nargs=6,
     default=None,
+    show_default='auto',
     metavar='XSCALE XSHEAR XTRANSLATION YSHEAR YSCALE YTRANSLATION',
-    help='Six element affine transform in the download CRS.  Use with ``--shape`` to specify image '
-    'bounds and resolution.',
-)  # yapf: disable
+    help='Georeferencing transform of the export image(s).',
+)
 shape_option = click.option(
     '-sh',
     '--shape',
     type=click.INT,
     nargs=2,
     default=None,
+    show_default='auto',
     metavar='HEIGHT WIDTH',
-    help='Image height & width dimensions (pixels).',
+    help='Dimensions of the export image(s) (pixels).',
 )
 like_option = click.option(
     '-l',
     '--like',
-    type=click.Path(exists=True, dir_okay=False),
+    type=click.Path(dir_okay=False),
     default=None,
-    help='Template raster from which to derive ``--crs``, ``--crs-transform`` & ``--shape``.',
+    callback=_like_cb,
+    help='Path / URI of a georeferenced image file defining :option:`--crs`, '
+    ':option:`--crs-transform` & :option:`--shape`.',
+)
+image_ids_option = click.option(
+    '-i',
+    '--id',
+    'image_ids',
+    type=click.STRING,
+    multiple=True,
+    help='Earth Engine ID(s) of image(s) to export.',
+)
+band_name_option = click.option(
+    '-bn',
+    '--band-name',
+    'bands',
+    type=click.STRING,
+    multiple=True,
+    default=None,
+    show_default='all bands',
+    help='Band name(s) to export.',
+)
+split_option = click.option(
+    '-sp',
+    '--split',
+    type=click.Choice(enums.SplitType, case_sensitive=True),
+    default=enums.SplitType.images,
+    show_default=True,
+    help='Whether to export an image file for each input image, or for each band of '
+    'the input image(s).',
 )
 
 
 # geedim CLI and chained command group
 @click.group(chain=True)
-@click.option('--verbose', '-v', count=True, help="Increase verbosity.")
-@click.option('--quiet', '-q', count=True, help="Decrease verbosity.")
+@click.option('--verbose', '-v', count=True, help='Increase verbosity.')
+@click.option('--quiet', '-q', count=True, help='Decrease verbosity.')
 @click.version_option(version=version.__version__, message='%(version)s')
 @click.pass_context
-def cli(ctx, verbose, quiet):
-    """Search, composite and download Google Earth Engine imagery."""
-    ctx.obj = SimpleNamespace(image_list=[], region=None, cloud_kwargs={})
-    verbosity = verbose - quiet
-    _configure_logging(verbosity)
-
-
-# TODO: add clear docs on what is piped out of or into each command.
-# TODO: use cloup and linear help layout & move lists of option values from command docsting to corresponding option
-#  help
-# TODO: add RST option markup like in homonim e.g. :option:`--mask-method`, and
-#  :option:`--param-image <homonim-fuse --param-image>`
+def cli(ctx: click.Context, verbose: int, quiet: int):
+    """Search, composite and export Google Earth Engine imagery."""
+    ctx.obj = {}
+    _configure_logging(verbose - quiet)
+    # prevent GDAL from searching for sidecar files (speeds up reads of remote files)
+    ctx.with_resource(rio.Env(GDAL_DISABLE_READDIR_ON_OPEN='EMPTY_DIR'))
 
 
 # config command
-@cli.command(cls=ChainedCommand, context_settings=dict(auto_envvar_prefix='GEEDIM'))
+@cli.command()
 @click.option(
     '-mc/-nmc',
     '--mask-cirrus/--no-mask-cirrus',
     default=True,
     show_default=True,
-    help='Whether to mask cirrus clouds.  Valid for Landsat 8-9 images, and, for Sentinel-2 images with '
-    'the `qa` ``--mask-method``.',
+    help='Whether to mask cirrus clouds.  Valid for Landsat 8-9 images and for '
+    "Sentinel-2 images with the 'qa' :option:`--mask-method`.",
 )
 @click.option(
     '-ms/-nms',
     '--mask-shadows/--no-mask-shadows',
     default=True,
     show_default=True,
-    help='Whether to mask cloud shadows.  Valid for Landsat images, and, for Sentinel-2 images with the `qa` or '
-    '`cloud-prob` ``--mask-method``.',
+    help='Whether to mask cloud shadows.  Valid for Landsat images and for Sentinel-2 '
+    "images with the 'qa' or 'cloud-prob' :option:`--mask-method`.",
+)
+@click.option(
+    '-mst/-nmst',
+    '--mask-saturation/--no-mask-saturation',
+    default=False,
+    show_default=True,
+    help='Whether to mask saturation.  Valid for Landsat images.',
+)
+@click.option(
+    '-mnp/-nmnp',
+    '--mask-nonphysical/--no-mask-nonphysical',
+    default=False,
+    show_default=True,
+    help='Whether to mask reflectance outside the 0-1 range.  Valid for Landsat '
+    'surface reflectance images and Sentinel-2 images.',
+)
+@click.option(
+    '-ma/-nma',
+    '--mask-aerosols/--no-mask-aerosols',
+    default=False,
+    show_default=True,
+    help='Whether to mask high aerosol levels.  Valid for Landsat 8-9 surface '
+    'reflectance images.',
 )
 @click.option(
     '-mm',
     '--mask-method',
-    type=click.Choice(CloudMaskMethod, case_sensitive=True),
-    default=CloudMaskMethod.cloud_score,
+    type=click.Choice(enums.CloudMaskMethod, case_sensitive=True),
+    default=enums.CloudMaskMethod.cloud_score,
     show_default=True,
     help='Method used to mask clouds.  Valid for Sentinel-2 images.',
 )
@@ -336,7 +451,8 @@ def cli(ctx, verbose, quiet):
     type=click.FloatRange(min=0, max=100),
     default=60,
     show_default=True,
-    help='Cloud Probability threshold (%). Valid for Sentinel-2 images with the `cloud-prob` ``--mask-method``',
+    help='Cloud Probability threshold (%). Valid for Sentinel-2 images with the '
+    "'cloud-prob' :option:`--mask-method`.",
 )
 @click.option(
     '-d',
@@ -344,8 +460,9 @@ def cli(ctx, verbose, quiet):
     type=click.FloatRange(min=0, max=1),
     default=0.15,
     show_default=True,
-    help='NIR reflectance threshold for shadow masking. NIR values below this threshold are potential cloud shadows. '
-    'Valid for Sentinel-2 images with the `qa` or `cloud-prob` ``--mask-method``.',
+    help='NIR reflectance threshold for shadow masking. NIR values below this '
+    'threshold are potential cloud shadows.  Valid for Sentinel-2 images with '
+    "the 'qa' or 'cloud-prob' :option:`--mask-method`.",
 )
 @click.option(
     '-sd',
@@ -353,8 +470,8 @@ def cli(ctx, verbose, quiet):
     type=click.INT,
     default=1000,
     show_default=True,
-    help='Maximum distance (m) to look for cloud shadows from cloud edges.  Valid for Sentinel-2 images with the `qa` '
-    'or `cloud-prob` ``--mask-method``.',
+    help='Maximum distance (m) to look for cloud shadows from cloud edges.  Valid for '
+    "Sentinel-2 images with the 'qa' or 'cloud-prob' :option:`--mask-method`.",
 )
 @click.option(
     '-b',
@@ -362,16 +479,17 @@ def cli(ctx, verbose, quiet):
     type=click.INT,
     default=50,
     show_default=True,
-    help='Distance (m) to dilate cloud/shadow.  Valid for Sentinel-2 images with the `qa` or `cloud-prob` '
-    '``--mask-method``.',
+    help="Distance (m) to dilate cloud.  Valid for Sentinel-2 images with the 'qa' "
+    "or 'cloud-prob' :option:`--mask-method`.",
 )
 @click.option(
     '-cdi',
     '--cdi-thresh',
     type=click.FloatRange(min=-1, max=1),
     default=None,
-    help='Cloud Displacement Index (CDI) threshold.  Values below this threshold are considered potential clouds.  '
-    'Valid for Sentinel-2 images with the `qa` or `cloud-prob` ``--mask-method``.  By default, the CDI is not used.',
+    help='Cloud Displacement Index (CDI) threshold.  Values below this threshold are '
+    "considered potential cloud.  Valid for Sentinel-2 images with the 'qa' or "
+    "'cloud-prob' :option:`--mask-method`.  By default, the CDI is not used.",
 )
 @click.option(
     '-mcd',
@@ -379,8 +497,9 @@ def cli(ctx, verbose, quiet):
     type=click.INT,
     default=5000,
     show_default=True,
-    help='Maximum distance (m) to look for clouds.  Used to form the cloud distance band for the `q-mosaic` '
-    'compositing ``--method``.',
+    help='Maximum distance (m) to look for clouds.  Used to form the cloud distance '
+    "band for the 'q-mosaic' compositing :option:`--method <geedim-composite "
+    '--method>`.',
 )
 @click.option(
     '-s',
@@ -388,131 +507,94 @@ def cli(ctx, verbose, quiet):
     type=click.FloatRange(min=0, max=1),
     default=0.6,
     show_default=True,
-    help='Cloud Score+ threshold.  Valid for Sentinel-2 images with the `cloud-score` ``--mask-method``',
+    help="Cloud Score+ threshold.  Valid for Sentinel-2 images with the 'cloud-score' "
+    ':option:`--mask-method`.',
 )
 @click.option(
     '-cb',
     '--cs-band',
-    type=click.Choice(CloudScoreBand, case_sensitive=True),
-    default=CloudScoreBand.cs,
+    type=click.Choice(enums.CloudScoreBand, case_sensitive=True),
+    default=enums.CloudScoreBand.cs,
     show_default=True,
-    help='Cloud Score+ band to threshold. Valid for Sentinel-2 images with the `cloud-score` ``--mask-method``',
+    help='Cloud Score+ band to threshold. Valid for Sentinel-2 images with the '
+    "'cloud-score' :option:`--mask-method <geedim-config --mask-method>`.",
 )
 @click.pass_context
-def config(ctx, **kwargs):
-    # @formatter:off
+def config(ctx: click.Context, **kwargs):
     """
-    Configure cloud/shadow masking.
+    Configure cloud masking.
 
-    Chain this command with one or more other command(s) to configure cloud/shadow masking for those operation(s).
-    A sensible default configuration is used if this command is not specified.
-
-    Cloud/shadow masking is supported for the collections:
-    \b
-
-        ===========  ===========================
-        geedim name  EE name
-        ===========  ===========================
-        l4-c2-l2     LANDSAT/LT04/C02/T1_L2
-        l5-c2-l2     LANDSAT/LT05/C02/T1_L2
-        l7-c2-l2     LANDSAT/LE07/C02/T1_L2
-        l8-c2-l2     LANDSAT/LC08/C02/T1_L2
-        l9-c2-l2     LANDSAT/LC09/C02/T1_L2
-        s2-toa       COPERNICUS/S2
-        s2-sr        COPERNICUS/S2_SR
-        s2-toa-hm    COPERNICUS/S2_HARMONIZED
-        s2-sr-hm     COPERNICUS/S2_SR_HARMONIZED
-        ===========  ===========================
-    \b
-
-    For Sentinel-2 collections, ``--mask-method`` can be one of:
-    \b
-
-        * | `cloud-prob`: Threshold the Sentinel-2 Cloud Probability.
-        * | `qa`: Bit mask the `QA60` quality assessment band.
-        * | `cloud-score`: Threshold the Sentinel-2 Cloud Score+.
-    \b
-
-    Examples
-    --------
-
-    Search the Sentinel-2 SR collection for images with a cloudless portion of at least 60%, where cloud/shadow is
-    identified with the `qa` ``mask-method``::
-
-        geedim config --mask-method qa search -c s2-sr --cloudless-portion 60 -s 2022-01-01 -e 2022-01-14 --bbox 24 -34 24.5 -33.5
-
-    Download and cloud/shadow mask a Landsat-8 image, where shadows are excluded from the mask::
-
-        geedim config --no-mask-shadows download -i LANDSAT/LC08/C02/T1_L2/LC08_172083_20220104 --mask --bbox 24.25 -34 24.5 -33.75
+    Masking configuration is piped out of this command and used by subsequent
+    pipeline commands that require it.
     """
-    # @formatter:on
-    # store commandline configuration (only) in the context object for use by other commands
-    for key, val in ctx.params.items():
-        if ctx.get_parameter_source(key) == ParameterSource.COMMANDLINE:
-            ctx.obj.cloud_kwargs[key] = val
+    # store configuration in the context object for use by other commands (only
+    # include command line options so that the mask._CloudlessImage._get_mask_bands()
+    # does not get unexpected default value kwargs)
+    ctx.obj['cloud_kwargs'] = {
+        k: v
+        for k, v in ctx.params.items()
+        if ctx.get_parameter_source(k) == ParameterSource.COMMANDLINE
+    }
 
 
 # search command
-@cli.command(cls=ChainedCommand)
+@cli.command(cls=_EECommand)
 @click.option(
     '-c',
     '--collection',
+    'coll_id',
     type=click.STRING,
     required=True,
     callback=_collection_cb,
-    help=f'Earth Engine image collection to search. geedim or EE collection names can be used.',
+    help='Earth Engine / Geedim ID of the image collection to search.',
 )
-@click.option('-s', '--start-date', type=click.DateTime(), required=False, default=None, help='Start date (UTC).')
+@click.option(
+    '-s',
+    '--start-date',
+    type=click.DateTime(),
+    required=False,
+    default=None,
+    help='Start date (UTC).',
+)
 @click.option(
     '-e',
     '--end-date',
     type=click.DateTime(),
     required=False,
     default=None,
-    show_default='one day after ``--start-date``',
+    show_default='one millisecond after --start-date',
     help='End date (UTC).',
 )
 @bbox_option
-@click.option(
-    '-r',
-    '--region',
-    type=click.Path(exists=True, dir_okay=False, allow_dash=True),
-    callback=_region_cb,
-    help='Region defined by geojson polygon or raster file. Use "-" to read geojson from stdin.',
-)
+@region_option
+@buffer_option
 @click.option(
     '-fp',
     '--fill-portion',
     '--fill',
-    metavar='VALUE',
     type=click.FloatRange(min=0, max=100),
     default=None,
-    is_flag=False,
-    flag_value=0,
-    show_default='don\'t calculate, or filter on, fill portion',
-    help='Lower limit on the portion of the region that contains filled/valid image pixels (%).  Uses zero if VALUE is '
-    'not specified.',
+    show_default="don't calculate or filter on fill portion",
+    help='Lower limit on the portion of :option:`--bbox` / :option:`--region` that '
+    'contains filled pixels (%).',
 )
 @click.option(
     '-cp',
     '--cloudless-portion',
     '--cloudless',
-    metavar='VALUE',
     type=click.FloatRange(min=0, max=100),
     default=None,
-    is_flag=False,
-    flag_value=0,
-    show_default='don\'t calculate, or filter on, cloudless portion',
-    help='Lower limit on the portion of filled pixels that are cloud/shadow free (%).  Uses zero if VALUE is not '
-    'specified.  If cloud/shadow masking is not supported for the specified collection, ``--cloudless-portion`` '
-    'has no effect.',
+    show_default="don't calculate or filter on cloudless portion",
+    help='Lower limit on the portion of filled pixels in :option:`--bbox` / '
+    ':option:`--region` that are cloud-free (%). Has no effect if cloud masking is '
+    'not supported for :option:`--collection`.',
 )
 @click.option(
     '-cf',
     '--custom-filter',
     type=click.STRING,
     default=None,
-    help='Custom image property filter e.g. "property > value".  Quote delimiters are required.',
+    help='Custom image property filter e.g. "property > value".',
 )
 @click.option(
     '-ap',
@@ -526,239 +608,235 @@ def config(ctx, **kwargs):
 @click.option(
     '-op',
     '--output',
-    type=click.Path(exists=False, dir_okay=False, writable=True),
+    type=click.Path(dir_okay=False),
     default=None,
-    help='JSON file to write search results to.',
+    help='Path / URI of a file to write JSON search results to.',
 )
-@click.pass_obj
+@click.pass_context
 def search(
-    obj,
-    collection,
-    start_date,
-    end_date,
-    bbox,
-    region,
-    fill_portion,
-    cloudless_portion,
-    custom_filter,
-    output,
-    add_props,
+    ctx: click.Context,
+    coll_id: str,
+    geometry: dict[str, Any] | None,
+    buffer: float | None,
+    output: str | None,
+    add_props: tuple[str] | None,
+    **kwargs,
 ):
-    # @formatter:off
     """
-    Search for images.
+    Search a collection for images.
 
-    Search a Google Earth Engine image collection for images, based on date, region, portion of filled pixels in
-    region, and custom filters.  Filtering on cloud/shadow-free (cloudless) portion of filled pixels is supported on
-    the following collections:
-    \b
-
-        ===========  ===========================
-        geedim name  EE name
-        ===========  ===========================
-        l4-c2-l2     LANDSAT/LT04/C02/T1_L2
-        l5-c2-l2     LANDSAT/LT05/C02/T1_L2
-        l7-c2-l2     LANDSAT/LE07/C02/T1_L2
-        l8-c2-l2     LANDSAT/LC08/C02/T1_L2
-        l9-c2-l2     LANDSAT/LC09/C02/T1_L2
-        s2-toa       COPERNICUS/S2
-        s2-sr        COPERNICUS/S2_SR
-        s2-toa-hm    COPERNICUS/S2_HARMONIZED
-        s2-sr-hm     COPERNICUS/S2_SR_HARMONIZED
-        ===========  ===========================
-
-    The search must be filtered with at least one of the ``--start-date``, ``--bbox`` or ``--region`` options.
-
-    Note that filled/cloudless portions are not taken from the granule metadata, but are calculated as portions
-    inside the specified search region for improved accuracy.  These portions are only found and reported when one or
-    both of ``--fill-portion`` / ``--cloudless-portion`` are specified.
-
-    Search speed can be improved by specifying ``--custom-filter``, and or by omitting ``--fill-portion`` /
-    ``--cloudless-portion``.
-    \b
-
-    Examples
-    --------
-
-    Search the GEDI canopy height collection for images with a filled portion of at least 0.5%::
-
-        geedim search -c LARSE/GEDI/GEDI02_A_002_MONTHLY -s 2021-12-01 -e 2022-02-01 --bbox 23 -34 23.2 -33.8 --fill-portion 0.5
-
-    Search the Landsat-9 collection for images, reporting the cloud/shadow free portion::
-
-        geedim search -c l9-c2-l2 -s 2022-01-01 -e 2022-03-01 --bbox 23 -34 23.2 -33.8 --cloudless-portion
-
-    Search the Landsat-8 collection for images whose `CLOUD_COVER_LAND` property is less than 50%, and include the
-    `CLOUD_COVER_LAND`, and `CLOUD_COVER` image properties in the search results::
-
-        geedim search -c l8-c2-l2 -s 2022-01-01 -e 2022-05-01 --bbox 23 -34 23.2 -33.8 -cf "CLOUD_COVER_LAND<50" -ap CLOUD_COVER_LAND -ap CLOUD_COVER
+    Search result images are added to images piped in from previous commands,
+    and piped out for use by subsequent pipeline commands.
     """
-    # @formatter:on
-    if not obj.region and not start_date:
-        raise click.BadOptionUsage(
-            'start-date / region', 'Specify at least --start-time and/or a region with --region/--bbox'
+    # raise an error if --fill-portion / --cloudless-portion were supplied without
+    # --bbox / --region
+    if not geometry:
+        for option, option_str in zip(
+            ['fill_portion', 'cloudless_portion'],
+            ["'-fp' / '--fill-portion'", "'-cp' / '--cloudless-portion'"],
+            strict=True,
+        ):
+            if ctx.get_parameter_source(option) is ParameterSource.COMMANDLINE:
+                raise click.UsageError(
+                    f"'-b' / '--bbox' or '-r' / '--region' is required with "
+                    f'{option_str}'
+                )
+    elif buffer:
+        geometry = ee.Geometry(geometry).buffer(buffer)
+
+    # create collection and search
+    coll = ee.ImageCollection(coll_id)
+    label = f'Searching for {coll_id} images: '
+    with utils.Spinner(desc=label, leave=' '):
+        coll = coll.gd.filter(
+            region=geometry, **kwargs, **ctx.obj.get('cloud_kwargs', {})
         )
 
-    # create collection wrapper and search
-    gd_collection = MaskedCollection.from_name(collection, add_props=add_props)
-    logger.info('')
-
-    label = f'Searching for {collection} images: '
-    with Spinner(label=label, leave=' '):
-        gd_collection = gd_collection.search(
-            start_date,
-            end_date,
-            obj.region,
-            fill_portion=fill_portion,
-            cloudless_portion=cloudless_portion,
-            custom_filter=custom_filter,
-            **obj.cloud_kwargs,
-        )
         # retrieve search result properties from EE
-        num_images = len(gd_collection.properties)
+        coll.gd.schemaPropertyNames += add_props
+        num_images = len(coll.gd.properties)
 
+        # update context object images for chained commands
+        images = [
+            ee.Image(f'{coll_id}/{im_idx}') for im_idx in coll.gd.properties.keys()
+        ]
+        ctx.obj['images'] = ctx.obj.get('images', []) + images
+
+    # print results
     if num_images == 0:
-        logger.info('No images found\n')
+        tqdm.write('No images found\n')
     else:
-        obj.image_list += list(gd_collection.properties.keys())  # store image ids for chained commands
-        logger.info(f'{len(gd_collection.properties)} images found\n')
-        logger.info(f'Image property descriptions:\n\n{gd_collection.schema_table}\n')
-        logger.info(f'Search Results:\n\n{gd_collection.properties_table}')
+        tqdm.write(f'{num_images} images found\n')
+        tqdm.write(f'Image property descriptions:\n\n{coll.gd.schemaTable}\n')
+        tqdm.write(f'Search Results:\n\n{coll.gd.propertiesTable}')
 
     # write results to file
-    if output is not None:
-        output = pathlib.Path(output)
-        with open(output, 'w', encoding='utf8', newline='') as f:
-            json.dump(gd_collection.properties, f)
+    if output:
+        with fsspec.open(output, 'wt', encoding='utf8', newline='') as f:
+            json.dump(coll.gd.properties, f)
 
 
 # download command
-@cli.command(cls=ChainedCommand)
-@click.option('-i', '--id', 'image_id', type=click.STRING, multiple=True, help='Earth Engine image ID(s) to download.')
+@cli.command(cls=_EECommand)
+@image_ids_option
 @crs_option
 @bbox_option
 @region_option
+@buffer_option
 @scale_option
 @crs_transform_option
 @shape_option
 @like_option
 @dtype_option
-@click.option(
-    '-bn',
-    '--band-name',
-    'bands',
-    type=click.STRING,
-    multiple=True,
-    default=None,
-    show_default='all bands',
-    help='Band name(s) to download.',
-)
+@band_name_option
 @mask_option
 @resampling_option
 @scale_offset_option
+@split_option
 @click.option(
-    '-dd',
-    '--download-dir',
-    type=click.Path(exists=True, file_okay=False, dir_okay=True, writable=True),
-    default=None,
-    show_default='current working directory.',
-    help='Directory to download image file(s) into.',
+    '-n/-nn',
+    '--nodata/--no-nodata',
+    type=click.BOOL,
+    default=True,
+    show_default=True,
+    help='Set the nodata tag of downloaded file(s) to the :option:`--dtype` dependent '
+    'value provided by Earth Engine (``--nodata``), or leave it unset '
+    '(``--no-nodata``).',
+)
+@click.option(
+    '-dv',
+    '--driver',
+    type=click.Choice(enums.Driver, case_sensitive=True),
+    default=enums.Driver.gtiff,
+    show_default=True,
+    help='Format driver for the downloaded file(s).',
 )
 @click.option(
     '-mts',
     '--max-tile-size',
     type=click.FLOAT,
-    default=BaseImage._ee_max_tile_size,
+    default=Tiler._default_max_tile_size,
     show_default=True,
-    help='Maximum download tile size (MB).',
+    help='Maximum tile size (MB).',
 )
 @click.option(
     '-mtd',
     '--max-tile-dim',
     type=click.INT,
-    default=BaseImage._ee_max_tile_dim,
+    default=Tiler._ee_max_tile_dim,
     show_default=True,
-    help='Maximum download tile dimension (pixels).',
+    help='Maximum tile width / height (pixels).',
 )
-@click.option('-o', '--overwrite', is_flag=True, default=False, help='Overwrite the destination file if it exists.')
+@click.option(
+    '-mtb',
+    '--max-tile-bands',
+    type=click.INT,
+    default=Tiler._ee_max_tile_bands,
+    show_default=True,
+    help='Maximum number of tile bands.',
+)
+@click.option(
+    '-mr',
+    '--max-requests',
+    type=click.INT,
+    default=Tiler._max_requests,
+    show_default=True,
+    help='Maximum concurrent tile downloads.',
+)
+@click.option(
+    '-mc',
+    '--max-cpus',
+    type=click.INT,
+    default=None,
+    show_default='auto',
+    help='Maximum number of tiles to decompress concurrently.',
+)
+@click.option(
+    '-dd',
+    '--download-dir',
+    type=click.Path(file_okay=False),
+    default=str(Path.cwd()),
+    show_default='current working',
+    callback=_dir_cb,
+    help='Path / URI of the download directory.',
+)
+@click.option(
+    '-o',
+    '--overwrite',
+    is_flag=True,
+    default=False,
+    help='Overwrite destination file(s) if they exist.',
+)
 @click.pass_obj
-def download(obj, image_id, bbox, region, like, download_dir, mask, max_tile_size, max_tile_dim, overwrite, **kwargs):
-    # @formatter:off
+def download(
+    obj: dict[str, Any],
+    image_ids: tuple[str],
+    split: enums.SplitType,
+    nodata: bool,
+    driver: enums.Driver,
+    max_tile_size: float,
+    max_tile_dim: int,
+    max_tile_bands: int,
+    max_requests: int,
+    max_cpus: int,
+    download_dir: OpenFile,
+    overwrite: bool,
+    **kwargs,
+):
     """
-    Download image(s).
+    Export image(s) to GeoTIFF file(s).
 
-    Download Earth Engine image(s) to GeoTIFF file(s), allowing optional region of interest, and other image
-    formatting options to be specified.  Images larger than the
-    `Earth Engine size limit <https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl>`_ are split
-    and downloaded as separate tiles, then re-assembled into a single GeoTIFF.  Downloaded image files are populated
-    with metadata from the Earth Engine image and STAC.
+    Images piped from previous commands will be exported, in addition to any images
+    specified with :option:`--id <geedim-download --id>`.  Input images are piped out
+    of this command for use by subsequent commands.
 
-    This command can be chained after the ``composite`` command, to download the composite image, or it can be
-    chained after an asset ``export`` to download the asset image.  It can also be chained after the ``search`` command,
-    in which case the search result images will be downloaded, without the need to specify image IDs with ``--id``, or
-    region with ``--bbox`` / ``--region``.
+    Exported images include mask and related bands.
 
-    The following auxiliary bands are added to images from collections with support for cloud/shadow masking:
-    \b
+    Images are retrieved as separate tiles which are downloaded and decompressed
+    concurrently.  Tile size can be controlled with :option:`--max-tile-size
+    <geedim-download --max-tile-size>`, :option:`--max-tile-dim <geedim-download
+    --max-tile-dim>` and :option:`--max-tile-bands <geedim-download
+    --max-tile-bands>`, and download / decompress concurrency with
+    :option:`--max-requests <geedim-download --max-requests>` and :option:`--max-cpus
+    <geedim-download --max-cpus>`.
 
-        ==============  =========================================
-        Band name       Description
-        ==============  =========================================
-        FILL_MASK       Mask of filled (valid) pixels.
-        SHADOW_MASK     Mask of cloud shadows.
-        CLOUD_MASK      Mask of clouds.
-        CLOUDLESS_MASK  Mask of filled & cloud/shadow-free pixels.
-        CLOUD_DIST      Distance to nearest cloud (10m).
-        ==============  =========================================
-
-    Images from other collections, will contain the FILL_MASK band only.
-
-    Bounds and resolution of the downloaded image can be specified with ``--region`` / ``--bbox`` and ``--scale`` /
-    ``--shape``, or ``--crs-transform`` and ``--shape``.  The ``--like`` option will automatically derive ``--crs``,
-    ``--crs-transform`` and ``--shape`` from a provided template raster.  If no bounds are specified (with either
-    ``--region``, or ``--crs-transform`` & ``--shape``), the entire image granule is downloaded.
-
-    When ``--crs``, ``--scale``, ``--crs-transform`` and ``--shape`` are not specified, the pixel grids of the
-    downloaded and Earth Engine images will coincide.
-
-    Image filenames are derived from their Earth Engine ID.
-    \b
-
-    Examples
-    --------
-
-    Download a region of a Landsat-9 image, applying the cloud/shadow mask and converting to uint16::
-
-        geedim download -i LANDSAT/LC09/C02/T1_L2/LC09_173083_20220308 --mask --bbox 21.6 -33.5 21.7 -33.4 --dtype uint16
-
-    Download the results of a MODIS NBAR search, specifying a CRS and scale to reproject to::
-
-        geedim search -c MODIS/006/MCD43A4 -s 2022-01-01 -e 2022-01-03 --bbox 23 -34 24 -33 download --crs EPSG:3857 --scale 500
+    Files are named with the Earth Engine index of their source image, and file band
+    descriptions set to image band names with :option:`--split <geedim-download
+    --split>` 'images'.  Otherwise, files are named with their band name, and file
+    band descriptions set to the Earth Engine index of the band's source image with
+    :option:`--split <geedim-download --split>` 'bands'.
     """
-    # @formatter:on
-    logger.info('\nDownloading:\n')
-    download_dir = download_dir or os.getcwd()
-    image_list = _prepare_image_list(obj, mask=mask)
-    for im in image_list:
-        filename = pathlib.Path(download_dir).joinpath(im.name + '.tif')
-        im.download(
-            filename,
-            region=obj.region,
+    obj['images'] = _get_images(obj, image_ids=image_ids)
+    coll = _prepare_export_collection(
+        obj['images'], cloud_kwargs=obj.get('cloud_kwargs'), **kwargs
+    )
+
+    tqdm.write('\nDownloading:\n')
+    try:
+        coll.gd.toGeoTIFF(
+            download_dir,
+            overwrite=overwrite,
+            split=split,
+            nodata=nodata,
+            driver=driver,
             max_tile_size=max_tile_size,
             max_tile_dim=max_tile_dim,
-            overwrite=overwrite,
-            **kwargs,
+            max_tile_bands=max_tile_bands,
+            max_requests=max_requests,
+            max_cpus=max_cpus,
         )
+    except FileExistsError as ex:
+        raise click.UsageError(str(ex)) from ex
 
 
 # export command
-@cli.command(cls=ChainedCommand)
-@click.option('-i', '--id', 'image_id', type=click.STRING, multiple=True, help='Earth Engine image ID(s) to export.')
+@cli.command(cls=_EECommand)
+@image_ids_option
 @click.option(
     '-t',
     '--type',
-    type=click.Choice(ExportType, case_sensitive=True),
-    default=BaseImage._default_export_type.value,
+    type=click.Choice(enums.ExportType, case_sensitive=True),
+    default=ImageAccessor._default_export_type.value,
     show_default=True,
     help='Export type.',
 )
@@ -769,134 +847,115 @@ def download(obj, image_id, bbox, region, like, download_dir, mask, max_tile_siz
     '--drive-folder',
     type=click.STRING,
     default=None,
-    help='Google Drive folder, Earth Engine asset project, or Google Cloud Storage bucket to export image(s) to.  '
-    'Interpretation based on :option:`--type`.',
+    help='Google Drive folder, Earth Engine asset project, or Google Cloud Storage '
+    'bucket to export image(s) to.  Can include sub-folders or an image collection '
+    'name.  Interpretation based on :option:`--type`.',
 )
 @crs_option
 @bbox_option
 @region_option
+@buffer_option
 @scale_option
 @crs_transform_option
 @shape_option
 @like_option
 @dtype_option
-@click.option(
-    '-bn',
-    '--band-name',
-    'bands',
-    type=click.STRING,
-    multiple=True,
-    default=None,
-    show_default='all bands',
-    help='Band name(s) to download.',
-)
+@band_name_option
 @mask_option
 @resampling_option
 @scale_offset_option
+@split_option
 @click.option(
-    '-w/-nw', '--wait/--no-wait', default=True, show_default=True, help='Whether to wait for the export to complete.'
+    '-w/-nw',
+    '--wait/--no-wait',
+    default=True,
+    show_default=True,
+    help='Whether to wait for the export to complete.',
 )
 @click.pass_obj
-def export(obj, image_id, type, folder, bbox, region, like, mask, wait, **kwargs):
-    # @formatter:off
+def export(
+    obj: dict[str, Any],
+    image_ids: tuple[str],
+    type: enums.ExportType,
+    folder: str,
+    split: enums.SplitType,
+    wait: bool,
+    **kwargs,
+):
     """
-    Export image(s).
+    Export image(s) to Google cloud platforms.
 
-    Export Earth Engine image(s) to Google Drive, Earth Engine asset, or Google Cloud Storage, allowing optional region
-    of interest, and other image formatting options to be specified.
+    Images piped from previous commands will be exported, in addition to any images
+    specified with :option:`--id <geedim-export --id>`.  Input images are piped out
+    of this command for use by subsequent commands.
 
-    This command can be chained after the ``composite`` command, to export the composite image.  It can also be
-    chained after the ``search`` command, in which case the search result images will be exported, without the need
-    to specify image IDs with ``--id``, or region with ``--bbox`` / ``--region``.
+    Exported images include mask and related bands.
 
-    The following auxiliary bands are added to images from collections with support for cloud/shadow masking:
-    \b
-
-        ==============  =========================================
-        Band name       Description
-        ==============  =========================================
-        FILL_MASK       Mask of filled (valid) pixels.
-        SHADOW_MASK     Mask of cloud shadows.
-        CLOUD_MASK      Mask of clouds.
-        CLOUDLESS_MASK  Mask of filled & cloud/shadow-free pixels.
-        CLOUD_DIST      Distance to nearest cloud (10m).
-        ==============  =========================================
-
-    Images from other collections, will contain the FILL_MASK band only.
-
-    Bounds and resolution of the exported image can be specified with ``--region`` / ``--bbox`` and ``--scale`` /
-    ``--shape``, or ``--crs-transform`` and ``--shape``.  The ``--like`` option will automatically derive ``--crs``,
-    ``--crs-transform`` and ``--shape`` from a provided template raster.  If no bounds are specified (with either
-    ``--region``, or ``--crs-transform`` & ``--shape``), the entire image granule is exported.
-
-    When ``--crs``, ``--scale``, ``--crs-transform`` and ``--shape`` are not specified, the pixel grids of the
-    exported and Earth Engine images will coincide.
-
-    Image file or asset names are derived from their Earth Engine ID.
-    \b
-
-    Examples
-    --------
-
-    Export a region of a Landsat-9 image to an Earth Engine asset, applying the cloud/shadow mask and converting to
-    uint16::
-
-        geedim export -i LANDSAT/LC09/C02/T1_L2/LC09_173083_20220308 --type asset --folder <your cloud project> --mask --bbox 21.6 -33.5 21.7 -33.4 --dtype uint16
-
-    Export the results of a MODIS NBAR search to Google Drive in the 'geedim' folder, specifying a CRS and scale to
-    reproject to::
-
-        geedim search -c MODIS/006/MCD43A4 -s 2022-01-01 -e 2022-01-03 --bbox 23 -34 24 -33 export --crs EPSG:3857 --scale 500 -df geedim
+    Files are named with the Earth Engine index of their source image, and file band
+    descriptions set to image band names with :option:`--split <geedim-export
+    --split>` 'images'.  Otherwise, files are named with their band name, and file
+    band descriptions set to the Earth Engine index of the band's source image with
+    :option:`--split <geedim-export --split>` 'bands'.
     """
-    # @formatter:on
-    logger.info('\nExporting:\n')
-    if (type == ExportType.asset) and not folder:
-        raise click.BadParameter('--folder must be specified when exporting to asset', param_hint='--folder')
-    image_list = _prepare_image_list(obj, mask=mask)
-    export_tasks = []
-    for im in image_list:
-        task = im.export(im.name, type=type, folder=folder, wait=False, region=obj.region, **kwargs)
-        export_tasks.append(task)
-        logger.info(f'Started {im.name}') if not wait else None
+    if (type in [enums.ExportType.asset, enums.ExportType.cloud]) and not folder:
+        raise click.MissingParameter(
+            param_hint="'-f' / '--folder'", param_type='option'
+        )
 
-    if wait:
-        obj.image_list = [] if type == ExportType.asset else obj.image_list
-        for task, im in zip(export_tasks, image_list):
-            BaseImage.monitor_export(task)
-            if type == ExportType.asset:
-                # add asset ids, so that assets can be downloaded or composited with chained commands
-                obj.image_list += [asset_id(im.name, folder)]
+    obj['images'] = _get_images(obj, image_ids=image_ids)
+    coll = _prepare_export_collection(
+        obj['images'], cloud_kwargs=obj.get('cloud_kwargs'), **kwargs
+    )
+
+    tqdm.write('\nExporting:\n')
+    try:
+        coll.gd.toGoogleCloud(type=type, folder=folder, wait=wait, split=split)
+    except (ee.EEException, OSError) as ex:
+        raise click.ClickException(str(ex)) from ex
 
 
 # composite command
-@cli.command(cls=ChainedCommand)
+@cli.command(cls=_EECommand)
 @click.option(
-    '-i', '--id', 'image_id', type=click.STRING, multiple=True, help='Earth Engine image ID(s) to include in composite.'
+    '-i',
+    '--id',
+    'image_ids',
+    type=click.STRING,
+    multiple=True,
+    help='Earth Engine ID(s) of the component image(s).',
 )
 @click.option(
     '-cm',
     '--method',
     'method',
-    type=click.Choice(CompositeMethod, case_sensitive=False),
+    type=click.Choice(enums.CompositeMethod, case_sensitive=False),
     default=None,
-    show_default='`q-mosaic` for cloud/shadow mask supported collections, `mosaic` otherwise.',
-    help='Compositing method to use.',
+    show_default="'q-mosaic' for cloud mask supported collections, 'mosaic' otherwise.",
+    help='Compositing method.',
 )
 @click.option(
     '-m/-nm',
     '--mask/--no-mask',
     default=True,
     show_default=True,
-    help='Whether to apply cloud/shadow (or fill) masks to input images before compositing.  Fill masks are used for '
-    'images without support for cloud/shadow masking.',
+    help='Whether to mask cloud in component images.  Has no effect if cloud masking '
+    'is not supported.',
 )
 @click.option(
     '-rs',
     '--resampling',
-    type=click.Choice(ResamplingMethod, case_sensitive=True),
-    default=BaseImage._default_resampling,
+    type=click.Choice(enums.ResamplingMethod, case_sensitive=True),
+    default=ImageAccessor._default_resampling,
     show_default=True,
-    help='Resample images with this method before compositing.',
+    help='Resampling method for component images.',
+)
+@click.option(
+    '-d',
+    '--date',
+    type=click.DateTime(),
+    default=None,
+    help='Sort component images by the absolute difference of capture date and this '
+    'date (UTC).',
 )
 @click.option(
     '-b',
@@ -905,103 +964,54 @@ def export(obj, image_id, type, folder, bbox, region, like, mask, wait, **kwargs
     nargs=4,
     default=None,
     callback=_bbox_cb,
-    help='Give preference to images with the highest cloudless (or filled) portion inside this bounding box (left, '
-    'bottom, right, top).  Valid for `mosaic` and `q-mosaic` compositing ``--method``.',
+    expose_value=False,  # callback exposes 'geometry' parameter for the command
+    metavar='LEFT BOTTOM RIGHT TOP',
+    help='Sort component images by their cloud-free / filled portion inside these '
+    'bounds.',
 )
 @click.option(
     '-r',
     '--region',
-    type=click.Path(exists=True, dir_okay=False, allow_dash=True),
+    type=click.Path(dir_okay=False),
     default=None,
     callback=_region_cb,
-    help='Give preference to images with the highest cloudless (or filled) portion inside this geojson polygon, '
-    'or raster file, region.  Valid for `mosaic` and `q-mosaic` compositing ``--method``.',
-)
-@click.option(
-    '-d',
-    '--date',
-    type=click.DateTime(),
-    help='Give preference to images closest to this date (UTC).  Valid for `mosaic` and `q-mosaic` compositing '
-    '``--method``.',
+    expose_value=False,  # callback exposes 'geometry' parameter for the command
+    help='Sort component images by their cloud-free / filled portion inside the '
+    "bounds defined by this GeoJSON / georeferenced image file.  Use '-' to read from "
+    'previous ``--bbox`` / ``--region`` options in the pipeline.',
 )
 @click.pass_obj
-def composite(obj, image_id, mask, method, resampling, bbox, region, date):
-    # @formatter:off
+def composite(
+    obj: dict[str, Any],
+    image_ids: tuple[str],
+    geometry: ee.Geometry | None,
+    **kwargs,
+):
     """
     Create a composite image.
 
-    Create cloud/shadow-free and other composite image(s) from specified input images.
+    Images piped from previous commands are used to create the composite, in addition
+    to any images specified with :option:`--id <geedim-composite --id>`.  The
+    composite image is piped out of this command for use by subsequent commands.
 
-    ``download`` or ``export`` commands can be chained after the ``composite`` command to download/export the composite
-    image. ``composite`` can also be chained after ``search``, ``download`` or ``composite``, in which case it will
-    composite the output image(s) from the previous command.  Images specified with the ``--id`` option will be added
-    to any existing chained images i.e. images output from previous chained commands.
+    When supported, input images are cloud masked by default.  This can be turned off
+    with :option:`--no-mask <geedim-composite --no-mask>`.  The 'q-mosaic'
+    :option:`--method <geedim-composite --method>` uses distance to the nearest cloud
+    as the quality measure and requires cloud mask support.
 
-    In general, input images should belong to the same collection.  In the specific case of Landsat, images from
-    spectrally compatible collections can be combined i.e. Landsat-4 with Landsat-5, and Landsat-8 with Landsat-9.
-
-    ``--method`` specifies the method for finding a composite pixel from the stack of corresponding input image
-    pixels.  The following options are available:
-    \b
-
-        ==========  ========================================================
-        Method      Description
-        ==========  ========================================================
-        `q-mosaic`  | Use the unmasked pixel with the highest cloud distance
-                    | (i.e. distance to nearest cloud).  Where more than one
-                    | pixel has the same cloud distance, the first one in the
-                    | stack is selected.
-        `mosaic`    Use the first unmasked pixel in the stack.
-        `medoid`    | Use the medoid of the unmasked pixels i.e. the pixel
-                    | of the image with the minimum sum of spectral distances
-                    | to the rest of the input images.
-                    | Maintains relationship between bands.
-        `median`    Use the median of the unmasked pixels.
-        `mode`      Use the mode of the unmasked pixels.
-        `mean`      Use the mean of the unmasked pixels.
-        ==========  ========================================================
-
-    For the `mosaic`, `q-mosaic` and `medoid` methods there are three ways of ordering (i.e. prioritising) images in
-    the stack:
-    \b
-
-        * | If ``--date`` is specified, images are sorted by the absolute
-          | difference of their capture time from this date.
-        * | If either ``--region`` or ``--bbox`` are specified, images are sorted
-          | by their cloudless/filled portion inside this region.
-        * | If none of the above options are specified, images are sorted by their
-          | capture time.
-
-    By default, input images are masked before compositing.  This means that only cloud/shadow-free (or filled) pixels
-    are used to make the composite.  You can turn off this behaviour with the ``--no-mask`` option.
-    \b
-
-    Examples
-    --------
-    Composite two Landsat-7 images using the default options and download the result::
-
-        geedim composite -i LANDSAT/LE07/C02/T1_L2/LE07_173083_20100203 -i LANDSAT/LE07/C02/T1_L2/LE07_173083_20100219 download --bbox 22 -33.1 22.1 -33 --crs EPSG:3857 --scale 30
-
-    Create and download a composite of a year of GEDI canopy height data, by chaining with ``search``::
-
-        geedim search -c LARSE/GEDI/GEDI02_A_002_MONTHLY -s 2021-01-01 -e 2022-01-01 --bbox 23 -34 23.1 -33.9 --fill-portion 0.1 composite -cm mosaic download --crs EPSG:3857 --scale 25
-
-    Create and download a cloud/shadow-free composite of Sentinel-2 SR images, by chaining with ``search``::
-
-        geedim search -c s2-sr -s 2021-01-12 -e 2021-01-23 --bbox 23 -33.5 23.1 -33.4 composite -cm q-mosaic download --crs EPSG:3857 --scale 10
+    Images are sorted by their capture date when :option:`--date <geedim-composite
+    --date>` and :option:`--bbox <geedim-composite --bbox>` / :option:`--region
+    <geedim-composite --region>` are not provided.
     """
-    # @formatter:on
+    images = _get_images(obj, image_ids)
+    coll = ee.ImageCollection.gd.fromImages(images)
+    comp_im = coll.gd.composite(
+        region=geometry,
+        **kwargs,
+        **obj.get('cloud_kwargs', {}),
+    )
 
-    # get image ids from command line or chained search command
-    if len(obj.image_list) == 0:
-        raise click.BadOptionUsage('image_id', 'Either pass --id, or chain this command with a successful ``search``')
-
-    gd_collection = MaskedCollection.from_list(obj.image_list)
-    obj.image_list = [
-        gd_collection.composite(
-            method=method, mask=mask, resampling=resampling, region=obj.region, date=date, **obj.cloud_kwargs
-        )
-    ]
+    obj['images'] = [comp_im]
 
 
 if __name__ == '__main__':

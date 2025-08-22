@@ -1,77 +1,35 @@
 Contributing
 ============
 
-Contributions are welcome.  Please report bugs and make feature requests with the github `issue tracker
-<https://github.com/leftfield-geospatial/geedim/issues>`_.
+If Geedim is useful to you, please consider `making a donation <https://github.com/sponsors/leftfield-geospatial>`__.
 
-Development environment
------------------------
+Bug reports and feature requests are welcome, and can be made with the `GitHub issue tracker <https://github.com/leftfield-geospatial/geedim/issues>`__.
 
-``geedim`` uses the `rasterio <https://github.com/rasterio/rasterio>`_ package, which has binary dependencies.  Under
-Windows, it is easiest to resolve these dependencies by working in a ``conda`` environment.  You can set this up with:
+Development
+-----------
 
-.. code:: shell
+Setup
+~~~~~
 
-    conda create -n <environment name> python=3.9 -c conda-forge
-    conda activate <environment name>
-    conda install -c conda-forge earthengine-api rasterio click requests tqdm tabulate pytest
+To create up a development setup, start by forking the `repository <https://github.com/leftfield-geospatial/geedim>`__, then clone the fork with:
 
-If you are using Linux, or macOS, you may want to create a clean virtual python environment.  Once the environment is
-set up, create a fork of the ``geedim`` github repository, and clone it:
+.. code-block::
 
-.. code:: shell
+    git clone https://github.com/<username>/geedim
+    cd geedim
 
-    git clone https://github.com/<username>/geedim.git
+Dependencies required for running tests can be installed, and Geedim linked into your environment with:
 
-Finally, install the local ``geedim`` package into your python environment:
+.. code-block::
 
-.. code:: shell
+    pip install --group tests -e .
 
-    pip install -e geedim
+Pull requests
+~~~~~~~~~~~~~
 
+Make changes in a new branch and submit a `pull request <https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/creating-a-pull-request-from-a-fork>`__ from your fork when the changes are ready for review.  You can use a draft pull request to get early feedback on changes before they are complete.  Geedim uses the `GitHub Flow <https://docs.github.com/en/get-started/using-github/github-flow>`__ workflow.
 
-Development guide
------------------
+Please include reStructuredText style docstrings and `pytest <https://docs.pytest.org>`__ unit tests with your code.  Geedim uses `Ruff <https://docs.astral.sh/ruff>`__ for linting and formatting, with settings in |pyproject.toml|_.
 
-Cloud/shadow masking
-^^^^^^^^^^^^^^^^^^^^
-
-If you want to add cloud/shadow masking support for a new Earth Engine image collection, you should subclass
-``geedim.mask.CloudMaskedImage``, and implement at least the ``_aux_image()`` method.  Then add a new entry to
-``geedim.schema.collection_schema``.
-
-Testing
-^^^^^^^
-
-Please include `pytest <https://docs.pytest.org>`__ tests with your code.  The existing tests require the user
-to be registered with `Google Earth Engine <https://signup.earthengine.google.com>`__.  Installing the `pytest-xdist
-<https://github.com/pytest-dev/pytest-xdist>`_ plugin will help speed the testing process.  For ``conda`` users:
-
-.. code:: shell
-
-    conda install -c conda-forge pytest-xdist
-
-Or, using ``pip``:
-
-.. code:: shell
-
-    pip install pytest-xdist
-
-You can then run the tests from the root of the ``geedim`` repository with:
-
-.. code:: shell
-
-    pytest -v -n auto tests
-
-Style
-^^^^^
-
-Please include `NumPy docstrings <https://sphinxcontrib-napoleon.readthedocs.io/en/latest/example_numpy.html>`_ with
-your code. Try to conform to the ``geedim`` code style.  You can auto-format with
-`yapf <https://github.com/google/yapf>`__ and the included
-`.style.yapf <https://github.com/leftfield-geospatial/geedim/blob/main/ .style.yapf>`__ configuration file:
-
-.. code::
-
-    yapf --style .style.yapf -i <file path>
-
+.. |pyproject.toml| replace:: ``pyproject.toml``
+.. _pyproject.toml: https://github.com/leftfield-geospatial/geedim/blob/main/pyproject.toml

@@ -1,25 +1,22 @@
-geedim
+Geedim
 ======
 
 .. include:: ../README.rst
-    :start-after: short_descr_start
-    :end-before: short_descr_end
-
-.. include:: description.rst
-
-.. include:: installation.rst
+    :start-after: description_start
+    :end-before: description_end
 
 Contents
 --------
 
 .. toctree::
-   :maxdepth: 2
+    :maxdepth: 2
 
-   description
-   installation
-   cli
-   api
-   contributing
+    installation
+    getting_started/index
+    reference/index
 
-* :ref:`genindex`
+.. toctree::
+    :maxdepth: 1
 
+    contributing
+    changelog

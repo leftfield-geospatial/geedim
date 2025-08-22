@@ -1,92 +1,87 @@
-"""
-    Copyright 2021 Dugal Harris - dugalh@gmail.com
-
-    Licensed under the Apache License, Version 2.0 (the "License");
-    you may not use this file except in compliance with the License.
-    You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-    Unless required by applicable law or agreed to in writing, software
-    distributed under the License is distributed on an "AS IS" BASIS,
-    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-    See the License for the specific language governing permissions and
-    limitations under the License.
-"""
+# Copyright The Geedim Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+# this file except in compliance with the License. You may obtain a copy of the
+# License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software distributed
+# under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+# CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+# language governing permissions and limitations under the License.
 
 from __future__ import annotations
 
+import json
 import logging
+import os
+import posixpath
 import re
-import textwrap as wrap
-from collections import OrderedDict
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Union
+import warnings
+from collections.abc import Iterable, Sequence
+from datetime import UTC, datetime
+from functools import cached_property
+from typing import Any
 
 import ee
+import fsspec
+import numpy as np
 import tabulate
+from fsspec.core import OpenFile
 from tabulate import DataRow, Line, TableFormat
 
-from geedim import schema
+from geedim import enums, schema, utils
 from geedim.download import BaseImage
-from geedim.enums import CompositeMethod, ResamplingMethod
-from geedim.errors import InputImageError, UnfilteredError
-from geedim.mask import class_from_id, MaskedImage
+from geedim.image import ImageAccessor, _scale_offset_image
+from geedim.mask import MaskedImage, _CloudlessImage, _get_class_for_id, _MaskedImage
 from geedim.medoid import medoid
-from geedim.stac import StacCatalog, StacItem
-from geedim.utils import resample, split_id
+from geedim.stac import STACClient
+from geedim.tile import Tiler
+
+try:
+    import xarray
+    from pandas import to_datetime
+except ImportError:
+    xarray = None
 
 logger = logging.getLogger(__name__)
 tabulate.MIN_PADDING = 0
 
 ##
 # tabulate format for collection properties
-_table_fmt = TableFormat(
-    lineabove=Line("", "-", " ", ""),
-    linebelowheader=Line("", "-", " ", ""),
+_tablefmt = TableFormat(
+    lineabove=Line('', '-', ' ', ''),
+    linebelowheader=Line('', '-', ' ', ''),
     linebetweenrows=None,
-    linebelow=Line("", "-", " ", ""),
-    headerrow=DataRow("", " ", ""),
-    datarow=DataRow("", " ", ""),
+    linebelow=Line('', '-', ' ', ''),
+    headerrow=DataRow('', ' ', ''),
+    datarow=DataRow('', ' ', ''),
     padding=0,
-    with_header_hide=["lineabove", "linebelow"],
-)  # yapf: disable
+    with_header_hide=['lineabove', 'linebelow'],
+)
 
 
-def compatible_collections(names: List[str]) -> bool:
+def _compatible_collections(ids: list[str]) -> bool:
+    """Test if the given collection IDs are spectrally compatible (either identical
+    or compatible Landsat collections).
     """
-    Test if all the collections in a list are spectrally compatible i.e. images from these collections can be
-    composited together.
-    """
-    names = list(set(names))  # reduce to unique values
-    start_name = names[0]
-    name_matches = [True]
+    ids = list(set(ids))  # reduce to unique values
     landsat_regex = re.compile(r'(LANDSAT/\w{2})(\d{2})(/.*)')
-    start_landsat_match = landsat_regex.search(start_name)
-    for name in names[1:]:
-        name_match = False
-        if start_name == name:
-            name_match = True
-        elif start_landsat_match:
-            landsat_regex = re.compile(rf'{start_landsat_match.groups()[0]}\d\d{start_landsat_match.groups()[-1]}')
-            if landsat_regex.search(name):
-                name_match = True
-        name_matches.append(name_match)
-    return all(name_matches)
+    landsat_match = ids[0] and landsat_regex.search(ids[0])
+    for name in ids[1:]:
+        if name and landsat_match:
+            landsat_regex = re.compile(
+                rf'{landsat_match.groups()[0]}\d\d{landsat_match.groups()[-1]}'
+            )
+            if not landsat_regex.search(name):
+                return False
+        elif not name == ids[0]:
+            return False
+    return True
 
 
-def parse_date(date: Union[datetime, str], var_name=None) -> datetime:
-    """Convert a string to a datetime, raising an exception if it is in the wrong format."""
-    var_name = var_name or 'date'
-    if isinstance(date, str):
-        try:
-            date = datetime.strptime(date, '%Y-%m-%d').replace(tzinfo=timezone.utc)
-        except ValueError:
-            raise ValueError(f'{var_name} should be a datetime instance or UTC string with format: "%Y-%m-%d"')
-    return date
-
-
-def abbreviate(name: str) -> str:
+def _abbreviate(name: str) -> str:
     """Return an acronym for a string in camel or snake case."""
     name = name.strip()
     if len(name) <= 5:
@@ -102,526 +97,1344 @@ def abbreviate(name: str) -> str:
     return abbrev if len(abbrev) >= 2 else name
 
 
-class MaskedCollection:
-    _sort_methods = [CompositeMethod.mosaic, CompositeMethod.q_mosaic, CompositeMethod.medoid]
+@utils.register_accessor('gd', ee.ImageCollection)
+class ImageCollectionAccessor:
+    _max_export_images = 5000
 
-    def __init__(self, ee_collection: ee.ImageCollection, add_props: List[str] = None):
+    def __init__(self, ee_coll: ee.ImageCollection):
         """
-        A class for describing, searching and compositing an Earth Engine image collection, with support for
-        cloud/shadow masking.
+        Accessor for :class:`ee.ImageCollection`.
 
-        Parameters
-        ----------
-        ee_collection : ee.ImageCollection
-            Earth Engine image collection to encapsulate.
-        add_props: list of str, optional
-            Additional Earth Engine image properties to include in :attr:`properties`.
+        :param ee_coll:
+            Image collection to access.
         """
-        if not isinstance(ee_collection, ee.ImageCollection):
-            raise TypeError(f'`ee_collection` must be an instance of ee.ImageCollection')
-        self._name = None
-        self._properties = None
+        self._ee_coll = ee_coll
+        self._info = None
         self._schema = None
-        self._filtered = False
-        self._ee_collection = ee_collection
-        self._add_props = list(add_props) if add_props else None
-        self._image_type = None
-        self._stac = None
-        self._stats_scale = None
+        self._schema_prop_names = None
+        self._properties = None
 
     @classmethod
-    def from_name(cls, name: str, add_props: List[str] = None) -> MaskedCollection:
+    def _with_info(cls, ee_coll: ee.Image, info: dict) -> ImageAccessor:
+        """Create an accessor for ``ee_coll`` with cached ``info``."""
+        coll = cls(ee_coll)
+        coll._info = info
+        return coll
+
+    @staticmethod
+    def fromImages(images: Any) -> ee.ImageCollection:
         """
-        Create a MaskedCollection instance from an Earth Engine image collection name.
+        Create an image collection with support for cloud masking, from the given
+        images.
 
-        Parameters
-        ----------
-        name: str
-            Name of the Earth Engine image collection to create.
-        add_props: list of str, optional
-            Additional Earth Engine image properties to include in :attr:`properties`.
+        Images from spectrally compatible Landsat collections can be combined i.e.
+        Landsat-4 with Landsat-5, and Landsat-8 with Landsat-9.  Otherwise,
+        images should belong to the same collection.  Images may include composites
+        created with :meth:`composite`, which are treated as belonging to the
+        collection of their component images.
 
-        Returns
-        -------
-        MaskedCollection
-            A MaskedCollection instance.
+        Use this method (instead of :class:`ee.ImageCollection` or
+        :meth:`ee.ImageCollection.fromImages`) to support cloud masking on a
+        collection built from a sequence of images.
+
+        :param images:
+            Sequence of images, or anything that can be used to construct an image.
+
+        :return:
+            Image collection.
         """
-        # this is separate from __init__ for consistency with MaskedImage.from_id()
-        ee_collection = ee.ImageCollection(name)
-        gd_collection = cls(ee_collection, add_props=add_props)
-        gd_collection._name = name
-        return gd_collection
+        ee_coll = ee.ImageCollection(images)
 
-    @classmethod
-    def from_list(
-        cls, image_list: List[Union[str, MaskedImage, ee.Image]], add_props: List[str] = None
-    ) -> MaskedCollection:
+        # check the images are from compatible collections
+        ids = [
+            utils.split_id(im_id)[0]
+            for im_id in ee_coll.aggregate_array('system:id').getInfo()
+        ]
+        if not _compatible_collections(ids):
+            raise ValueError(
+                'Images must belong to the same, or spectrally compatible, collections.'
+            )
+
+        # set the collection ID to enable cloud masking if supported
+        ee_coll = ee_coll.set('system:id', ids[0])
+        return ee_coll
+
+    @cached_property
+    def _mi(self) -> type[_MaskedImage]:
+        """Masking method container."""
+        return _get_class_for_id(self.id)
+
+    @cached_property
+    def _portion_scale(self) -> float | int | None:
+        """Scale to use for finding mask portions.  ``None`` if there is no STAC band
+        information for this collection.
         """
-        Create a MaskedCollection instance from a list of Earth Engine image ID strings, ``ee.Image`` instances and/or
-        :class:`~geedim.mask.MaskedImage` instances.  The list may include composite images, as created with
-        :meth:`composite`.
-
-        Images from spectrally compatible Landsat collections can be combined i.e. Landsat-4 with Landsat-5,
-        and Landsat-8 with Landsat-9.  Otherwise, images should all belong to the same collection.
-
-        Any ``ee.Image`` instances in the list (including those encapsulated by :class:`~geedim.mask.MaskedImage`)
-        must have ``system:id`` and ``system:time_start`` properties.  This is always the case for images
-        obtained from the Earth Engine catalog, and images returned from :meth:`composite`.  Any other user-created
-        images passed to :meth:`from_list` should have these properties set.
-
-        Parameters
-        ----------
-        image_list : list
-            List of images to include in the collection (must all be from the same, or compatible Earth Engine
-            collections). List items can be ID strings, instances of :class:`~geedim.mask.MaskedImage`, or instances of
-            ``ee.Image``.
-        add_props: list of str, optional
-            Additional Earth Engine image properties to include in :attr:`properties`.
-
-        Returns
-        -------
-        MaskedCollection
-            A MaskedCollection instance.
-        """
-        # build lists of EE images and IDs from image_list
-        if len(image_list) == 0:
-            raise ValueError('`image_list` is empty.')
-
-        im_dict_list = []
-        for image_obj in image_list:
-            if isinstance(image_obj, str):
-                im_dict_list.append(dict(ee_image=ee.Image(image_obj), id=image_obj, has_date=True))
-            elif isinstance(image_obj, ee.Image):
-                # TODO: combine all getInfo() calls into one
-                ee_info = image_obj.getInfo()
-                ee_id = ee_info['id'] if 'id' in ee_info else None
-                has_date = ('properties' in ee_info) and ('system:time_start' in ee_info['properties'])
-                im_dict_list.append(dict(ee_image=ee.Image(image_obj), id=ee_id, has_date=has_date))
-            elif isinstance(image_obj, BaseImage):
-                im_dict_list.append(
-                    dict(ee_image=image_obj.ee_image, id=image_obj.id, has_date=image_obj.date is not None)
-                )
-            else:
-                raise TypeError(f'Unsupported image object type: {type(image_obj)}')
-
-        # check all images have IDs and capture dates
-        if any([(im_dict['id'] is None) or (not im_dict['has_date']) for im_dict in im_dict_list]):
-            raise InputImageError('Image(s) must have "id" and "system:time_start" properties.')
-
-        # check the images all come from the same or compatible collections
-        ee_coll_names = [split_id(im_dict['id'])[0] for im_dict in im_dict_list]
-        if not compatible_collections(ee_coll_names):
-            raise InputImageError('All images must belong to the same, or spectrally compatible, collections.')
-
-        # create the collection object, using the name of the first collection in ee_coll_names.
-        gd_collection = cls.from_name(ee_coll_names[0], add_props=add_props)
-        gd_collection._ee_collection = ee.ImageCollection(ee.List([im_dict['ee_image'] for im_dict in im_dict_list]))
-        gd_collection._filtered = True
-        return gd_collection
-
-    @property
-    def stac(self) -> Union[StacItem, None]:
-        """STAC info, if any."""
-        if not self._stac and (self.name in StacCatalog().url_dict):
-            self._stac = StacCatalog().get_item(self.name)
-        return self._stac
-
-    @property
-    def stats_scale(self) -> Union[float, None]:
-        """Scale to use for re-projections when finding region statistics."""
         if not self.stac:
             return None
-        if not self._stats_scale:
-            gsds = [float(band_dict['gsd']) for band_dict in self.stac.band_props.values()]
-            max_gsd = max(gsds)
-            min_gsd = min(gsds)
-            self._stats_scale = min_gsd if (max_gsd > 10 * min_gsd) and (min_gsd > 0) else max_gsd
-        return self._stats_scale
 
-    @property
-    def ee_collection(self) -> ee.ImageCollection:
-        """Earth Engine image collection."""
-        return self._ee_collection
-
-    @property
-    def name(self) -> str:
-        """Name of the encapsulated Earth Engine image collection."""
-        if not self._name:
-            ee_info = self._ee_collection.first().getInfo()
-            self._name = split_id(ee_info['id'])[0] if ee_info and 'id' in ee_info else 'None'
-        return self._name
-
-    @property
-    def image_type(self) -> type:
-        """:class:`~geedim.mask.MaskedImage` class or sub-class corresponding to images in :attr:`ee_collection`."""
-        if not self._image_type:
-            self._image_type = class_from_id(self.name)
-        return self._image_type
-
-    @property
-    def properties(self) -> Dict[str, Dict]:
-        """
-        A dictionary of properties for each image in the collection. Dictionary keys are the image IDs, and values
-        are a dictionaries of image properties.
-        """
-        if not self._filtered:
-            raise UnfilteredError(
-                '`properties` can only be retrieved for collections returned by `search()` and `from_list()`'
+        # derive scale from the global GSD if it exists
+        summaries = self.stac.get('summaries', {})
+        global_gsd = summaries.get('gsd', None)
+        if global_gsd:
+            return (
+                float(np.sqrt(np.prod(global_gsd)))
+                if len(global_gsd) > 1
+                else global_gsd[0]
             )
-        if not self._properties:
-            self._properties = self._get_properties(self._ee_collection)
-        return self._properties
+
+        # derive scale from band GSDs if they exist
+        band_props = summaries.get('eo:bands', [])
+        band_gsds = [float(bp['gsd']) for bp in band_props if 'gsd' in bp]
+        if not band_gsds:
+            return None
+        max_scale = max(band_gsds)
+        min_scale = min(band_gsds)
+        return (
+            min_scale if (max_scale > 10 * min_scale) and (min_scale > 0) else max_scale
+        )
+
+    @cached_property
+    def _first(self) -> ImageAccessor:
+        """Accessor to the first image of the collection."""
+        if self._info:
+            # use cached info to avoid a getInfo() on _first
+            first = ImageAccessor._with_info(
+                self._ee_coll.first(), self._info.get('features', [{}])[0]
+            )
+        else:
+            first = ImageAccessor(self._ee_coll.first())
+        return first
 
     @property
-    def properties_table(self) -> str:
-        """:attr:`properties` formatted as a printable table string."""
-        return self._get_properties_table(self.properties)
+    def info(self) -> dict[str, Any]:
+        """Earth Engine information as returned by :meth:`ee.ImageCollection.getInfo`,
+        but limited to the first 5000 images.
+        """
+        if self._info is None:
+            self._info = self._ee_coll.limit(self._max_export_images).getInfo()
+        return self._info
 
     @property
-    def schema(self) -> Dict[str, Dict]:
-        """
-        A dictionary of abbreviations and descriptions for :attr:`properties`. Keys are the EE property names,
-        and values are dictionaries of abbreviations and descriptions.
-        """
-        if not self._schema:
-            if self.name in schema.collection_schema:
-                self._schema = schema.collection_schema[self.name]['prop_schema'].copy()
+    def stac(self) -> dict[str, Any] | None:
+        """STAC dictionary.  ``None`` if there is no STAC entry for this collection."""
+        return STACClient().get(self.id)
+
+    @cached_property
+    def id(self) -> str | None:
+        """Earth Engine ID."""
+        # Get the ID from self._info if it has been cached.  Otherwise get the ID
+        # directly rather than retrieving self._info, which can be time-consuming.
+        if self._info is not None:
+            return self._info.get('id', None)
+        else:
+            return self._ee_coll.get('system:id').getInfo()
+
+    @property
+    def schemaPropertyNames(self) -> tuple[str]:
+        """Names of properties to include in :attr:`schema`."""
+        if self._schema_prop_names is None:
+            if self.id in schema.collection_schema:
+                self._schema_prop_names = schema.collection_schema[self.id][
+                    'prop_schema'
+                ].keys()
             else:
-                self._schema = schema.default_prop_schema.copy()
+                self._schema_prop_names = schema.default_prop_schema.keys()
+            # use tuple to prevent in-place mutations that don't go through the setter
+            self._schema_prop_names = tuple(self._schema_prop_names)
+        return self._schema_prop_names
 
-            # append any additional properties to the schema
-            if self._add_props:
-                for add_prop in self._add_props:
-                    # get a description from STAC where possible
-                    description = (
-                        self.stac.descriptions[add_prop] if self.stac and add_prop in self.stac.descriptions else ''
-                    )
+    @schemaPropertyNames.setter
+    def schemaPropertyNames(self, value: tuple[str]):
+        if not isinstance(value, Iterable) or not all(
+            isinstance(n, str) for n in value
+        ):
+            raise ValueError("'schemaPropertyNames' should be an iterable of strings.")
+        # remove duplicates, keeping order (https://stackoverflow.com/a/17016257)
+        self._schema_prop_names = tuple(dict.fromkeys(value))
+        # reset the schema
+        self._schema = None
+
+    @property
+    def schema(self) -> dict[str, dict]:
+        """Dictionary of property abbreviations and descriptions used to form
+        :attr:`schemaTable` and :attr:`propertiesTable`.
+        """
+        if self._schema is None:
+            if self.id in schema.collection_schema:
+                coll_schema = schema.collection_schema[self.id]['prop_schema']
+            else:
+                coll_schema = schema.default_prop_schema
+
+            self._schema = {}
+
+            if set(coll_schema.keys()).issuperset(self.schemaPropertyNames):
+                gee_descriptions = {}
+            else:
+                # get STAC property descriptions (if any)
+                summaries = self.stac.get('summaries', {}) if self.stac else {}
+                gee_schema = summaries.get('gee:schema', {})
+                gee_descriptions = {
+                    item['name']: item['description'] for item in gee_schema
+                }
+
+            for prop_name in self.schemaPropertyNames:
+                if prop_name in coll_schema:
+                    prop_schema = coll_schema[prop_name]
+                elif prop_name in gee_descriptions:
+                    descr = gee_descriptions[prop_name]
                     # remove newlines from description and crop to the first sentence
-                    description = ' '.join(description.strip().splitlines()).split('. ')[0]
-                    self._schema[add_prop] = dict(abbrev=abbreviate(add_prop), description=description)
+                    descr = ' '.join(descr.strip().splitlines()).split('. ')[0]
+                    prop_schema = dict(abbrev=_abbreviate(prop_name), description=descr)
+                else:
+                    prop_schema = dict(abbrev=_abbreviate(prop_name), description=None)
+                self._schema[prop_name] = prop_schema
+
         return self._schema
 
     @property
-    def schema_table(self) -> str:
+    def schemaTable(self) -> str:
         """:attr:`schema` formatted as a printable table string."""
-        table_list = []
-        for prop_name, prop_dict in self.schema.items():
-            description = '\n'.join(wrap.wrap(prop_dict['description'], 50))
-            table_list.append(dict(abbrev=prop_dict['abbrev'], name=prop_name, description=description))
-        headers = {key: key.upper() for key in table_list[0].keys()}
-        return tabulate.tabulate(table_list, headers=headers, floatfmt='.2f', tablefmt='simple')
+        if not self.schema:
+            return ''
+        # cast description to str to work around
+        # https://github.com/astanin/python-tabulate/issues/312
+        table_list = [
+            dict(ABBREV=pd['abbrev'], NAME=pn, DESCRIPTION=str(pd['description']))
+            for pn, pd in self.schema.items()
+        ]
+        return tabulate.tabulate(
+            table_list,
+            headers='keys',
+            floatfmt='.2f',
+            tablefmt='simple',
+            maxcolwidths=50,
+            missingval='-',
+        )
 
     @property
-    def refl_bands(self) -> Union[List[str], None]:
-        """List of spectral / reflectance band names, if any."""
-        if not self.stac:
-            return None
-        return [bname for bname, bdict in self.stac.band_props.items() if 'center_wavelength' in bdict]
-
-    def _get_properties(self, ee_collection: ee.ImageCollection, schema=None) -> Dict:
-        """Retrieve properties of images in a given Earth Engine image collection."""
-        if not schema:
-            schema = self.schema
-
-        # the properties to retrieve
-        prop_key_list = ee.List(list(schema.keys()))
-
-        def aggregrate_props(ee_image, coll_list):
-            im_dict = ee_image.toDictionary(prop_key_list)
-            return ee.List(coll_list).add(im_dict)
-
-        # retrieve list of dicts of properties of images in ee_collection
-        props_list = []
-        try:
-            props_list = ee.List(ee_collection.iterate(aggregrate_props, ee.List([]))).getInfo()
-        except ee.EEException as ex:
-            if 'geometry' in str(ex) and 'unbounded' in str(ex):
-                raise ValueError(
-                    'This collection is unbounded and needs a `region` to be specified to find FILL_PORTION / '
-                    'CLOUDLESS_PORTION.'
-                )
-            else:
-                raise
-        # add image properties to the return dict in the same order as the underlying collection
-        props_dict = OrderedDict()
-        for prop_dict in props_list:
-            props_dict[prop_dict['system:id']] = prop_dict
-        return props_dict
-
-    def _get_properties_table(self, properties: Dict, schema: Dict = None) -> str:
+    def properties(self) -> dict[str, dict[str, Any]]:
+        """Dictionary of image properties.  Keys are the image indexes and values the
+        image property dictionaries.
         """
-        Format the given properties into a table.  Orders properties (columns) according to :attr:`schema` and
-        replaces long form property names with abbreviations.
-        """
-        if not schema:
-            schema = self.schema
+        if self._properties is None:
+            self._properties = {}
+            for i, im_info in enumerate(self.info.get('features', [])):
+                im_props = im_info.get('properties', {})
+                # collection images should always have unique indexes
+                im_index = im_props.get('system:index', str(i))
+                self._properties[im_index] = im_props
+        return self._properties
 
-        abbrev_props = []
-        for im_id, im_prop_dict in properties.items():
-            abbrev_dict = OrderedDict()
-            for prop_name, key_dict in schema.items():
-                if prop_name in im_prop_dict:
-                    if prop_name == 'system:time_start':  # convert timestamp to date string
-                        dt = datetime.fromtimestamp(im_prop_dict[prop_name] / 1000, tz=timezone.utc)
-                        abbrev_dict[key_dict['abbrev']] = datetime.strftime(dt, '%Y-%m-%d %H:%M')
+    @property
+    def propertiesTable(self) -> str:
+        """The :attr:`schema` defined subset of :attr:`properties`, abbreviated and
+        formatted as a printable table string.
+        """
+        coll_schema_props = []
+        for im_props in self.properties.values():
+            im_schema_props = {}
+            for prop_name, prop_schema in self.schema.items():
+                prop_val = im_props.get(prop_name, None)
+                if prop_val is not None:
+                    if prop_name in ['system:time_start', 'system:time_end']:
+                        # convert timestamp to date string
+                        dt = datetime.fromtimestamp(prop_val / 1000, tz=UTC)
+                        im_schema_props[prop_schema['abbrev']] = datetime.strftime(
+                            dt, '%Y-%m-%d %H:%M'
+                        )
                     else:
-                        abbrev_dict[key_dict['abbrev']] = im_prop_dict[prop_name]
-            abbrev_props.append(abbrev_dict)
-        return tabulate.tabulate(abbrev_props, headers='keys', floatfmt='.2f', tablefmt=_table_fmt)
+                        im_schema_props[prop_schema['abbrev']] = prop_val
+            coll_schema_props.append(im_schema_props)
+        return tabulate.tabulate(
+            coll_schema_props,
+            headers='keys',
+            floatfmt='.2f',
+            tablefmt=_tablefmt,
+            missingval='-',
+        )
+
+    @property
+    def specBands(self) -> list[str]:
+        """List of spectral band names."""
+        if not self.stac:
+            return []
+        return self._first.specBands
+
+    @property
+    def cloudSupport(self) -> bool:
+        """Whether this collection has cloud mask support."""
+        return issubclass(self._mi, _CloudlessImage)
 
     def _prepare_for_composite(
         self,
-        method: CompositeMethod,
+        method: enums.CompositeMethod | str,
         mask: bool = True,
-        resampling: Union[ResamplingMethod, str] = None,
-        date: str = None,
+        resampling: enums.ResamplingMethod | str = ImageAccessor._default_resampling,
+        date: str | datetime | ee.Date = None,
         region: dict | ee.Geometry = None,
         **kwargs,
     ) -> ee.ImageCollection:
-        """
-        Prepare the Earth Engine collection for compositing. See :meth:`~MaskedCollection.composite` for
-        parameter descriptions.
-        """
-        date = parse_date(date, 'date')
+        """Return a collection that has been prepared for compositing."""
+        method = enums.CompositeMethod(method)
+        resampling = enums.ResamplingMethod(resampling)
 
-        if not self._filtered:
-            raise UnfilteredError(
-                'Composites can only be created from collections returned by `search()` and `from_list()`'
-            )
-
-        method = CompositeMethod(method)
-        resampling = ResamplingMethod(resampling) if resampling else BaseImage._default_resampling
-        if (method == CompositeMethod.q_mosaic) and (self.image_type == MaskedImage):
-            cloud_coll_str = ", ".join(schema.cloud_coll_names)
+        if (method is enums.CompositeMethod.q_mosaic) and (not self.cloudSupport):
             raise ValueError(
-                f'The `q-mosaic` method is not supported for this collection: {self.name}.  It is supported for the '
-                f'{cloud_coll_str} collections only.'
+                "The 'q-mosaic' method requires cloud mask support, which this "
+                'collection does not have.'
             )
 
-        def prepare_image(ee_image: ee.Image):
+        if date and region:
+            raise ValueError("One of 'date' or 'region' can be supplied, but not both.")
+
+        def prepare_image(ee_image: ee.Image) -> ee.Image:
             """Prepare an Earth Engine image for use in compositing."""
-            if date and (method in self._sort_methods):
-                date_dist = ee.Number(ee_image.get('system:time_start')).subtract(ee.Date(date).millis()).abs()
+            if date:
+                date_dist = (
+                    ee.Number(ee_image.date().millis())
+                    .subtract(ee.Date(date).millis())
+                    .abs()
+                )
                 ee_image = ee_image.set('DATE_DIST', date_dist)
 
-            gd_image = self.image_type(ee_image, **kwargs)
-            if region and (method in self._sort_methods):
-                gd_image._set_region_stats(region=region, scale=self.stats_scale)
+            ee_image = self._mi.add_mask_bands(ee_image, **kwargs)
+            if region:
+                ee_image = self._mi.set_mask_portions(
+                    ee_image, region=region, scale=self._portion_scale
+                )
             if mask:
-                gd_image.mask_clouds()
-            return resample(gd_image.ee_image, resampling)
+                ee_image = self._mi.mask_clouds(ee_image)
+            return ImageAccessor(ee_image).resample(resampling)
 
-        ee_collection = self._ee_collection.map(prepare_image)
+        ee_coll = self._ee_coll.map(prepare_image)
 
-        if method in self._sort_methods:
-            if date:
-                ee_collection = ee_collection.sort('DATE_DIST', opt_ascending=False)
-            elif region:
-                sort_key = 'CLOUDLESS_PORTION' if 'CLOUDLESS_PORTION' in self.schema.keys() else 'FILL_PORTION'
-                ee_collection = ee_collection.sort(sort_key)
-            else:
-                ee_collection = ee_collection.sort('system:time_start')
+        if date:
+            ee_coll = ee_coll.sort('DATE_DIST', ascending=False)
+        elif region:
+            sort_key = 'CLOUDLESS_PORTION' if self.cloudSupport else 'FILL_PORTION'
+            ee_coll = ee_coll.sort(sort_key)
         else:
-            if date:
-                logger.warning('`date` is valid for `mosaic`, `q_mosaic` and `medoid` methods only.')
-            elif region:
-                logger.warning('`region` is valid for `mosaic`, `q_mosaic` and `medoid` methods only.')
+            ee_coll = ee_coll.sort('system:time_start')
 
-        return ee_collection
+        return ee_coll
 
-    def search(
+    def _raise_image_consistency(self) -> None:
+        """Raise an error if the collection image bands are not consistent (i.e.
+        don't have same band names, projections or bounds; or don't have fixed
+        projections).
+        """
+        first_band_names = first_band = None
+        band_compare_keys = ['crs', 'crs_transform', 'dimensions', 'data_type']
+
+        # Note that for export, this test is stricter than it needs to be.  For image
+        # splitting, only the min. scale band of each image should have a fixed
+        # projection and match all other min. scale band's projection & bounds.  For
+        # band splitting, only the first image should have all bands with fixed
+        # projections, and matching projections and bounds.
+        try:
+            for im_info in self.info.get('features', []):
+                cmp_bands = {bp['id']: bp for bp in im_info.get('bands', [])}
+
+                # test number of bands & names against the first image's bands
+                if not first_band_names:
+                    first_band_names = cmp_bands.keys()
+                elif not cmp_bands.keys() == first_band_names:
+                    raise ValueError('Inconsistent number of bands or band names.')
+
+                for band in cmp_bands.values():
+                    cmp_band = {k: band.get(k, None) for k in band_compare_keys}
+                    # test band has a fixed projections
+                    if not cmp_band['dimensions']:
+                        raise ValueError(
+                            'One or more image bands do not have a fixed projection.'
+                        )
+                    # test band projection & bounds against the first image's first band
+                    if not first_band:
+                        first_band = cmp_band
+                    elif cmp_band != first_band:
+                        raise ValueError(
+                            'Inconsistent band projections, bounds or data types.'
+                        )
+
+        except ValueError as ex:
+            raise ValueError(
+                f"Cannot export collection: '{ex!s}'.  'prepareForExport()' can be "
+                f'called to create an export-ready collection.'
+            ) from ex
+
+    def _split_images(self, split: enums.SplitType) -> dict[str, ImageAccessor]:
+        """Split the collection into images according to ``split``."""
+        # test for consistency before splitting to raise errors early
+        self._raise_image_consistency()
+        indexes = list(self.properties.keys())
+
+        if split is enums.SplitType.bands:
+            # split collection into an image per band (i.e. the same band from every
+            # collection image form the bands of a new 'band' image)
+            def to_bands(band_name: ee.String) -> ee.Image:
+                ee_image = self._ee_coll.select(ee.String(band_name)).toBands()
+                # rename system:index to band name & band names to system indexes
+                ee_image = ee_image.set('system:index', band_name)
+                return ee_image.rename(indexes)
+
+            im_list = ee.List(self._first.bandNames).map(to_bands)
+            im_infos = im_list.getInfo()
+            im_names = self._first.bandNames
+        else:
+            # split collection into its images
+            im_list = self._ee_coll.toList(self._max_export_images)
+            im_infos = self.info['features']
+            im_names = indexes
+
+        # return a dictionary of image name keys, and ImageAccessor values (where
+        # ImageAccessors have cached info to save on getInfo() calls in users of the
+        # dictionary)
+        return {
+            im_name: ImageAccessor._with_info(ee.Image(im_list.get(i)), im_info)
+            for i, (im_name, im_info) in enumerate(zip(im_names, im_infos, strict=True))
+        }
+
+    def addMaskBands(self, **kwargs) -> ee.ImageCollection:
+        """
+        Return this collection with mask and related bands added.
+
+        Existing mask bands are overwritten, except on images without fixed projections,
+        where no mask bands are added or overwritten.
+
+        :param kwargs:
+            Cloud masking arguments - see
+            :meth:`geedim.image.ImageAccessor.addMaskBands` for details.
+
+        :return:
+            Image collection with added mask bands.
+        """
+        return self._ee_coll.map(
+            lambda ee_image: self._mi.add_mask_bands(ee_image, **kwargs)
+        )
+
+    def maskClouds(self) -> ee.ImageCollection:
+        """
+        Return this collection with cloud masks applied when supported, otherwise
+        return this collection unaltered.
+
+        Mask bands should be added with :meth:`addMaskBands` before calling this method.
+
+        :return:
+            Masked image collection.
+        """
+        return self._ee_coll.map(lambda ee_image: self._mi.mask_clouds(ee_image))
+
+    def medoid(self, bands: list | ee.List = None) -> ee.Image:
+        """
+        Find the medoid composite of the collection images.
+
+        See https://www.mdpi.com/2072-4292/5/12/6481 for a description of the method.
+
+        :param bands:
+            List of bands to include in the medoid score.  Defaults to
+            :attr:`specBands` if available, otherwise all bands.
+
+        :return:
+            Medoid composite image.
+        """
+        return medoid(self._ee_coll, bands=bands or self.specBands)
+
+    def filter(
         self,
-        start_date: datetime | str = None,
-        end_date: datetime | str = None,
+        start_date: str | datetime | ee.Date = None,
+        end_date: str | datetime | ee.Date = None,
         region: dict | ee.Geometry = None,
-        fill_portion: float = None,
-        cloudless_portion: float = None,
-        custom_filter: str = None,
+        fill_portion: float | ee.Number = None,
+        cloudless_portion: float | ee.Number = None,
+        custom_filter: str | None = None,
         **kwargs,
-    ) -> MaskedCollection:
+    ) -> ee.ImageCollection:
         """
-        Search for images based on date, region, filled/cloudless portion, and custom criteria.
+        Filter the collection on date, region, filled / cloud-free portion, and custom
+        criteria.
 
-        Filled and cloudless portions are only calculated and included in collection properties when one or both of
-        ``fill_portion`` / ``cloudless_portion`` are specified.
+        Filled and cloud-free portions are only included in returned image
+        :attr:`properties` when one or both of ``fill_portion`` /
+        ``cloudless_portion`` are supplied.  If ``fill_portion`` or
+        ``cloudless_portion`` are supplied, ``region`` is required.
 
-        Search speed can be increased by specifying ``custom_filter``, and or by omitting ``fill_portion`` /
-        ``cloudless_portion``.
+        Filter speeds can be improved by supplying multiple of the ``start_date``,
+        ``end_date``, ``region`` and ``custom_filter`` arguments.
 
-        Parameters
-        ----------
-        start_date : datetime, str
-            Start date (UTC).  In '%Y-%m-%d' format if a string.
-        end_date : datetime, str, optional
-            End date (UTC).  In '%Y-%m-%d' format if a string.  If None, ``end_date`` is set to a day after
-            ``start_date``.
-        region: dict, ee.Geometry
-            Region that images should intersect as a GeoJSON dictionary or ``ee.Geometry``.
-        fill_portion: float, optional
-            Lower limit on the portion of region that contains filled/valid image pixels (%).
-        cloudless_portion: float, optional
-            Lower limit on the portion of filled pixels that are cloud/shadow free (%).
-        custom_filter: str, optional
-            Custom image property filter expression e.g. "property > value".  See the `EE docs
-            <https://developers.google.com/earth-engine/apidocs/ee-filter-expression>`_.
-        **kwargs
-            Optional cloud/shadow masking parameters - see :meth:`geedim.mask.MaskedImage.__init__` for details.
+        :param start_date:
+            Start date, in ISO format if a string.
+        :param end_date:
+            End date, in ISO format if a string.  Defaults to a millisecond after
+            ``start_date`` if ``start_date`` is supplied.  Ignored if ``start_date``
+            is not supplied.
+        :param region:
+            Region that images should intersect as a GeoJSON dictionary or
+            :class:`ee.Geometry`.
+        :param fill_portion:
+            Lower limit on the filled (valid) portion of ``region`` (%).
+        :param cloudless_portion:
+            Lower limit on the cloud-free portion of the filled portion of ``region``
+            (%).
+        :param custom_filter:
+            Custom image property filter expression e.g. ``property > value``.  See
+            the `Earth Engine docs
+            <https://developers.google.com/earth-engine/apidocs/ee-filter-expression>`__
+            for details.
+        :param kwargs:
+            Cloud masking arguments used for ``cloudless_portion`` - see
+            :meth:`geedim.image.ImageAccessor.addMaskBands` for details.
 
-        Returns
-        -------
-        MaskedCollection
-            Filtered MaskedCollection instance containing the search result image(s).
+        :return:
+            Filtered image collection.
         """
-        if not start_date and not region:
-            raise ValueError('At least one of `start_date` or `region` should be specified')
+        if (fill_portion is not None or cloudless_portion is not None) and not region:
+            raise ValueError(
+                "'region' is required when 'fill_portion' or 'cloudless_portion' are "
+                'supplied.'
+            )
 
-        if not start_date or not region:
-            logger.warning('Specifying `start_date` and `region` will improve the search speed.')
-
-        def set_region_stats(ee_image: ee.Image):
-            """Find filled and cloud/shadow free portions inside the search region for a given image."""
-            gd_image = self.image_type(ee_image, **kwargs)
-            gd_image._set_region_stats(region, scale=self.stats_scale)
-            return gd_image.ee_image
-
-        # filter the image collection, finding cloud/shadow masks and region stats
-        ee_collection = self._ee_collection
+        # filter the image collection, finding cloud masks and region stats
+        ee_coll = self._ee_coll
         if start_date:
-            start_date = parse_date(start_date, 'start_date')
-            if end_date is None:
-                # set end_date a day later than start_date
-                end_date = start_date + timedelta(days=1)
-            else:
-                end_date = parse_date(end_date, 'end_date')
-            if end_date <= start_date:
-                raise ValueError('`end_date` must be at least a day later than `start_date`')
-            ee_collection = ee_collection.filterDate(start_date, end_date)
+            ee_coll = ee_coll.filterDate(start_date, end_date)
 
         if region:
-            ee_collection = ee_collection.filterBounds(region)
+            ee_coll = ee_coll.filterBounds(region)
 
-        # when possible filter on custom_filter before calling set_region_stats to reduce computation
-        if custom_filter and all([prop_key not in custom_filter for prop_key in ['FILL_PORTION', 'CLOUDLESS_PORTION']]):
-            ee_collection = ee_collection.filter(ee.Filter.expression(custom_filter))
+        # when possible filter on custom_filter before calling set_region_stats to
+        # reduce computation
+        if custom_filter and all(
+            prop_key not in custom_filter
+            for prop_key in ['FILL_PORTION', 'CLOUDLESS_PORTION']
+        ):
+            ee_coll = ee_coll.filter(ee.Filter.expression(custom_filter))
             custom_filter = None
 
-        if (fill_portion is not None) or (cloudless_portion is not None) or (custom_filter is not None):
+        if (
+            (fill_portion is not None)
+            or (cloudless_portion is not None)
+            or custom_filter
+        ):
             # set regions stats before filtering on those properties
-            ee_collection = ee_collection.map(set_region_stats)
-            if fill_portion:
-                ee_collection = ee_collection.filter(ee.Filter.gte('FILL_PORTION', fill_portion))
 
-            if cloudless_portion and self.image_type != MaskedImage:
-                ee_collection = ee_collection.filter(ee.Filter.gte('CLOUDLESS_PORTION', cloudless_portion))
+            def set_portions(ee_image: ee.Image) -> ee.Image:
+                ee_image = self._mi.add_mask_bands(ee_image, **kwargs)
+                return self._mi.set_mask_portions(
+                    ee_image, region=region, scale=self._portion_scale
+                )
+
+            ee_coll = ee_coll.map(set_portions)
+            if fill_portion:
+                ee_coll = ee_coll.filter(ee.Filter.gte('FILL_PORTION', fill_portion))
+            if cloudless_portion:
+                ee_coll = ee_coll.filter(
+                    ee.Filter.gte('CLOUDLESS_PORTION', cloudless_portion)
+                )
 
             # filter on custom_filter that refers to FILL_ or CLOUDLESS_PORTION
             if custom_filter:
                 # this expression can include properties from set_region_stats
-                ee_collection = ee_collection.filter(ee.Filter.expression(custom_filter))
+                ee_coll = ee_coll.filter(ee.Filter.expression(custom_filter))
 
-        ee_collection = ee_collection.sort('system:time_start')
-
-        # return a new MaskedCollection containing the filtered EE collection (the EE collection
-        # wrapped by MaskedCollection remains fixed)
-        gd_collection = MaskedCollection(ee_collection, add_props=self._add_props)
-        gd_collection._name = self._name
-        gd_collection._filtered = True
-        return gd_collection
+        ee_coll = ee_coll.sort('system:time_start')
+        return ee_coll
 
     def composite(
         self,
-        method: CompositeMethod | str = None,
+        method: enums.CompositeMethod | str = None,
         mask: bool = True,
-        resampling: ResamplingMethod | str = None,
-        date: datetime | str = None,
+        resampling: enums.ResamplingMethod | str = ImageAccessor._default_resampling,
+        date: str | datetime | ee.Date = None,
         region: dict | ee.Geometry = None,
         **kwargs,
-    ) -> MaskedImage:
+    ) -> ee.Image:
         """
-        Create a composite image from the encapsulated image collection.
+        Create a composite from the images in the collection.
 
-        Parameters
-        ----------
-        method: CompositeMethod, str, optional
-            Method for finding each composite pixel from the stack of corresponding input image pixels. See
-            :class:`~geedim.enums.CompositeMethod` for available options.  By default, `q-mosaic` is used for
-            cloud/shadow mask supported collections, `mosaic` otherwise.
-        mask: bool, optional
-            Whether to apply the cloud/shadow mask; or fill (valid pixel) mask, in the case of images without
-            support for cloud/shadow masking.
-        resampling: ResamplingMethod, str, optional
-            Resampling method to use on collection images prior to compositing.  If None, `near` resampling is used
-            (the default).  See :class:`~geedim.enums.ResamplingMethod` for available options.
-        date: datetime, str, optional
-            Sort collection images by their absolute difference in capture time from this date.  Pioritises pixels
-            from images closest to this date.  Valid for the `q-mosaic`, `mosaic` and `medoid` ``method`` only.  If
-            None, no time difference sorting is done (the default).
-        region: dict, ee.Geometry, optional
-            Sort collection images by the portion of their pixels that are cloudless, and inside this region.  Can be
-            a GeoJSON dictionary or ee.Geometry.  Prioritises pixels from the least cloudy image(s). Valid for the
-            `q-mosaic`, `mosaic`, and `medoid` ``method`` only.  If collection has no cloud/shadow mask support,
-            images are sorted by the portion of their pixels that are valid, and inside ``region``. If None,
-            no cloudless/valid portion sorting is done (the default).  If ``date`` and ``region`` are not specified,
-            collection images are sorted by their capture date.
-        **kwargs
-            Optional cloud/shadow masking parameters - see :meth:`geedim.mask.MaskedImage.__init__` for details.
+        :param method:
+            Compositing method. By default,
+            :attr:`~geedim.enums.CompositeMethod.q_mosaic` is used for cloud mask
+            supported collections, and :attr:`~geedim.enums.CompositeMethod.mosaic`
+            otherwise.
+        :param mask:
+            Whether to cloud mask images before compositing.  No effect if cloud
+            masking is not supported.
+        :param resampling:
+            Resampling method to use on images before compositing.
+        :param date:
+            Sort component images by the absolute difference between their capture
+            time and this date.  If a string, it should be in ISO format.  Images are
+            sorted by their capture time if both ``date`` and ``region`` are ``None``
+            (the default).
+        :param region:
+            Sort component images by their cloud-free portion inside this region when
+            cloud masking is supported, otherwise sort by their filled (valid) portion.
+            Can be a GeoJSON dictionary or :class:`ee.Geometry`. Images are sorted by
+            their capture date if both ``date`` and ``region`` are ``None`` (the
+            default).
+        :param kwargs:
+            Cloud/shadow masking arguments - see
+            :meth:`geedim.image.ImageAccessor.addMaskBands` for details.
 
-        Returns
-        -------
-        MaskedImage
+        :return:
             Composite image.
         """
-        date = parse_date(date, 'date')
-
         if method is None:
-            method = CompositeMethod.mosaic if self.image_type == MaskedImage else CompositeMethod.q_mosaic
+            method = (
+                enums.CompositeMethod.q_mosaic
+                if self.id in schema.cloud_coll_names
+                else enums.CompositeMethod.mosaic
+            )
 
         # mask, sort & resample the EE collection
-        method = CompositeMethod(method)
-        ee_collection = self._prepare_for_composite(
-            method=method, mask=mask, resampling=resampling, date=date, region=region, **kwargs
+        ee_coll = self._prepare_for_composite(
+            method=method,
+            mask=mask,
+            resampling=resampling,
+            date=date,
+            region=region,
+            **kwargs,
         )
 
-        if method == CompositeMethod.q_mosaic:
-            comp_image = ee_collection.qualityMosaic('CLOUD_DIST')
-        elif method == CompositeMethod.mosaic:
-            comp_image = ee_collection.mosaic()
-        elif method == CompositeMethod.median:
-            comp_image = ee_collection.median()
-        elif method == CompositeMethod.medoid:
+        method = enums.CompositeMethod(method)
+        if method == enums.CompositeMethod.q_mosaic:
+            comp_image = ee_coll.qualityMosaic('CLOUD_DIST')
+        elif method == enums.CompositeMethod.medoid:
             # limit medoid to surface reflectance bands
-            comp_image = medoid(ee_collection, bands=self.refl_bands)
-        elif method == CompositeMethod.mode:
-            comp_image = ee_collection.mode()
-        elif method == CompositeMethod.mean:
-            comp_image = ee_collection.mean()
+            comp_image: ee.Image = ImageCollectionAccessor(ee_coll).medoid(
+                bands=self.specBands
+            )
         else:
-            raise ValueError(f'Unsupported composite method: {method}')
+            comp_image = getattr(ee_coll, method.name)()
 
-        # populate composite image metadata with info on component images
-        # TODO: speed this up, e.g. can we use just ID's and times from self.properties?
-        props = self._get_properties(ee_collection)
-        if len(props) == 0:
-            raise ValueError('The collection is empty.')
-        props_str = self._get_properties_table(props)
-        comp_image = comp_image.set('INPUT_IMAGES', 'TABLE:\n' + props_str)
+        # populate composite image metadata
+        comp_index = f'{method.value.upper()}-COMP'
+        # set 'properties'->'system:index'
+        comp_image = comp_image.set('system:index', comp_index)
+        # set root 'id' property
+        comp_id = (self.id + '/') if self.id else ''
+        comp_id += comp_index
+        comp_image = comp_image.set('system:id', comp_id)
+        # set composite start-end times
+        date_range = ee_coll.reduceColumns(ee.Reducer.minMax(), ['system:time_start'])
+        comp_image = comp_image.set(
+            'system:time_start', ee.Number(date_range.get('min'))
+        )
+        comp_image = comp_image.set('system:time_end', ee.Number(date_range.get('max')))
+        return comp_image
 
-        # construct an ID for the composite
-        dates = [datetime.fromtimestamp(item['system:time_start'] / 1000, tz=timezone.utc) for item in props.values()]
-        start_date = min(dates).strftime('%Y_%m_%d')
-        end_date = max(dates).strftime('%Y_%m_%d')
+    def prepareForExport(
+        self,
+        crs: str | None = None,
+        crs_transform: Sequence[float] | None = None,
+        shape: tuple[int, int] | None = None,
+        region: dict[str, Any] | ee.Geometry | None = None,
+        scale: float | None = None,
+        resampling: str | enums.ResamplingMethod = ImageAccessor._default_resampling,
+        dtype: str | None = None,
+        scale_offset: bool | None = False,
+        bands: list[str | int] | str | None = None,
+    ) -> ee.ImageCollection:
+        """
+        Prepare the collection for export.
 
-        method_str = method.value.upper()
-        if method in self._sort_methods and date:
-            method_str += '-' + date.strftime('%Y_%m_%d')
+        .. warning::
+            The prepared collection images are reprojected and clipped versions of
+            their source images. This type of image is `not recommended
+            <https://developers.google.com/earth-engine/guides/best_practices>`__ for
+            use in map display or further computation.
 
-        comp_id = f'{self.name}/{start_date}-{end_date}-{method_str}-COMP'
-        comp_image = comp_image.set('system:id', comp_id)  # sets root 'id' property
-        comp_image = comp_image.set('system:index', comp_id)  # sets 'properties'->'system:index'
+        :param crs:
+            CRS of the prepared images as a well-known authority (e.g. EPSG) or WKT
+            string. Defaults to the CRS of the minimum scale band of the first image.
+        :param crs_transform:
+            Georeferencing transform of the prepared images, as a sequence of 6
+            numbers.  In row-major order: [xScale, xShearing, xTranslation,
+            yShearing, yScale, yTranslation].
+        :param shape:
+            (height, width) dimensions of the prepared images in pixels.
+        :param region:
+            Region defining the prepared image bounds as a GeoJSON dictionary or
+            :class:`ee.Geometry`. Defaults to the geometry of the first image.
+            Ignored if ``crs_transform`` is supplied.
+        :param scale:
+            Pixel scale (m) of the prepared images.  Defaults to the minimum scale of
+            the first image's bands.  Ignored if ``crs_transform`` is supplied.
+        :param resampling:
+            Resampling method to use for reprojecting.  Ignored for images without
+            fixed projections e.g. composites.  Composites can be resampled by
+            resampling their component images.
+        :param dtype:
+            Data type of the prepared images (``uint8``, ``int8``, ``uint16``,
+            ``int16``, ``uint32``, ``int32``, ``float32`` or ``float64``).  Defaults
+            to the minimum size data type able to represent all the first image's bands.
+        :param scale_offset:
+            Whether to apply any STAC band scales and offsets to the images (e.g. for
+            converting digital numbers to physical units).
+        :param bands:
+            Bands to include in the prepared images as a list of names / indexes,
+            or a regex string.  Defaults to all bands of the first image.
 
-        # set the composite capture time to the capture time of the first input image.
-        timestamp = min(dates).timestamp() * 1000
-        comp_image = comp_image.set('system:time_start', timestamp)
-        gd_comp_image = self.image_type(comp_image)
-        gd_comp_image._id = comp_id  # avoid getInfo() for id property
-        return gd_comp_image
+        :return:
+            Prepared collection.
+        """
+        # apply the export args to the first image
+        first = self._first.prepareForExport(
+            crs=crs,
+            crs_transform=crs_transform,
+            shape=shape,
+            region=region,
+            scale=scale,
+            resampling=resampling,
+            dtype=dtype,
+            scale_offset=scale_offset,
+            bands=bands,
+        )
+        first = ImageAccessor(first)
+
+        # prepare collection images to match the first (same CRS, grid, bounds etc)
+        def prepare_image(ee_image: ee.Image) -> ee.Image:
+            # adapted from ImageAccessor.prepareForExport()
+            ee_image = ee_image.select(bands) if bands else ee_image
+            ee_image = (
+                _scale_offset_image(ee_image, first.stac) if scale_offset else ee_image
+            )
+            ee_image = ImageAccessor(ee_image).resample(resampling)
+            ee_image = ImageAccessor(ee_image).toDType(dtype=first.dtype)
+            ee_image, _ = ee_image.prepare_for_export(
+                dict(
+                    crs=first.crs,
+                    crs_transform=first.transform,
+                    dimensions=first.shape[::-1],
+                )
+            )
+            return ee_image
+
+        return self._ee_coll.map(prepare_image)
+
+    def toGoogleCloud(
+        self,
+        type: enums.ExportType = ImageAccessor._default_export_type,
+        folder: str | None = None,
+        wait: bool = True,
+        split: str | enums.SplitType = enums.SplitType.bands,
+        **kwargs,
+    ) -> list[ee.batch.Task]:
+        """
+        Export the collection to raster files on Google Drive, Earth Engine assets,
+        or raster files on Google Cloud Storage, using batch tasks.
+
+        All bands in the collection should share the same projection, bounds and data
+        type. :meth:`prepareForExport` can be called before this method to apply
+        export parameters and create an export-ready collection.
+
+        A maximum of 5000 images can be exported.
+
+        :param type:
+            Export type.
+        :param folder:
+            Google Drive folder (when ``type`` is
+            :attr:`~geedim.enums.ExportType.drive`), Earth Engine asset project (when
+            ``type`` is :attr:`~geedim.enums.ExportType.asset`), or Google Cloud
+            Storage bucket (when ``type`` is :attr:`~geedim.enums.ExportType.cloud`).
+            Can include sub-folders, or an image collection name if ``type`` is
+            :attr:`~geedim.enums.ExportType.asset`.  Required if ``type`` is
+            :attr:`~geedim.enums.ExportType.asset` or
+            :attr:`~geedim.enums.ExportType.cloud`.
+        :param wait:
+            Whether to wait for the exports to complete before returning.
+        :param split:
+            Export a file / asset for each collection band
+            (:attr:`~geedim.enums.SplitType.bands`), or for each collection image
+            (:attr:`~geedim.enums.SplitType.images`).  Files / assets are named with
+            their band name, and band descriptions / names set to the
+            ``system:index`` property of the band's source image, when ``split`` is
+            :attr:`~geedim.enums.SplitType.bands`. Otherwise, files / assets are
+            named with the ``system:index`` property of the source image, and band
+            descriptions / names set to the image band names, when ``split`` is
+            :attr:`~geedim.enums.SplitType.images`.  Band names are prefixed with
+            ``'B_'`` if ``split`` is :attr:`~geedim.enums.SplitType.bands` and
+            ``type`` is :attr:`~geedim.enums.ExportType.asset`.
+        :param kwargs:
+            Additional arguments to the ``type`` dependent Earth Engine function:
+            ``Export.image.toDrive()``, ``Export.image.toAsset()`` or
+            ``Export.image.toCloudStorage()``.
+
+        :return:
+            List of image export tasks, started if ``wait`` is ``False``,
+            or completed if ``wait`` is ``True``.
+        """
+        type = enums.ExportType(type)
+        split = enums.SplitType(split)
+        images = self._split_images(split)
+
+        # start exporting the split images concurrently
+        tasks = {}
+        for name, image in images.items():
+            if type is enums.ExportType.asset and split is enums.SplitType.bands:
+                # prefix image band names with 'B_' (asset image band names must
+                # start with an alpha character)
+                image._ee_image = image._ee_image.regexpRename('^(.*)', 'B_$1')
+
+            tasks[name] = image.toGoogleCloud(
+                filename=name, type=type, folder=folder, wait=False, **kwargs
+            )
+
+        if wait:
+            # wait for tasks to complete
+            tqdm_kwargs = utils.get_tqdm_kwargs(
+                desc=self.id or 'Collection', unit=split.value
+            )
+            for name, task in utils.auto_leave_tqdm(tasks.items(), **tqdm_kwargs):
+                ImageAccessor.monitorTask(task, name)
+
+        return list(tasks.values())
+
+    def toGeoTIFF(
+        self,
+        dirname: os.PathLike | str | OpenFile,
+        overwrite: bool = False,
+        split: str | enums.SplitType = enums.SplitType.bands,
+        nodata: bool | int | float = True,
+        driver: str | enums.Driver = enums.Driver.gtiff,
+        max_tile_size: float = Tiler._default_max_tile_size,
+        max_tile_dim: int = Tiler._ee_max_tile_dim,
+        max_tile_bands: int = Tiler._ee_max_tile_bands,
+        max_requests: int = Tiler._max_requests,
+        max_cpus: int | None = None,
+    ) -> None:
+        """
+        Export the collection to GeoTIFF files.
+
+        Export projection and bounds are defined by the
+        :attr:`~geedim.image.ImageAccessor.crs`,
+        :attr:`~geedim.image.ImageAccessor.transform` and
+        :attr:`~geedim.image.ImageAccessor.shape` properties, and the data type by
+        the :attr:`~geedim.image.ImageAccessor.dtype` property of the collection
+        images. All bands in the collection should share the same projection,
+        bounds and data type. :meth:`prepareForExport` can be called before this
+        method to apply export parameters and create an export-ready collection.
+
+        Images are retrieved as separate tiles which are downloaded and decompressed
+        concurrently.  Tile size can be controlled with ``max_tile_size``,
+        ``max_tile_dim`` and ``max_tile_bands``, and download / decompress
+        concurrency with ``max_requests`` and ``max_cpus``.
+
+        When ``split`` is :attr:`~geedim.enums.SplitType.images`, GeoTIFF default
+        namespace tags are written with the
+        :attr:`~geedim.image.ImageAccessor.properties`, and band tags with the
+        :attr:`~geedim.image.ImageAccessor.bandProps` attributes of their source images.
+
+        A maximum of 5000 images can be exported.
+
+        :param dirname:
+            Destination directory.  Can be a path or URI string, or an
+            :class:`~fsspec.core.OpenFile` object.
+        :param overwrite:
+            Whether to overwrite destination files if they exist.
+        :param split:
+            Export a file for each collection band
+            (:attr:`~geedim.enums.SplitType.bands`), or for each collection image
+            (:attr:`~geedim.enums.SplitType.images`).  Files are named with their band
+            name, and file band descriptions are set to the ``system:index`` property
+            of the band's source image, when ``split`` is
+            :attr:`~geedim.enums.SplitType.bands`.  Otherwise, files are named with
+            the ``system:index`` property of the file's source image, and file band
+            descriptions are set to the image band names, when ``split`` is
+            :attr:`~geedim.enums.SplitType.images`.
+        :param nodata:
+            How to set the GeoTIFF nodata tags.  If ``True`` (the default),
+            the nodata tags are set to the :attr:`~geedim.image.ImageAccessor.nodata`
+            value of the collection images. Otherwise, if ``False``, the nodata tags
+            are not set.  A custom value can also be provided, in which case the
+            nodata tags are set to this value. Usually, a custom value would be
+            supplied when the collection images have been unmasked with
+            ``ee.Image.unmask(nodata)``.
+        :param driver:
+            File format driver.
+        :param max_tile_size:
+            Maximum tile size (MB).  Should be less than the `Earth Engine size limit
+            <https://developers.google.com/earth-engine/apidocs/ee-image
+            -getdownloadurl>`__ (32 MB).
+        :param max_tile_dim:
+            Maximum tile width / height (pixels).  Should be less than the `Earth
+            Engine limit <https://developers.google.com/earth-engine/apidocs/ee-image
+            -getdownloadurl>`__ (10000).
+        :param max_tile_bands:
+            Maximum number of tile bands.  Should be less than the `Earth Engine
+            limit <https://developers.google.com/earth-engine/reference/rest/v1
+            /projects.image/computePixels>`__ (1024).
+        :param max_requests:
+            Maximum number of concurrent tile downloads.  Should be less than the
+            `max concurrent requests quota
+            <https://developers.google.com/earth-engine/guides/usage
+            #adjustable_quota_limits>`__.
+        :param max_cpus:
+            Maximum number of tiles to decompress concurrently.  Defaults to one less
+            than the number of CPUs, or one, whichever is greater.  Values larger
+            than the default can stall the asynchronous event loop and are not
+            recommended.
+        """
+        odir = (
+            fsspec.open(os.fspath(dirname), 'wb')
+            if not isinstance(dirname, OpenFile)
+            else dirname
+        )
+        split = enums.SplitType(split)
+        driver = enums.Driver(driver)
+        images = self._split_images(split)
+
+        # download the split images sequentially, each into its own file
+        tqdm_kwargs = utils.get_tqdm_kwargs(
+            desc=self.id or 'Collection', unit=split.value
+        )
+        for name, image in utils.auto_leave_tqdm(images.items(), **tqdm_kwargs):
+            joined_path = posixpath.join(odir.path, name + '.tif')
+            ofile = OpenFile(odir.fs, joined_path, mode='wb')
+            image.toGeoTIFF(
+                ofile,
+                overwrite=overwrite,
+                nodata=nodata,
+                driver=driver,
+                max_tile_size=max_tile_size,
+                max_tile_dim=max_tile_dim,
+                max_tile_bands=max_tile_bands,
+                max_requests=max_requests,
+                max_cpus=max_cpus,
+            )
+
+    def toNumPy(
+        self,
+        masked: bool = False,
+        structured: bool = False,
+        split: str | enums.SplitType = enums.SplitType.bands,
+        max_tile_size: float = Tiler._default_max_tile_size,
+        max_tile_dim: int = Tiler._ee_max_tile_dim,
+        max_tile_bands: int = Tiler._ee_max_tile_bands,
+        max_requests: int = Tiler._max_requests,
+        max_cpus: int | None = None,
+    ) -> np.ndarray:
+        """
+        Export the collection to a NumPy array.
+
+        Export projection and bounds are defined by the
+        :attr:`~geedim.image.ImageAccessor.crs`,
+        :attr:`~geedim.image.ImageAccessor.transform` and
+        :attr:`~geedim.image.ImageAccessor.shape` properties, and the data type by
+        the :attr:`~geedim.image.ImageAccessor.dtype` property of the collection
+        images. All bands in the collection should share the same projection,
+        bounds and data type. :meth:`prepareForExport` can be called before this
+        method to apply export parameters and create an export-ready collection.
+
+        Images are retrieved as separate tiles which are downloaded and decompressed
+        concurrently.  Tile size can be controlled with ``max_tile_size``,
+        ``max_tile_dim`` and ``max_tile_bands``, and download / decompress
+        concurrency with ``max_requests`` and ``max_cpus``.
+
+        A maximum of 5000 images can be exported.
+
+        :param masked:
+            Return a :class:`~numpy.ndarray` with masked pixels set to the shared
+            :attr:`~geedim.image.ImageAccessor.nodata` value of the collection images
+            (``False``), or a :class:`~numpy.ma.MaskedArray` (``True``).
+        :param structured:
+            Return a 4D array with a numerical ``dtype`` (``False``), or a 2D array
+            with a structured ``dtype`` (``True``).  Array dimension ordering,
+            and structured ``dtype`` fields depend on the value of ``split``.
+        :param split:
+            Return a 4D array with (row, column, band, image) dimensions
+            (:attr:`~geedim.enums.SplitType.bands`), or a 4D array with (row, column,
+            image, band) dimensions ( :attr:`~geedim.enums.SplitType.images`),
+            when ``structured`` is ``False``. Otherwise, return a 2D array with (row,
+            column) dimensions and a structured ``dtype`` representing images nested
+            in bands (:attr:`~geedim.enums.SplitType.bands`), or a 2D array with
+            (row, column) dimensions and a structured ``dtype`` representing bands
+            nested in images (:attr:`~geedim.enums.SplitType.images`),
+            when ``structured`` is ``True``.
+        :param max_tile_size:
+            Maximum tile size (MB).  Should be less than the `Earth Engine size limit
+            <https://developers.google.com/earth-engine/apidocs/ee-image
+            -getdownloadurl>`__ (32 MB).
+        :param max_tile_dim:
+            Maximum tile width / height (pixels).  Should be less than the `Earth
+            Engine limit <https://developers.google.com/earth-engine/apidocs/ee-image
+            -getdownloadurl>`__ (10000).
+        :param max_tile_bands:
+            Maximum number of tile bands.  Should be less than the `Earth Engine
+            limit <https://developers.google.com/earth-engine/reference/rest/v1
+            /projects.image/computePixels>`__ (1024).
+        :param max_requests:
+            Maximum number of concurrent tile downloads.  Should be less than the
+            `max concurrent requests quota
+            <https://developers.google.com/earth-engine/guides/usage
+            #adjustable_quota_limits>`__.
+        :param max_cpus:
+            Maximum number of tiles to decompress concurrently.  Defaults to one less
+            than the number of CPUs, or one, whichever is greater.  Values larger
+            than the default can stall the asynchronous event loop and are not
+            recommended.
+
+        :returns:
+            NumPy array.
+        """
+        split = enums.SplitType(split)
+        images = self._split_images(split)
+
+        # initialise the destination array
+        first = next(iter(images.values()))
+        shape = (*first.shape, len(images), first.count)
+        dtype = first.dtype
+        if masked:
+            array = np.ma.zeros(shape, dtype=dtype, fill_value=first.nodata)
+        else:
+            array = np.zeros(shape, dtype=dtype)
+
+        # download the split image arrays sequentially, copying into the destination
+        # array
+        tqdm_kwargs = utils.get_tqdm_kwargs(
+            desc=self.id or 'Collection', unit=split.value
+        )
+        for i, image in enumerate(
+            utils.auto_leave_tqdm(images.values(), **tqdm_kwargs)
+        ):
+            array[:, :, i, :] = image.toNumPy(
+                masked=masked,
+                max_tile_size=max_tile_size,
+                max_tile_dim=max_tile_dim,
+                max_tile_bands=max_tile_bands,
+                max_requests=max_requests,
+                max_cpus=max_cpus,
+            )
+
+        if structured:
+            # create a structured data dtype to describe the last 2 array dimensions
+            band_names = first.bandNames
+            image_names = list(images.keys())
+
+            timestamps = [
+                p.get('system:time_start', None) for p in self.properties.values()
+            ]
+            if all([ts is not None for ts in timestamps]):
+                # zip date string 'title's with the corresponding system:index
+                # 'name's (allows the time dimension to be indexed by date string or
+                # system:index)
+                date_strings = [
+                    datetime.fromtimestamp(ts / 1000).isoformat(timespec='seconds')
+                    for ts in timestamps
+                ]
+                if split is enums.SplitType.bands:
+                    band_names = list(zip(date_strings, band_names, strict=True))
+                else:
+                    image_names = list(zip(date_strings, image_names, strict=True))
+
+            # nest the structured data type for a split image's bands (last array
+            # dimension) in the structured data type for the split images (second
+            # last array dimension)
+            band_dtype = np.dtype(
+                list(zip(band_names, [array.dtype] * len(band_names), strict=True))
+            )
+            exp_dtype = np.dtype(
+                list(zip(image_names, [band_dtype] * len(images), strict=True))
+            )
+
+            # create a view of the array with the last 2 dimensions as the structured
+            # dtype
+            array = array.reshape(*array.shape[:2], -1).view(dtype=exp_dtype).squeeze()
+            if masked:
+                # re-set masked array fill_value which is not copied in view
+                array.fill_value = first.nodata
+
+        return array
+
+    def toXarray(
+        self,
+        masked: bool = False,
+        split: str | enums.SplitType = enums.SplitType.bands,
+        max_tile_size: float = Tiler._default_max_tile_size,
+        max_tile_dim: int = Tiler._ee_max_tile_dim,
+        max_tile_bands: int = Tiler._ee_max_tile_bands,
+        max_requests: int = Tiler._max_requests,
+        max_cpus: int | None = None,
+    ) -> xarray.Dataset:
+        """
+        Export the collection to an Xarray Dataset.
+
+        Export projection and bounds are defined by the
+        :attr:`~geedim.image.ImageAccessor.crs`,
+        :attr:`~geedim.image.ImageAccessor.transform` and
+        :attr:`~geedim.image.ImageAccessor.shape` properties, and the data type by
+        the :attr:`~geedim.image.ImageAccessor.dtype` property of the collection
+        images. All bands in the collection should share the same projection,
+        bounds and data type. :meth:`prepareForExport` can be called before this
+        method to apply export parameters and create an export-ready collection.
+
+        Images are retrieved as separate tiles which are downloaded and decompressed
+        concurrently.  Tile size can be controlled with ``max_tile_size``,
+        ``max_tile_dim`` and ``max_tile_bands``, and download / decompress
+        concurrency with ``max_requests`` and ``max_cpus``.
+
+        DataArray attributes include ``crs``, ``transform`` and ``nodata`` values for
+        compatibility with `rioxarray <https://github.com/corteva/rioxarray>`_,
+        as well as ``ee`` and ``stac`` JSON strings of the Earth Engine property and
+        STAC dictionaries.
+
+        A maximum of 5000 images can be exported.
+
+        :param masked:
+            Set masked pixels in the returned dataset to the shared
+            :attr:`~geedim.image.ImageAccessor.nodata` value of the collection images
+            (``False``), or to NaN (``True``).  If ``True``, the export data type is
+            integer, and one or more pixels are masked, the returned dataset is
+            converted to a minimal floating point type able to represent the export
+            data type.
+        :param split:
+            Return a dataset with bands as variables
+            (:attr:`~geedim.enums.SplitType.bands`), or a dataset with images as
+            variables (:attr:`~geedim.enums.SplitType.images`). Variables are named
+            with their band name, and time coordinates are converted from the
+            ``system:start_time`` property of the images when ``split`` is
+            :attr:`~geedim.enums.SplitType.bands`.  Variables are named with the
+            ``system:index`` property of their image, and band coordinates are set to
+            image band names when ``split`` is :attr:`~geedim.enums.SplitType.images`.
+        :param max_tile_size:
+            Maximum tile size (MB).  Should be less than the `Earth Engine size limit
+            <https://developers.google.com/earth-engine/apidocs/ee-image
+            -getdownloadurl>`__ (32 MB).
+        :param max_tile_dim:
+            Maximum tile width / height (pixels).  Should be less than the `Earth
+            Engine limit <https://developers.google.com/earth-engine/apidocs/ee-image
+            -getdownloadurl>`__ (10000).
+        :param max_tile_bands:
+            Maximum number of tile bands.  Should be less than the `Earth Engine
+            limit <https://developers.google.com/earth-engine/reference/rest/v1
+            /projects.image/computePixels>`__ (1024).
+        :param max_requests:
+            Maximum number of concurrent tile downloads.  Should be less than the
+            `max concurrent requests quota
+            <https://developers.google.com/earth-engine/guides/usage
+            #adjustable_quota_limits>`__.
+        :param max_cpus:
+            Maximum number of tiles to decompress concurrently.  Defaults to one less
+            than the number of CPUs, or one, whichever is greater.  Values larger
+            than the default can stall the asynchronous event loop and are not
+            recommended.
+
+        :returns:
+            Xarray Dataset.
+        """
+        if not xarray:
+            raise ImportError(
+                "'toXarray()' requires the 'xarray' package to be installed."
+            )
+        split = enums.SplitType(split)
+        images = self._split_images(split)
+
+        # download the split image DataArrays sequentially, storing in a dict
+        arrays = {}
+        tqdm_kwargs = utils.get_tqdm_kwargs(
+            desc=self.id or 'Collection', unit=split.value
+        )
+        for name, image in utils.auto_leave_tqdm(images.items(), **tqdm_kwargs):
+            arrays[name] = image.toXarray(
+                masked=masked,
+                max_tile_size=max_tile_size,
+                max_tile_dim=max_tile_dim,
+                max_tile_bands=max_tile_bands,
+                max_requests=max_requests,
+                max_cpus=max_cpus,
+            )
+
+        if split is enums.SplitType.bands:
+            # change the 'band' coordinate and dimension in each DataArray to 'time'
+            timestamps = [
+                p.get('system:time_start', None) for p in self.properties.values()
+            ]
+            datetimes = to_datetime(timestamps, unit='ms')
+
+            for name, array in arrays.items():
+                array = array.rename(band='time')
+                array.coords['time'] = datetimes
+                arrays[name] = array
+
+        # create attributes dict
+        attrs = dict(id=self.id or None)
+        # copy rioxarray required attributes from the first DataArray
+        for array in arrays.values():
+            attrs.update(**{k: array.attrs[k] for k in ['crs', 'transform', 'nodata']})
+            break
+        # add EE / STAC attributes (use json strings here, then drop all Nones for
+        # serialisation compatibility e.g. netcdf)
+        attrs['ee'] = (
+            json.dumps(self.info['properties']) if 'properties' in self.info else None
+        )
+        attrs['stac'] = json.dumps(self.stac) if self.stac else None
+        attrs = {k: v for k, v in attrs.items() if v is not None}
+
+        # return a Dataset of split image DataArrays
+        return xarray.Dataset(arrays, attrs=attrs)
+
+
+class MaskedCollection(ImageCollectionAccessor):
+    def __init__(
+        self, ee_collection: ee.ImageCollection, add_props: list[str] | None = None
+    ):
+        """
+        A class for encapsulating an Earth Engine image collection.
+
+        .. deprecated:: 2.0.0
+            Please use the :class:`ee.ImageCollection.gd
+            <geedim.collection.ImageCollectionAccessor>` accessor instead.
+
+        :param ee_collection:
+            Image collection to encapsulate.
+        :param add_props:
+            Additional image properties to include in :attr:`schema` and
+            :attr:`properties`.
+        """
+        warnings.warn(
+            f"'{self.__class__.__name__}' is deprecated and will be removed in a "
+            f"future release. Please use the 'ee.ImageCollection.gd' accessor instead.",
+            category=FutureWarning,
+            stacklevel=2,
+        )
+        if not isinstance(ee_collection, ee.ImageCollection):
+            raise TypeError('`ee_collection` must be an instance of ee.ImageCollection')
+        super().__init__(ee_collection)
+        if add_props:
+            self.schemaPropertyNames += tuple(add_props)
+
+    @classmethod
+    def from_name(
+        cls, name: str, add_props: list[str] | None = None
+    ) -> MaskedCollection:
+        """
+        Create a MaskedCollection from an Earth Engine image collection ID.
+
+        :param name:
+            Image collection ID.
+        :param add_props:
+            Additional image properties to include in :attr:`schema` and
+            :attr:`properties`.
+
+        :return:
+            Image collection.
+        """
+        return cls(ee.ImageCollection(name), add_props=add_props)
+
+    @classmethod
+    def from_list(
+        cls,
+        image_list: list[str | BaseImage | ee.Image],
+        add_props: list[str] | None = None,
+    ) -> MaskedCollection:
+        """
+        Create a MaskedCollection with support for cloud masking, that contains the
+        given images.
+
+        Images from spectrally compatible Landsat collections can be combined i.e.
+        Landsat-4 with Landsat-5, and Landsat-8 with Landsat-9.  Otherwise,
+        images should all belong to the same collection.  Images may include
+        composites as created with :meth:`composite`.  Composites are treated as
+        belonging to the collection of their component images.
+
+        Use this method (instead of :meth:`ee.ImageCollection` or
+        :meth:`ee.ImageCollection.fromImages`) to support cloud masking on a
+        collection built from a sequence of images.
+
+        :param image_list:
+            Sequence of images, as Earth Engine image IDs, :class:`ee.Image`
+            instances or :class:`~geedim.download.BaseImage` instances.
+        :param add_props:
+            Additional image properties to include in :attr:`schema` and
+            :attr:`properties`.
+
+        :return:
+            Image collection.
+        """
+        if len(image_list) == 0:
+            raise ValueError("'image_list' is empty.")
+
+        images = [
+            image.ee_image if isinstance(image, BaseImage) else ee.Image(image)
+            for image in image_list
+        ]
+        ee_coll = cls.fromImages(images)
+        return cls(ee_coll, add_props=add_props)
+
+    @property
+    def ee_collection(self) -> ee.ImageCollection:
+        """Encapsulated Earth Engine image collection."""
+        return self._ee_coll
+
+    @property
+    def name(self) -> str:
+        """Earth Engine image collection ID."""
+        return self.id
+
+    @property
+    def image_type(self) -> type:
+        """:class:`~geedim.mask.MaskedImage` class for images in
+        :attr:`ee_collection`.
+        """
+        return MaskedImage
+
+    @property
+    def stats_scale(self) -> float | None:
+        """Scale to use for finding mask portions.  ``None`` if there is no STAC band
+        information for this collection.
+        """
+        return self._portion_scale
+
+    @property
+    def schema(self) -> dict[str, dict]:
+        """Dictionary of property abbreviations and descriptions used to form
+        :attr:`schema_table`, :attr:`properties` and :attr:`properties_table`.
+        """
+        return super().schema
+
+    @property
+    def schema_table(self) -> str:
+        """:attr:`schema` formatted as a printable table string."""
+        return self.schemaTable
+
+    @property
+    def properties(self) -> dict[str, dict[str, Any]]:
+        """Dictionary of image properties.  Keys are the image IDs and values the
+        image property dictionaries.
+        """
+        coll_schema_props = {}
+        for i, im_info in enumerate(self.info.get('features', [])):
+            im_id = im_info.get('id', str(i))
+            im_props = im_info.get('properties', {})
+            im_schema_props = {
+                key: im_props[key]
+                for key in self.schema.keys()
+                if im_props.get(key, None) is not None
+            }
+            coll_schema_props[im_id] = im_schema_props
+        return coll_schema_props
+
+    @property
+    def properties_table(self) -> str:
+        """:attr:`properties` abbreviated with :attr:`schema` and formatted as a
+        printable table string.
+        """
+        return self.propertiesTable
+
+    @property
+    def refl_bands(self) -> list[str]:
+        """List of spectral band names."""
+        return self.specBands
+
+    def search(self, *args, **kwargs) -> MaskedCollection:
+        ee_coll = self.filter(*args, **kwargs)
+        gd_coll = MaskedCollection(ee_coll)
+        gd_coll.schemaPropertyNames = self.schemaPropertyNames
+        return gd_coll
+
+    search.__doc__ = ImageCollectionAccessor.filter.__doc__
+
+    def composite(self, *args, **kwargs) -> MaskedImage:
+        ee_image = super().composite(*args, **kwargs)
+        gd_image = MaskedImage(ee_image)
+        return gd_image
