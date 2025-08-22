@@ -30,7 +30,7 @@ Features
 - Provide client-side access to image and collection properties.
 - Allow images and image collections to be exported to GeoTIFF file, NumPy array, Xarray DataArray / Dataset and Google Cloud platforms.
 - Support exporting to Cloud Optimised GeoTIFF.
-- Allow setting a custom nodata value when exporting to GeoTIFF (#21).
+- Allow setting a custom nodata value when exporting to GeoTIFF (`#21 <https://github.com/leftfield-geospatial/geedim/issues/21>`_).
 - Support specifying file / directory paths as remote URIs with ``fsspec``.
 - Extend cloud masking support to Landsat C2 collections.
 - Allow saturated, non-physical reflectance or aerosol pixels to be included in cloud masks.
@@ -51,7 +51,7 @@ Documentation
 Internal changes
 ~~~~~~~~~~~~~~~~
 
-- Rewrite tiled downloading with AIOHTTP and custom retries (#22, #26, #30).
+- Rewrite tiled downloading with AIOHTTP and custom retries (`#22 <https://github.com/leftfield-geospatial/geedim/issues/22>`_, `#26 <https://github.com/leftfield-geospatial/geedim/issues/26>`_, `#30 <https://github.com/leftfield-geospatial/geedim/issues/30>`_).
 - Rewrite STAC retrieval with AIOHTTP.
 
 v1.9.1 - 2025-05-13
