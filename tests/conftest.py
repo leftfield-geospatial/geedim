@@ -75,7 +75,7 @@ def ee_initialize() -> None:
     utils_initialize = utils.Initialize
 
     def initialize(**kwargs):
-        if not ee.data._initialized:
+        if not ee.data.is_initialized():
             utils_initialize(**kwargs)
 
     with pytest.MonkeyPatch.context() as mp:
