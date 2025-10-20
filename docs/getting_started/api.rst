@@ -17,7 +17,7 @@ Geedim extends the `GEE API <https://github.com/google/earthengine-api>`__ with 
     from geedim import utils
 
     # prevent widget display
-    utils.get_tqdm_kwargs = partial(utils.get_tqdm_kwargs, display=False)
+    utils.get_tqdm_kwargs = partial(utils.get_tqdm_kwargs, disable=True)
 
     # initialise using EE_SERVICE_ACC_PRIVATE_KEY env variable if present
     gd.Initialize()
