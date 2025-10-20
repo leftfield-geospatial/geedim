@@ -1,8 +1,6 @@
 Contributing
 ============
 
-If Geedim is useful to you, please consider `making a donation <https://github.com/sponsors/leftfield-geospatial>`__.
-
 Bug reports and feature requests are welcome, and can be made with the `GitHub issue tracker <https://github.com/leftfield-geospatial/geedim/issues>`__.
 
 Development
