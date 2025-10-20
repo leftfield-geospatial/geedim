@@ -9,6 +9,7 @@ author = 'Leftfield Geospatial'
 release = __version__
 
 # -- General configuration ---------------------------------------------------
+# TODO: add sphinx.ext.extlinks to link to issues in changelog
 extensions = [
     'sphinx.ext.intersphinx',
     'sphinx.ext.autodoc',

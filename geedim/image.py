@@ -385,6 +385,9 @@ class ImageAccessor:
         """GeoJSON geometry of the image extent.  ``None`` if the image has no fixed
         projection.
         """
+        # TODO: ee.Image('GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL/x4n21uv635n0p75cs')
+        #  does not contain 'system:footprint'.  This also means .fixed() incorrectly
+        #  returns False and a CLI search of this collection fails with -fp
         if (
             'properties' not in self.info
             or 'system:footprint' not in self.info['properties']
