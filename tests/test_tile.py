@@ -18,6 +18,7 @@ import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+import ee
 import numpy as np
 import pytest
 import rasterio as rio
@@ -27,7 +28,6 @@ from rasterio.windows import Window
 
 from geedim.image import ImageAccessor
 from geedim.tile import Tile, Tiler
-from geedim.utils import AsyncRunner
 
 
 @dataclass
@@ -203,66 +203,62 @@ def test_tiler_tiles():
 
 
 def test_tile_map_tile_retries(
-    prepared_image: ImageAccessor, monkeypatch: pytest.MonkeyPatch
+    prepared_image: ImageAccessor,
+    prepared_image_array: np.ndarray,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     """Test Tiler._map_tile() retry behaviour."""
 
-    class MockDatasetReader(rio.DatasetReader):
-        """Mocked Rasterio DatasetReader that raises exceptions on the first
-        max_exceptions reads, then reads as normal.
-        """
+    class MockImage(ee.Image):
+        """Mocked ee.Image."""
 
-        exceptions = 0
+        errors = 0
+        max_errors = 1
 
-        def read(self, *args, **kwargs):
-            if MockDatasetReader.exceptions < max_exceptions:
-                MockDatasetReader.exceptions += 1
-                raise RasterioIOError('Mock error')
+        def getDownloadURL(self, *args, **kwargs):
+            """Raise an error on the first max_errors calls then return a URL as
+            usual.
+            """
+            if MockImage.errors < MockImage.max_errors:
+                MockImage.errors += 1
+                raise ConnectionError('Mock error')
             else:
-                return super().read(*args, **kwargs)
+                return super().getDownloadURL(*args, **kwargs)
 
-    monkeypatch.setattr(rasterio.io, 'DatasetReader', MockDatasetReader)
+    monkeypatch.setattr(ee, 'Image', MockImage)
+    array = np.ones(
+        (*prepared_image.shape, prepared_image.count), dtype=prepared_image.dtype
+    )
 
-    def tile_func(tile: Tile, tile_array: np.ndarray):
-        """Write tile to array."""
-        array[tile.slices.band, tile.slices.row, tile.slices.col] = tile_array
+    def write_tile(tile: Tile, tile_array: np.ndarray):
+        """Write tile_array into array."""
+        tile_array = np.moveaxis(tile_array, 0, -1)
+        array[tile.slices.row, tile.slices.col, tile.slices.band] = tile_array
 
     with Tiler(prepared_image) as tiler:
-        # test a tile is downloaded correctly after max_exceptions retries
-        max_exceptions = 1
-        array = np.ones(
-            (prepared_image.count, *prepared_image.shape), dtype=prepared_image.dtype
-        )
-        tile = next(tiler._tiles())
-        AsyncRunner().run(
-            tiler._map_tile(
-                tile_func,
-                tile,
-                False,
-                AsyncRunner().session,
-                max_retries=max_exceptions,
-                backoff_factor=0,
-            )
-        )
-        assert MockDatasetReader.exceptions == max_exceptions
+        # test a tile is downloaded correctly after max_errors retries
+        with monkeypatch.context() as m:
+            # set the default values for the Tiler._map_tile() max_retries and
+            # backoff_factor kwargs
+            m.setattr(Tiler._map_tile, '__defaults__', (MockImage.max_errors, 0))
+            tiler.map_tiles(write_tile, masked=False)
+
+        assert MockImage.errors == MockImage.max_errors
         mask = array != prepared_image.nodata
-        assert not np.all(mask)
-        assert np.all((array.T == range(1, prepared_image.count + 1)) == mask.T)
+        assert (mask == ~prepared_image_array.mask).all()
+        assert (array == prepared_image_array).all()
 
         # test an error is raised when a tile is not downloaded correctly within
-        # max_retries retries
-        MockDatasetReader.exceptions = 0
-        with pytest.raises(RasterioIOError, match='Mock error'):
-            AsyncRunner().run(
-                tiler._map_tile(
-                    tile_func,
-                    tile,
-                    False,
-                    AsyncRunner().session,
-                    max_retries=max_exceptions - 1,
-                    backoff_factor=0,
-                )
-            )
+        # max_errors retries
+        MockImage.errors = 0
+        with (
+            monkeypatch.context() as m,
+            pytest.raises(ConnectionError, match='Mock error'),
+        ):
+            # set the default values for the Tiler._map_tile() max_retries and
+            # backoff_factor kwargs
+            m.setattr(Tiler._map_tile, '__defaults__', (0, 0))
+            tiler.map_tiles(write_tile, masked=False)
 
 
 @pytest.mark.parametrize('masked', [False, True])
@@ -279,12 +275,17 @@ def test_tiler_map_tiles(
     # choose max_tile_dim and max_tile_bands to have 2 tiles along each dimension,
     # and max_requests and max_cpus to reach their limits
     with Tiler(
-        prepared_image, max_tile_dim=11, max_tile_bands=2, max_requests=4, max_cpus=4
+        prepared_image,
+        max_tile_dim=11,
+        max_tile_bands=2,
+        max_requests=4,
+        max_cpus=4,
     ) as tiler:
         assert len([*tiler._tiles()]) == 8
         array_type = np.ma.ones if masked else np.ones
         array = array_type(
-            (*prepared_image.shape, prepared_image.count), dtype=prepared_image.dtype
+            (*prepared_image.shape, prepared_image.count),
+            dtype=prepared_image.dtype,
         )
         tiler.map_tiles(write_tile, masked=masked)
 
