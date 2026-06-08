@@ -51,7 +51,7 @@ jobs:
           python -m pytest -n 2 --durations=10 --cov=geedim --cov-report=term-missing --cov-report=xml:coverage.xml ./tests
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           fail_ci_if_error: true
           files: ./coverage.xml
