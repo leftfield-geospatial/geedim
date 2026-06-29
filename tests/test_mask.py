@@ -564,11 +564,15 @@ def test_landsat_sr_aerosol_image_get_mask_bands(mock_ls_sr_aerosol_ee_image: ee
     assert stats['CLOUDLESS_MASK'] == 0.1
 
 
-def test_s2_image_get_mask_bands_support(s2_image_ids: list[str], region_100ha: dict):
-    """Test _Sentinel2Image._get_mask_bands() works on all supported Sentinel-2
-    collections with all mask methods.
-    """
+def test_s2_image_get_mask_bands_support(
+    s2_toa_hm_image_id, s2_sr_hm_image_id, region_100ha: dict
+):
+    """Test _Sentinel2Image._get_mask_bands() works with all mask methods."""
+    # TODO: s2_toa_image_id, and recent COPERNICUS/S2* images no longer have QA*
+    #  bands (as of 2026-06-29).  Remove geedim-deprecated S2 cloud mask methods and
+    #  or Copernicus-deprecated non-harmonised S2 test fixtures.
     # find mask bands for each s2 image & method
+    s2_image_ids = [s2_toa_hm_image_id, s2_sr_hm_image_id]
     mask_bands_list = [
         mask._get_class_for_id(im_id)._get_mask_bands(ee.Image(im_id), mask_method=meth)
         for im_id, meth in product(s2_image_ids, CloudMaskMethod)
