@@ -11,19 +11,13 @@
 # CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
 
-from enum import Enum
+from enum import StrEnum
 
 
-class _StrChoiceEnum(str, Enum):
-    """String value enumeration that can be used with a ``click.Choice()`` parameter
-    type.
+class _StrChoiceEnum(StrEnum):
+    """StrEnum subclass workaround to use enum values rather than names in
+    ``click.Choice()`` options.
     """
-
-    def __repr__(self):
-        return self._value_
-
-    def __str__(self):
-        return self._value_
 
     @property
     def name(self):
@@ -168,3 +162,8 @@ class Driver(_StrChoiceEnum):
 
     cog = 'cog'
     """Cloud Optimised GeoTIFF."""
+
+    def _to_gdal(self) -> str:
+        """Return the GDAL driver name."""
+        gdal_map = dict(gtiff='GTiff', cog='COG')
+        return gdal_map[self._value_]
