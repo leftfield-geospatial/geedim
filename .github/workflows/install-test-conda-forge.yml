@@ -1,5 +1,3 @@
-# Test installing from conda-forge
-
 name: Install & test conda-forge package
 on:
   workflow_dispatch:
@@ -19,11 +17,10 @@ jobs:
     steps:
 
       - name: Set up conda
-        uses: conda-incubator/setup-miniconda@v3
+        uses: conda-incubator/setup-miniconda@v4
         with:
           python-version: ${{ matrix.python-version }}
-          channels: conda-forge
-          channel-priority: strict
+          miniforge-version: latest
           activate-environment: geedim-test
           conda-solver: libmamba
 
@@ -33,13 +30,12 @@ jobs:
           conda install geedim>=2.0.0
           conda list
 
-      - name: Run tests
+      - name: Test CLI
         timeout-minutes: 5
         env:
           EE_SERVICE_ACC_PRIVATE_KEY: ${{ secrets.EE_SERVICE_ACC_PRIVATE_KEY }}
         run: |
           geedim --version
           geedim search -c l8-c2-l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 composite -cm q-mosaic --mask download --scale 30 --crs EPSG:3857 -r - -o
-          dir Q-MOSAIC-COMP.tif && echo "Test OK"
-          pwd
-          ls -R
+          ls .
+          test -f Q-MOSAIC-COMP.tif && echo "Pass" || echo "Fail"
