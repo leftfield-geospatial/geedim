@@ -1,11 +1,8 @@
-# Test publishing to, and installing and running with Test PyPI
-
 name: Install & test PyPI package
 on:
   workflow_dispatch:
 
 jobs:
-  # Install geedim from Test PyPI and test CLI
   test:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -14,23 +11,24 @@ jobs:
       matrix:
         os: [ macos-latest, ubuntu-latest, windows-latest ]
         python-version: [ '3.11', '3.14' ]
+
     steps:
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install geedim from PyPI
+
+      - name: Install from PyPI
         run: |
           python -m pip install --upgrade pip
-          python -m pip install --upgrade geedim
-      - name: Test geedim CLI
+          python -m pip install --no-cache-dir --upgrade geedim
+
+      - name: Test CLI
         timeout-minutes: 5
         env:
           EE_SERVICE_ACC_PRIVATE_KEY: ${{ secrets.EE_SERVICE_ACC_PRIVATE_KEY }}
-        shell: bash
         run: |
           geedim --version
           geedim search -c l8-c2-l2 -s 2019-02-01 -e 2019-03-01 --bbox 23 -33 23.2 -33.2 composite -cm q-mosaic --mask download --scale 30 --crs EPSG:3857 -r - -o
-          dir Q-MOSAIC-COMP.tif && echo "Test OK"
-          pwd
-          ls -R
+          ls .
+          test -f Q-MOSAIC-COMP.tif && echo "Pass" || echo "Fail"
