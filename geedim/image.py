@@ -1031,7 +1031,7 @@ class ImageAccessor:
         elif nodata is False:
             nodata = None
         profile.update(
-            driver=driver.value,
+            driver=driver._to_gdal(),
             compress='deflate',
             bigtiff='if_safer',
             nodata=nodata,
@@ -1055,8 +1055,9 @@ class ImageAccessor:
                 rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False)
             )
 
-            # open the destination file
+            # open the destination file & populate metadata
             out_ds = exit_stack.enter_context(_open_raster(ofile, **profile))
+            self._write_metadata(out_ds)
 
             # download and write tiles to file
             out_lock = threading.Lock()
@@ -1079,8 +1080,6 @@ class ImageAccessor:
             )
             tiler.map_tiles(write_tile)
 
-            # populate metadata & build overviews
-            self._write_metadata(out_ds)
             logger.debug(f"Building overviews for '{ofile.path}'.")
             _build_overviews(out_ds)
 
