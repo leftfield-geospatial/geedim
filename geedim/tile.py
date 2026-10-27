@@ -91,6 +91,8 @@ class Tile:
     @cached_property
     def tile_transform(self) -> list[float]:
         """Tile georeferencing transform."""
+        # TODO: pin rasterio when it is released with Affine>=3, and use @ instead of
+        #  * here and elsewhere: https://github.com/rasterio/rasterio/issues/3655
         transform = rio.Affine(*self.image_transform) * rio.Affine.translation(
             self.col_start, self.row_start
         )
