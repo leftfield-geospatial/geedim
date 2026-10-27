@@ -6,8 +6,8 @@ v2.0.1 - 2026-10-27
 
 This release fixes a bug in exported COG metadata.
 
-Fixes:
-~~~~~~
+Fixes
+~~~~~
 
 - Convert ``Driver`` to a case-sensitive GDAL name to ensure COG band descriptions are written.
 
