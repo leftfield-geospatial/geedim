@@ -13,7 +13,7 @@ dependencies = [
     'fsspec>=2025.2',
     'aiohttp>=3.11',
 ]
-authors = [{name = 'Leftfield Geospatial'}]
+authors = [{ name = 'Leftfield Geospatial' }]
 keywords = [
     'earth engine', 'image', 'export', 'geotiff', 'xarray', 'numpy', 'cloud', 'mask'
 ]
@@ -40,7 +40,7 @@ docs = [
 Homepage = 'https://github.com/leftfield-geospatial/geedim'
 Documentation = "https://geedim.readthedocs.org"
 Source = 'https://github.com/leftfield-geospatial/geedim'
-Changelog = 'https://github.com/leftfield-geospatial/geedim/releases'
+Changelog = 'https://geedim.readthedocs.io/en/stable/changelog.html'
 Issues = 'https://github.com/leftfield-geospatial/geedim/issues'
 
 [build-system]
@@ -51,7 +51,7 @@ build-backend = 'setuptools.build_meta'
 packages = ['geedim']
 
 [tool.setuptools.dynamic]
-version = {attr = 'geedim.version.__version__'}
+version = { attr = 'geedim.version.__version__' }
 
 [tool.setuptools.package-data]
 geedim = ['py.typed']
@@ -66,11 +66,11 @@ format = { quote-style = 'single' }
 
 [tool.ruff.lint]
 select = [
-    'B',  # flake8-bugbear
-    'E',  # pycodestyle error
-    'F',  # pyflakes
-    'I',  # isort
-    'UP',  # pyupgrade
-    'W',  # pycodestyle warning
+    'B', # flake8-bugbear
+    'E', # pycodestyle error
+    'F', # pyflakes
+    'I', # isort
+    'UP', # pyupgrade
+    'W', # pycodestyle warning
     'RUF'
 ]
