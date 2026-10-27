@@ -3,6 +3,7 @@ name: Tests (conda-forge)
 on:
   pull_request:
     branches: [ main ]
+  push:
   workflow_dispatch:
   schedule:
     - cron: '0 2 * * 1'  # run weekly
