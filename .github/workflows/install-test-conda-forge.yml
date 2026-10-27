@@ -27,7 +27,7 @@ jobs:
       - name: Install package
         run: |
           conda info
-          conda install --force-reinstall "geedim>=2.0.0"
+          conda install --force-reinstall "geedim>=2.0.1"
           conda list
 
       - name: Test CLI
